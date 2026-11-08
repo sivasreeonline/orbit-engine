@@ -1260,3 +1260,121 @@ button:focus-visible, a:focus-visible, select:focus-visible {
     font-size: clamp(54px, 15vw, 82px);
   }
 }
+
+
+/* Shared interaction language for Reset, Focus, Run and Submit controls. */
+.panel-focus-button,
+.action-reset-button,
+.editor-run-button,
+.editor-submit-button {
+  min-height: 38px;
+  border-radius: 8px;
+  font-weight: 850;
+  letter-spacing: 0.05px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
+  transform: translateY(0) scale(1);
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease;
+  will-change: transform;
+}
+
+.panel-focus-button {
+  border: 1px solid rgba(0, 194, 255, 0.38);
+  background: linear-gradient(110deg, rgba(0, 194, 255, 0.13), rgba(8, 125, 216, 0.17));
+  color: #c6f2ff;
+  padding-inline: 12px;
+  gap: 8px;
+}
+.panel-focus-button > svg {
+  display: block;
+  flex: 0 0 auto;
+  color: #75e1ff;
+}
+.panel-focus-button.active {
+  border-color: rgba(240, 20, 184, 0.58);
+  background: linear-gradient(110deg, rgba(240, 20, 184, 0.2), rgba(177, 45, 227, 0.2));
+  color: #ffd1f1;
+}
+.panel-focus-button.active > svg { color: #ff9cde; }
+
+.action-reset-button {
+  border: 1px solid rgba(0, 194, 255, 0.3);
+  background: linear-gradient(110deg, rgba(0, 194, 255, 0.09), rgba(23, 42, 69, 0.9));
+  color: #d1e9f6;
+  padding-inline: 13px;
+}
+
+.panel-focus-button:hover,
+.action-reset-button:hover,
+.editor-run-button:hover,
+.editor-submit-button:hover {
+  transform: translateY(-2px) scale(1.025);
+  box-shadow: 0 8px 19px rgba(0, 0, 0, 0.27);
+  animation: sky-button-bounce 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.panel-focus-button:hover { border-color: rgba(0, 194, 255, 0.72); background: linear-gradient(110deg, rgba(0, 194, 255, 0.2), rgba(8, 125, 216, 0.24)); }
+.panel-focus-button.active:hover { border-color: rgba(240, 20, 184, 0.78); background: linear-gradient(110deg, rgba(240, 20, 184, 0.27), rgba(177, 45, 227, 0.25)); }
+.action-reset-button:hover { border-color: rgba(0, 194, 255, 0.62); background: linear-gradient(110deg, rgba(0, 194, 255, 0.16), rgba(23, 42, 69, 1)); }
+.editor-run-button:hover { background: rgba(0, 194, 255, 0.18); }
+.editor-submit-button:hover { box-shadow: 0 9px 22px rgba(240, 20, 184, 0.27); }
+
+.panel-focus-button:active,
+.action-reset-button:active,
+.editor-run-button:active,
+.editor-submit-button:active {
+  transform: translateY(0) scale(0.97);
+  animation: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+}
+.panel-focus-button:focus-visible,
+.action-reset-button:focus-visible,
+.editor-run-button:focus-visible,
+.editor-submit-button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+.panel-focus-button:disabled,
+.action-reset-button:disabled,
+.editor-run-button:disabled,
+.editor-submit-button:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+  transform: none;
+  animation: none;
+  will-change: auto;
+  box-shadow: none;
+}
+@keyframes sky-button-bounce {
+  0% { transform: translateY(0) scale(1); }
+  42% { transform: translateY(-3px) scale(1.035); }
+  72% { transform: translateY(-1px) scale(1.012); }
+  100% { transform: translateY(-2px) scale(1.025); }
+}
+
+/* Lighter, restrained watermark with a slow ambient float. */
+.editor-language-watermark {
+  color: rgba(174, 196, 222, 0.145);
+  text-shadow: 0 0 34px rgba(116, 157, 205, 0.055);
+  transform-origin: 100% 100%;
+  animation: language-watermark-float 4.8s ease-in-out infinite;
+}
+@keyframes language-watermark-float {
+  0%, 100% { opacity: 0.82; transform: translate3d(0, 0, 0); }
+  50% { opacity: 1; transform: translate3d(0, -4px, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor-language-watermark { animation: none; }
+  .panel-focus-button,
+  .action-reset-button,
+  .editor-run-button,
+  .editor-submit-button {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    will-change: auto;
+  }
+}
