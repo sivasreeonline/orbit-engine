@@ -1510,3 +1510,9 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   .console-run-actions { width: 100%; }
   .console-run-button, .console-submit-button { flex: 1; }
 }
+
+
+/* Keep a usable output viewport after adding the dedicated action dock. */
+.workspace-grid {
+  grid-template-rows: minmax(400px, 1fr) minmax(230px, 0.4fr);
+}
