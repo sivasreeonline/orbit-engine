@@ -961,3 +961,208 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   .output-panel-header { align-items: flex-start; flex-direction: column; justify-content: center; padding: 12px 14px; }
   .output-sample-grid { grid-template-columns: 1fr; }
 }
+
+/* Focus Editor: maximize the code pane; stack Output and actions on the right. */
+.workspace-grid.focus-editor-mode {
+  grid-template-columns: minmax(0, 1.58fr) minmax(360px, 0.82fr);
+  grid-template-areas: "editor output";
+}
+.workspace-grid.focus-problem-mode {
+  grid-template-columns: minmax(0, 1.58fr) minmax(360px, 0.82fr);
+  grid-template-areas: "problem guide";
+}
+.workspace-grid.focus-editor-mode .editor-workspace { grid-template-rows: minmax(0, 1fr); }
+.focus-side-column {
+  grid-area: output;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.focus-side-column .output-panel { min-height: 0; height: auto; }
+.focus-side-column .editor-action-dock {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);
+  grid-template-areas: "reset run submit" "hint hint hint";
+  gap: 8px;
+  min-height: 0;
+}
+.focus-side-column .action-reset-button { grid-area: reset; min-width: 0; width: 100%; }
+.focus-side-column .editor-action-hint { grid-area: hint; font-size: 8px; }
+.focus-side-column .editor-run-actions { display: contents; }
+.focus-side-column .editor-run-button { grid-area: run; min-width: 0; width: 100%; padding-inline: 7px; }
+.focus-side-column .editor-submit-button { grid-area: submit; min-width: 0; width: 100%; padding-inline: 7px; }
+
+/* Focus Problem: use a relevant problem guide instead of execution output. */
+.problem-guide-panel {
+  grid-area: guide;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(182,201,228,0.15);
+  border-radius: 17px;
+  background: linear-gradient(145deg, rgba(20,26,39,0.98), rgba(11,16,26,0.98));
+  box-shadow: var(--shadow);
+}
+.problem-guide-header {
+  display: flex;
+  min-height: 68px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(100deg, rgba(240,20,184,0.07), transparent 65%);
+  padding: 0 15px;
+}
+.problem-guide-title { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.problem-guide-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(240,20,184,0.25);
+  border-radius: 9px;
+  background: rgba(240,20,184,0.1);
+  color: #ff83d8;
+  font-size: 17px;
+}
+.problem-guide-title strong { display: block; color: #f1f5fb; font-size: 12px; font-weight: 850; }
+.problem-guide-title small { display: block; margin-top: 4px; color: #8997aa; font-size: 9px; }
+.guide-mode-pill {
+  border: 1px solid rgba(0,194,255,0.2);
+  border-radius: 999px;
+  background: rgba(0,194,255,0.06);
+  color: #82dff5;
+  padding: 5px 7px;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .45px;
+  white-space: nowrap;
+}
+.problem-guide-tabs {
+  display: flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: stretch;
+  gap: 15px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(5,8,14,0.22);
+  padding: 0 14px;
+}
+.problem-guide-tab {
+  position: relative;
+  border: 0;
+  background: transparent;
+  color: #8997aa;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 750;
+}
+.problem-guide-tab.active { color: #fff; }
+.problem-guide-tab.active::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--magenta);
+  box-shadow: 0 0 9px rgba(240,20,184,.35);
+  content: "";
+}
+.problem-guide-content {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 15px;
+  scrollbar-width: auto;
+  scrollbar-color: #52647e #151c29;
+}
+.guide-topic-card {
+  border: 1px solid rgba(0,194,255,.18);
+  border-radius: 10px;
+  background: linear-gradient(120deg, rgba(0,194,255,.08), rgba(16,42,86,.18));
+  padding: 13px;
+}
+.guide-eyebrow { display: block; margin-bottom: 6px; color: #82dff5; font-size: 8px; font-weight: 900; letter-spacing: .9px; }
+.guide-topic-card > strong { display: block; color: #eef6ff; font-size: 14px; }
+.guide-tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.guide-tag { border: 1px solid rgba(240,20,184,.22); border-radius: 999px; background: rgba(240,20,184,.07); color: #e7a5d5; padding: 5px 8px; font-size: 8px; font-weight: 750; }
+.guide-section { margin-top: 17px; }
+.guide-section-heading { display: flex; align-items: center; gap: 8px; color: #eef3fb; font-size: 10px; font-weight: 850; }
+.guide-section-index { display: grid; width: 21px; height: 21px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(0,194,255,.2); border-radius: 6px; background: rgba(0,194,255,.08); color: #6ad9f8; font-size: 8px; }
+.guide-section p, .guide-section li { color: #aab7c8; font-size: 9px; line-height: 1.65; }
+.guide-section p { margin: 8px 0 0; }
+.guide-section ul { display: grid; gap: 6px; margin: 8px 0 0; padding-left: 17px; }
+.guide-callout { display: flex; align-items: flex-start; gap: 9px; margin-top: 17px; border: 1px solid rgba(255,214,0,.18); border-radius: 9px; background: rgba(255,214,0,.055); padding: 11px; }
+.guide-callout-icon { color: var(--yellow); font-size: 15px; }
+.guide-callout strong { display: block; color: #f3df85; font-size: 9px; }
+.guide-callout p { margin: 5px 0 0; color: #bdb48a; font-size: 8px; line-height: 1.6; }
+.guide-intro { margin: 0 0 12px; color: #9baabd; font-size: 9px; line-height: 1.6; }
+.guide-constraint-row { display: flex; align-items: flex-start; gap: 10px; border-bottom: 1px solid rgba(182,201,228,.09); padding: 11px 0; }
+.guide-constraint-row > span { color: var(--cyan); font-size: 8px; font-weight: 900; }
+.guide-constraint-row code { color: #d4dfed; font-family: "Cascadia Code", Consolas, monospace; font-size: 9px; }
+.guide-hints { display: grid; gap: 10px; }
+.guide-hint-card { border: 1px solid rgba(0,194,255,.17); border-radius: 9px; background: rgba(0,194,255,.045); padding: 11px; }
+.guide-hint-card span { color: #6fdcf7; font-size: 8px; font-weight: 900; letter-spacing: .8px; }
+.guide-hint-card p { margin: 7px 0 0; color: #bdc9d9; font-size: 9px; line-height: 1.65; }
+.reveal-hint-button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(240,20,184,.3);
+  border-radius: 8px;
+  background: rgba(240,20,184,.09);
+  color: #ffa1e1;
+  padding: 0 12px;
+  font-size: 9px;
+  font-weight: 800;
+}
+.reveal-hint-button:hover { background: rgba(240,20,184,.16); }
+.hints-complete { color: #9baabd; font-size: 9px; line-height: 1.6; }
+
+/* Remove the editor status strip; use the full area beneath the toolbar. */
+.editor-card { grid-template-rows: auto minmax(0, 1fr); }
+.code-editor { height: 100%; min-height: 0; overflow: hidden; }
+.code-editor .cm-editor { height: 100% !important; min-height: 0; }
+.code-editor .cm-scroller {
+  height: 100%;
+  min-height: 0;
+  overflow-y: scroll !important;
+  overflow-x: auto !important;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto !important;
+  scrollbar-color: #a5bad5 #1a2c44 !important;
+}
+.code-editor .cm-scroller::-webkit-scrollbar { display: block; width: 16px; height: 16px; }
+.code-editor .cm-scroller::-webkit-scrollbar-track { background: #1a2c44; }
+.code-editor .cm-scroller::-webkit-scrollbar-thumb { border: 3px solid #1a2c44; border-radius: 999px; background: #a5bad5; }
+.code-editor .cm-scroller::-webkit-scrollbar-thumb:hover { background: #c0d1e5; }
+
+@media (max-width: 1120px) {
+  .workspace-grid.focus-editor-mode,
+  .workspace-grid.focus-problem-mode {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(560px, auto) auto;
+  }
+  .workspace-grid.focus-editor-mode { grid-template-areas: "editor" "output"; }
+  .workspace-grid.focus-problem-mode { grid-template-areas: "problem" "guide"; }
+  .focus-side-column { min-height: 620px; }
+  .problem-guide-panel { min-height: 480px; }
+}
+@media (max-width: 760px) {
+  .focus-side-column { min-height: 600px; }
+  .focus-side-column .editor-action-dock { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .focus-side-column .editor-run-button,
+  .focus-side-column .editor-submit-button,
+  .focus-side-column .action-reset-button { font-size: 8px; padding-inline: 4px; }
+}
