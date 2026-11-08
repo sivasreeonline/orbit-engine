@@ -1392,3 +1392,22 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   display: block;
   flex: 0 0 auto;
 }
+
+
+/* Override the earlier Edge-specific zero-width rule with the native
+   CodeMirror vertical scrollbar. Match Problem description colours. */
+.code-editor .cm-scroller::-webkit-scrollbar:vertical {
+  display: block !important;
+  width: 12px !important;
+}
+.code-editor .cm-scroller::-webkit-scrollbar-track:vertical {
+  background: #151c29 !important;
+}
+.code-editor .cm-scroller::-webkit-scrollbar-thumb:vertical {
+  border: 3px solid #151c29 !important;
+  border-radius: 999px !important;
+  background: #52647e !important;
+}
+.code-editor .cm-scroller::-webkit-scrollbar-thumb:vertical:hover {
+  background: #7186a4 !important;
+}
