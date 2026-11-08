@@ -1,0 +1,98 @@
+name: Trivy dependency and container scan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/web/package.json"
+      - "apps/web/package-lock.json"
+      - "services/**"
+      - "**/go.mod"
+      - "**/go.sum"
+      - "**/Dockerfile"
+      - "**/*.Dockerfile"
+      - "docker/**"
+      - "infra/**"
+      - ".trivyignore"
+      - ".github/workflows/trivy-security-scan.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/package.json"
+      - "apps/web/package-lock.json"
+      - "services/**"
+      - "**/go.mod"
+      - "**/go.sum"
+      - "**/Dockerfile"
+      - "**/*.Dockerfile"
+      - "docker/**"
+      - "infra/**"
+      - ".trivyignore"
+      - ".github/workflows/trivy-security-scan.yml"
+  schedule:
+    - cron: "59 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trivy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  filesystem:
+    name: Scan dependencies and infrastructure configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+
+      - name: Scan repository filesystem
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "1"
+          format: table
+
+  runner-image:
+    name: Build and scan runner container image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+
+      - name: Detect runner Dockerfile
+        id: detect
+        shell: bash
+        run: |
+          if [[ -f services/execution-runner/Dockerfile ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Runner Dockerfile is not present yet; image scanning is intentionally skipped."
+          fi
+
+      - name: Build runner image
+        if: ${{ steps.detect.outputs.available == 'true' }}
+        run: docker build --pull --file services/execution-runner/Dockerfile --tag sky-high-execution-runner:ci .
+
+      - name: Scan runner image
+        if: ${{ steps.detect.outputs.available == 'true' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          scan-type: image
+          image-ref: sky-high-execution-runner:ci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "1"
+          format: table
