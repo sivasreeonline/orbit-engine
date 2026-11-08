@@ -24,13 +24,13 @@ export default function ExecutionConsole({
         <div className="console-title">
           <span className="console-title-icon" aria-hidden="true">&gt;_</span>
           <div>
-            <strong>Execution console</strong>
-            <small>Inspect output and sample data</small>
+            <strong>Run & output</strong>
+            <small>Review the result of your code</small>
           </div>
         </div>
         <div className="console-header-right">
           <span className="console-mode-dot" />
-          <span className="console-caption">PREVIEW MODE</span>
+          <span className="console-caption">PREVIEW ENVIRONMENT</span>
         </div>
       </div>
 
@@ -50,7 +50,7 @@ export default function ExecutionConsole({
             role="tab"
             aria-selected={activeTab === "fixtures"}
           >
-            Samples
+            Sample cases
           </button>
           <button
             className={activeTab === "history" ? "console-tab active" : "console-tab"}
@@ -61,7 +61,7 @@ export default function ExecutionConsole({
             History
           </button>
         </div>
-        <span className="console-status">NOT CONNECTED</span>
+        <span className="console-status">ENGINE NOT CONNECTED</span>
       </div>
 
       <div className="console-body" role="tabpanel">
@@ -80,10 +80,10 @@ export default function ExecutionConsole({
             <div className="console-empty">
               <div className="console-prompt">&gt;_</div>
               <div>
-                <strong>Ready for your first run?</strong>
+                <strong>Your output will appear here</strong>
                 <p>
-                  The editor is ready. Execution will be enabled after the secure
-                  runner and authenticated API are connected.
+                  The editor is ready. Secure execution becomes available after
+                  the isolated runner and authenticated API are connected.
                 </p>
               </div>
             </div>
@@ -93,8 +93,7 @@ export default function ExecutionConsole({
         {activeTab === "fixtures" && (
           <div className="fixture-list">
             <p className="fixture-disclaimer">
-              Reference fixtures only. These expected outputs have not been
-              evaluated against your current code.
+              Sample cases are reference data; they have not been evaluated against your code.
             </p>
             {problem.examples.map((example) => (
               <article className="fixture-row" key={example.id}>
@@ -118,8 +117,7 @@ export default function ExecutionConsole({
             <div>
               <strong>Attempt history is not connected</strong>
               <p>
-                This preview does not persist code, runs, submissions, scores
-                or student records.
+                This preview does not persist code, runs, submissions, scores or student records.
               </p>
             </div>
           </div>

@@ -15,12 +15,12 @@ export default function ProblemDetails({
     <section className="problem-card" aria-label="Problem details">
       <div className="problem-panel-heading">
         <div className="panel-heading-icon" aria-hidden="true">01</div>
-        <div>
-          <strong>Problem brief</strong>
-          <span>Understand the challenge</span>
+        <div className="panel-heading-copy">
+          <strong>Challenge briefing</strong>
+          <span>Read the requirements carefully</span>
         </div>
         <span className="panel-heading-spacer" />
-        <span className="panel-lockup">VER. 01</span>
+        <span className="panel-lockup">SH / 001</span>
       </div>
 
       <div className="problem-tabs" role="tablist" aria-label="Problem sections">
@@ -45,12 +45,16 @@ export default function ProblemDetails({
       {activeTab === "description" ? (
         <div className="problem-content">
           <div className="problem-intro">
-            <span className="eyebrow">THE CHALLENGE</span>
+            <div className="challenge-kicker">
+              <span className="challenge-kicker-dot" />
+              THE CHALLENGE
+            </div>
+            <h2>{problem.title}</h2>
             <p>{problem.statement}</p>
           </div>
 
           <section className="detail-section">
-            <h2><span className="section-index">01</span> Input format</h2>
+            <h3><span className="section-index">01</span> Input format</h3>
             <ol className="format-list">
               {problem.inputFormat.map((line) => (
                 <li key={line}>{line}</li>
@@ -59,18 +63,18 @@ export default function ProblemDetails({
           </section>
 
           <section className="detail-section">
-            <h2><span className="section-index">02</span> Output format</h2>
+            <h3><span className="section-index">02</span> Output format</h3>
             <p>{problem.outputFormat}</p>
           </section>
 
           <section className="detail-section">
-            <h2><span className="section-index">03</span> Examples</h2>
+            <h3><span className="section-index">03</span> Examples</h3>
             <div className="example-list">
               {problem.examples.map((example) => (
                 <article className="example-card" key={example.id}>
                   <div className="example-heading">
                     <span>Example {String(example.id).padStart(2, "0")}</span>
-                    <span className="example-heading-label">REFERENCE CASE</span>
+                    <span className="example-heading-label">SAMPLE CASE</span>
                   </div>
                   <div className="example-grid">
                     <div>
@@ -89,7 +93,7 @@ export default function ProblemDetails({
           </section>
 
           <section className="detail-section">
-            <h2><span className="section-index">04</span> Constraints</h2>
+            <h3><span className="section-index">04</span> Constraints</h3>
             <ul className="constraints-list">
               {problem.constraints.map((constraint) => (
                 <li key={constraint}>
@@ -101,7 +105,7 @@ export default function ProblemDetails({
 
           <div className="problem-note">
             <span className="note-dot" />
-            Console input/output format · Java 25 and Python 3.14
+            Console input/output · Java 25 and Python 3.14
           </div>
         </div>
       ) : (

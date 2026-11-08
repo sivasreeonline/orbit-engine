@@ -21,7 +21,7 @@ export default function CodeEditor({
   );
 
   return (
-    <div className="code-editor">
+    <div className="code-editor" aria-label="Source code editor">
       <CodeMirror
         value={value}
         height="100%"
@@ -34,6 +34,7 @@ export default function CodeEditor({
           highlightActiveLine: true,
           highlightActiveLineGutter: true,
           tabSize: 4,
+          lineWrapping: false,
         }}
         aria-label={`${language.toUpperCase()} source editor`}
       />
