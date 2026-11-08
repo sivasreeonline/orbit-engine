@@ -1369,3 +1369,144 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   .editor-card { min-height: 560px; }
   .code-editor .cm-editor { font-size: 12px; }
 }
+
+
+/* Keep workspace focus controls in the console header and execution actions
+   in a separate, fixed footer so neither competes for header space. */
+.console-header {
+  min-height: 64px;
+  align-items: center;
+  flex-wrap: nowrap;
+  padding: 10px 16px;
+}
+.console-header-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.focus-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.console-action-dock {
+  display: flex;
+  min-height: 60px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(100deg, rgba(17, 29, 48, 0.98), rgba(21, 35, 57, 0.98));
+  padding: 9px 14px;
+}
+.console-action-hint {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: #92a2b8;
+  font-size: 9px;
+  line-height: 1.4;
+}
+.action-hint-indicator {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--yellow);
+  box-shadow: 0 0 9px rgba(255,214,0,0.45);
+}
+.console-run-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+.console-run-button, .console-submit-button {
+  min-height: 37px;
+  padding: 0 14px;
+  font-size: 10px;
+}
+.console-action-divider { display: none; }
+
+/* CodeMirror must retain its vertical flex layout. The scroller then occupies
+   the full available editor width and owns both scrollbars at its outer edge. */
+.code-editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.code-editor > .cm-editor {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch;
+  width: 100%;
+  max-width: 100%;
+  height: 100% !important;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.code-editor .cm-scroller {
+  display: flex;
+  flex: 1 1 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-width: auto !important;
+  scrollbar-color: #7186a4 #111d30 !important;
+  scrollbar-gutter: stable;
+  white-space: pre;
+}
+.code-editor .cm-content {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  flex: 0 0 auto;
+  white-space: pre;
+}
+.code-editor .cm-line { white-space: pre; }
+.code-editor .cm-gutters { flex: 0 0 auto; }
+
+@media (max-width: 1350px) {
+  .console-header {
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .console-header-actions { justify-content: flex-start; }
+}
+@media (max-width: 1120px) {
+  .console-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .console-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .focus-actions { justify-content: flex-start; }
+}
+@media (max-width: 760px) {
+  .console-header { gap: 9px; }
+  .console-header-actions { width: 100%; }
+  .focus-actions { width: 100%; }
+  .focus-toggle { flex: 1 1 auto; }
+  .console-action-dock {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .console-action-hint { font-size: 8px; }
+  .console-run-actions { width: 100%; }
+  .console-run-button, .console-submit-button { flex: 1; }
+}

@@ -63,29 +63,6 @@ export default function ExecutionConsole({
               {focusMode === "editor" ? "Exit editor focus" : "Focus editor"}
             </button>
           </div>
-
-          <span className="console-action-divider" />
-
-          <div className="console-run-actions">
-            <button
-              className="console-run-button"
-              type="button"
-              onClick={onRun}
-              disabled={pendingAction !== null}
-            >
-              <span aria-hidden="true">▶</span>
-              {pendingAction === "RUN" ? "Preparing…" : "Run"}
-            </button>
-            <button
-              className="console-submit-button"
-              type="button"
-              onClick={onSubmit}
-              disabled={pendingAction !== null}
-            >
-              {pendingAction === "SUBMIT" ? "Preparing…" : "Submit"}
-              <span aria-hidden="true">→</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -177,6 +154,33 @@ export default function ExecutionConsole({
             </div>
           </div>
         )}
+      </div>
+
+      <div className="console-action-dock">
+        <div className="console-action-hint">
+          <span className="action-hint-indicator" />
+          <span>Preview only · secure execution is not connected</span>
+        </div>
+        <div className="console-run-actions">
+          <button
+            className="console-run-button"
+            type="button"
+            onClick={onRun}
+            disabled={pendingAction !== null}
+          >
+            <span aria-hidden="true">▶</span>
+            {pendingAction === "RUN" ? "Preparing…" : "Run"}
+          </button>
+          <button
+            className="console-submit-button"
+            type="button"
+            onClick={onSubmit}
+            disabled={pendingAction !== null}
+          >
+            {pendingAction === "SUBMIT" ? "Preparing…" : "Submit"}
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
       </div>
     </section>
   );
