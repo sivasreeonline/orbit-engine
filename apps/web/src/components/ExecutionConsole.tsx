@@ -21,6 +21,20 @@ export default function ExecutionConsole({
   return (
     <section className="console-card" aria-label="Execution results">
       <div className="console-header">
+        <div className="console-title">
+          <span className="console-title-icon" aria-hidden="true">&gt;_</span>
+          <div>
+            <strong>Execution console</strong>
+            <small>Inspect output and sample data</small>
+          </div>
+        </div>
+        <div className="console-header-right">
+          <span className="console-mode-dot" />
+          <span className="console-caption">PREVIEW MODE</span>
+        </div>
+      </div>
+
+      <div className="console-subnav">
         <div className="console-tabs" role="tablist" aria-label="Console sections">
           <button
             className={activeTab === "output" ? "console-tab active" : "console-tab"}
@@ -36,7 +50,7 @@ export default function ExecutionConsole({
             role="tab"
             aria-selected={activeTab === "fixtures"}
           >
-            Sample fixtures
+            Samples
           </button>
           <button
             className={activeTab === "history" ? "console-tab active" : "console-tab"}
@@ -47,7 +61,7 @@ export default function ExecutionConsole({
             History
           </button>
         </div>
-        <span className="console-caption">Local preview only</span>
+        <span className="console-status">NOT CONNECTED</span>
       </div>
 
       <div className="console-body" role="tabpanel">
@@ -65,11 +79,13 @@ export default function ExecutionConsole({
           ) : (
             <div className="console-empty">
               <div className="console-prompt">&gt;_</div>
-              <strong>Ready when you are</strong>
-              <p>
-                Run and Submit controls are wired to a preview-only adapter.
-                No code will execute until the secure runner is integrated.
-              </p>
+              <div>
+                <strong>Ready for your first run?</strong>
+                <p>
+                  The editor is ready. Execution will be enabled after the secure
+                  runner and authenticated API are connected.
+                </p>
+              </div>
             </div>
           )
         )}
@@ -99,11 +115,13 @@ export default function ExecutionConsole({
         {activeTab === "history" && (
           <div className="console-empty">
             <div className="console-prompt">↗</div>
-            <strong>Attempt history is not connected</strong>
-            <p>
-              This UI preview does not persist code, runs, submissions, scores
-              or student records.
-            </p>
+            <div>
+              <strong>Attempt history is not connected</strong>
+              <p>
+                This preview does not persist code, runs, submissions, scores
+                or student records.
+              </p>
+            </div>
           </div>
         )}
       </div>

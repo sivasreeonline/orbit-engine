@@ -13,6 +13,16 @@ export default function ProblemDetails({
 }: ProblemDetailsProps) {
   return (
     <section className="problem-card" aria-label="Problem details">
+      <div className="problem-panel-heading">
+        <div className="panel-heading-icon" aria-hidden="true">01</div>
+        <div>
+          <strong>Problem brief</strong>
+          <span>Understand the challenge</span>
+        </div>
+        <span className="panel-heading-spacer" />
+        <span className="panel-lockup">VER. 01</span>
+      </div>
+
       <div className="problem-tabs" role="tablist" aria-label="Problem sections">
         <button
           className={activeTab === "description" ? "problem-tab active" : "problem-tab"}
@@ -35,12 +45,12 @@ export default function ProblemDetails({
       {activeTab === "description" ? (
         <div className="problem-content">
           <div className="problem-intro">
-            <span className="eyebrow">PROBLEM STATEMENT</span>
+            <span className="eyebrow">THE CHALLENGE</span>
             <p>{problem.statement}</p>
           </div>
 
           <section className="detail-section">
-            <h2>Input format</h2>
+            <h2><span className="section-index">01</span> Input format</h2>
             <ol className="format-list">
               {problem.inputFormat.map((line) => (
                 <li key={line}>{line}</li>
@@ -49,16 +59,19 @@ export default function ProblemDetails({
           </section>
 
           <section className="detail-section">
-            <h2>Output format</h2>
+            <h2><span className="section-index">02</span> Output format</h2>
             <p>{problem.outputFormat}</p>
           </section>
 
           <section className="detail-section">
-            <h2>Examples</h2>
+            <h2><span className="section-index">03</span> Examples</h2>
             <div className="example-list">
               {problem.examples.map((example) => (
                 <article className="example-card" key={example.id}>
-                  <div className="example-heading">Example {example.id}</div>
+                  <div className="example-heading">
+                    <span>Example {String(example.id).padStart(2, "0")}</span>
+                    <span className="example-heading-label">REFERENCE CASE</span>
+                  </div>
                   <div className="example-grid">
                     <div>
                       <span>Input</span>
@@ -76,7 +89,7 @@ export default function ProblemDetails({
           </section>
 
           <section className="detail-section">
-            <h2>Constraints</h2>
+            <h2><span className="section-index">04</span> Constraints</h2>
             <ul className="constraints-list">
               {problem.constraints.map((constraint) => (
                 <li key={constraint}>

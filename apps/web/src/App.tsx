@@ -5,9 +5,7 @@ import ExecutionConsole, {
 } from "./components/ExecutionConsole";
 import ProblemDetails from "./components/ProblemDetails";
 import { twoSumProblem, starterCode } from "./data/twoSumProblem";
-import {
-  MockExecutionAdapter,
-} from "./lib/execution/MockExecutionAdapter";
+import { MockExecutionAdapter } from "./lib/execution/MockExecutionAdapter";
 import type {
   ExecutionAction,
   ExecutionFeedback,
@@ -24,7 +22,7 @@ const runtimeVersions: Record<SupportedLanguage, string> = {
 const navigationItems = [
   { label: "Practice", icon: "⌘", active: true },
   { label: "Assessments", icon: "▤", active: false },
-  { label: "My progress", icon: "⌁", active: false },
+  { label: "My progress", icon: "↗", active: false },
   { label: "Bookmarks", icon: "◇", active: false },
 ];
 
@@ -43,7 +41,6 @@ export default function App() {
   );
 
   const sourceCode = sourceByLanguage[language];
-  const editorLanguage = language;
 
   function updateSource(value: string) {
     setSourceByLanguage((current) => ({
@@ -105,8 +102,15 @@ export default function App() {
         </a>
 
         <div className="topbar-center">
-          <span className="environment-dot" />
-          <span>Development preview</span>
+          <div className="topbar-context">
+            <span className="topbar-kicker">STUDENT WORKSPACE</span>
+            <strong>Problem-solving studio</strong>
+          </div>
+          <span className="topbar-divider" />
+          <span className="environment-pill">
+            <span className="environment-dot" />
+            Development preview
+          </span>
           <span className="preview-pill">MOCK MODE</span>
         </div>
 
@@ -117,7 +121,8 @@ export default function App() {
             target="_blank"
             rel="noreferrer"
           >
-            Repository <span aria-hidden="true">↗</span>
+            <span className="topbar-link-icon">↗</span>
+            Repository
           </a>
           <div className="profile-avatar" aria-label="Student profile">
             S
@@ -127,61 +132,90 @@ export default function App() {
 
       <div className="app-frame">
         <aside className="sidebar" aria-label="Main navigation">
-          <div className="sidebar-section-label">WORKSPACE</div>
-          <nav className="sidebar-nav">
-            {navigationItems.map((item) => (
-              <button
-                className={item.active ? "nav-item active" : "nav-item"}
-                key={item.label}
-                type="button"
-                aria-current={item.active ? "page" : undefined}
-                disabled={!item.active}
-                title={item.active ? item.label : `${item.label} — coming later`}
-              >
-                <span className="nav-icon" aria-hidden="true">
-                  {item.icon}
-                </span>
-                <span className="nav-label">{item.label}</span>
-              </button>
-            ))}
-          </nav>
+          <div className="sidebar-top">
+            <div className="sidebar-section-label">LEARNING SPACE</div>
+            <nav className="sidebar-nav">
+              {navigationItems.map((item) => (
+                <button
+                  className={item.active ? "nav-item active" : "nav-item"}
+                  key={item.label}
+                  type="button"
+                  aria-current={item.active ? "page" : undefined}
+                  disabled={!item.active}
+                  title={item.active ? item.label : `${item.label} — coming later`}
+                >
+                  <span className="nav-icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                  <span className="nav-label">{item.label}</span>
+                  {!item.active && <span className="nav-item-soon">SOON</span>}
+                </button>
+              ))}
+            </nav>
+          </div>
 
           <div className="sidebar-bottom">
-            <div className="sidebar-divider" />
-            <div className="sidebar-help">
-              <span className="help-mark">?</span>
-              <span>Help centre</span>
+            <div className="sidebar-runner-card">
+              <div className="runner-card-top">
+                <span className="runner-status-dot" />
+                <span>EXECUTION ENGINE</span>
+              </div>
+              <strong>Not connected</strong>
+              <p>The secure runner is being prepared.</p>
+              <span className="runner-card-mode">PREVIEW ENVIRONMENT</span>
             </div>
-            <div className="sidebar-version">BUILD 0.1.0</div>
+            <a
+              className="sidebar-help"
+              href="https://github.com/sivasreeonline/orbit-engine"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span className="help-mark">?</span>
+              <span>Help & documentation</span>
+            </a>
+            <div className="sidebar-version">SKY HIGH · BUILD 0.1.0</div>
           </div>
         </aside>
 
         <main className="workspace">
-          <div className="breadcrumb">
-            <span>Practice</span>
-            <span className="breadcrumb-separator">/</span>
-            <span>{twoSumProblem.category}</span>
-            <span className="breadcrumb-separator">/</span>
-            <strong>{twoSumProblem.title}</strong>
+          <div className="workspace-topline">
+            <div className="breadcrumb">
+              <span>Practice</span>
+              <span className="breadcrumb-separator">/</span>
+              <span>{twoSumProblem.category}</span>
+              <span className="breadcrumb-separator">/</span>
+              <strong>{twoSumProblem.title}</strong>
+            </div>
+            <div className="workspace-context-badge">
+              <span className="context-badge-dot" />
+              CONSOLE I/O CHALLENGE
+            </div>
           </div>
 
           <section className="page-heading">
-            <div>
+            <div className="heading-main">
               <div className="problem-overline">
                 <span className="problem-id">{twoSumProblem.id}</span>
-                <span className="overline-divider">·</span>
-                <span>CODING PROBLEM</span>
+                <span className="overline-divider">/</span>
+                <span>ARRAYS & HASHING</span>
               </div>
               <h1>{twoSumProblem.title}</h1>
               <p>{twoSumProblem.summary}</p>
             </div>
             <div className="heading-meta">
-              <span className="difficulty-badge">{twoSumProblem.difficulty}</span>
+              <span className="difficulty-badge">
+                <span className="difficulty-dot" />
+                {twoSumProblem.difficulty}
+              </span>
               {twoSumProblem.tags.map((tag) => (
                 <span className="topic-chip" key={tag}>
                   {tag}
                 </span>
               ))}
+              <span className="sample-count">
+                <span className="sample-count-icon">▦</span>
+                {twoSumProblem.examples.length} sample cases
+              </span>
             </div>
           </section>
 
@@ -195,15 +229,27 @@ export default function App() {
             <div className="editor-column">
               <section className="editor-card" aria-label="Code editor">
                 <div className="editor-toolbar">
-                  <div className="editor-file">
-                    <span className="file-icon" aria-hidden="true">
-                      {language === "java" ? "J" : "Py"}
+                  <div className="editor-toolbar-title">
+                    <span className="editor-window-mark">
+                      <span />
+                      <span />
+                      <span />
                     </span>
-                    <span>{language === "java" ? "Main.java" : "main.py"}</span>
-                    <span className="file-dot" aria-label="Unsaved local edits" />
+                    <div>
+                      <strong>Solution workspace</strong>
+                      <small>Write, review and refine your approach</small>
+                    </div>
                   </div>
 
                   <div className="editor-controls">
+                    <div className="editor-file">
+                      <span className="file-icon" aria-hidden="true">
+                        {language === "java" ? "J" : "Py"}
+                      </span>
+                      <span>{language === "java" ? "Main.java" : "main.py"}</span>
+                      <span className="file-dot" aria-label="Local editor state" />
+                    </div>
+                    <span className="toolbar-divider" />
                     <label className="language-select-label" htmlFor="language-select">
                       Language
                     </label>
@@ -219,23 +265,33 @@ export default function App() {
                       <option value="python">Python 3.14</option>
                     </select>
                     <button className="reset-button" onClick={resetStarter} type="button">
-                      Reset
+                      Reset code
                     </button>
                   </div>
                 </div>
 
-                <Suspense fallback={<div className="editor-loading" role="status">Loading code editor…</div>}>
+                <Suspense
+                  fallback={
+                    <div className="editor-loading" role="status">
+                      <span className="loading-spinner" />
+                      Preparing editor…
+                    </div>
+                  }
+                >
                   <CodeEditor
-                    language={editorLanguage}
+                    language={language}
                     value={sourceCode}
                     onChange={updateSource}
                   />
                 </Suspense>
 
                 <div className="editor-footer">
+                  <span className="editor-footer-language">
+                    <span className="footer-language-dot" />
+                    {language === "java" ? "Java 25" : "Python 3.14"}
+                  </span>
                   <span>UTF-8</span>
                   <span>Spaces: 4</span>
-                  <span>{language === "java" ? "Java 25" : "Python 3.14"}</span>
                   <span className="footer-spacer" />
                   <span className="local-edit-label">LOCAL EDITOR STATE</span>
                 </div>
@@ -243,7 +299,7 @@ export default function App() {
                 <div className="action-bar">
                   <div className="action-hint">
                     <span className="hint-key">i</span>
-                    <span>Preview actions only · execution is not connected</span>
+                    <span>Preview only · code execution is not connected</span>
                   </div>
                   <div className="action-buttons">
                     <button
@@ -253,7 +309,7 @@ export default function App() {
                       disabled={pendingAction !== null}
                     >
                       <span aria-hidden="true">▶</span>
-                      {pendingAction === "RUN" ? "Preparing…" : "Run"}
+                      {pendingAction === "RUN" ? "Preparing…" : "Run code"}
                     </button>
                     <button
                       className="submit-button"
@@ -261,7 +317,7 @@ export default function App() {
                       onClick={() => void handleExecution("SUBMIT")}
                       disabled={pendingAction !== null}
                     >
-                      {pendingAction === "SUBMIT" ? "Preparing…" : "Submit"}
+                      {pendingAction === "SUBMIT" ? "Preparing…" : "Submit solution"}
                       <span aria-hidden="true">→</span>
                     </button>
                   </div>
@@ -278,9 +334,13 @@ export default function App() {
           </div>
 
           <footer className="workspace-footer">
-            <span>Sky High Coding Judge</span>
-            <span>Execution adapter: mock</span>
-            <span>No source code is sent to a server in this preview.</span>
+            <span>SKY HIGH CODING JUDGE</span>
+            <span className="footer-status-dot" />
+            <span>Preview environment</span>
+            <span className="footer-spacer" />
+            <span>Java 25</span>
+            <span className="footer-separator">·</span>
+            <span>Python 3.14</span>
           </footer>
         </main>
       </div>
