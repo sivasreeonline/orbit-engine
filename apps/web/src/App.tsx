@@ -1,5 +1,8 @@
 import { lazy, Suspense, useState } from "react";
 const CodeEditor = lazy(() => import("./components/CodeEditor"));
+import ExecutionOutput, {
+  type OutputTab,
+} from "./components/ExecutionOutput";
 import ProblemDetails from "./components/ProblemDetails";
 import { twoSumProblem, starterCode } from "./data/twoSumProblem";
 import { MockExecutionAdapter } from "./lib/execution/MockExecutionAdapter";
@@ -34,6 +37,7 @@ export default function App() {
     "description",
   );
   const [focusMode, setFocusMode] = useState<FocusMode>("none");
+  const [outputTab, setOutputTab] = useState<OutputTab>("output");
   const [feedback, setFeedback] = useState<ExecutionFeedback | null>(null);
   const [pendingAction, setPendingAction] = useState<ExecutionAction | null>(
     null,
@@ -58,6 +62,7 @@ export default function App() {
 
   async function handleExecution(action: ExecutionAction) {
     setPendingAction(action);
+    setOutputTab("output");
     setFeedback(null);
 
     try {
@@ -70,6 +75,9 @@ export default function App() {
         sourceCode,
       });
       setFeedback(result);
+      if (focusMode === "none") {
+        setFocusMode("editor");
+      }
     } catch {
       setFeedback({
         mode: "MOCK",
@@ -184,7 +192,9 @@ export default function App() {
           </div>
         </section>
 
-        <div className={`workspace-grid ${focusMode === "none" ? "" : `focus-${focusMode}-mode`}`.trim()}>
+        <div
+          className={`workspace-grid ${focusMode === "none" ? "" : `focus-${focusMode}-mode`}`.trim()}
+        >
           {focusMode !== "editor" && (
             <ProblemDetails
               problem={twoSumProblem}
@@ -192,7 +202,9 @@ export default function App() {
               onTabChange={setProblemTab}
               isFocused={focusMode === "problem"}
               onFocus={() =>
-                setFocusMode((current) => current === "problem" ? "none" : "problem")
+                setFocusMode((current) =>
+                  current === "problem" ? "none" : "problem",
+                )
               }
             />
           )}
@@ -214,14 +226,6 @@ export default function App() {
                   </div>
 
                   <div className="editor-controls">
-                    <div className="editor-file">
-                      <span className="file-icon" aria-hidden="true">
-                        {language === "java" ? "J" : "Py"}
-                      </span>
-                      <span>{language === "java" ? "Main.java" : "main.py"}</span>
-                      <span className="file-dot" aria-label="Local editor state" />
-                    </div>
-                    <span className="toolbar-divider" />
                     <label className="language-select-label" htmlFor="language-select">
                       Language
                     </label>
@@ -236,13 +240,16 @@ export default function App() {
                       <option value="java">Java 25</option>
                       <option value="python">Python 3.14</option>
                     </select>
-                    <button className="reset-button" onClick={resetStarter} type="button">
-                      Reset code
-                    </button>
                     <button
-                      className={focusMode === "editor" ? "panel-focus-button active" : "panel-focus-button"}
+                      className={
+                        focusMode === "editor"
+                          ? "panel-focus-button active"
+                          : "panel-focus-button"
+                      }
                       onClick={() =>
-                        setFocusMode((current) => current === "editor" ? "none" : "editor")
+                        setFocusMode((current) =>
+                          current === "editor" ? "none" : "editor",
+                        )
                       }
                       type="button"
                       aria-pressed={focusMode === "editor"}
@@ -281,6 +288,14 @@ export default function App() {
               </section>
 
               <div className="editor-action-dock">
+                <button
+                  className="reset-button action-reset-button"
+                  onClick={resetStarter}
+                  type="button"
+                >
+                  <span aria-hidden="true">↺</span>
+                  Reset code
+                </button>
                 <div className="editor-action-hint">
                   <span className="action-hint-indicator" />
                   <span>Preview only · secure execution is not connected</span>
@@ -326,6 +341,15 @@ export default function App() {
                 </div>
               )}
             </section>
+          )}
+
+          {focusMode !== "none" && (
+            <ExecutionOutput
+              problem={twoSumProblem}
+              activeTab={outputTab}
+              onTabChange={setOutputTab}
+              feedback={feedback}
+            />
           )}
         </div>
 

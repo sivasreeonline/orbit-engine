@@ -743,3 +743,221 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+
+/* Focus layouts: the selected work surface is paired with Output on the right. */
+.workspace-grid.focus-editor-mode,
+.workspace-grid.focus-problem-mode {
+  grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.85fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "focus-main output";
+}
+.workspace-grid.focus-editor-mode { grid-template-areas: "editor output"; }
+.workspace-grid.focus-problem-mode { grid-template-areas: "problem output"; }
+
+.output-panel {
+  grid-area: output;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(182,201,228,0.15);
+  border-radius: 17px;
+  background: linear-gradient(145deg, rgba(20,26,39,0.98), rgba(11,16,26,0.98));
+  box-shadow: var(--shadow);
+}
+.output-panel-header {
+  display: flex;
+  min-height: 68px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(100deg, rgba(0,194,255,0.08), transparent 65%);
+  padding: 0 16px;
+}
+.output-panel-title { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.output-panel-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(0,194,255,0.25);
+  border-radius: 9px;
+  background: rgba(0,194,255,0.1);
+  color: var(--cyan);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 900;
+}
+.output-panel-title strong { display: block; color: #f1f5fb; font-size: 12px; font-weight: 850; }
+.output-panel-title small { display: block; margin-top: 4px; color: #8997aa; font-size: 9px; }
+.output-engine-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255,214,0,0.23);
+  border-radius: 999px;
+  background: rgba(255,214,0,0.07);
+  color: #e7d16b;
+  padding: 5px 7px;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.45px;
+  white-space: nowrap;
+}
+.output-engine-status span { width: 6px; height: 6px; border-radius: 50%; background: var(--yellow); }
+.output-tabs {
+  display: flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: stretch;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(5,8,14,0.22);
+  padding: 0 16px;
+}
+.output-tab {
+  position: relative;
+  border: 0;
+  background: transparent;
+  color: #8997aa;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 750;
+}
+.output-tab.active { color: #fff; }
+.output-tab.active::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--cyan);
+  box-shadow: 0 0 10px rgba(0,194,255,0.38);
+  content: "";
+}
+.output-panel-content {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  scrollbar-width: auto;
+  scrollbar-color: #52647e #151c29;
+}
+.output-empty {
+  display: flex;
+  min-height: 110px;
+  align-items: flex-start;
+  gap: 12px;
+}
+.output-empty-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(0,194,255,0.22);
+  border-radius: 9px;
+  background: rgba(0,194,255,0.09);
+  color: var(--cyan);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 900;
+}
+.output-empty strong { display: block; color: #eaf0f9; font-size: 10px; font-weight: 850; }
+.output-empty p { max-width: 380px; margin: 6px 0 0; color: #95a3b7; font-size: 9px; line-height: 1.65; }
+.output-disclaimer { margin: 0 0 12px; color: #96a4b8; font-size: 9px; line-height: 1.55; }
+.output-sample-list { display: grid; gap: 11px; }
+.output-sample-card {
+  border: 1px solid rgba(182,201,228,0.13);
+  border-radius: 9px;
+  background: rgba(7,12,21,0.6);
+  padding: 11px;
+}
+.output-sample-card > strong { display: block; margin-bottom: 9px; color: #edf3fb; font-size: 10px; }
+.output-sample-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.output-sample-grid span { display: block; margin-bottom: 5px; color: #8493a8; font-size: 8px; font-weight: 850; letter-spacing: .7px; text-transform: uppercase; }
+.output-sample-grid pre {
+  overflow: auto;
+  margin: 0;
+  border: 1px solid rgba(154,179,211,0.1);
+  border-radius: 6px;
+  background: #0b1220;
+  color: #bfe9f4;
+  padding: 9px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 9px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* Put reset next to execution actions, leaving the editor header uncluttered. */
+.editor-controls .editor-file,
+.editor-controls .reset-button,
+.editor-controls .toolbar-divider { display: none; }
+.editor-action-dock { justify-content: flex-start; }
+.action-reset-button { min-width: 105px; }
+.editor-action-hint { flex: 1 1 auto; }
+
+/* Explicit, persistent native scrollbars inside CodeMirror's actual scroll node. */
+.code-editor .cm-editor {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100%;
+  height: 100% !important;
+  min-width: 0;
+  min-height: 0;
+}
+.code-editor .cm-scroller {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: auto !important;
+  overflow-y: scroll !important;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto !important;
+  scrollbar-color: #8298b8 #152238 !important;
+}
+.code-editor .cm-scroller::-webkit-scrollbar { width: 16px; height: 16px; display: block; }
+.code-editor .cm-scroller::-webkit-scrollbar-track { background: #152238; }
+.code-editor .cm-scroller::-webkit-scrollbar-thumb {
+  border: 3px solid #152238;
+  border-radius: 999px;
+  background: #8298b8;
+}
+.code-editor .cm-scroller::-webkit-scrollbar-thumb:hover { background: #a9bad1; }
+
+/* Responsive: focused output stacks below the selected surface on narrow viewports. */
+@media (max-width: 1350px) {
+  .workspace-grid.focus-editor-mode,
+  .workspace-grid.focus-problem-mode {
+    grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.9fr);
+  }
+}
+@media (max-width: 1120px) {
+  .workspace-grid.focus-editor-mode,
+  .workspace-grid.focus-problem-mode {
+    height: auto;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+  .workspace-grid.focus-editor-mode { grid-template-areas: "editor" "output"; }
+  .workspace-grid.focus-problem-mode { grid-template-areas: "problem" "output"; }
+  .output-panel { min-height: 300px; }
+}
+@media (max-width: 760px) {
+  .editor-action-dock { align-items: stretch; flex-wrap: wrap; }
+  .action-reset-button { order: 0; }
+  .editor-action-hint { order: 2; flex-basis: 100%; }
+  .editor-run-actions { order: 1; margin-left: auto; }
+  .output-panel-header { align-items: flex-start; flex-direction: column; justify-content: center; padding: 12px 14px; }
+  .output-sample-grid { grid-template-columns: 1fr; }
+}
