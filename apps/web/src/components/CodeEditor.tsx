@@ -25,6 +25,7 @@ export default function CodeEditor({
       <CodeMirror
         value={value}
         height="100%"
+        width="100%"
         theme="dark"
         extensions={extensions}
         onChange={onChange}
@@ -34,6 +35,7 @@ export default function CodeEditor({
           highlightActiveLine: true,
           highlightActiveLineGutter: true,
           tabSize: 4,
+          lineWrapping: false,
         }}
         aria-label={`${language.toUpperCase()} source editor`}
       />

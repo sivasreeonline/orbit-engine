@@ -4,12 +4,16 @@ interface ProblemDetailsProps {
   problem: ProblemDefinition;
   activeTab: "description" | "submissions";
   onTabChange: (tab: "description" | "submissions") => void;
+  isFocused: boolean;
+  onFocus: () => void;
 }
 
 export default function ProblemDetails({
   problem,
   activeTab,
   onTabChange,
+  isFocused,
+  onFocus,
 }: ProblemDetailsProps) {
   return (
     <section className="problem-card" aria-label="Problem details">
@@ -21,6 +25,15 @@ export default function ProblemDetails({
         </div>
         <span className="panel-heading-spacer" />
         <span className="panel-lockup">SH / 001</span>
+        <button
+          className={isFocused ? "panel-focus-button active" : "panel-focus-button"}
+          type="button"
+          onClick={onFocus}
+          aria-pressed={isFocused}
+        >
+          <span aria-hidden="true">▤</span>
+          {isFocused ? "Exit focus" : "Focus problem"}
+        </button>
       </div>
 
       <div className="problem-tabs" role="tablist" aria-label="Problem sections">

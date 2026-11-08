@@ -1,9 +1,5 @@
 import { lazy, Suspense, useState } from "react";
 const CodeEditor = lazy(() => import("./components/CodeEditor"));
-import ExecutionConsole, {
-  type ConsoleTab,
-  type FocusMode,
-} from "./components/ExecutionConsole";
 import ProblemDetails from "./components/ProblemDetails";
 import { twoSumProblem, starterCode } from "./data/twoSumProblem";
 import { MockExecutionAdapter } from "./lib/execution/MockExecutionAdapter";
@@ -12,6 +8,8 @@ import type {
   ExecutionFeedback,
 } from "./lib/execution/ExecutionAdapter";
 import type { SupportedLanguage } from "./types/problem";
+
+type FocusMode = "none" | "editor" | "problem";
 
 const mockAdapter = new MockExecutionAdapter();
 
@@ -35,12 +33,11 @@ export default function App() {
   const [problemTab, setProblemTab] = useState<"description" | "submissions">(
     "description",
   );
-  const [consoleTab, setConsoleTab] = useState<ConsoleTab>("output");
+  const [focusMode, setFocusMode] = useState<FocusMode>("none");
   const [feedback, setFeedback] = useState<ExecutionFeedback | null>(null);
   const [pendingAction, setPendingAction] = useState<ExecutionAction | null>(
     null,
   );
-  const [focusMode, setFocusMode] = useState<FocusMode>("none");
 
   const sourceCode = sourceByLanguage[language];
 
@@ -61,7 +58,7 @@ export default function App() {
 
   async function handleExecution(action: ExecutionAction) {
     setPendingAction(action);
-    setConsoleTab("output");
+    setFeedback(null);
 
     try {
       const result = await mockAdapter.execute({
@@ -193,92 +190,143 @@ export default function App() {
               problem={twoSumProblem}
               activeTab={problemTab}
               onTabChange={setProblemTab}
+              isFocused={focusMode === "problem"}
+              onFocus={() =>
+                setFocusMode((current) => current === "problem" ? "none" : "problem")
+              }
             />
           )}
 
           {focusMode !== "problem" && (
-            <section className="editor-card" aria-label="Code editor">
-              <div className="editor-toolbar">
-                <div className="editor-toolbar-title">
-                  <span className="editor-window-mark" aria-hidden="true">
-                    <span />
-                    <span />
-                    <span />
-                  </span>
-                  <div className="editor-title-copy">
-                    <strong>Code workspace</strong>
-                    <small>Make your approach count</small>
+            <section className="editor-workspace" aria-label="Coding workspace">
+              <section className="editor-card" aria-label="Code editor">
+                <div className="editor-toolbar">
+                  <div className="editor-toolbar-title">
+                    <span className="editor-window-mark" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    <div className="editor-title-copy">
+                      <strong>Code workspace</strong>
+                      <small>Make your approach count</small>
+                    </div>
+                  </div>
+
+                  <div className="editor-controls">
+                    <div className="editor-file">
+                      <span className="file-icon" aria-hidden="true">
+                        {language === "java" ? "J" : "Py"}
+                      </span>
+                      <span>{language === "java" ? "Main.java" : "main.py"}</span>
+                      <span className="file-dot" aria-label="Local editor state" />
+                    </div>
+                    <span className="toolbar-divider" />
+                    <label className="language-select-label" htmlFor="language-select">
+                      Language
+                    </label>
+                    <select
+                      id="language-select"
+                      value={language}
+                      onChange={(event) =>
+                        setLanguage(event.target.value as SupportedLanguage)
+                      }
+                      aria-label="Programming language"
+                    >
+                      <option value="java">Java 25</option>
+                      <option value="python">Python 3.14</option>
+                    </select>
+                    <button className="reset-button" onClick={resetStarter} type="button">
+                      Reset code
+                    </button>
+                    <button
+                      className={focusMode === "editor" ? "panel-focus-button active" : "panel-focus-button"}
+                      onClick={() =>
+                        setFocusMode((current) => current === "editor" ? "none" : "editor")
+                      }
+                      type="button"
+                      aria-pressed={focusMode === "editor"}
+                    >
+                      <span aria-hidden="true">⌘</span>
+                      {focusMode === "editor" ? "Exit focus" : "Focus editor"}
+                    </button>
                   </div>
                 </div>
 
-                <div className="editor-controls">
-                  <div className="editor-file">
-                    <span className="file-icon" aria-hidden="true">
-                      {language === "java" ? "J" : "Py"}
-                    </span>
-                    <span>{language === "java" ? "Main.java" : "main.py"}</span>
-                    <span className="file-dot" aria-label="Local editor state" />
-                  </div>
-                  <span className="toolbar-divider" />
-                  <label className="language-select-label" htmlFor="language-select">
-                    Language
-                  </label>
-                  <select
-                    id="language-select"
-                    value={language}
-                    onChange={(event) =>
-                      setLanguage(event.target.value as SupportedLanguage)
-                    }
-                    aria-label="Programming language"
+                <Suspense
+                  fallback={
+                    <div className="editor-loading" role="status">
+                      <span className="loading-spinner" />
+                      Preparing editor…
+                    </div>
+                  }
+                >
+                  <CodeEditor
+                    language={language}
+                    value={sourceCode}
+                    onChange={updateSource}
+                  />
+                </Suspense>
+
+                <div className="editor-footer">
+                  <span className="editor-footer-language">
+                    <span className="footer-language-dot" />
+                    {language === "java" ? "Java 25" : "Python 3.14"}
+                  </span>
+                  <span>UTF-8</span>
+                  <span>Spaces: 4</span>
+                  <span className="footer-spacer" />
+                  <span className="local-edit-label">LOCAL EDITOR STATE</span>
+                </div>
+              </section>
+
+              <div className="editor-action-dock">
+                <div className="editor-action-hint">
+                  <span className="action-hint-indicator" />
+                  <span>Preview only · secure execution is not connected</span>
+                </div>
+                <div className="editor-run-actions">
+                  <button
+                    className="editor-run-button"
+                    type="button"
+                    onClick={() => void handleExecution("RUN")}
+                    disabled={pendingAction !== null}
                   >
-                    <option value="java">Java 25</option>
-                    <option value="python">Python 3.14</option>
-                  </select>
-                  <button className="reset-button" onClick={resetStarter} type="button">
-                    Reset code
+                    <span aria-hidden="true">▶</span>
+                    {pendingAction === "RUN" ? "Preparing…" : "Run"}
+                  </button>
+                  <button
+                    className="editor-submit-button"
+                    type="button"
+                    onClick={() => void handleExecution("SUBMIT")}
+                    disabled={pendingAction !== null}
+                  >
+                    {pendingAction === "SUBMIT" ? "Preparing…" : "Submit"}
+                    <span aria-hidden="true">→</span>
                   </button>
                 </div>
               </div>
 
-              <Suspense
-                fallback={
-                  <div className="editor-loading" role="status">
-                    <span className="loading-spinner" />
-                    Preparing editor…
+              {feedback && (
+                <div className="execution-feedback" role="status">
+                  <span className="feedback-icon">!</span>
+                  <div>
+                    <strong>{feedback.heading}</strong>
+                    <p>{feedback.message}</p>
+                    <small>{feedback.details} · MOCK ADAPTER · NO VERDICT</small>
                   </div>
-                }
-              >
-                <CodeEditor
-                  language={language}
-                  value={sourceCode}
-                  onChange={updateSource}
-                />
-              </Suspense>
-
-              <div className="editor-footer">
-                <span className="editor-footer-language">
-                  <span className="footer-language-dot" />
-                  {language === "java" ? "Java 25" : "Python 3.14"}
-                </span>
-                <span>UTF-8</span>
-                <span>Spaces: 4</span>
-                <span className="footer-spacer" />
-                <span className="local-edit-label">LOCAL EDITOR STATE</span>
-              </div>
+                  <button
+                    type="button"
+                    className="feedback-dismiss"
+                    onClick={() => setFeedback(null)}
+                    aria-label="Dismiss execution feedback"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
             </section>
           )}
-
-          <ExecutionConsole
-            problem={twoSumProblem}
-            activeTab={consoleTab}
-            onTabChange={setConsoleTab}
-            feedback={feedback}
-            focusMode={focusMode}
-            onFocusModeChange={setFocusMode}
-            onRun={() => void handleExecution("RUN")}
-            onSubmit={() => void handleExecution("SUBMIT")}
-            pendingAction={pendingAction}
-          />
         </div>
 
         <footer className="workspace-footer">
