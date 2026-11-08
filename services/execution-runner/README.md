@@ -2,12 +2,15 @@
 
 This is the initial Go runner foundation. It is intentionally **not an execution service**.
 
+The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services/execution-runner`.
+
 ## Current capabilities
 - Loopback-only HTTP health endpoint: `GET /healthz`.
 - Readiness endpoint returns HTTP 503 until a sandbox executor is configured.
 - Versioned internal execution request types and strict structural validation.
 - An executor interface with a safe unconfigured implementation.
 - Unit tests for health/readiness, request validation and disabled execution.
+- Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
 
 ## Explicit safety boundary
 - No endpoint accepts source code or starts a process.
