@@ -1146,8 +1146,8 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 
 
 /* CodeMirror sizing and native scrollbars.
-   Keep the editor viewport bounded so long source files overflow inside
-   CodeMirror instead of expanding the editor card. */
+   The @uiw wrapper is .cm-theme-dark when theme="dark". Constrain that
+   wrapper so the inner CodeMirror scroller has a real viewport to overflow. */
 .code-editor {
   display: flex;
   flex: 1 1 0;
@@ -1159,7 +1159,7 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   overflow: hidden;
   background: var(--editor, #0b1220);
 }
-.code-editor > .cm-theme {
+.code-editor > .cm-theme-dark {
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
@@ -1173,6 +1173,7 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   display: flex !important;
   flex: 1 1 0;
   flex-direction: column !important;
+  position: relative;
   width: 100%;
   height: 100% !important;
   min-width: 0;
@@ -1180,13 +1181,14 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   overflow: hidden;
 }
 .code-editor .cm-scroller {
-  display: flex;
+  display: flex !important;
   flex: 1 1 0;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
-  overflow: auto !important;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   scrollbar-width: auto;
