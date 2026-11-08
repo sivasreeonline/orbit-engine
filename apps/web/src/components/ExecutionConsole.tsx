@@ -1,22 +1,33 @@
-import type { ExecutionFeedback } from "../lib/execution/ExecutionAdapter";
+import type { ExecutionAction, ExecutionFeedback } from "../lib/execution/ExecutionAdapter";
 import type { ProblemDefinition } from "../types/problem";
 
 type ConsoleTab = "output" | "fixtures" | "history";
+type FocusMode = "none" | "editor" | "problem";
 
 interface ExecutionConsoleProps {
   problem: ProblemDefinition;
   activeTab: ConsoleTab;
   onTabChange: (tab: ConsoleTab) => void;
   feedback: ExecutionFeedback | null;
+  focusMode: FocusMode;
+  onFocusModeChange: (mode: FocusMode) => void;
+  onRun: () => void;
+  onSubmit: () => void;
+  pendingAction: ExecutionAction | null;
 }
 
-export type { ConsoleTab };
+export type { ConsoleTab, FocusMode };
 
 export default function ExecutionConsole({
   problem,
   activeTab,
   onTabChange,
   feedback,
+  focusMode,
+  onFocusModeChange,
+  onRun,
+  onSubmit,
+  pendingAction,
 }: ExecutionConsoleProps) {
   return (
     <section className="console-card" aria-label="Execution results">
@@ -28,9 +39,53 @@ export default function ExecutionConsole({
             <small>Review the result of your code</small>
           </div>
         </div>
-        <div className="console-header-right">
-          <span className="console-mode-dot" />
-          <span className="console-caption">PREVIEW ENVIRONMENT</span>
+
+        <div className="console-header-actions">
+          <div className="focus-actions" aria-label="Workspace focus controls">
+            <button
+              className={focusMode === "problem" ? "focus-toggle active" : "focus-toggle"}
+              type="button"
+              aria-pressed={focusMode === "problem"}
+              onClick={() => onFocusModeChange(focusMode === "problem" ? "none" : "problem")}
+              title="Focus on the problem statement with output beside it"
+            >
+              <span aria-hidden="true">▤</span>
+              {focusMode === "problem" ? "Exit problem focus" : "Focus problem"}
+            </button>
+            <button
+              className={focusMode === "editor" ? "focus-toggle active" : "focus-toggle"}
+              type="button"
+              aria-pressed={focusMode === "editor"}
+              onClick={() => onFocusModeChange(focusMode === "editor" ? "none" : "editor")}
+              title="Focus on the code editor with output beside it"
+            >
+              <span aria-hidden="true">⌘</span>
+              {focusMode === "editor" ? "Exit editor focus" : "Focus editor"}
+            </button>
+          </div>
+
+          <span className="console-action-divider" />
+
+          <div className="console-run-actions">
+            <button
+              className="console-run-button"
+              type="button"
+              onClick={onRun}
+              disabled={pendingAction !== null}
+            >
+              <span aria-hidden="true">▶</span>
+              {pendingAction === "RUN" ? "Preparing…" : "Run"}
+            </button>
+            <button
+              className="console-submit-button"
+              type="button"
+              onClick={onSubmit}
+              disabled={pendingAction !== null}
+            >
+              {pendingAction === "SUBMIT" ? "Preparing…" : "Submit"}
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
         </div>
       </div>
 

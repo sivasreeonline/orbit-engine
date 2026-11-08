@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from "react";
 const CodeEditor = lazy(() => import("./components/CodeEditor"));
 import ExecutionConsole, {
   type ConsoleTab,
+  type FocusMode,
 } from "./components/ExecutionConsole";
 import ProblemDetails from "./components/ProblemDetails";
 import { twoSumProblem, starterCode } from "./data/twoSumProblem";
@@ -39,7 +40,7 @@ export default function App() {
   const [pendingAction, setPendingAction] = useState<ExecutionAction | null>(
     null,
   );
-  const [editorFocusMode, setEditorFocusMode] = useState(false);
+  const [focusMode, setFocusMode] = useState<FocusMode>("none");
 
   const sourceCode = sourceByLanguage[language];
 
@@ -186,8 +187,8 @@ export default function App() {
           </div>
         </section>
 
-        <div className={editorFocusMode ? "workspace-grid editor-focus-mode" : "workspace-grid"}>
-          {!editorFocusMode && (
+        <div className={`workspace-grid ${focusMode === "none" ? "" : `focus-${focusMode}-mode`}`.trim()}>
+          {focusMode !== "editor" && (
             <ProblemDetails
               problem={twoSumProblem}
               activeTab={problemTab}
@@ -195,7 +196,7 @@ export default function App() {
             />
           )}
 
-          <div className="editor-column">
+          {focusMode !== "problem" && (
             <section className="editor-card" aria-label="Code editor">
               <div className="editor-toolbar">
                 <div className="editor-toolbar-title">
@@ -236,15 +237,6 @@ export default function App() {
                   <button className="reset-button" onClick={resetStarter} type="button">
                     Reset code
                   </button>
-                  <button
-                    className="focus-button"
-                    onClick={() => setEditorFocusMode((current) => !current)}
-                    type="button"
-                    aria-pressed={editorFocusMode}
-                  >
-                    <span aria-hidden="true">{editorFocusMode ? "⊡" : "⛶"}</span>
-                    {editorFocusMode ? "Show problem" : "Focus editor"}
-                  </button>
                 </div>
               </div>
 
@@ -273,42 +265,20 @@ export default function App() {
                 <span className="footer-spacer" />
                 <span className="local-edit-label">LOCAL EDITOR STATE</span>
               </div>
-
-              <div className="action-bar">
-                <div className="action-hint">
-                  <span className="hint-key">i</span>
-                  <span>Preview only · secure execution is not connected</span>
-                </div>
-                <div className="action-buttons">
-                  <button
-                    className="run-button"
-                    type="button"
-                    onClick={() => void handleExecution("RUN")}
-                    disabled={pendingAction !== null}
-                  >
-                    <span aria-hidden="true">▶</span>
-                    {pendingAction === "RUN" ? "Preparing…" : "Run code"}
-                  </button>
-                  <button
-                    className="submit-button"
-                    type="button"
-                    onClick={() => void handleExecution("SUBMIT")}
-                    disabled={pendingAction !== null}
-                  >
-                    {pendingAction === "SUBMIT" ? "Preparing…" : "Submit solution"}
-                    <span aria-hidden="true">→</span>
-                  </button>
-                </div>
-              </div>
             </section>
+          )}
 
-            <ExecutionConsole
-              problem={twoSumProblem}
-              activeTab={consoleTab}
-              onTabChange={setConsoleTab}
-              feedback={feedback}
-            />
-          </div>
+          <ExecutionConsole
+            problem={twoSumProblem}
+            activeTab={consoleTab}
+            onTabChange={setConsoleTab}
+            feedback={feedback}
+            focusMode={focusMode}
+            onFocusModeChange={setFocusMode}
+            onRun={() => void handleExecution("RUN")}
+            onSubmit={() => void handleExecution("SUBMIT")}
+            pendingAction={pendingAction}
+          />
         </div>
 
         <footer className="workspace-footer">
