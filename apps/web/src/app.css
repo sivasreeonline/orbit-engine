@@ -1784,3 +1784,38 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .app-shell[data-theme="light"] .code-editor > .cm-theme-light {
   background: #f8fafd !important;
 }
+
+
+
+/* Screenshot-calibrated default desktop alignment:
+   100% was 10px short; the earlier +12px overshot slightly. */
+@media (min-width: 1121px) {
+  .workspace-grid:not(.focus-editor-mode):not(.focus-problem-mode) > .editor-workspace {
+    height: calc(100% + 10px);
+    align-self: stretch;
+  }
+}
+
+/* Light-mode Problem Description scrollbar.
+   Explicit WebKit rules are required for Chromium/Edge in addition to
+   scrollbar-color for Firefox. */
+.app-shell[data-theme="light"] .problem-content {
+  scrollbar-color: #9aaac0 #edf2f8;
+  scrollbar-width: auto;
+}
+.app-shell[data-theme="light"] .problem-content::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.app-shell[data-theme="light"] .problem-content::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: #edf2f8;
+}
+.app-shell[data-theme="light"] .problem-content::-webkit-scrollbar-thumb {
+  border: 3px solid #edf2f8;
+  border-radius: 999px;
+  background: #9aaac0;
+}
+.app-shell[data-theme="light"] .problem-content::-webkit-scrollbar-thumb:hover {
+  background: #778da9;
+}
