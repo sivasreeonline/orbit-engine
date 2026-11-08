@@ -532,53 +532,12 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   white-space: nowrap;
 }
 .reset-button:hover { border-color: rgba(0,194,255,0.55); background: rgba(0,194,255,0.08); color: #fff; }
-
-/* CodeMirror: preserve its native column/scroller model. */
-.code-editor {
-  display: block;
-  position: relative;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--editor);
-}
-.code-editor > .cm-theme {
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-}
-.code-editor .cm-editor {
-  width: 100%;
-  height: 100% !important;
-  min-width: 0;
-  min-height: 0;
-  background: var(--editor);
-  color: #e1eaf7;
-  font-size: 13px;
-}
-.code-editor .cm-scroller {
-  overflow: auto !important;
-  overscroll-behavior: contain;
-  scrollbar-width: auto;
-  scrollbar-color: #7186a4 #111d30;
-  white-space: pre;
-  font-family: "Cascadia Code", Consolas, ui-monospace, monospace;
-  line-height: 1.8;
-}
 .code-editor .cm-content { white-space: pre; padding: 14px 0 28px; }
 .code-editor .cm-line { white-space: pre; }
 .code-editor .cm-gutters { border-right: 1px solid rgba(158, 181, 211, 0.09); background: #0b1220; color: #70839e; }
 .code-editor .cm-activeLine, .code-editor .cm-activeLineGutter { background: rgba(0,194,255,0.055); }
 .code-editor .cm-cursor { border-left-color: #fff; }
 .code-editor .cm-selectionBackground, .code-editor ::selection { background: rgba(8,125,216,0.32) !important; }
-.code-editor .cm-scroller::-webkit-scrollbar { width: 14px; height: 14px; }
-.code-editor .cm-scroller::-webkit-scrollbar-track { background: #111d30; }
-.code-editor .cm-scroller::-webkit-scrollbar-thumb { border: 3px solid #111d30; border-radius: 999px; background: #7186a4; }
-.code-editor .cm-scroller::-webkit-scrollbar-thumb:hover { background: #91a6c3; }
 
 .editor-footer {
   display: flex;
@@ -672,7 +631,6 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   .workspace { padding-right: 48px; padding-left: 48px; }
   .workspace-grid { gap: 22px; }
   .problem-content { padding: 28px 30px 32px; }
-  .code-editor .cm-editor { font-size: 14px; }
 }
 @media (max-width: 1350px) {
   .topbar { grid-template-columns: auto 1fr; min-height: 68px; gap: 12px; padding: 0 18px; }
@@ -906,34 +864,6 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .action-reset-button { min-width: 105px; }
 .editor-action-hint { flex: 1 1 auto; }
 
-/* Explicit, persistent native scrollbars inside CodeMirror's actual scroll node. */
-.code-editor .cm-editor {
-  display: flex !important;
-  flex-direction: column !important;
-  width: 100%;
-  height: 100% !important;
-  min-width: 0;
-  min-height: 0;
-}
-.code-editor .cm-scroller {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  overflow-x: auto !important;
-  overflow-y: scroll !important;
-  scrollbar-gutter: stable;
-  scrollbar-width: auto !important;
-  scrollbar-color: #8298b8 #152238 !important;
-}
-.code-editor .cm-scroller::-webkit-scrollbar { width: 16px; height: 16px; display: block; }
-.code-editor .cm-scroller::-webkit-scrollbar-track { background: #152238; }
-.code-editor .cm-scroller::-webkit-scrollbar-thumb {
-  border: 3px solid #152238;
-  border-radius: 999px;
-  background: #8298b8;
-}
-.code-editor .cm-scroller::-webkit-scrollbar-thumb:hover { background: #a9bad1; }
-
 /* Responsive: focused output stacks below the selected surface on narrow viewports. */
 @media (max-width: 1350px) {
   .workspace-grid.focus-editor-mode,
@@ -1132,21 +1062,6 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 
 /* Remove the editor status strip; use the full area beneath the toolbar. */
 .editor-card { grid-template-rows: auto minmax(0, 1fr); }
-.code-editor { height: 100%; min-height: 0; overflow: hidden; }
-.code-editor .cm-editor { height: 100% !important; min-height: 0; }
-.code-editor .cm-scroller {
-  height: 100%;
-  min-height: 0;
-  overflow-y: scroll !important;
-  overflow-x: auto !important;
-  scrollbar-gutter: stable;
-  scrollbar-width: auto !important;
-  scrollbar-color: #a5bad5 #1a2c44 !important;
-}
-.code-editor .cm-scroller::-webkit-scrollbar { display: block; width: 16px; height: 16px; }
-.code-editor .cm-scroller::-webkit-scrollbar-track { background: #1a2c44; }
-.code-editor .cm-scroller::-webkit-scrollbar-thumb { border: 3px solid #1a2c44; border-radius: 999px; background: #a5bad5; }
-.code-editor .cm-scroller::-webkit-scrollbar-thumb:hover { background: #c0d1e5; }
 
 @media (max-width: 1120px) {
   .workspace-grid.focus-editor-mode,
@@ -1172,96 +1087,6 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .focus-side-column > .output-panel {
   grid-area: auto;
   min-height: 0;
-}
-
-
-/* Always-visible vertical source scrollbar, synchronized with CodeMirror. */
-.code-editor {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) 15px;
-  grid-template-rows: minmax(0, 1fr);
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--editor, #0b1220);
-}
-.code-editor > .cm-theme {
-  grid-column: 1;
-  grid-row: 1;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-.code-editor .cm-editor {
-  width: 100%;
-  height: 100% !important;
-  min-width: 0;
-  min-height: 0;
-}
-.code-editor .cm-scroller {
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow-x: auto !important;
-  overflow-y: auto !important;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-/* Edge/Chromium uses our independent scrollbar lane for vertical movement;
-   keep the native horizontal scrollbar available for long source lines. */
-.code-editor .cm-scroller::-webkit-scrollbar:vertical {
-  width: 0 !important;
-}
-.code-editor .cm-scroller::-webkit-scrollbar:horizontal {
-  height: 12px;
-}
-.code-editor .cm-scroller::-webkit-scrollbar-track:horizontal {
-  background: #152238;
-}
-.code-editor .cm-scroller::-webkit-scrollbar-thumb:horizontal {
-  border: 3px solid #152238;
-  border-radius: 999px;
-  background: #8298b8;
-}
-.code-editor-scrollbar {
-  position: relative;
-  z-index: 2;
-  grid-column: 2;
-  grid-row: 1;
-  min-height: 0;
-  overflow: hidden;
-  border-left: 1px solid rgba(154, 176, 207, 0.18);
-  background: linear-gradient(90deg, #101b2d, #1b2c45);
-  cursor: pointer;
-  touch-action: none;
-  user-select: none;
-}
-.code-editor-scrollbar:focus-visible {
-  outline: 2px solid var(--cyan, #00c2ff);
-  outline-offset: -2px;
-}
-.code-editor-scrollbar-thumb {
-  position: absolute;
-  top: 0;
-  right: 2px;
-  left: 2px;
-  min-height: 38px;
-  border: 1px solid rgba(224, 237, 252, 0.48);
-  border-radius: 999px;
-  background: linear-gradient(180deg, #c2d2e7, #8199b8);
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.4);
-  pointer-events: none;
-}
-.code-editor-scrollbar:hover .code-editor-scrollbar-thumb {
-  background: linear-gradient(180deg, #e0ebf8, #9bb3d1);
-}
-.code-editor-scrollbar:active .code-editor-scrollbar-thumb {
-  background: linear-gradient(180deg, #f0f7ff, #a9c5e7);
 }
 
 
@@ -1307,80 +1132,6 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   }
 }
 
-/* Only the synchronized custom track renders a vertical scrollbar.
-   Keep the native horizontal scrollbar for long source lines. */
-.code-editor .cm-scroller {
-  scrollbar-width: auto !important;
-}
-.code-editor .cm-scroller::-webkit-scrollbar:vertical {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-}
-.code-editor .cm-scroller::-webkit-scrollbar:horizontal {
-  display: block !important;
-  width: auto !important;
-  height: 12px !important;
-}
-
-
-/* Use CodeMirror's native vertical scrollbar only. The duplicate custom
-   scrollbar lane has been removed from the React component. */
-.code-editor {
-  display: block !important;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-.code-editor > .cm-theme {
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-.code-editor .cm-editor {
-  width: 100%;
-  height: 100% !important;
-  min-width: 0;
-  min-height: 0;
-}
-.code-editor .cm-scroller {
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow-x: auto !important;
-  overflow-y: auto !important;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  scrollbar-width: auto !important;
-  scrollbar-color: #52647e #151c29 !important;
-}
-/* Match the Problem description scrollbar in Edge / Chromium. */
-.code-editor .cm-scroller::-webkit-scrollbar {
-  display: block !important;
-  width: 12px !important;
-  height: 12px !important;
-}
-.code-editor .cm-scroller::-webkit-scrollbar-track {
-  background: #151c29 !important;
-}
-.code-editor .cm-scroller::-webkit-scrollbar-thumb {
-  border: 3px solid #151c29 !important;
-  border-radius: 999px !important;
-  background: #52647e !important;
-}
-.code-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
-  background: #7186a4 !important;
-}
-.code-editor-scrollbar {
-  display: none !important;
-}
-
 /* Crisp reset icon with consistent baseline and spacing. */
 .action-reset-button {
   display: inline-flex;
@@ -1394,20 +1145,67 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 }
 
 
-/* Override the earlier Edge-specific zero-width rule with the native
-   CodeMirror vertical scrollbar. Match Problem description colours. */
-.code-editor .cm-scroller::-webkit-scrollbar:vertical {
-  display: block !important;
-  width: 12px !important;
+/* CodeMirror sizing and native scrollbars.
+   Keep the editor viewport bounded so long source files overflow inside
+   CodeMirror instead of expanding the editor card. */
+.code-editor {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--editor, #0b1220);
 }
-.code-editor .cm-scroller::-webkit-scrollbar-track:vertical {
-  background: #151c29 !important;
+.code-editor > .cm-theme {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
-.code-editor .cm-scroller::-webkit-scrollbar-thumb:vertical {
-  border: 3px solid #151c29 !important;
-  border-radius: 999px !important;
-  background: #52647e !important;
+.code-editor .cm-editor {
+  display: flex !important;
+  flex: 1 1 0;
+  flex-direction: column !important;
+  width: 100%;
+  height: 100% !important;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
-.code-editor .cm-scroller::-webkit-scrollbar-thumb:vertical:hover {
-  background: #7186a4 !important;
+.code-editor .cm-scroller {
+  display: flex;
+  flex: 1 1 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: #52647e #151c29;
+  white-space: pre;
+}
+/* Match the Problem description scrollbar in Edge/Chromium and Firefox. */
+.code-editor .cm-scroller::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.code-editor .cm-scroller::-webkit-scrollbar-track {
+  background: #151c29;
+}
+.code-editor .cm-scroller::-webkit-scrollbar-thumb {
+  border: 3px solid #151c29;
+  border-radius: 999px;
+  background: #52647e;
+}
+.code-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: #7186a4;
 }
