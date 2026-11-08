@@ -1262,7 +1262,9 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 }
 
 
-/* Shared interaction language for Reset, Focus, Run and Submit controls. */
+
+/* Unified action controls. Keep the original Run/Submit hover behaviour:
+   a subtle 1px lift with the established colour and glow responses. */
 .panel-focus-button,
 .action-reset-button,
 .editor-run-button,
@@ -1271,15 +1273,14 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   border-radius: 8px;
   font-weight: 850;
   letter-spacing: 0.05px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
-  transform: translateY(0) scale(1);
+  transform: translateY(0);
+  animation: none;
   transition:
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 180ms ease,
-    border-color 180ms ease,
-    background 180ms ease,
-    color 180ms ease;
-  will-change: transform;
+    transform 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
 }
 
 .panel-focus-button {
@@ -1312,23 +1313,34 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .action-reset-button:hover,
 .editor-run-button:hover,
 .editor-submit-button:hover {
-  transform: translateY(-2px) scale(1.025);
-  box-shadow: 0 8px 19px rgba(0, 0, 0, 0.27);
-  animation: sky-button-bounce 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translateY(-1px);
+  animation: none;
 }
-.panel-focus-button:hover { border-color: rgba(0, 194, 255, 0.72); background: linear-gradient(110deg, rgba(0, 194, 255, 0.2), rgba(8, 125, 216, 0.24)); }
-.panel-focus-button.active:hover { border-color: rgba(240, 20, 184, 0.78); background: linear-gradient(110deg, rgba(240, 20, 184, 0.27), rgba(177, 45, 227, 0.25)); }
-.action-reset-button:hover { border-color: rgba(0, 194, 255, 0.62); background: linear-gradient(110deg, rgba(0, 194, 255, 0.16), rgba(23, 42, 69, 1)); }
+.panel-focus-button:hover {
+  border-color: rgba(0, 194, 255, 0.55);
+  background: rgba(0, 194, 255, 0.12);
+  color: #fff;
+}
+.panel-focus-button.active:hover {
+  border-color: rgba(240, 20, 184, 0.68);
+  background: rgba(240, 20, 184, 0.19);
+  color: #fff;
+}
+.action-reset-button:hover {
+  border-color: rgba(0, 194, 255, 0.55);
+  background: rgba(0, 194, 255, 0.12);
+  color: #fff;
+}
 .editor-run-button:hover { background: rgba(0, 194, 255, 0.18); }
-.editor-submit-button:hover { box-shadow: 0 9px 22px rgba(240, 20, 184, 0.27); }
+.editor-submit-button:hover { box-shadow: 0 7px 18px rgba(240, 20, 184, 0.3); }
 
 .panel-focus-button:active,
 .action-reset-button:active,
 .editor-run-button:active,
 .editor-submit-button:active {
-  transform: translateY(0) scale(0.97);
+  transform: translateY(0);
   animation: none;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+  box-shadow: none;
 }
 .panel-focus-button:focus-visible,
 .action-reset-button:focus-visible,
@@ -1345,29 +1357,27 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   cursor: not-allowed;
   transform: none;
   animation: none;
-  will-change: auto;
-  box-shadow: none;
-}
-@keyframes sky-button-bounce {
-  0% { transform: translateY(0) scale(1); }
-  42% { transform: translateY(-3px) scale(1.035); }
-  72% { transform: translateY(-1px) scale(1.012); }
-  100% { transform: translateY(-2px) scale(1.025); }
 }
 
-/* Lighter, restrained watermark with a slow ambient float. */
+ /* The watermark is normally static and very faint. It animates once only
+    when the student changes the selected language. */
 .editor-language-watermark {
-  color: rgba(174, 196, 222, 0.145);
-  text-shadow: 0 0 34px rgba(116, 157, 205, 0.055);
-  transform-origin: 100% 100%;
-  animation: language-watermark-float 4.8s ease-in-out infinite;
+  color: rgba(174, 196, 222, 0.055);
+  text-shadow: 0 0 28px rgba(116, 157, 205, 0.025);
+  transform: none;
+  opacity: 1;
+  animation: none;
 }
-@keyframes language-watermark-float {
-  0%, 100% { opacity: 0.82; transform: translate3d(0, 0, 0); }
-  50% { opacity: 1; transform: translate3d(0, -4px, 0); }
+.editor-language-watermark.is-changing {
+  animation: language-watermark-change 620ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes language-watermark-change {
+  0% { opacity: 0.15; transform: translate3d(0, 7px, 0) scale(0.985); }
+  48% { opacity: 1; transform: translate3d(0, -2px, 0) scale(1.01); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .editor-language-watermark { animation: none; }
+  .editor-language-watermark.is-changing { animation: none; }
   .panel-focus-button,
   .action-reset-button,
   .editor-run-button,
@@ -1375,6 +1385,5 @@ button:focus-visible, a:focus-visible, select:focus-visible {
     animation: none !important;
     transition: none !important;
     transform: none !important;
-    will-change: auto;
   }
 }
