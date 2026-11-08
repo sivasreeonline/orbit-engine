@@ -1322,3 +1322,73 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   width: auto !important;
   height: 12px !important;
 }
+
+
+/* Use CodeMirror's native vertical scrollbar only. The duplicate custom
+   scrollbar lane has been removed from the React component. */
+.code-editor {
+  display: block !important;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.code-editor > .cm-theme {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.code-editor .cm-editor {
+  width: 100%;
+  height: 100% !important;
+  min-width: 0;
+  min-height: 0;
+}
+.code-editor .cm-scroller {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: auto !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto !important;
+  scrollbar-color: #52647e #151c29 !important;
+}
+/* Match the Problem description scrollbar in Edge / Chromium. */
+.code-editor .cm-scroller::-webkit-scrollbar {
+  display: block !important;
+  width: 12px !important;
+  height: 12px !important;
+}
+.code-editor .cm-scroller::-webkit-scrollbar-track {
+  background: #151c29 !important;
+}
+.code-editor .cm-scroller::-webkit-scrollbar-thumb {
+  border: 3px solid #151c29 !important;
+  border-radius: 999px !important;
+  background: #52647e !important;
+}
+.code-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: #7186a4 !important;
+}
+.code-editor-scrollbar {
+  display: none !important;
+}
+
+/* Crisp reset icon with consistent baseline and spacing. */
+.action-reset-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.action-reset-button svg {
+  display: block;
+  flex: 0 0 auto;
+}
