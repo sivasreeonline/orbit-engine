@@ -1402,3 +1402,368 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   color: rgba(174, 196, 222, 0.035);
   text-shadow: 0 0 24px rgba(116, 157, 205, 0.015);
 }
+
+
+/* Light theme: Sky High keeps its identity while switching all work surfaces
+   to a crisp, readable light palette. The dark theme remains the default. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  color: #1b2a40;
+  background: #edf2f8;
+  --ink: #1b2a40;
+  --muted: #64748b;
+  --line: rgba(43, 65, 96, 0.14);
+  --panel: #ffffff;
+  --panel-raised: #f5f8fc;
+  --editor: #f8fafd;
+  --background: #edf2f8;
+  --shadow: 0 14px 38px rgba(24, 48, 79, 0.1);
+}
+:root[data-theme="light"] body {
+  color: #1b2a40;
+  background: #edf2f8;
+}
+.app-shell[data-theme="light"] {
+  color: #1b2a40;
+  background:
+    radial-gradient(ellipse at 3% 18%, rgba(240, 20, 184, 0.075), transparent 34rem),
+    radial-gradient(ellipse at 94% 16%, rgba(8, 125, 216, 0.075), transparent 32rem),
+    radial-gradient(ellipse at 82% 96%, rgba(255, 214, 0, 0.07), transparent 32rem),
+    #edf2f8;
+}
+.app-shell[data-theme="light"]::before { opacity: 0.12; }
+
+.app-shell[data-theme="light"] .topbar {
+  border-bottom-color: #dbe4ef;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 4px 18px rgba(26, 48, 77, 0.05);
+}
+.app-shell[data-theme="light"] .brand-copy strong { color: #102a56; }
+.app-shell[data-theme="light"] .brand-copy small { color: #718198; }
+.app-shell[data-theme="light"] .primary-nav {
+  border-color: #dce5ef;
+  background: rgba(18, 47, 82, 0.045);
+}
+.app-shell[data-theme="light"] .primary-nav-item { color: #56677f; }
+.app-shell[data-theme="light"] .primary-nav-item > span:first-child { color: #71839d; }
+.app-shell[data-theme="light"] .primary-nav-item.active { color: #fff; }
+.app-shell[data-theme="light"] .environment-pill {
+  border-color: #dce5ef;
+  background: #f8fafd;
+  color: #596b83;
+}
+.app-shell[data-theme="light"] .preview-pill {
+  border-color: rgba(205, 160, 0, 0.28);
+  background: rgba(255, 214, 0, 0.12);
+  color: #8c6b00;
+}
+.app-shell[data-theme="light"] .topbar-link {
+  border-color: #d6e0ec;
+  background: #f8fafd;
+  color: #34516f;
+}
+.app-shell[data-theme="light"] .profile-avatar {
+  border-color: rgba(8, 125, 216, 0.25);
+  background: linear-gradient(145deg, #eaf6ff, #cfe8fa);
+  color: #124b75;
+}
+
+.app-shell[data-theme="light"] .breadcrumb { color: #708097; }
+.app-shell[data-theme="light"] .breadcrumb strong { color: #233a57; }
+.app-shell[data-theme="light"] .breadcrumb-separator { color: #a0aec0; }
+.app-shell[data-theme="light"] .page-heading h1 { color: #152b49; }
+.app-shell[data-theme="light"] .page-heading p { color: #64748b; }
+.app-shell[data-theme="light"] .problem-overline { color: #66768d; }
+.app-shell[data-theme="light"] .overline-divider { color: #9aa8ba; }
+.app-shell[data-theme="light"] .difficulty-badge {
+  border-color: rgba(190, 145, 0, 0.28);
+  background: rgba(255, 214, 0, 0.14);
+  color: #866500;
+}
+.app-shell[data-theme="light"] .topic-chip {
+  border-color: rgba(196, 35, 151, 0.2);
+  background: rgba(240, 20, 184, 0.055);
+  color: #a62b80;
+}
+.app-shell[data-theme="light"] .sample-count {
+  border-color: rgba(8, 125, 216, 0.18);
+  background: rgba(8, 125, 216, 0.06);
+  color: #176b9f;
+}
+.app-shell[data-theme="light"] .workspace-context-badge {
+  border-color: rgba(8, 125, 216, 0.2);
+  background: rgba(8, 125, 216, 0.055);
+  color: #176b9f;
+}
+
+.app-shell[data-theme="light"] .problem-card,
+.app-shell[data-theme="light"] .editor-card {
+  border-color: #d8e2ee;
+  background: #fff;
+  box-shadow: 0 14px 36px rgba(24, 48, 79, 0.09);
+}
+.app-shell[data-theme="light"] .problem-panel-heading,
+.app-shell[data-theme="light"] .editor-panel-heading {
+  border-bottom-color: #e0e7f0;
+  background: linear-gradient(100deg, rgba(240, 20, 184, 0.045), #f8fafd 70%);
+}
+.app-shell[data-theme="light"] .panel-heading-copy strong { color: #1d3453; }
+.app-shell[data-theme="light"] .panel-heading-copy span { color: #718198; }
+.app-shell[data-theme="light"] .panel-lockup {
+  border-color: #dbe4ef;
+  background: #f5f8fc;
+  color: #62748b;
+}
+.app-shell[data-theme="light"] .problem-tabs {
+  border-bottom-color: #e0e7f0;
+  background: #f8fafd;
+}
+.app-shell[data-theme="light"] .problem-tab { color: #718198; }
+.app-shell[data-theme="light"] .problem-tab.active { color: #1d3453; }
+.app-shell[data-theme="light"] .problem-tab.active::after { background: #d915a6; }
+
+.app-shell[data-theme="light"] .problem-content { color: #293c56; }
+.app-shell[data-theme="light"] .challenge-kicker {
+  border-color: rgba(217, 21, 166, 0.2);
+  background: rgba(217, 21, 166, 0.055);
+  color: #a62b80;
+}
+.app-shell[data-theme="light"] .problem-intro h2 { color: #183252; }
+.app-shell[data-theme="light"] .problem-intro p,
+.app-shell[data-theme="light"] .detail-section > p { color: #53657d; }
+.app-shell[data-theme="light"] .detail-section h3 { color: #223b5b; }
+.app-shell[data-theme="light"] .format-list,
+.app-shell[data-theme="light"] .constraints-list { color: #53657d; }
+.app-shell[data-theme="light"] .constraints-list code { color: #334b68; }
+.app-shell[data-theme="light"] .section-index {
+  border-color: #cce5f0;
+  background: #edf8fc;
+  color: #167da6;
+}
+.app-shell[data-theme="light"] .example-card {
+  border-color: #dce5ef;
+  background: linear-gradient(145deg, #fff, #f6f9fd);
+}
+.app-shell[data-theme="light"] .example-heading {
+  border-bottom-color: #e1e8f0;
+  color: #29415f;
+}
+.app-shell[data-theme="light"] .example-heading-label { color: #98769b; }
+.app-shell[data-theme="light"] .example-grid span { color: #718198; }
+.app-shell[data-theme="light"] .example-grid pre {
+  border-color: #dce5ef;
+  background: #eef3f9;
+  color: #294563;
+}
+.app-shell[data-theme="light"] .example-explanation { color: #718198; }
+.app-shell[data-theme="light"] .problem-note {
+  border-top-color: #e0e7f0;
+  color: #718198;
+}
+
+.app-shell[data-theme="light"] .editor-panel-heading .editor-controls select {
+  border-color: #ccd9e8;
+  background: #f6f9fd;
+  color: #29415f;
+}
+.app-shell[data-theme="light"] .language-select-label { color: #637790; }
+.app-shell[data-theme="light"] .panel-focus-button {
+  border-color: rgba(8, 125, 216, 0.3);
+  background: linear-gradient(110deg, #eef9fd, #e9f2fc);
+  color: #176b9f;
+}
+.app-shell[data-theme="light"] .panel-focus-button > svg { color: #1687b8; }
+.app-shell[data-theme="light"] .panel-focus-button.active {
+  border-color: rgba(217, 21, 166, 0.38);
+  background: linear-gradient(110deg, #fcecf7, #f5eaff);
+  color: #9b277e;
+}
+.app-shell[data-theme="light"] .panel-focus-button.active > svg { color: #c52c9e; }
+
+.app-shell[data-theme="light"] .code-editor {
+  background: #f8fafd !important;
+}
+.app-shell[data-theme="light"] .code-editor .cm-editor,
+.app-shell[data-theme="light"] .code-editor .cm-scroller,
+.app-shell[data-theme="light"] .code-editor .cm-content {
+  background: #f8fafd !important;
+}
+.app-shell[data-theme="light"] .code-editor .cm-gutters {
+  border-right-color: #dce5ef;
+  background: #eef3f9 !important;
+  color: #71839a;
+}
+.app-shell[data-theme="light"] .code-editor .cm-line { background-color: transparent; }
+.app-shell[data-theme="light"] .code-editor .cm-activeLine {
+  background: rgba(8, 125, 216, 0.065) !important;
+}
+.app-shell[data-theme="light"] .code-editor .cm-activeLineGutter {
+  background: rgba(8, 125, 216, 0.07) !important;
+}
+.app-shell[data-theme="light"] .code-editor .cm-cursor { border-left-color: #173e68 !important; }
+.app-shell[data-theme="light"] .code-editor .cm-selectionBackground,
+.app-shell[data-theme="light"] .code-editor ::selection { background: rgba(8, 125, 216, 0.2) !important; }
+.app-shell[data-theme="light"] .code-editor .cm-scroller {
+  scrollbar-color: #9aaac0 #edf2f8;
+}
+.app-shell[data-theme="light"] .code-editor .cm-scroller::-webkit-scrollbar-track { background: #edf2f8; }
+.app-shell[data-theme="light"] .code-editor .cm-scroller::-webkit-scrollbar-thumb {
+  border-color: #edf2f8;
+  background: #9aaac0;
+}
+.app-shell[data-theme="light"] .code-editor .cm-scroller::-webkit-scrollbar-thumb:hover { background: #778da9; }
+.app-shell[data-theme="light"] .editor-language-watermark {
+  color: rgba(16, 42, 86, 0.055);
+  text-shadow: none;
+}
+.app-shell[data-theme="light"] .editor-loading {
+  background: #f8fafd;
+  color: #637790;
+}
+
+.app-shell[data-theme="light"] .editor-action-dock {
+  border-color: #d8e3ef;
+  background: linear-gradient(100deg, #fff, #f4f8fd);
+  box-shadow: 0 10px 25px rgba(24, 48, 79, 0.07);
+}
+.app-shell[data-theme="light"] .action-reset-button {
+  border-color: #c8d9e9;
+  background: linear-gradient(110deg, #f0f8fd, #edf3fa);
+  color: #31516f;
+}
+.app-shell[data-theme="light"] .action-reset-button:hover {
+  border-color: #87bdd8;
+  background: #e5f5fb;
+  color: #174d76;
+}
+.app-shell[data-theme="light"] .editor-action-hint { color: #687b92; }
+.app-shell[data-theme="light"] .editor-run-button {
+  border-color: #8bcfe3;
+  background: #eaf8fc;
+  color: #176b9f;
+}
+.app-shell[data-theme="light"] .editor-run-button:hover { background: #dcf3fa; }
+.app-shell[data-theme="light"] .editor-submit-button { color: #fff; }
+
+.app-shell[data-theme="light"] .output-panel,
+.app-shell[data-theme="light"] .problem-guide-panel {
+  border-color: #d8e2ee;
+  background: linear-gradient(145deg, #fff, #f5f8fc);
+  box-shadow: 0 14px 36px rgba(24, 48, 79, 0.09);
+}
+.app-shell[data-theme="light"] .output-panel-header,
+.app-shell[data-theme="light"] .problem-guide-header {
+  border-bottom-color: #e0e7f0;
+  background: linear-gradient(100deg, rgba(8, 125, 216, 0.055), transparent 70%);
+}
+.app-shell[data-theme="light"] .output-panel-title strong,
+.app-shell[data-theme="light"] .problem-guide-title strong { color: #1d3453; }
+.app-shell[data-theme="light"] .output-panel-title small,
+.app-shell[data-theme="light"] .problem-guide-title small { color: #718198; }
+.app-shell[data-theme="light"] .output-tabs,
+.app-shell[data-theme="light"] .problem-guide-tabs {
+  border-bottom-color: #e0e7f0;
+  background: #f8fafd;
+}
+.app-shell[data-theme="light"] .output-tab,
+.app-shell[data-theme="light"] .problem-guide-tab { color: #718198; }
+.app-shell[data-theme="light"] .output-tab.active,
+.app-shell[data-theme="light"] .problem-guide-tab.active { color: #1d3453; }
+.app-shell[data-theme="light"] .output-panel-content,
+.app-shell[data-theme="light"] .problem-guide-content { color: #31465f; }
+.app-shell[data-theme="light"] .output-empty strong { color: #1e3959; }
+.app-shell[data-theme="light"] .output-empty p,
+.app-shell[data-theme="light"] .output-disclaimer { color: #687b92; }
+.app-shell[data-theme="light"] .output-sample-card {
+  border-color: #dce5ef;
+  background: #f8fafd;
+}
+.app-shell[data-theme="light"] .output-sample-card > strong { color: #29415f; }
+.app-shell[data-theme="light"] .output-sample-grid span { color: #718198; }
+.app-shell[data-theme="light"] .output-sample-grid pre {
+  border-color: #dce5ef;
+  background: #eef3f9;
+  color: #294563;
+}
+
+.app-shell[data-theme="light"] .guide-topic-card {
+  border-color: #d4e6f0;
+  background: linear-gradient(120deg, #f0f9fd, #f5f7fc);
+}
+.app-shell[data-theme="light"] .guide-topic-card > strong,
+.app-shell[data-theme="light"] .guide-section-heading { color: #24415f; }
+.app-shell[data-theme="light"] .guide-section p,
+.app-shell[data-theme="light"] .guide-section li,
+.app-shell[data-theme="light"] .guide-intro { color: #5d7088; }
+.app-shell[data-theme="light"] .guide-callout {
+  border-color: rgba(190, 145, 0, 0.22);
+  background: rgba(255, 214, 0, 0.09);
+}
+.app-shell[data-theme="light"] .guide-callout strong { color: #806200; }
+.app-shell[data-theme="light"] .guide-callout p { color: #76683e; }
+.app-shell[data-theme="light"] .guide-constraint-row { border-bottom-color: #e3eaf2; }
+.app-shell[data-theme="light"] .guide-constraint-row code { color: #354e6a; }
+.app-shell[data-theme="light"] .guide-hint-card {
+  border-color: #d7e8f1;
+  background: #f2f9fc;
+}
+.app-shell[data-theme="light"] .guide-hint-card p { color: #536a84; }
+.app-shell[data-theme="light"] .reveal-hint-button {
+  border-color: rgba(217, 21, 166, 0.24);
+  background: #fbf0f8;
+  color: #a62b80;
+}
+.app-shell[data-theme="light"] .hints-complete { color: #637790; }
+
+.app-shell[data-theme="light"] .workspace-footer { color: #73839a; }
+.app-shell[data-theme="light"] .workspace-footer span:first-child { color: #526782; }
+.app-shell[data-theme="light"] .footer-separator { color: #a0aec0; }
+.app-shell[data-theme="light"] .execution-feedback {
+  border-color: #ead9a3;
+  background: #fff9e8;
+}
+.app-shell[data-theme="light"] .execution-feedback strong { color: #775d13; }
+.app-shell[data-theme="light"] .execution-feedback p,
+.app-shell[data-theme="light"] .execution-feedback small { color: #76683e; }
+.app-shell[data-theme="light"] .empty-state h2 { color: #24415f; }
+.app-shell[data-theme="light"] .empty-state p { color: #687b92; }
+
+/* Theme toggle */
+.theme-toggle {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(173, 195, 226, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #e1eaf6;
+  padding: 0 11px;
+  font-size: 9px;
+  font-weight: 800;
+  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease;
+}
+.theme-toggle svg { display: block; color: var(--yellow); }
+.theme-toggle:hover { transform: translateY(-1px); border-color: rgba(0, 194, 255, 0.5); background: rgba(0, 194, 255, 0.1); }
+.theme-toggle:active { transform: translateY(0); }
+.app-shell[data-theme="light"] .theme-toggle {
+  border-color: #d3dfec;
+  background: #f5f8fc;
+  color: #38516f;
+}
+.app-shell[data-theme="light"] .theme-toggle svg { color: #986f00; }
+
+/* Precise desktop alignment: use the shared grid height for both columns.
+   The previous +12px extension made the editor action dock sit too low. */
+@media (min-width: 1121px) {
+  .workspace-grid:not(.focus-editor-mode):not(.focus-problem-mode) > .editor-workspace {
+    height: 100%;
+    align-self: stretch;
+  }
+}
+@media (max-width: 760px) {
+  .topbar-actions { gap: 7px; }
+  .theme-toggle { min-height: 31px; padding-inline: 8px; font-size: 8px; }
+  .theme-toggle span { display: none; }
+}

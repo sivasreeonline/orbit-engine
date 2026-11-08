@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 const CodeEditor = lazy(() => import("./components/CodeEditor"));
 import EditorActions from "./components/EditorActions";
 import ExecutionOutput, { type OutputTab } from "./components/ExecutionOutput";
@@ -21,6 +21,15 @@ const navigationItems = [
 
 export default function App() {
   const [language, setLanguage] = useState<SupportedLanguage>("java");
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    try {
+      return window.localStorage.getItem("sky-high-theme") === "light"
+        ? "light"
+        : "dark";
+    } catch {
+      return "dark";
+    }
+  });
   const [sourceByLanguage, setSourceByLanguage] = useState<Record<SupportedLanguage, string>>(starterCode);
   const [problemTab, setProblemTab] = useState<"description" | "submissions">("description");
   const [focusMode, setFocusMode] = useState<FocusMode>("none");
@@ -28,6 +37,20 @@ export default function App() {
   const [feedback, setFeedback] = useState<ExecutionFeedback | null>(null);
   const [pendingAction, setPendingAction] = useState<ExecutionAction | null>(null);
   const sourceCode = sourceByLanguage[language];
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    try {
+      window.localStorage.setItem("sky-high-theme", theme);
+    } catch {
+      // Theme switching still works for this session when storage is unavailable.
+    }
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
+  }
 
   function updateSource(value: string) {
     setSourceByLanguage((current) => ({ ...current, [language]: value }));
@@ -77,7 +100,7 @@ export default function App() {
   );
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={theme}>
       <header className="topbar">
         <a className="brand" href="/" aria-label="Sky High Coding Judge home">
           <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
@@ -101,6 +124,26 @@ export default function App() {
         <div className="topbar-actions">
           <div className="environment-pill"><span className="environment-dot" /><span>Development preview</span></div>
           <span className="preview-pill">MOCK MODE</span>
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            aria-pressed={theme === "light"}
+          >
+            {theme === "dark" ? (
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42" />
+              </svg>
+            ) : (
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z" />
+              </svg>
+            )}
+            <span>{theme === "dark" ? "Light" : "Dark"}</span>
+          </button>
           <a className="topbar-link" href="https://github.com/sivasreeonline/orbit-engine" target="_blank" rel="noreferrer" aria-label="Open source repository">↗</a>
           <div className="profile-avatar" aria-label="Student profile">S</div>
         </div>
@@ -178,7 +221,7 @@ export default function App() {
                   </div>
                 </div>
                 <Suspense fallback={<div className="editor-loading" role="status"><span className="loading-spinner" />Preparing editor…</div>}>
-                  <CodeEditor language={language} value={sourceCode} onChange={updateSource} />
+                  <CodeEditor language={language} value={sourceCode} onChange={updateSource} theme={theme} />
                 </Suspense>
               </section>
 

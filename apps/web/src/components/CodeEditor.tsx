@@ -6,12 +6,14 @@ import type { SupportedLanguage } from "../types/problem";
 
 interface CodeEditorProps {
   language: SupportedLanguage;
+  theme: "dark" | "light";
   value: string;
   onChange: (value: string) => void;
 }
 
 export default function CodeEditor({
   language,
+  theme,
   value,
   onChange,
 }: CodeEditorProps) {
@@ -35,7 +37,7 @@ export default function CodeEditor({
         value={value}
         height="100%"
         width="100%"
-        theme="dark"
+        theme={theme}
         extensions={extensions}
         onChange={onChange}
         basicSetup={{
