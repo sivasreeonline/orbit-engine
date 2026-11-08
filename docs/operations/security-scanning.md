@@ -20,7 +20,7 @@ This repository uses layered, automated security checks. No single scanner prove
 - Workflows use read-only repository permissions.
 - Checkout does not persist the repository token in the workspace.
 - Gitleaks PR comments are disabled to avoid granting pull-request write access.
-- govulncheck is installed/run at the pinned module version v1.1.4.
+- govulncheck is installed/run at the pinned module version v1.9.0.
 - Trivy fails the job for HIGH and CRITICAL findings; exceptions must be reviewed rather than silently ignored.
 - Container scanning is skipped, with an explicit notice, until the runner Dockerfile is introduced.
 
