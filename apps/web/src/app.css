@@ -1387,3 +1387,18 @@ button:focus-visible, a:focus-visible, select:focus-visible {
     transform: none !important;
   }
 }
+
+
+/* Align the editor and its action dock with the bottom of Challenge Briefing.
+   Keep the problem panel height unchanged; apply only to the wide default view. */
+@media (min-width: 1121px) {
+  .workspace-grid:not(.focus-editor-mode):not(.focus-problem-mode) > .editor-workspace {
+    height: calc(100% + 12px);
+  }
+}
+
+/* Make the language watermark subtler behind source code. */
+.editor-language-watermark {
+  color: rgba(174, 196, 222, 0.035);
+  text-shadow: 0 0 24px rgba(116, 157, 205, 0.015);
+}
