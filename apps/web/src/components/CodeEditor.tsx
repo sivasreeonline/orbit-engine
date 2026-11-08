@@ -74,9 +74,11 @@ export default function CodeEditor({
     });
   }
 
-  function handleEditorCreated(view: Parameters<NonNullable<
-    React.ComponentProps<typeof CodeMirror>["onCreateEditor"]
-  >>[0]) {
+  interface CodeMirrorEditorView {
+  scrollDOM: HTMLElement;
+}
+
+function handleEditorCreated(view: CodeMirrorEditorView) {
     cleanupRef.current?.();
 
     const scroller = view.scrollDOM;
