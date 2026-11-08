@@ -1211,3 +1211,52 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .code-editor .cm-scroller::-webkit-scrollbar-thumb:hover {
   background: #7186a4;
 }
+
+
+/* Restore the original deep navy editor canvas. The @uiw dark theme sets a
+   lighter #282c34 content surface; override it without touching the gutters,
+   active-line treatment, native scrollbars or syntax colours. */
+.code-editor {
+  position: relative;
+  background: #0b1220 !important;
+}
+.code-editor > .cm-theme-dark,
+.code-editor .cm-editor,
+.code-editor .cm-scroller,
+.code-editor .cm-content {
+  background-color: #0b1220 !important;
+}
+.code-editor .cm-line {
+  background-color: transparent;
+}
+.code-editor .cm-activeLine {
+  background-color: rgba(0, 194, 255, 0.055) !important;
+}
+.code-editor .cm-selectionBackground {
+  background: rgba(8, 125, 216, 0.32) !important;
+}
+
+/* Subtle language watermark, inspired by the oversized IBM label in the
+   supplied reference. It updates automatically with the selected language. */
+.editor-language-watermark {
+  position: absolute;
+  z-index: 5;
+  right: 18px;
+  bottom: 8px;
+  pointer-events: none;
+  user-select: none;
+  color: rgba(135, 158, 190, 0.085);
+  font-size: clamp(64px, 8vw, 116px);
+  font-weight: 950;
+  letter-spacing: -0.085em;
+  line-height: 0.82;
+  white-space: nowrap;
+  text-align: right;
+}
+@media (max-width: 760px) {
+  .editor-language-watermark {
+    right: 12px;
+    bottom: 7px;
+    font-size: clamp(54px, 15vw, 82px);
+  }
+}

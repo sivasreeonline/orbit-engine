@@ -38,6 +38,9 @@ export default function CodeEditor({
         }}
         aria-label={`${language.toUpperCase()} source editor`}
       />
+      <span className="editor-language-watermark" aria-hidden="true">
+        {language === "java" ? "JAVA" : "PYTHON"}
+      </span>
     </div>
   );
 }
