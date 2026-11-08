@@ -143,15 +143,23 @@ export default function App() {
           {focusMode !== "problem" && (
             <section className="editor-workspace" aria-label="Coding workspace">
               <section className="editor-card" aria-label="Code editor">
-                <div className="editor-toolbar">
-                  <div className="editor-toolbar-title">
-                    <span className="editor-window-mark" aria-hidden="true"><span /><span /><span /></span>
-                    <div className="editor-title-copy"><strong>Code workspace</strong><small>Make your approach count</small></div>
+                <div className="problem-panel-heading editor-panel-heading">
+                  <div className="panel-heading-icon" aria-hidden="true">02</div>
+                  <div className="panel-heading-copy">
+                    <strong>Code workspace</strong>
+                    <span>Make your approach count</span>
                   </div>
+                  <span className="panel-heading-spacer" />
                   <div className="editor-controls">
                     <label className="language-select-label" htmlFor="language-select">Language</label>
-                    <select id="language-select" value={language} onChange={(event) => setLanguage(event.target.value as SupportedLanguage)} aria-label="Programming language">
-                      <option value="java">Java 25</option><option value="python">Python 3.14</option>
+                    <select
+                      id="language-select"
+                      value={language}
+                      onChange={(event) => setLanguage(event.target.value as SupportedLanguage)}
+                      aria-label="Programming language"
+                    >
+                      <option value="java">Java 25</option>
+                      <option value="python">Python 3.14</option>
                     </select>
                     <button
                       className={focusMode === "editor" ? "panel-focus-button active" : "panel-focus-button"}
@@ -159,7 +167,8 @@ export default function App() {
                       type="button"
                       aria-pressed={focusMode === "editor"}
                     >
-                      <span aria-hidden="true">⌘</span>{focusMode === "editor" ? "Exit focus" : "Focus editor"}
+                      <span aria-hidden="true">⌘</span>
+                      {focusMode === "editor" ? "Exit focus" : "Focus editor"}
                     </button>
                   </div>
                 </div>

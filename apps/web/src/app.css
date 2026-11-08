@@ -1263,3 +1263,62 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .code-editor-scrollbar:active .code-editor-scrollbar-thumb {
   background: linear-gradient(180deg, #f0f7ff, #a9c5e7);
 }
+
+
+/* Code workspace header mirrors Challenge Briefing exactly. */
+.editor-panel-heading {
+  background: linear-gradient(100deg, rgba(240,20,184,0.08), transparent 58%);
+}
+.editor-panel-heading .editor-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+.editor-panel-heading .language-select-label {
+  white-space: nowrap;
+}
+.editor-panel-heading .editor-controls select {
+  min-height: 36px;
+}
+@media (max-width: 1350px) {
+  .editor-panel-heading {
+    gap: 9px;
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+  .editor-panel-heading .editor-controls {
+    gap: 6px;
+  }
+}
+@media (max-width: 760px) {
+  .editor-panel-heading {
+    flex-wrap: wrap;
+    padding: 10px 13px;
+  }
+  .editor-panel-heading .panel-heading-spacer {
+    display: none;
+  }
+  .editor-panel-heading .editor-controls {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* Only the synchronized custom track renders a vertical scrollbar.
+   Keep the native horizontal scrollbar for long source lines. */
+.code-editor .cm-scroller {
+  scrollbar-width: auto !important;
+}
+.code-editor .cm-scroller::-webkit-scrollbar:vertical {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.code-editor .cm-scroller::-webkit-scrollbar:horizontal {
+  display: block !important;
+  width: auto !important;
+  height: 12px !important;
+}
