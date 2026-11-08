@@ -46,3 +46,18 @@ Sky High Coding Judge is an intelligent coding assessment service. Its initial r
 ## Current milestones
 - M0: Prove isolated, resource-limited Java/Python execution on Linux.
 - M1: Deliver the first functional coding judge using a mock adapter in parallel with M0, then integrate the approved runner.
+
+
+## First M1 web workspace
+
+The initial student workspace lives in `apps/web`.
+
+```powershell
+cd apps/web
+npm install
+npm run dev
+```
+
+This first slice is a **UI preview only**. Its mock execution adapter does not execute source code, does not produce verdicts, does not persist attempts and does not call a remote service. Real execution remains blocked until the M0 isolated Linux runner and authenticated API integration pass their release gates.
+
+See `apps/web/README.md` for details.
