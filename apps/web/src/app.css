@@ -1191,3 +1191,14 @@ a {
     gap: 8px 12px;
   }
 }
+
+
+.editor-loading {
+  display: grid;
+  min-height: 330px;
+  flex: 1;
+  place-items: center;
+  background: var(--editor);
+  color: #94a6bf;
+  font-size: 11px;
+}

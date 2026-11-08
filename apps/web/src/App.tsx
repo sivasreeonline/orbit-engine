@@ -1,5 +1,5 @@
-import { useState } from "react";
-import CodeEditor from "./components/CodeEditor";
+import { lazy, Suspense, useState } from "react";
+const CodeEditor = lazy(() => import("./components/CodeEditor"));
 import ExecutionConsole, {
   type ConsoleTab,
 } from "./components/ExecutionConsole";
@@ -224,11 +224,13 @@ export default function App() {
                   </div>
                 </div>
 
-                <CodeEditor
-                  language={editorLanguage}
-                  value={sourceCode}
-                  onChange={updateSource}
-                />
+                <Suspense fallback={<div className="editor-loading" role="status">Loading code editor…</div>}>
+                  <CodeEditor
+                    language={editorLanguage}
+                    value={sourceCode}
+                    onChange={updateSource}
+                  />
+                </Suspense>
 
                 <div className="editor-footer">
                   <span>UTF-8</span>
