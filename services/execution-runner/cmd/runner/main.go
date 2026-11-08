@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sivasreeonline/sky-high-coding-judge/services/execution-runner/internal/httpapi"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/httpapi"
 )
 
 func main() {

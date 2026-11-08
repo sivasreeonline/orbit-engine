@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/sivasreeonline/sky-high-coding-judge/services/execution-runner/internal/protocol"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
 )
 
 var ErrSandboxNotConfigured = errors.New("sandbox executor is not configured")

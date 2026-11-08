@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sivasreeonline/sky-high-coding-judge/services/execution-runner/internal/protocol"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
 )
 
 func TestUnconfiguredExecutorFailsClosed(t *testing.T) {
