@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import CodeEditor from "./components/CodeEditor";
 import ExecutionConsole, {
   type ConsoleTab,
@@ -43,7 +43,7 @@ export default function App() {
   );
 
   const sourceCode = sourceByLanguage[language];
-  const editorLanguage = useMemo(() => language, [language]);
+  const editorLanguage = language;
 
   function updateSource(value: string) {
     setSourceByLanguage((current) => ({
