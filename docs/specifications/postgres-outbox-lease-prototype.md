@@ -15,7 +15,7 @@
 
 ## Explicitly not decided or implemented
 
-- Cloudflare Queues binding, publisher runtime and queue message schema.
+- Cloudflare Queues is already the accepted transport in ADR-0006. The binding/provisioning, publisher runtime and exact queue message schema remain to be implemented.
 - Retry/backoff schedule, maximum delivery attempts, dead-letter threshold and operator replay.
 - Lease duration and batch size as deployment policy. The repository accepts caller-supplied values and enforces only defensive bounds.
 - Queue acknowledgement semantics, metrics, tracing and operational alerting.
@@ -30,4 +30,4 @@
 
 ## Next integration gate
 
-Before adding a real publisher, approve queue transport configuration, retry/dead-letter policy, lease duration, message schema and operational ownership. Queue delivery must remain at-least-once and consumers must be idempotent.
+Before adding a real publisher, configure/provision the already-selected Cloudflare Queues binding and settle retry/dead-letter policy, lease duration, message schema and operational ownership. Queue delivery must remain at-least-once and consumers must be idempotent.
