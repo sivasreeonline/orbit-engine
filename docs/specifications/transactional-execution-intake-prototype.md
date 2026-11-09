@@ -25,6 +25,10 @@ A matching replay returns the original attempt and execution identifiers. Reusin
 - The code does not publish to a queue, execute user source, or expose a POST endpoint.
 - The database source storage path is used in this prototype. Source-size thresholds, R2 selection, encryption, retention and deletion remain unapproved.
 
+## PostgreSQL integration coverage
+
+The API CI now runs a real PostgreSQL integration test after applying the proposed migrations. It submits 12 concurrent requests with the same tenant, actor, action and idempotency key, then verifies that all callers receive one execution/attempt identity and that exactly one snapshot, attempt, job and outbox event were persisted. It also verifies that reusing the key with different source text is rejected. This test runs against the disposable PostgreSQL service in CI; it does not establish production load capacity.
+
 ## Provisional decisions requiring review
 
 - The request hash uses SHA-256 over a fixed-order JSON array of action, problem slug, language, server-selected runtime version and exact source text. This is a testable prototype canonicalization, not an approved public contract.
