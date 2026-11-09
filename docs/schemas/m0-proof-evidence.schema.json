@@ -197,7 +197,10 @@
               "output",
               "cleanup",
               "cancellation",
-              "repeatability"
+              "repeatability",
+              "runtime",
+              "recovery",
+              "idempotency"
             ]
           },
           "status": {
@@ -209,34 +212,18 @@
             ]
           },
           "expected_outcome": {
-            "enum": [
-              "available",
-              "systrap",
-              "non_root",
-              "absent",
-              "blocked",
-              "enforced",
-              "terminated",
-              "clean",
-              "idempotent",
-              "within_limit"
-            ]
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.:=/-]{0,255}$",
+            "description": "Concise non-sensitive expected assertion; never include raw output or hidden test content."
           },
           "observed_outcome": {
-            "enum": [
-              "available",
-              "systrap",
-              "non_root",
-              "absent",
-              "blocked",
-              "enforced",
-              "terminated",
-              "clean",
-              "idempotent",
-              "within_limit",
-              "unexpected",
-              "unknown"
-            ]
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.:=/-]{0,255}$",
+            "description": "Concise non-sensitive observed assertion; never include raw output or hidden test content."
           },
           "exit_code": {
             "type": [
