@@ -50,7 +50,7 @@ describe.skipIf(!databaseUrl)("runner dispatch handoff PostgreSQL integration", 
       delivery_state: string;
     }>(
       [
-        "SELECT count(*)::text AS count, min(attempt_id)::text AS attempt_id,",
+        "SELECT count(*)::text AS count, (array_agg(attempt_id::text))[1] AS attempt_id,",
         "  min(delivery_state) AS delivery_state",
         "FROM runner_dispatch_outbox WHERE execution_id = $1::uuid",
       ].join("\n"),
