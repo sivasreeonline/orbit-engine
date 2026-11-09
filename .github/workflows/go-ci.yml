@@ -2,7 +2,7 @@ name: Go Runner CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, docs/runner-contract-decision-proposal]
     paths:
       - "services/execution-runner/**"
       - ".github/workflows/go-ci.yml"
