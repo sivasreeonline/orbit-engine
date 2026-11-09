@@ -58,6 +58,7 @@ container_id="$(docker create \
   ')"
 
 config="$(docker inspect --format '{{.HostConfig.Runtime}}|{{.Config.User}}|{{.HostConfig.NetworkMode}}|{{.HostConfig.ReadonlyRootfs}}|{{.HostConfig.Memory}}|{{.HostConfig.NanoCpus}}|{{.HostConfig.PidsLimit}}|{{json .HostConfig.CapDrop}}|{{json .HostConfig.SecurityOpt}}' "$container_id")"
+tmpfs_options="$(docker inspect --format '{{index .HostConfig.Tmpfs "/tmp"}}' "$container_id")"
 IFS='|' read -r runtime user network readonly memory nano_cpus pids cap_drop security_opt <<< "$config"
 
 [[ "$runtime" == "runsc" ]] || { echo "FAIL: runtime=$runtime" >&2; exit 1; }
@@ -67,10 +68,14 @@ IFS='|' read -r runtime user network readonly memory nano_cpus pids cap_drop sec
 [[ "$memory" == "134217728" ]] || { echo "FAIL: memory=$memory" >&2; exit 1; }
 [[ "$nano_cpus" == "500000000" ]] || { echo "FAIL: nano_cpus=$nano_cpus" >&2; exit 1; }
 [[ "$pids" == "64" ]] || { echo "FAIL: pids_limit=$pids" >&2; exit 1; }
+[[ "$tmpfs_options" == "rw,noexec,nosuid,size=16m" ]] || {
+  echo "FAIL: /tmp tmpfs options=$tmpfs_options" >&2
+  exit 1
+}
 grep -q 'ALL' <<< "$cap_drop" || { echo "FAIL: all capabilities were not dropped: $cap_drop" >&2; exit 1; }
 grep -q 'no-new-privileges' <<< "$security_opt" || { echo "FAIL: no-new-privileges missing: $security_opt" >&2; exit 1; }
 
-echo "Verified container policy: runtime=$runtime user=$user network=$network readonly=$readonly memory=$memory nano_cpus=$nano_cpus pids=$pids"
+echo "Verified container policy: runtime=$runtime user=$user network=$network readonly=$readonly memory=$memory nano_cpus=$nano_cpus pids=$pids tmpfs=$tmpfs_options"
 docker start --attach "$container_id"
 exit_code="$(docker wait "$container_id")"
 [[ "$exit_code" == "0" ]] || { echo "FAIL: sandbox process exited with status $exit_code" >&2; exit 1; }
