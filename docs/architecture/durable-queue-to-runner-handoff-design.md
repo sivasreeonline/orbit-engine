@@ -83,7 +83,7 @@ Do not introduce RabbitMQ or a public unauthenticated callback as an implementat
 - How the runner retrieves source artifacts and authorized test bundles without exposing hidden tests to the API/queue/browser.
 - How result callbacks are authenticated and fenced against stale attempts.
 
-The runner request must be constructed from trusted database policy and artifact metadata, not from student-controlled queue fields. The queue envelope must not contain source code or hidden test material.
+The runner request must be constructed from trusted database policy and artifact metadata, not from student-controlled queue fields. The queue envelope must not contain source code or hidden test material. The proposed machine-to-machine claim/receipt API, service-identity requirements, dispatch-vs-execution lease separation and receipt-schema gap are documented in [Runner Agent Control API Proposal](../specifications/runner-agent-control-api-proposal.md); that proposal is non-normative and adds no routes.
 
 ## Observability and operations
 
@@ -108,13 +108,14 @@ Provide operator-visible counts and oldest-age metrics for pending dispatch inte
 
 ## Decisions still required
 
-1. Select and threat-model the Cloudflare-to-Linux runner transport and network topology.
-2. Approve the normative request/result contracts and complete job state machine.
-3. Define dispatch lease duration, retry classification, backoff, dead-letter threshold and operator replay policy.
-4. Define runner receipt semantics, deduplication retention and crash recovery for a runner that has accepted but not completed an execution.
-5. Define artifact retrieval authorization, R2 object lifecycle, encryption, retention and deletion.
-6. Approve database roles/grants and migration/rollback strategy for the new dispatch table.
-7. Define cancellation and stale `RUNNING` job recovery before enabling execution.
+1. Select and threat-model the Cloudflare-to-Linux runner transport and network topology, including late Queue acknowledgements and token-scope verification.
+2. Select machine identity and approve the runner claim/receipt API and durable receipt schema.
+3. Approve the normative request/result contracts and complete job state machine.
+4. Define dispatch lease duration, retry classification, backoff, dead-letter threshold and operator replay policy.
+5. Define runner receipt semantics, deduplication retention and crash recovery for a runner that has accepted but not completed an execution.
+6. Define artifact retrieval authorization, R2 object lifecycle, encryption, retention and deletion.
+7. Approve database roles/grants and migration/rollback strategy for the new dispatch table.
+8. Define cancellation and stale `RUNNING` job recovery before enabling execution.
 
 ## Explicit non-goals and safety gates
 
