@@ -130,6 +130,55 @@ BEGIN
     repeat('b', 64), attempt_id
   );
 
+
+  blocked := false;
+  BEGIN
+    INSERT INTO execution_idempotency (
+      tenant_id, actor_user_id, endpoint, idempotency_key,
+      request_sha256, attempt_id
+    ) VALUES (
+      tenant, actor, 'SUBMIT', 'mismatched-endpoint-key',
+      repeat('b', 64), attempt_id
+    );
+  EXCEPTION WHEN check_violation THEN
+    blocked := true;
+  END;
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'Idempotency endpoint was allowed to differ from attempt action';
+  END IF;
+
+  blocked := false;
+  BEGIN
+    INSERT INTO execution_idempotency (
+      tenant_id, actor_user_id, endpoint, idempotency_key,
+      request_sha256, attempt_id
+    ) VALUES (
+      tenant, '20000000-0000-4000-8000-000000000099',
+      'RUN', 'mismatched-actor-key', repeat('b', 64), attempt_id
+    );
+  EXCEPTION WHEN check_violation THEN
+    blocked := true;
+  END;
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'Idempotency actor was allowed to differ from attempt actor';
+  END IF;
+
+  blocked := false;
+  BEGIN
+    INSERT INTO execution_idempotency (
+      tenant_id, actor_user_id, endpoint, idempotency_key,
+      request_sha256, attempt_id
+    ) VALUES (
+      '40000000-0000-4000-8000-000000000099', actor,
+      'RUN', 'mismatched-tenant-key', repeat('b', 64), attempt_id
+    );
+  EXCEPTION WHEN check_violation THEN
+    blocked := true;
+  END;
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'Idempotency tenant was allowed to differ from attempt tenant';
+  END IF;
+
   INSERT INTO execution_outbox (
     execution_id, event_type, protocol_version, correlation_id, payload
   ) VALUES (
