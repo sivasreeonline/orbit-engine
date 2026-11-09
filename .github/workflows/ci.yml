@@ -199,6 +199,11 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/outbox-lease-repository.integration.test.ts
 
+      - name: Verify execution job claims against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/execution-job-repository.integration.test.ts
+
       - name: Worker deployment dry run
         run: npx wrangler deploy --dry-run
 
