@@ -64,7 +64,7 @@ func TestDecodeExecutionRequestV2RejectsUnknownDuplicateAndNonCanonicalKeys(t *t
 		t.Fatal(err)
 	}
 	tests := []struct {
-		name string
+		name   string
 		mutate func([]byte) []byte
 	}{
 		{"unknown field", func(b []byte) []byte { return bytes.Replace(b, []byte("{"), []byte("{\"futureField\":true,"), 1) }},
@@ -124,8 +124,8 @@ func TestDecodeExecutionRequestV2RejectsMissingAndNullRequiredFields(t *testing.
 		t.Fatal(err)
 	}
 	tests := []struct {
-		name string
-		remove string
+		name    string
+		remove  string
 		setNull string
 	}{
 		{"missing execution id", "executionId", ""},
@@ -191,7 +191,7 @@ func TestDecodeExecutionRequestV2RejectsMissingNestedLimit(t *testing.T) {
 func TestExecutionRequestV2RejectsInvalidPolicyAndBounds(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
+		name   string
 		mutate func(*ExecutionRequestV2)
 	}{
 		{"unsupported protocol", func(r *ExecutionRequestV2) { r.ProtocolVersion = "v1" }},
