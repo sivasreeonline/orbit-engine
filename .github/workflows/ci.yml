@@ -94,7 +94,12 @@ jobs:
       # yet have its generated lockfile. Replace npm install with npm ci once
       # package-lock.json is generated and committed.
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: >-
+          npm install --no-audit --no-fund
+          --fetch-retries=5
+          --fetch-retry-mintimeout=10000
+          --fetch-retry-maxtimeout=120000
+          --fetch-timeout=300000
 
       - name: Typecheck
         run: npm run typecheck
