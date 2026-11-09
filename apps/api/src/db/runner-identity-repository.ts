@@ -26,7 +26,7 @@ const defaultClientFactory: PgClientFactory = (connectionString) =>
 
 interface RunnerIdentityRow extends Record<string, unknown> {
   readonly runner_id: string;
-  readonly pool_key: string;
+  readonly pool_id: string;
   readonly identity_subject: string;
   readonly scopes: string[];
 }
@@ -75,7 +75,7 @@ export class PostgresRunnerIdentityRepository {
       await client.query("SET statement_timeout = '5s'");
       const result = await client.query<RunnerIdentityRow>(
         [
-          "SELECT identity.runner_id, pool.pool_key, identity.identity_subject, identity.scopes",
+          "SELECT identity.runner_id, pool.id::text AS pool_id, identity.identity_subject, identity.scopes",
           "FROM runner_identities AS identity",
           "INNER JOIN runner_pools AS pool ON pool.id = identity.pool_id",
           "WHERE identity.identity_issuer = $1",
@@ -99,7 +99,7 @@ export class PostgresRunnerIdentityRepository {
 
       return {
         runnerId: row.runner_id,
-        poolId: row.pool_key,
+        poolId: row.pool_id,
         subject: row.identity_subject,
         scopes: [...row.scopes] as RunnerScope[],
       };
