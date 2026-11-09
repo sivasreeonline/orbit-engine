@@ -120,51 +120,17 @@ export default function CodeEditor({
         }}
         aria-label={`${language.toUpperCase()} source editor`}
       />
-      <svg
+      <span
         key={watermarkAnimationId}
         className={
-          language === "java"
-            ? watermarkAnimationId > 0
-              ? "editor-language-watermark editor-language-watermark--java is-changing"
-              : "editor-language-watermark editor-language-watermark--java"
-            : watermarkAnimationId > 0
-              ? "editor-language-watermark editor-language-watermark--python is-changing"
-              : "editor-language-watermark editor-language-watermark--python"
+          watermarkAnimationId > 0
+            ? "editor-language-watermark is-changing"
+            : "editor-language-watermark"
         }
-        viewBox={language === "java" ? "0 0 420 130" : "0 0 620 130"}
-        role="img"
-        aria-label={`${language.toUpperCase()} watermark`}
         aria-hidden="true"
       >
-        <text
-          className="watermark-word"
-          x="10"
-          y="112"
-          textLength={language === "java" ? "400" : "600"}
-          lengthAdjust="spacingAndGlyphs"
-        >
-          {language === "java" ? "JAVA" : "PYTHON"}
-        </text>
-        <g className="watermark-guide-lines">
-          {language === "java" ? (
-            <>
-              <path className="watermark-guide watermark-guide--1" pathLength="1" d="M18 22 L84 22 L84 76 L72 94 L54 104 L30 104" />
-              <path className="watermark-guide watermark-guide--2" pathLength="1" d="M112 104 L150 20 L188 104 M128 70 L172 70" />
-              <path className="watermark-guide watermark-guide--3" pathLength="1" d="M212 22 L250 104 L288 22" />
-              <path className="watermark-guide watermark-guide--4" pathLength="1" d="M312 104 L350 20 L388 104 M328 70 L372 70" />
-            </>
-          ) : (
-            <>
-              <path className="watermark-guide watermark-guide--1" pathLength="1" d="M20 106 L20 20 L70 20 L88 34 L88 50 L70 64 L20 64" />
-              <path className="watermark-guide watermark-guide--2" pathLength="1" d="M114 20 L150 62 L186 20 M150 62 L150 106" />
-              <path className="watermark-guide watermark-guide--3" pathLength="1" d="M214 20 L286 20 M250 20 L250 106" />
-              <path className="watermark-guide watermark-guide--4" pathLength="1" d="M320 20 L320 106 M380 20 L380 106 M320 63 L380 63" />
-              <path className="watermark-guide watermark-guide--5" pathLength="1" d="M450 20 L475 20 L490 40 L490 86 L475 106 L435 106 L420 86 L420 40 L435 20 Z" />
-              <path className="watermark-guide watermark-guide--6" pathLength="1" d="M520 106 L520 20 L580 106 L580 20" />
-            </>
-          )}
-        </g>
-      </svg>
+        {language === "java" ? "JAVA" : "PYTHON"}
+      </span>
     </div>
   );
 }
