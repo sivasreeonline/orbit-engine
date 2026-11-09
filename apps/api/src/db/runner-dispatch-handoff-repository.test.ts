@@ -62,7 +62,7 @@ const envelope = { executionId, attemptId, protocolVersion: "v1" } as const;
 
 describe("PostgresRunnerDispatchHandoffRepository", () => {
   it("validates authoritative job/outbox identity and commits one durable intent", async () => {
-    const fake = fakeClient();
+    const fake = fakeClient({ existing: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
     await expect(repository.record(envelope)).resolves.toEqual({
