@@ -78,3 +78,37 @@ No option is selected here. Provider selection requires a separate reviewed ADR 
 ## 7. Explicit non-goals
 
 This proposal does not select or configure a provider, add credentials/secrets, add runner registry tables, add HTTP routes/middleware, alter human authentication, expose dispatch operations, retrieve source artifacts, consume queues or enable execution. The runner executor remains fail-closed and gVisor M0 evidence remains a separate prerequisite.
+
+
+## 8. Cloudflare deployment fit — evidence-based candidate comparison
+
+The following is a preliminary platform-fit assessment, not a provider decision. Documentation was checked on 2026-11-09.
+
+| Candidate | Cloudflare fit | Operational strengths | Important caveats |
+| --- | --- | --- | --- |
+| Cloudflare Access service token + validated Access JWT | Strong candidate for a first non-production proof | Per-token identity, expiration, individual rotation/revocation, Service Auth policies and Access audit logs | The Worker must cryptographically validate the `Cf-Access-Jwt-Assertion` signature and claims. Never trust the presence/value of an Access header alone. Must prove direct-origin/bypass paths cannot reach protected handlers. |
+| Inbound mTLS at the Worker hostname | Strong edge-authentication candidate | TLS handshake rejects clients without an accepted certificate; Workers expose client-certificate validation metadata | Must enforce certificate verification/revocation in Worker policy and map certificate identity to runner registry. Cloudflare-managed client-certificate quota is 100 active certificates per zone by default; BYOCA has Enterprise constraints. |
+| Short-lived signed service assertion | Portable alternative | Can be independent of edge-specific service-token format; short expiry and audience binding can reduce replay window | Requires a trusted issuer, signing-key lifecycle/JWKS rotation, revocation strategy and careful validation in the Worker. No issuer is selected. |
+| Worker mTLS binding | Not an inbound runner-auth mechanism | Useful when the Worker calls an external origin that requires client certificates | This binding presents a certificate on Worker-to-origin subrequests; it does not authenticate a Linux runner calling the Worker. |
+
+### Evidence and implications
+
+- Cloudflare Access service tokens consist of a Client ID and Client Secret, can be assigned an expiry, rotated with a grace period, disabled/revoked individually and constrained by Service Auth policies. For origin validation, Cloudflare sends a `Cf-Access-Jwt-Assertion`; the application should validate its signature using the account's Access public keys. Access signing keys rotate every six weeks by default. Therefore, a future Worker adapter must validate signature, issuer, audience, time claims and the service identity mapping; checking only that Access headers exist is insufficient.
+- Cloudflare inbound client-certificate authentication validates the TLS client certificate at the edge and exposes validation details through `request.cf.tlsClientAuth`. A Worker can use that verified metadata to map the certificate to a registered runner. The route must reject missing, unverified or revoked certificates. This is distinct from the Workers mTLS binding, which is for the Worker presenting a client certificate to an external service.
+- Neither mechanism removes the need for the Sky High runner registry, pool mapping, least-privilege scopes, per-runner revocation and PostgreSQL lease fencing.
+
+Official documentation reviewed:
+
+- Cloudflare Access service tokens: https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/
+- Validate Access JWTs: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
+- Cloudflare client certificates / inbound mTLS: https://developers.cloudflare.com/ssl/client-certificates/
+- Worker client-certificate variables: https://developers.cloudflare.com/ssl/client-certificates/client-certificate-variables/
+- Workers mTLS binding (outbound distinction): https://developers.cloudflare.com/workers/runtime-apis/bindings/mtls/
+
+### Recommended next proof, not production selection
+
+For the first non-production experiment, test **Cloudflare Access service tokens with one unique token per runner**, a narrowly scoped Service Auth policy, and explicit JWT assertion verification inside the Worker before mapping the verified service identity to a registered `runnerId` and `poolId`. Prove that direct/bypass requests cannot reach the internal route, key rotation works, and an individual token can be revoked without affecting other runners.
+
+In parallel, measure inbound mTLS if the runner population or credential lifecycle justifies per-runner certificates. Do not treat the Workers outbound mTLS binding as a substitute for inbound client authentication.
+
+No Access application, token, certificate, Worker binding, secret or route was configured by this change. The candidate must be validated in the actual Sky High Cloudflare account before an ADR can select it.
