@@ -2292,8 +2292,8 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .app-shell[data-theme="light"] .problem-content::-webkit-scrollbar-thumb:hover { background: #8739a8; }
 
 
-/* Light-theme-only ambient donut field. Rings are solid palette colours;
-   pointer movement gently nudges nearby rings without constant animation. */
+/* Light-theme-only ambient donut field. Larger solid rings create a
+   bolder editorial backdrop while staying behind the coding workspace. */
 .ambient-donuts {
   position: fixed;
   z-index: 0;
@@ -2318,65 +2318,65 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   will-change: transform;
 }
 .ambient-donut--1 {
-  left: 5%;
-  top: 17%;
-  width: 148px;
-  height: 148px;
-  border-width: 27px;
+  left: 4%;
+  top: 16%;
+  width: 210px;
+  height: 210px;
+  border-width: 38px;
   border-color: #A64AC9;
 }
 .ambient-donut--2 {
-  left: 27%;
-  top: 70%;
-  width: 86px;
-  height: 86px;
-  border-width: 17px;
+  left: 24%;
+  top: 68%;
+  width: 126px;
+  height: 126px;
+  border-width: 24px;
   border-color: #FCCD04;
   opacity: 0.56;
 }
 .ambient-donut--3 {
   left: 48%;
-  top: 8%;
-  width: 116px;
-  height: 116px;
-  border-width: 23px;
+  top: 5%;
+  width: 164px;
+  height: 164px;
+  border-width: 32px;
   border-color: #17BFB7;
   opacity: 0.4;
 }
 .ambient-donut--4 {
   left: 73%;
-  top: 34%;
-  width: 172px;
-  height: 172px;
-  border-width: 31px;
+  top: 31%;
+  width: 236px;
+  height: 236px;
+  border-width: 43px;
   border-color: #FFB48F;
   opacity: 0.48;
 }
 .ambient-donut--5 {
-  left: 86%;
-  top: 78%;
-  width: 102px;
-  height: 102px;
-  border-width: 19px;
+  left: 85%;
+  top: 74%;
+  width: 144px;
+  height: 144px;
+  border-width: 27px;
   border-color: #A64AC9;
   opacity: 0.38;
 }
 .ambient-donut--6 {
-  left: 38%;
+  left: 39%;
   top: 43%;
-  width: 66px;
-  height: 66px;
-  border-width: 14px;
+  width: 96px;
+  height: 96px;
+  border-width: 20px;
   border-color: #FCCD04;
   opacity: 0.48;
 }
 @media (max-width: 760px) {
-  .ambient-donut--1 { width: 104px; height: 104px; border-width: 20px; }
-  .ambient-donut--2 { left: 18%; width: 68px; height: 68px; border-width: 14px; }
-  .ambient-donut--3 { left: 58%; width: 86px; height: 86px; border-width: 18px; }
-  .ambient-donut--4 { left: 76%; width: 118px; height: 118px; border-width: 23px; }
-  .ambient-donut--5 { left: 78%; width: 72px; height: 72px; border-width: 15px; }
-  .ambient-donut--6 { left: 42%; width: 54px; height: 54px; border-width: 12px; }
+  .ambient-donut--1 { width: 145px; height: 145px; border-width: 27px; }
+  .ambient-donut--2 { left: 18%; width: 92px; height: 92px; border-width: 18px; }
+  .ambient-donut--3 { left: 58%; width: 118px; height: 118px; border-width: 23px; }
+  .ambient-donut--4 { left: 76%; width: 166px; height: 166px; border-width: 30px; }
+  .ambient-donut--5 { left: 78%; width: 102px; height: 102px; border-width: 20px; }
+  .ambient-donut--6 { left: 42%; width: 72px; height: 72px; border-width: 15px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ambient-donut { transition: none; transform: none !important; }

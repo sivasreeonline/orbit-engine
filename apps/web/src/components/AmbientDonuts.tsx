@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 
 const DONUTS = [
-  { id: "one", x: 5, y: 17, size: 148 },
-  { id: "two", x: 27, y: 70, size: 86 },
-  { id: "three", x: 48, y: 8, size: 116 },
-  { id: "four", x: 73, y: 34, size: 172 },
-  { id: "five", x: 86, y: 78, size: 102 },
-  { id: "six", x: 38, y: 43, size: 66 },
+  { id: "one", x: 4, y: 16, size: 210 },
+  { id: "two", x: 24, y: 68, size: 126 },
+  { id: "three", x: 48, y: 5, size: 164 },
+  { id: "four", x: 73, y: 31, size: 236 },
+  { id: "five", x: 85, y: 74, size: 144 },
+  { id: "six", x: 39, y: 43, size: 96 },
 ] as const;
 
 export default function AmbientDonuts() {
