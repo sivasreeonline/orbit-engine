@@ -186,6 +186,32 @@ CREATE TABLE IF NOT EXISTS execution_outbox (
   )
 );
 
+CREATE OR REPLACE FUNCTION verify_execution_outbox_identity()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+DECLARE
+  expected_attempt_id uuid;
+BEGIN
+  SELECT attempt_id INTO expected_attempt_id
+  FROM execution_jobs
+  WHERE id = NEW.execution_id;
+
+  IF NOT FOUND
+    OR NEW.payload->>'attemptId' IS DISTINCT FROM expected_attempt_id::text THEN
+    RAISE EXCEPTION 'outbox payload does not match its execution job'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS trg_execution_outbox_identity ON execution_outbox;
+CREATE TRIGGER trg_execution_outbox_identity
+BEFORE INSERT OR UPDATE ON execution_outbox
+FOR EACH ROW EXECUTE FUNCTION verify_execution_outbox_identity();
+
 CREATE INDEX IF NOT EXISTS idx_execution_outbox_pending
   ON execution_outbox (available_at, created_at)
   WHERE delivery_state = 'PENDING';
