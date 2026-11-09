@@ -69,7 +69,7 @@ const listPublishedSql = [
   "  AND pv.published_at IS NOT NULL",
   "ORDER BY p.sort_order ASC, p.slug ASC",
   "LIMIT $2",
-].join("\\n");
+].join("\n");
 
 const getPublishedBySlugSql = [
   "SELECT",
@@ -92,7 +92,7 @@ const getPublishedBySlugSql = [
   "  AND (p.tenant_id IS NULL OR p.tenant_id = $2::uuid)",
   "  AND pv.published_at IS NOT NULL",
   "LIMIT 1",
-].join("\\n");
+].join("\n");
 
 const publicExamplesSql = [
   "SELECT",
@@ -105,7 +105,7 @@ const publicExamplesSql = [
   "  AND visibility = 'PUBLIC'",
   "ORDER BY sequence ASC",
   "LIMIT 10",
-].join("\\n");
+].join("\n");
 
 function mapSummary(row: SummaryRow): ProblemSummary {
   return {
