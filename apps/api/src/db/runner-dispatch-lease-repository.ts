@@ -274,6 +274,10 @@ export class PostgresRunnerDispatchLeaseRepository {
     } catch (error) {
       if (error instanceof RunnerDispatchReceiptConflictError ||
           error instanceof StaleRunnerDispatchLeaseError) throw error;
+      if (typeof error === "object" && error !== null &&
+          "code" in error && error.code === "23505") {
+        throw new RunnerDispatchReceiptConflictError();
+      }
       throw new DatabaseUnavailableError();
     } finally {
       await client.end().catch(() => undefined);
