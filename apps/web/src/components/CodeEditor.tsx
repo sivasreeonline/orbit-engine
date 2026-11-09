@@ -95,12 +95,15 @@ export default function CodeEditor({
   }, [language]);
 
   return (
-    <div className="code-editor" aria-label="Source code editor">
+    <div
+      className="code-editor"
+      aria-label="Source code editor"
       onKeyDown={(event) => {
         if (event.key === "Enter" && !event.repeat) {
           setWatermarkAnimationId((current) => current + 1);
         }
       }}
+    >
       <CodeMirror
         value={value}
         height="100%"
