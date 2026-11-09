@@ -137,6 +137,8 @@ func TestExecutionRequestV2RejectsInvalidPolicyAndBounds(t *testing.T) {
 	}{
 		{"unsupported protocol", func(r *ExecutionRequestV2) { r.ProtocolVersion = "v1" }},
 		{"noncanonical correlation", func(r *ExecutionRequestV2) { r.CorrelationID = "7D4C8A20-3E19-4B2C-9F10-8A7B6C5D4E3F" }},
+		{"non-v4 correlation", func(r *ExecutionRequestV2) { r.CorrelationID = "7d4c8a20-3e19-1b2c-9f10-8a7b6c5d4e3f" }},
+		{"invalid UUID variant", func(r *ExecutionRequestV2) { r.CorrelationID = "7d4c8a20-3e19-4b2c-7f10-8a7b6c5d4e3f" }},
 		{"mutable runtime tag", func(r *ExecutionRequestV2) { r.RuntimeImageDigest = "runtime:latest" }},
 		{"uppercase source digest", func(r *ExecutionRequestV2) { r.SourceSHA256 = strings.Repeat("B", 64) }},
 		{"unsupported comparison", func(r *ExecutionRequestV2) { r.ComparisonPolicy = "TRIM_WHITESPACE" }},
