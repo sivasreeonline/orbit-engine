@@ -93,8 +93,34 @@ export class PostgresRunnerDispatchHandoffRepository {
         if (!current ||
             current.attempt_id !== envelope.attemptId ||
             current.outbox_attempt_id !== envelope.attemptId ||
-            current.outbox_protocol_version !== envelope.protocolVersion ||
-            current.job_state !== "QUEUED") {
+            current.outbox_protocol_version !== envelope.protocolVersion) {
+          throw new InvalidRunnerDispatchEnvelopeError();
+        }
+
+        // A redelivery after the job has advanced is still safe to acknowledge
+        // when its exact durable handoff already exists.
+        const existing = await client.query<DispatchRow>(
+          [
+            "SELECT id, attempt_id, protocol_version, correlation_id",
+            "FROM runner_dispatch_outbox",
+            "WHERE execution_id = $1::uuid",
+            "FOR UPDATE",
+          ].join("\\n"),
+          [envelope.executionId],
+        );
+        const prior = existing.rows[0];
+        if (prior) {
+          if (prior.attempt_id !== envelope.attemptId ||
+              prior.protocol_version !== envelope.protocolVersion ||
+              prior.correlation_id !== current.correlation_id) {
+            throw new InvalidRunnerDispatchEnvelopeError();
+          }
+          await client.query("COMMIT");
+          return { status: "DUPLICATE", dispatchId: prior.id };
+        }
+
+        // First-time handoff is accepted only for a job still waiting in intake.
+        if (current.job_state !== "QUEUED") {
           throw new InvalidRunnerDispatchEnvelopeError();
         }
 
@@ -103,9 +129,8 @@ export class PostgresRunnerDispatchHandoffRepository {
             "INSERT INTO runner_dispatch_outbox",
             "  (execution_id, attempt_id, protocol_version, correlation_id)",
             "VALUES ($1::uuid, $2::uuid, $3, $4)",
-            "ON CONFLICT (execution_id) DO NOTHING",
             "RETURNING id, attempt_id, protocol_version, correlation_id",
-          ].join("\n"),
+          ].join("\\n"),
           [
             envelope.executionId,
             envelope.attemptId,
@@ -115,30 +140,9 @@ export class PostgresRunnerDispatchHandoffRepository {
         );
 
         const created = inserted.rows[0];
-        if (created) {
-          await client.query("COMMIT");
-          return { status: "RECORDED", dispatchId: created.id };
-        }
-
-        const existing = await client.query<DispatchRow>(
-          [
-            "SELECT id, attempt_id, protocol_version, correlation_id",
-            "FROM runner_dispatch_outbox",
-            "WHERE execution_id = $1::uuid",
-            "FOR UPDATE",
-          ].join("\n"),
-          [envelope.executionId],
-        );
-        const prior = existing.rows[0];
-        if (!prior ||
-            prior.attempt_id !== envelope.attemptId ||
-            prior.protocol_version !== envelope.protocolVersion ||
-            prior.correlation_id !== current.correlation_id) {
-          throw new InvalidRunnerDispatchEnvelopeError();
-        }
-
+        if (!created) throw new Error("runner_dispatch_insert_returned_no_id");
         await client.query("COMMIT");
-        return { status: "DUPLICATE", dispatchId: prior.id };
+        return { status: "RECORDED", dispatchId: created.id };
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);
         throw error;
