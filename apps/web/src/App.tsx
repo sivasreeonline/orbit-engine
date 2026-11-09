@@ -105,8 +105,15 @@ export default function App() {
       {theme === "light" && <AmbientDonuts />}
       <header className="topbar">
         <a className="brand" href="/" aria-label="Sky High Coding Judge home">
-          <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
-          <span className="brand-copy"><strong>sky high</strong><small>CODING JUDGE</small></span>
+          <img
+            className="brand-logo"
+            src={theme === "light" ? "/brand/sky-high-light.webp" : "/brand/sky-high-dark.webp"}
+            alt="Sky High — Reach New Heights"
+            width="240"
+            height={theme === "light" ? "44" : "53"}
+            decoding="async"
+            fetchPriority="high"
+          />
         </a>
         <nav className="primary-nav" aria-label="Main navigation">
           {navigationItems.map((item) => (
