@@ -50,7 +50,7 @@ No student source, hidden tests, application secrets, or production data may be 
 
 ## Phase 2 — Isolation and resource proof
 
-Run a reviewed adversarial fixture suite inside a disposable gVisor sandbox. The suite must be digest-pinned, source-reviewed, and contain no network callbacks or destructive host operations.
+Run the reviewed fixture matrix in `docs/specifications/m0-adversarial-fixture-contract.md` inside a disposable gVisor sandbox. The suite must be digest-pinned, source-reviewed, and contain no network callbacks or destructive host operations. Do not implement or execute fixture payloads until the disposable VM outer cgroup, watchdog, and recovery controls have been independently verified.
 
 | Area | Required evidence |
 |---|---|
