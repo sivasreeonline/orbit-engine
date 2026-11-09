@@ -57,7 +57,7 @@ describe("PostgresExecutionJobRepository", () => {
       lease: {
         executionId,
         attemptId,
-        stateVersion: 2,
+        stateVersion: "2",
         retryCount: 0,
         leaseOwner: "consumer-1",
         leaseToken,
