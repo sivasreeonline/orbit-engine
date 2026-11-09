@@ -78,6 +78,8 @@ A test passes only with captured host-side evidence and an assertion that checks
 
 ## Evidence bundle
 
+Use `docs/schemas/m0-proof-evidence.schema.json` as the versioned manifest contract for the proof report. The manifest records structured outcomes and references to sanitized evidence files; it must not embed raw logs, student code, hidden test data, credentials, or private artifact URLs. A schema-valid manifest is a completeness aid, not proof that the underlying tests actually ran or passed.
+
 Store a proof report outside the host and include:
 
 - Host/provider/region and image identifier (once selected).

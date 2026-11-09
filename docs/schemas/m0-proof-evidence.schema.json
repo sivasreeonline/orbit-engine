@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-proof-evidence.schema.json",
+  "title": "Sky High M0 Sandbox Proof Evidence",
+  "description": "Sanitized, structured evidence manifest for a disposable-host M0 gVisor proof. This schema records outcomes and references only; it is not proof that a test was performed or passed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "proof_run_id",
+    "generated_at",
+    "baseline",
+    "host",
+    "runtime",
+    "fixture",
+    "tests",
+    "overall_result",
+    "security_review"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "proof_run_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "architecture",
+        "containerd_major_minor",
+        "containerd_config_version",
+        "runtime_handler",
+        "required_platform"
+      ],
+      "properties": {
+        "os": {
+          "const": "Ubuntu Server 24.04 LTS"
+        },
+        "architecture": {
+          "const": "x86_64"
+        },
+        "containerd_major_minor": {
+          "const": "2.3"
+        },
+        "containerd_config_version": {
+          "const": 3
+        },
+        "runtime_handler": {
+          "const": "io.containerd.runsc.v1"
+        },
+        "required_platform": {
+          "const": "systrap"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image_identifier",
+        "kernel_release",
+        "cgroup_mode",
+        "provider",
+        "region"
+      ],
+      "properties": {
+        "image_identifier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "kernel_release": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "cgroup_mode": {
+          "const": "v2"
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "containerd_version",
+        "runsc_version",
+        "shim_version",
+        "runtime_handler",
+        "platform",
+        "oci_image_digest"
+      ],
+      "properties": {
+        "containerd_version": {
+          "type": "string",
+          "pattern": "^2\\.3\\.[0-9]+([+-].*)?$",
+          "maxLength": 96
+        },
+        "runsc_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "shim_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "runtime_handler": {
+          "const": "io.containerd.runsc.v1"
+        },
+        "platform": {
+          "enum": [
+            "systrap",
+            "kvm",
+            "ptrace",
+            "unknown"
+          ]
+        },
+        "oci_image_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_revision",
+        "image_digest"
+      ],
+      "properties": {
+        "repository_revision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "image_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "test_id",
+          "phase",
+          "status",
+          "expected_outcome",
+          "observed_outcome",
+          "evidence"
+        ],
+        "properties": {
+          "test_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "phase": {
+            "enum": [
+              "host_preflight",
+              "runtime_compatibility",
+              "identity",
+              "host_boundary",
+              "network",
+              "cpu",
+              "memory",
+              "processes",
+              "time",
+              "filesystem",
+              "output",
+              "cleanup",
+              "cancellation",
+              "repeatability"
+            ]
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "failed",
+              "not_run",
+              "blocked"
+            ]
+          },
+          "expected_outcome": {
+            "enum": [
+              "available",
+              "systrap",
+              "non_root",
+              "absent",
+              "blocked",
+              "enforced",
+              "terminated",
+              "clean",
+              "idempotent",
+              "within_limit"
+            ]
+          },
+          "observed_outcome": {
+            "enum": [
+              "available",
+              "systrap",
+              "non_root",
+              "absent",
+              "blocked",
+              "enforced",
+              "terminated",
+              "clean",
+              "idempotent",
+              "within_limit",
+              "unexpected",
+              "unknown"
+            ]
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 255
+          },
+          "duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "relative_path",
+                "sha256",
+                "bytes",
+                "redacted"
+              ],
+              "properties": {
+                "relative_path": {
+                  "type": "string",
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*://)[A-Za-z0-9._/-]{1,240}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "redacted": {
+                  "const": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "overall_result": {
+      "enum": [
+        "passed",
+        "failed",
+        "incomplete"
+      ]
+    },
+    "security_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "reviewed_at",
+        "reviewer_reference"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "pending",
+            "approved",
+            "rejected"
+          ]
+        },
+        "reviewed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "reviewer_reference": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 96
+        }
+      }
+    }
+  }
+}
