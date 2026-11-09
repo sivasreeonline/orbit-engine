@@ -60,7 +60,7 @@ func (request ExecutionRequestV2) ValidateAt(now time.Time) error {
 		return fieldError("protocolVersion", "must be v2")
 	}
 	if !isCanonicalUUID(request.CorrelationID) {
-		return fieldError("correlationId", "must be a canonical lowercase UUID")
+		return fieldError("correlationId", "must be a canonical lowercase UUIDv4")
 	}
 	ids := []struct {
 		field string
@@ -137,7 +137,8 @@ func (request ExecutionRequestV2) ValidateAt(now time.Time) error {
 }
 
 func isCanonicalUUID(value string) bool {
-	if len(value) != 36 || strings.ToLower(value) != value {
+	if len(value) != 36 || strings.ToLower(value) != value ||
+		value[14] != '4' || !strings.ContainsRune("89ab", rune(value[19])) {
 		return false
 	}
 	for index, character := range value {
