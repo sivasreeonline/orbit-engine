@@ -65,6 +65,60 @@ BEGIN
     RAISE EXCEPTION 'Attempt with a mismatched source hash was accepted';
   END IF;
 
+  INSERT INTO problems (
+    id, tenant_id, slug, lifecycle_status, current_version_id, sort_order
+  ) VALUES (
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+    '40000000-0000-4000-8000-000000000001',
+    'tenant-private-problem',
+    'DRAFT',
+    NULL,
+    200
+  );
+
+  INSERT INTO problem_versions (
+    id, problem_id, version_number, title, difficulty, category, tags,
+    summary, statement, input_format, output_format, constraints, published_at
+  ) VALUES (
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+    1,
+    'Tenant Private Problem',
+    'Easy',
+    'Testing',
+    ARRAY['Test'],
+    'Tenant scoped fixture.',
+    'Tenant scoped fixture statement.',
+    ARRAY['One input line.'],
+    'One output line.',
+    ARRAY['n = 1'],
+    now()
+  );
+
+  UPDATE problems
+  SET lifecycle_status = 'PUBLISHED',
+      current_version_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'
+  WHERE id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+
+  blocked := false;
+  BEGIN
+    INSERT INTO execution_attempts (
+      id, tenant_id, actor_user_id, problem_id, problem_version_id,
+      action, language, runtime_version, source_snapshot_id, source_sha256
+    ) VALUES (
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4',
+      tenant, actor,
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+      'RUN', 'java', '25', snapshot_id, source_hash
+    );
+  EXCEPTION WHEN check_violation THEN
+    blocked := true;
+  END;
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'Attempt from another tenant was allowed to use tenant-scoped problem';
+  END IF;
+
   INSERT INTO execution_jobs (id, attempt_id)
   VALUES (execution_id, attempt_id);
 
