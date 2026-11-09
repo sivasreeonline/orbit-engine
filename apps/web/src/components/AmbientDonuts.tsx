@@ -15,12 +15,13 @@ export default function AmbientDonuts() {
   useEffect(() => {
     const layer = layerRef.current;
     if (!layer) return;
+    const donutLayer: HTMLDivElement = layer;
 
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (reduceMotion.matches) return;
 
     const donuts = Array.from(
-      layer.querySelectorAll<HTMLElement>(".ambient-donut"),
+      donutLayer.querySelectorAll<HTMLElement>(".ambient-donut"),
     );
     let frameId = 0;
     let pointerX = -1;
@@ -40,7 +41,7 @@ export default function AmbientDonuts() {
         return;
       }
 
-      const bounds = layer.getBoundingClientRect();
+      const bounds = donutLayer.getBoundingClientRect();
       const proximityRadius = 285;
 
       for (const donut of donuts) {
