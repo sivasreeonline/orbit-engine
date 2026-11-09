@@ -239,9 +239,54 @@ func TestExecutionRequestV2IntakeBudgetUsesTrustedTimestamp(t *testing.T) {
 	if err := request.ValidateIntakeBudget(intakeAt, v2TestNow); err != nil {
 		t.Fatalf("valid intake budget rejected: %v", err)
 	}
-	request.DeadlineAt = intakeAt.Add(MaxExecutionBudget + time.Second).Format(time.RFC3339)
-	if err := request.ValidateIntakeBudget(intakeAt, v2TestNow); !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("error = %v, want ErrInvalidRequest", err)
+
+	tests := []struct {
+		name   string
+		intake time.Time
+		mutate func(*ExecutionRequestV2)
+	}{
+		{
+			name:   "deadline exceeds trusted intake budget",
+			intake: intakeAt,
+			mutate: func(r *ExecutionRequestV2) {
+				r.DeadlineAt = intakeAt.Add(MaxExecutionBudget + time.Second).Format(time.RFC3339)
+			},
+		},
+		{
+			name:   "noncanonical UTC deadline",
+			intake: intakeAt,
+			mutate: func(r *ExecutionRequestV2) {
+				r.DeadlineAt = "2026-11-09T17:05:00.000Z"
+			},
+		},
+		{
+			name:   "zero intake timestamp",
+			intake: time.Time{},
+		},
+		{
+			name:   "future intake timestamp",
+			intake: v2TestNow.Add(time.Second),
+		},
+		{
+			name:   "invalid request fields are also rejected",
+			intake: intakeAt,
+			mutate: func(r *ExecutionRequestV2) {
+				r.Action = Action("EXECUTE")
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			candidate := validRequestV2()
+			if test.mutate != nil {
+				test.mutate(&candidate)
+			}
+			if err := candidate.ValidateIntakeBudget(test.intake, v2TestNow); !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("error = %v, want ErrInvalidRequest", err)
+			}
+		})
 	}
 }
 
