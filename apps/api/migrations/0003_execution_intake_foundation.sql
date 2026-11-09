@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS source_snapshots (
     (storage_kind = 'R2'
       AND source_bytes IS NULL
       AND object_key IS NOT NULL
-      AND length(object_key) BETWEEN 1 AND 512)
+      AND length(object_key) BETWEEN 1 AND 512
+      AND object_key !~* '^https?://')
   )
 );
 
