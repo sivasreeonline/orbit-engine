@@ -103,15 +103,6 @@ describe("PostgresExecutionIntakeRepository", () => {
   });
 
   it("returns the original execution for a matching idempotent replay", async () => {
-    const fake = fakeClient({
-      existing: [{
-        attempt_id: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1",
-        execution_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
-        request_sha256: "placeholder",
-      }],
-    });
-    const repository = new PostgresExecutionIntakeRepository(connection, () => fake.client);
-
     // A replay must compare the same hash; derive it through a first deterministic call.
     const first = fakeClient();
     const firstRepository = new PostgresExecutionIntakeRepository(connection, () => first.client);
@@ -130,8 +121,6 @@ describe("PostgresExecutionIntakeRepository", () => {
     expect(replay).toEqual({ ...created, replayed: true });
     expect(replayFake.calls.some((call) => call.text.includes("INSERT INTO source_snapshots"))).toBe(false);
     expect(replayFake.committed()).toBe(true);
-    void repository;
-    void fake;
   });
 
   it("rejects reuse of an idempotency key for a different request and rolls back", async () => {
