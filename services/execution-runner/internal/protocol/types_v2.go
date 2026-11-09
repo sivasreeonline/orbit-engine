@@ -97,11 +97,21 @@ func (request ExecutionRequestV2) ValidateAt(now time.Time) error {
 		return fieldError("deadlineAt", "must be in the future; expired requests must not start")
 	}
 	limits := request.Limits
-	if limits.CPUQuotaMillis <= 0 { return fieldError("limits.cpuQuotaMillis", "must be positive") }
-	if limits.MemoryBytes <= 0 { return fieldError("limits.memoryBytes", "must be positive") }
-	if limits.WallTimeMillis <= 0 { return fieldError("limits.wallTimeMillis", "must be positive") }
-	if limits.ProcessLimit <= 0 { return fieldError("limits.processLimit", "must be positive") }
-	if limits.OutputBytes <= 0 { return fieldError("limits.outputBytes", "must be positive") }
+	if limits.CPUQuotaMillis <= 0 {
+		return fieldError("limits.cpuQuotaMillis", "must be positive")
+	}
+	if limits.MemoryBytes <= 0 {
+		return fieldError("limits.memoryBytes", "must be positive")
+	}
+	if limits.WallTimeMillis <= 0 {
+		return fieldError("limits.wallTimeMillis", "must be positive")
+	}
+	if limits.ProcessLimit <= 0 {
+		return fieldError("limits.processLimit", "must be positive")
+	}
+	if limits.OutputBytes <= 0 {
+		return fieldError("limits.outputBytes", "must be positive")
+	}
 	if limits.ScratchBytes <= 0 || limits.ScratchBytes > MaxScratchBytes {
 		return fieldError("limits.scratchBytes", "must be between 1 byte and 512 MiB")
 	}
@@ -136,7 +146,9 @@ func isCanonicalUUID(value string) bool {
 	for index, character := range value {
 		switch index {
 		case 8, 13, 18, 23:
-			if character != '-' { return false }
+			if character != '-' {
+				return false
+			}
 		default:
 			if !((character >= '0' && character <= '9') ||
 				(character >= 'a' && character <= 'f')) { return false }
@@ -147,16 +159,22 @@ func isCanonicalUUID(value string) bool {
 
 func isSHA256Digest(value string, withPrefix bool) bool {
 	if withPrefix {
-		if !strings.HasPrefix(value, "sha256:") { return false }
+		if !strings.HasPrefix(value, "sha256:") {
+			return false
+		}
 		value = strings.TrimPrefix(value, "sha256:")
 	}
-	if len(value) != 64 || strings.ToLower(value) != value { return false }
+	if len(value) != 64 || strings.ToLower(value) != value {
+		return false
+	}
 	decoded, err := hex.DecodeString(value)
 	return err == nil && len(decoded) == 32
 }
 
 func isCancellationRef(value string) bool {
-	if !strings.HasPrefix(value, "cxl_") || len(value) != 36 { return false }
+	if !strings.HasPrefix(value, "cxl_") || len(value) != 36 {
+		return false
+	}
 	decoded, err := hex.DecodeString(strings.TrimPrefix(value, "cxl_"))
 	return err == nil && len(decoded) == 16 && strings.ToLower(value) == value
 }

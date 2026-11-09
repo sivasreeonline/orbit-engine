@@ -34,21 +34,35 @@ func validRequestV2() ExecutionRequestV2 {
 func TestDecodeExecutionRequestV2AcceptsGoldenFixture(t *testing.T) {
 	t.Parallel()
 	body, err := os.ReadFile("testdata/execution-request-v2.valid.json")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	request, err := DecodeExecutionRequestV2At(bytes.NewReader(body), v2TestNow)
-	if err != nil { t.Fatalf("decode fixture: %v", err) }
-	if request != validRequestV2() { t.Fatalf("decoded request does not match expected contract: %+v", request) }
+	if err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+	if request != validRequestV2() {
+		t.Fatalf("decoded request does not match expected contract: %+v", request)
+	}
 	encoded, err := json.Marshal(request)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	roundTrip, err := DecodeExecutionRequestV2At(bytes.NewReader(encoded), v2TestNow)
-	if err != nil { t.Fatalf("decode round-trip: %v", err) }
-	if roundTrip != request { t.Fatalf("round-trip mismatch: got %+v want %+v", roundTrip, request) }
+	if err != nil {
+		t.Fatalf("decode round-trip: %v", err)
+	}
+	if roundTrip != request {
+		t.Fatalf("round-trip mismatch: got %+v want %+v", roundTrip, request)
+	}
 }
 
 func TestDecodeExecutionRequestV2RejectsUnknownDuplicateAndNonCanonicalKeys(t *testing.T) {
 	t.Parallel()
 	body, err := json.Marshal(validRequestV2())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		name string
 		mutate func([]byte) []byte
@@ -65,7 +79,9 @@ func TestDecodeExecutionRequestV2RejectsUnknownDuplicateAndNonCanonicalKeys(t *t
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := DecodeExecutionRequestV2At(bytes.NewReader(test.mutate(body)), v2TestNow)
-			if !errors.Is(err, ErrInvalidJSON) { t.Fatalf("error = %v, want ErrInvalidJSON", err) }
+			if !errors.Is(err, ErrInvalidJSON) {
+				t.Fatalf("error = %v, want ErrInvalidJSON", err)
+			}
 		})
 	}
 }
@@ -73,7 +89,9 @@ func TestDecodeExecutionRequestV2RejectsUnknownDuplicateAndNonCanonicalKeys(t *t
 func TestDecodeExecutionRequestV2RejectsMalformedBodies(t *testing.T) {
 	t.Parallel()
 	body, err := json.Marshal(validRequestV2())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct{ name, body string }{
 		{"empty", ""}, {"array", "[]"}, {"null", "null"}, {"malformed", "{\"protocolVersion\":"},
 		{"multiple values", string(body) + " {}"}, {"trailing garbage", string(body) + " nope"},
@@ -83,7 +101,9 @@ func TestDecodeExecutionRequestV2RejectsMalformedBodies(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := DecodeExecutionRequestV2At(strings.NewReader(test.body), v2TestNow)
-			if !errors.Is(err, ErrInvalidJSON) { t.Fatalf("error = %v, want ErrInvalidJSON", err) }
+			if !errors.Is(err, ErrInvalidJSON) {
+				t.Fatalf("error = %v, want ErrInvalidJSON", err)
+			}
 		})
 	}
 }
@@ -92,13 +112,17 @@ func TestDecodeExecutionRequestV2EnforcesBodyLimit(t *testing.T) {
 	t.Parallel()
 	body := bytes.Repeat([]byte(" "), MaxExecutionRequestV2Bytes+1)
 	_, err := DecodeExecutionRequestV2At(bytes.NewReader(body), v2TestNow)
-	if !errors.Is(err, ErrInvalidJSON) { t.Fatalf("error = %v, want ErrInvalidJSON", err) }
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("error = %v, want ErrInvalidJSON", err)
+	}
 }
 
 func TestDecodeExecutionRequestV2RejectsMissingAndNullRequiredFields(t *testing.T) {
 	t.Parallel()
 	body, err := json.Marshal(validRequestV2())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		name string
 		remove string
@@ -114,13 +138,23 @@ func TestDecodeExecutionRequestV2RejectsMissingAndNullRequiredFields(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			var object map[string]json.RawMessage
-			if err := json.Unmarshal(body, &object); err != nil { t.Fatal(err) }
-			if test.remove != "" { delete(object, test.remove) }
-			if test.setNull != "" { object[test.setNull] = json.RawMessage("null") }
+			if err := json.Unmarshal(body, &object); err != nil {
+				t.Fatal(err)
+			}
+			if test.remove != "" {
+				delete(object, test.remove)
+			}
+			if test.setNull != "" {
+				object[test.setNull] = json.RawMessage("null")
+			}
 			mutated, err := json.Marshal(object)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			_, err = DecodeExecutionRequestV2At(bytes.NewReader(mutated), v2TestNow)
-			if !errors.Is(err, ErrInvalidJSON) { t.Fatalf("error = %v, want ErrInvalidJSON", err) }
+			if !errors.Is(err, ErrInvalidJSON) {
+				t.Fatalf("error = %v, want ErrInvalidJSON", err)
+			}
 		})
 	}
 }
@@ -129,17 +163,29 @@ func TestDecodeExecutionRequestV2RejectsMissingNestedLimit(t *testing.T) {
 	t.Parallel()
 	var object map[string]json.RawMessage
 	body, err := json.Marshal(validRequestV2())
-	if err != nil { t.Fatal(err) }
-	if err := json.Unmarshal(body, &object); err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(body, &object); err != nil {
+		t.Fatal(err)
+	}
 	var limits map[string]json.RawMessage
-	if err := json.Unmarshal(object["limits"], &limits); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(object["limits"], &limits); err != nil {
+		t.Fatal(err)
+	}
 	delete(limits, "scratchInodes")
 	object["limits"], err = json.Marshal(limits)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	mutated, err := json.Marshal(object)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = DecodeExecutionRequestV2At(bytes.NewReader(mutated), v2TestNow)
-	if !errors.Is(err, ErrInvalidJSON) { t.Fatalf("error = %v, want ErrInvalidJSON", err) }
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("error = %v, want ErrInvalidJSON", err)
+	}
 }
 
 func TestExecutionRequestV2RejectsInvalidPolicyAndBounds(t *testing.T) {
@@ -195,5 +241,7 @@ func TestExecutionRequestV2AcceptsPythonSubmit(t *testing.T) {
 	request.Action = ActionSubmit
 	request.Language = LanguagePython
 	request.RuntimeVersion = "3.14"
-	if err := request.ValidateAt(v2TestNow); err != nil { t.Fatalf("valid Python SUBMIT rejected: %v", err) }
+	if err := request.ValidateAt(v2TestNow); err != nil {
+		t.Fatalf("valid Python SUBMIT rejected: %v", err)
+	}
 }
