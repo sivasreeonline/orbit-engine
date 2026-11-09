@@ -167,6 +167,38 @@ CREATE TABLE IF NOT EXISTS execution_idempotency (
   UNIQUE (tenant_id, actor_user_id, endpoint, idempotency_key)
 );
 
+
+CREATE OR REPLACE FUNCTION verify_execution_idempotency_identity()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+DECLARE
+  attempt_tenant_id uuid;
+  attempt_actor_user_id uuid;
+  attempt_action varchar(8);
+BEGIN
+  SELECT tenant_id, actor_user_id, action
+  INTO attempt_tenant_id, attempt_actor_user_id, attempt_action
+  FROM execution_attempts
+  WHERE id = NEW.attempt_id;
+
+  IF NOT FOUND
+    OR NEW.tenant_id IS DISTINCT FROM attempt_tenant_id
+    OR NEW.actor_user_id IS DISTINCT FROM attempt_actor_user_id
+    OR NEW.endpoint IS DISTINCT FROM attempt_action THEN
+    RAISE EXCEPTION 'idempotency identity does not match its execution attempt'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_idempotency_identity ON execution_idempotency;
+CREATE TRIGGER trg_execution_idempotency_identity
+BEFORE INSERT OR UPDATE ON execution_idempotency
+FOR EACH ROW EXECUTE FUNCTION verify_execution_idempotency_identity();
+
 CREATE TABLE IF NOT EXISTS execution_outbox (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   execution_id uuid NOT NULL REFERENCES execution_jobs(id) ON DELETE RESTRICT,
