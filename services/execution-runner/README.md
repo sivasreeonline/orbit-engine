@@ -12,6 +12,12 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - Unit tests for health/readiness, request validation, strict JSON decoding and disabled execution.
 - Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
 
+## Protocol lifecycle
+
+- Protocol v1 is retained for strict legacy parsing and is permanently non-executable.
+- Protocol v2 has a separate strict request model and decoder. The control-plane producer, authenticated dispatch transport, artifact authorization, and sandbox enforcement are not yet integrated.
+- A valid v2 request is not evidence that execution is enabled or safe; the executor remains unconfigured and readiness remains unavailable.
+
 ## Explicit safety boundary
 - No endpoint accepts source code or starts a process.
 - No Docker, containerd, gVisor or host command is invoked.
