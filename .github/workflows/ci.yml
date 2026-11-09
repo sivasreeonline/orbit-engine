@@ -176,6 +176,19 @@ jobs:
           $block$;
           SQL
 
+      - name: Apply and re-apply proposed execution intake migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0003_execution_intake_foundation.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0003_execution_intake_foundation.sql
+
+      - name: Verify execution intake persistence invariants
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0003_execution_intake_foundation.sql
+
       - name: Worker deployment dry run
         run: npx wrangler deploy --dry-run
 
