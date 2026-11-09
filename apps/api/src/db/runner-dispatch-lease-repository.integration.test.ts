@@ -96,7 +96,7 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
           "LEFT JOIN runner_dispatch_receipts AS receipt ON receipt.dispatch_id = dispatch.id",
           "WHERE dispatch.id = $1::uuid",
           "GROUP BY dispatch.id",
-        ].join("\\n"),
+        ].join("\n"),
         [original.id],
       );
       expect(state.rows[0]).toEqual({
