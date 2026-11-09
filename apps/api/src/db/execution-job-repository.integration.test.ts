@@ -57,10 +57,10 @@ describe.skipIf(!databaseUrl)("PostgresExecutionJobRepository PostgreSQL integra
     });
     verifierConnections.push(verifier);
     await verifier.connect();
-    const state = await verifier.query<{ state: string; state_version: number }>(
+    const state = await verifier.query<{ state: string; state_version: string }>(
       "SELECT state, state_version FROM execution_jobs WHERE id = $1::uuid",
       [created.executionId],
     );
-    expect(state.rows[0]).toEqual({ state: "RUNNING", state_version: 4 });
+    expect(state.rows[0]).toEqual({ state: "RUNNING", state_version: "4" });
   }, 10_000);
 });
