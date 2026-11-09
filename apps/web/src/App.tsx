@@ -4,6 +4,7 @@ import EditorActions from "./components/EditorActions";
 import ExecutionOutput, { type OutputTab } from "./components/ExecutionOutput";
 import ProblemDetails from "./components/ProblemDetails";
 import ProblemGuide from "./components/ProblemGuide";
+import AmbientDonuts from "./components/AmbientDonuts";
 import { twoSumProblem, starterCode } from "./data/twoSumProblem";
 import { MockExecutionAdapter } from "./lib/execution/MockExecutionAdapter";
 import type { ExecutionAction, ExecutionFeedback } from "./lib/execution/ExecutionAdapter";
@@ -101,6 +102,7 @@ export default function App() {
 
   return (
     <div className="app-shell" data-theme={theme}>
+      {theme === "light" && <AmbientDonuts />}
       <header className="topbar">
         <a className="brand" href="/" aria-label="Sky High Coding Judge home">
           <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
