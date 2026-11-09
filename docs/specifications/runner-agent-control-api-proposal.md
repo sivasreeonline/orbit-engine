@@ -71,8 +71,7 @@ Request:
   "attemptId": "uuid",
   "protocolVersion": "v1",
   "leaseToken": "opaque-fencing-token",
-  "receiptId": "runner-generated-opaque-id",
-  "acceptedAt": "2026-11-09T12:00:00Z"
+  "receiptId": "runner-generated-opaque-id"
 }
 ```
 
@@ -81,7 +80,7 @@ Rules:
 - The API verifies dispatch ID, execution ID, attempt ID, protocol, runner identity, lease token and unexpired lease against PostgreSQL.
 - A successful receipt means the runner has durably recorded responsibility for the execution and can recover it after process restart. It does **not** mean compilation started, execution completed or the student received an accepted verdict.
 - Only after the receipt is durably persisted may the dispatch outbox transition to `DELIVERED`.
-- Repeating the same receipt must be idempotent. A conflicting receipt for the same dispatch must be rejected and audited.
+- The API computes the receipt hash from a canonical representation of validated receipt fields and records its own database receipt time; it must not trust a runner-supplied timestamp as authoritative. Repeating the same receipt must be idempotent. A conflicting receipt for the same dispatch must be rejected and audited.
 - A stale or expired lease must not be accepted merely because the runner still possesses its token.
 
 **Prototype progress:** migration 0005 and the dispatch lease repository now persist an immutable receipt record with unique dispatch identity, runner ID, receipt ID, receipt hash and server receipt time. Exact replays return the original outcome; conflicting receipts are rejected. This is database-level prototype evidence only: no HTTP receipt endpoint, machine identity or durable runner-side journal exists yet.
