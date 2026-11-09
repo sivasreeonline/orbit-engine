@@ -79,6 +79,7 @@ func TestDecodeExecutionRequestV2RejectsUnknownDuplicateAndNonCanonicalKeys(t *t
 	}{
 		{"unknown field", func(b []byte) []byte { return bytes.Replace(b, []byte("{"), []byte("{\"futureField\":true,"), 1) }},
 		{"duplicate key", func(b []byte) []byte { return bytes.Replace(b, []byte("\"protocolVersion\":\"v2\""), []byte("\"protocolVersion\":\"v2\",\"protocolVersion\":\"v2\""), 1) }},
+		{"escaped-equivalent duplicate", func(b []byte) []byte { return bytes.Replace(b, []byte("\"executionId\":\"exec_123\""), []byte("\"executionId\":\"exec_123\",\"execution\\u0049d\":\"attacker\""), 1) }},
 		{"case alias", func(b []byte) []byte { return bytes.Replace(b, []byte("\"executionId\""), []byte("\"ExecutionID\""), 1) }},
 		{"nested unknown", func(b []byte) []byte { return bytes.Replace(b, []byte("\"scratchBytes\":"), []byte("\"scratchUnknown\":1,\"scratchBytes\":"), 1) }},
 		{"nested duplicate", func(b []byte) []byte { return bytes.Replace(b, []byte("\"scratchBytes\":268435456"), []byte("\"scratchBytes\":268435456,\"scratchBytes\":1"), 1) }},
