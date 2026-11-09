@@ -80,7 +80,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
   });
 
   it("returns the existing intent for a duplicate delivery", async () => {
-    const fake = fakeClient({ inserted: [] });
+    const fake = fakeClient({ authoritative: [{\n      attempt_id: attemptId, job_state: "RUNNING", outbox_attempt_id: attemptId,\n      outbox_protocol_version: "v1", correlation_id: "corr-1",\n    }], inserted: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
     await expect(repository.record(envelope)).resolves.toEqual({
@@ -106,7 +106,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
   });
 
   it("rolls back a failed intent insert so the queue message can be retried", async () => {
-    const fake = fakeClient({ failInsert: true });
+    const fake = fakeClient({ existing: [], failInsert: true });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
     await expect(repository.record(envelope)).rejects.toThrow("database_unavailable");
