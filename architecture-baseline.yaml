@@ -16,8 +16,8 @@ stack:
   object_storage: Cloudflare R2
   async_queue: Cloudflare Queues
   runner_language: Go
-  runner_host: separately-hosted Linux
-  sandbox_candidate: gVisor runsc with OCI runtime
+  runner_host: Ubuntu Server 24.04 LTS x86_64 (M0 proof baseline; provider deferred)
+  sandbox_candidate: containerd 2.3 LTS + gVisor runsc systrap (M0 proof only)
   languages:
     - Java 25
     - Python 3.14
@@ -38,9 +38,9 @@ milestones:
   parallelism: M1-mock-adapter-development-while-M0-validates-runner
 
 open_decisions:
-  - linux-host-provider-and-architecture
-  - OCI-engine-selection
-  - gVisor-kernel-compatibility-and-overhead
+  - linux-host-provider-and-region
+  - gVisor-containerd-compatibility-and-overhead-proof
+  - runner-to-containerd-privilege-boundary
   - Neon-connectivity-from-runner
   - queue-pull-consumer-authentication
   - Durable-Object-live-status-need
