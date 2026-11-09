@@ -93,13 +93,16 @@ export class PostgresExecutionIntakeRepository {
       !/^[A-Za-z0-9._:-]{1,96}$/.test(command.correlationId) ||
       command.idempotencyKey.length < 1 ||
       command.idempotencyKey.length > 128 ||
-      command.sourceBytes.byteLength < 1 ||
-      command.sourceBytes.byteLength > 1_048_576
+      sourceBytes.byteLength < 1 ||
+      sourceBytes.byteLength > 1_048_576
     ) {
       throw new TypeError("Execution intake command is invalid");
     }
 
-    const sourceHash = await sha256Hex(command.sourceBytes);
+    // Snapshot caller-owned bytes before the first await so the digest and the
+    // persisted byte sequence cannot diverge if the caller mutates its buffer.
+    const sourceBytes = new Uint8Array(command.sourceBytes);
+    const sourceHash = await sha256Hex(sourceBytes);
     const connectionString = this.env.HYPERDRIVE?.connectionString;
     if (!connectionString) throw new ExecutionIntakeDatabaseError();
 
@@ -121,8 +124,8 @@ export class PostgresExecutionIntakeRepository {
           command.principal.tenantId,
           command.principal.userId,
           sourceHash,
-          command.sourceBytes.byteLength,
-          `\\x${Array.from(command.sourceBytes, (byte) =>
+          sourceBytes.byteLength,
+          `\\x${Array.from(sourceBytes, (byte) =>
             byte.toString(16).padStart(2, "0"),
           ).join("")}`,
         ],
