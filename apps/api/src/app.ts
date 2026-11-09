@@ -363,6 +363,8 @@ export function buildApiHandler(
 ) {
   return createApiHandler({
     ...dependencies,
-    allowedOrigins: env.CORS_ALLOWED_ORIGINS,
+    ...(env.CORS_ALLOWED_ORIGINS !== undefined
+      ? { allowedOrigins: env.CORS_ALLOWED_ORIGINS }
+      : {}),
   });
 }
