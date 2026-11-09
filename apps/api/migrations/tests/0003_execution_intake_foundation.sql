@@ -120,21 +120,21 @@ BEGIN
         'sourceCode', 'must-not-be-queued'
       )
     );
-  EXCEPTION WHEN unique_violation OR check_violation THEN
+  EXCEPTION WHEN check_violation THEN
     blocked := true;
   END;
   IF NOT blocked THEN
-    RAISE EXCEPTION 'Outbox accepted a payload containing source code or duplicate execution';
+    RAISE EXCEPTION 'Outbox accepted a payload containing source code';
   END IF;
 
   blocked := false;
   BEGIN
     INSERT INTO execution_jobs (attempt_id, state)
     VALUES (
-      attempt_id,
+      second_attempt_id,
       'COMPLETED'
     );
-  EXCEPTION WHEN unique_violation OR check_violation THEN
+  EXCEPTION WHEN check_violation THEN
     blocked := true;
   END;
   IF NOT blocked THEN
