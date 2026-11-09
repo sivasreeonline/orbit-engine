@@ -57,6 +57,33 @@ func TestDecodeExecutionRequestRejectsUnknownAndSensitiveFields(t *testing.T) {
 	}
 }
 
+func TestDecodeExecutionRequestRejectsDuplicateObjectKeys(t *testing.T) {
+	t.Parallel()
+
+	body := validRequestJSON(t)
+	duplicateTopLevel := bytes.Replace(
+		body,
+		[]byte(`"protocolVersion":"v1"`),
+		[]byte(`"protocolVersion":"v1","protocolVersion":"v1"`),
+		1,
+	)
+	_, err := DecodeExecutionRequest(bytes.NewReader(duplicateTopLevel))
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("top-level duplicate error = %v, want ErrInvalidJSON", err)
+	}
+
+	duplicateNested := bytes.Replace(
+		body,
+		[]byte(`"cpuQuotaMillis":1000`),
+		[]byte(`"cpuQuotaMillis":1000,"cpuQuotaMillis":2000`),
+		1,
+	)
+	_, err = DecodeExecutionRequest(bytes.NewReader(duplicateNested))
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("nested duplicate error = %v, want ErrInvalidJSON", err)
+	}
+}
+
 func TestDecodeExecutionRequestRejectsMalformedOrMultipleValues(t *testing.T) {
 	t.Parallel()
 
