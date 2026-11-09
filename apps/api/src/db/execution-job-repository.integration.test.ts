@@ -36,12 +36,14 @@ describe.skipIf(!databaseUrl)("PostgresExecutionJobRepository PostgreSQL integra
     expect(claimed).toHaveLength(1);
     expect(duplicate).toHaveLength(1);
     if (claimed[0]?.status !== "CLAIMED") throw new Error("expected_one_claim");
+    expect(claimed[0].lease.stateVersion).toBe("2");
 
     await new Promise((resolve) => setTimeout(resolve, 1_150));
     const reclaimed = await jobs.claim(created.executionId, "consumer-c", 30);
     expect(reclaimed.status).toBe("CLAIMED");
     if (reclaimed.status !== "CLAIMED") throw new Error("expected_expired_lease_reclaim");
     expect(reclaimed.lease.leaseToken).not.toBe(claimed[0].lease.leaseToken);
+    expect(reclaimed.lease.stateVersion).toBe("3");
 
     await expect(jobs.markRunning(
       created.executionId, claimed[0].lease.leaseOwner, claimed[0].lease.leaseToken,
