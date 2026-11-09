@@ -13,7 +13,7 @@
 | `source_snapshots` | Exact source bytes or private R2 object reference, SHA-256 and byte length | Immutable; tenant/actor-bound |
 | `execution_attempts` | Immutable Run/Submit evidence and pinned problem/runtime/source identity | Immutable; composite FK pins version to problem |
 | `execution_jobs` | Mutable orchestration state, retry counter and lease | One job per attempt; explicit state/lease constraints |
-| `execution_idempotency` | Scoped idempotency reservation and request hash | Unique tenant + actor + endpoint + key |
+| `execution_idempotency` | Scoped idempotency reservation and request hash | Unique tenant + actor + endpoint + key; trigger binds tenant, actor and endpoint to the referenced attempt |
 | `execution_outbox` | Durable queue publication intent | One event per execution; bounded metadata-only payload |
 
 ## Transaction boundary intended for the future API
@@ -44,7 +44,7 @@ The exact ordering of idempotency reservation versus attempt insertion, conflict
 
 The API CI applies the migration twice to a disposable PostgreSQL database and runs SQL acceptance checks for:
 - source snapshot and attempt immutability;
-- scoped idempotency uniqueness;
+- scoped idempotency uniqueness and trigger-enforced tenant, actor and Run/Submit action consistency with the referenced attempt;
 - rejection of source code in outbox payloads;
 - terminal job completion timestamp consistency.
 
