@@ -116,6 +116,40 @@ func TestDecodeExecutionRequestRejectsNonCanonicalFieldCasing(t *testing.T) {
 	}
 }
 
+
+func TestDecodeExecutionRequestRejectsCaseFoldedAliasPairs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		from string
+		to   string
+	}{
+		{
+			name: "top-level execution id aliases",
+			from: `"executionId":"exec_123"`,
+			to:   `"executionId":"exec_123","ExecutionID":"attacker"`,
+		},
+		{
+			name: "nested memory limit aliases",
+			from: `"memoryBytes":134217728`,
+			to:   `"memoryBytes":134217728,"MemoryBytes":1`,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			body := bytes.Replace(validRequestJSON(t), []byte(test.from), []byte(test.to), 1)
+			_, err := DecodeExecutionRequest(bytes.NewReader(body))
+			if !errors.Is(err, ErrInvalidJSON) {
+				t.Fatalf("error = %v, want ErrInvalidJSON", err)
+			}
+		})
+	}
+}
+
 func TestDecodeExecutionRequestRejectsMalformedOrMultipleValues(t *testing.T) {
 	t.Parallel()
 
