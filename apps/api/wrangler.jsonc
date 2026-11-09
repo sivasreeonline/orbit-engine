@@ -8,6 +8,23 @@
   "observability": {
     "enabled": true
   },
+  "vars": {
+    "OUTBOX_BATCH_SIZE": "10",
+    "OUTBOX_LEASE_SECONDS": "120",
+    "OUTBOX_RETRY_BASE_MS": "5000",
+    "OUTBOX_RETRY_MAX_MS": "300000"
+  },
+  "triggers": {
+    "crons": ["*/1 * * * *"]
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "EXECUTION_QUEUE",
+        "queue": "sky-high-execution-requests"
+      }
+    ]
+  },
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
