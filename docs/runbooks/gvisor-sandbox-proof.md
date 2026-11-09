@@ -34,6 +34,10 @@ The harness creates a disposable container and inspects its effective Docker con
 
 The container is created with --rm semantics implemented by an explicit cleanup trap; cleanup is attempted on normal exit and interruption.
 
+## Adversarial verification plan
+
+Use the [gVisor adversarial test matrix](gvisor-adversarial-test-matrix.md) to track each required M0 security test. Every case remains not run until evidence is recorded; partial smoke coverage is identified explicitly.
+
 ## What this proof does not establish
 
 A passing run is only a smoke-test result. It does not establish:
