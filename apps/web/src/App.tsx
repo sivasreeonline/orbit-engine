@@ -170,7 +170,6 @@ export default function App() {
           <div className="heading-meta">
             <span className="difficulty-badge"><span className="difficulty-dot" />{twoSumProblem.difficulty}</span>
             {twoSumProblem.tags.map((tag) => <span className="topic-chip" key={tag}>{tag}</span>)}
-            <span className="sample-count"><span className="sample-count-icon">▦</span>{twoSumProblem.examples.length} sample cases</span>
           </div>
         </section>
 
