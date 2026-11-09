@@ -66,17 +66,39 @@ DECLARE
   snapshot_tenant_id uuid;
   snapshot_actor_user_id uuid;
   snapshot_sha256 char(64);
+  problem_tenant_id uuid;
+  problem_lifecycle_status varchar(16);
+  version_published_at timestamptz;
 BEGIN
-  SELECT tenant_id, actor_user_id, sha256
-    INTO snapshot_tenant_id, snapshot_actor_user_id, snapshot_sha256
-  FROM source_snapshots
-  WHERE id = NEW.source_snapshot_id;
+  SELECT
+    ss.tenant_id,
+    ss.actor_user_id,
+    ss.sha256,
+    p.tenant_id,
+    p.lifecycle_status,
+    pv.published_at
+  INTO
+    snapshot_tenant_id,
+    snapshot_actor_user_id,
+    snapshot_sha256,
+    problem_tenant_id,
+    problem_lifecycle_status,
+    version_published_at
+  FROM source_snapshots AS ss
+  INNER JOIN problems AS p ON p.id = NEW.problem_id
+  INNER JOIN problem_versions AS pv
+    ON pv.id = NEW.problem_version_id
+   AND pv.problem_id = p.id
+  WHERE ss.id = NEW.source_snapshot_id;
 
   IF NOT FOUND
     OR snapshot_tenant_id IS DISTINCT FROM NEW.tenant_id
     OR snapshot_actor_user_id IS DISTINCT FROM NEW.actor_user_id
-    OR snapshot_sha256 IS DISTINCT FROM NEW.source_sha256 THEN
-    RAISE EXCEPTION 'execution attempt does not match its source snapshot'
+    OR snapshot_sha256 IS DISTINCT FROM NEW.source_sha256
+    OR (problem_tenant_id IS NOT NULL AND problem_tenant_id IS DISTINCT FROM NEW.tenant_id)
+    OR problem_lifecycle_status IS DISTINCT FROM 'PUBLISHED'
+    OR version_published_at IS NULL THEN
+    RAISE EXCEPTION 'execution attempt identity, problem scope or source snapshot is invalid'
       USING ERRCODE = '23514';
   END IF;
 
