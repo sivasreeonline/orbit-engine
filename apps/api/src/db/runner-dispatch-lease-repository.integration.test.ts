@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionIntakeRepository } from "./execution-intake-repository";
 import { PostgresRunnerDispatchHandoffRepository } from "./runner-dispatch-handoff-repository";
@@ -48,7 +49,7 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
       reclaimed[0]!.id, "dispatcher-c", reclaimed[0]!.leaseToken,
     )).resolves.toBe(true);
 
-    const verifier = new (await import("pg")).Client({
+    const verifier = new Client({
       connectionString: databaseUrl,
       connectionTimeoutMillis: 5_000,
       application_name: "sky-high-runner-dispatch-lease-integration-test",
