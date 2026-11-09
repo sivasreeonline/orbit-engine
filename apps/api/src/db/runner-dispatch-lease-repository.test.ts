@@ -28,6 +28,10 @@ const executionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
 const attemptId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
 const token = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
 const receiptHash = "a".repeat(64);
+const activeLease = {
+  delivery_state: "PENDING", lease_owner: "runner-1",
+  lease_token: token, lease_active: true,
+};
 
 describe("PostgresRunnerDispatchLeaseRepository", () => {
   it("claims bounded pending work with SKIP LOCKED and a fresh fencing token", async () => {
@@ -51,7 +55,9 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
   });
 
   it("persists receipt and marks delivered in one fenced transaction", async () => {
-    const fake = fakeClient([[], [], [], [], [{ id: dispatchId }], [], [{ id: dispatchId }], []]);
+    const fake = fakeClient([
+      [], [], [activeLease], [], [], [], [{ id: dispatchId }], [],
+    ]);
     const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => fake.client);
     await expect(repository.recordReceipt(
       dispatchId, "runner-1", token, "receipt-001", receiptHash,
@@ -64,36 +70,50 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     expect(fake.ended()).toBe(true);
   });
 
-  it("returns the prior result for an exact receipt replay", async () => {
+  it("returns the prior result for an exact receipt replay after delivery", async () => {
     const fake = fakeClient([
-      [], [], [{
+      [],
+      [],
+      [{ delivery_state: "DELIVERED", lease_owner: null, lease_token: null, lease_active: false }],
+      [{
         dispatch_id: dispatchId, runner_id: "runner-1",
         receipt_id: "receipt-001", receipt_hash: receiptHash,
-      }], [],
+      }],
+      [],
     ]);
     const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => fake.client);
     await expect(repository.recordReceipt(
       dispatchId, "runner-1", token, "receipt-001", receiptHash,
     )).resolves.toEqual({ status: "DUPLICATE" });
-    expect(fake.calls[3]?.text).toBe("COMMIT");
+    expect(fake.calls[4]?.text).toBe("COMMIT");
   });
 
   it("rejects a conflicting receipt for an already receipted dispatch", async () => {
     const fake = fakeClient([
-      [], [], [{
+      [],
+      [],
+      [{ delivery_state: "DELIVERED", lease_owner: null, lease_token: null, lease_active: false }],
+      [{
         dispatch_id: dispatchId, runner_id: "runner-1",
         receipt_id: "receipt-original", receipt_hash: receiptHash,
-      }], [],
+      }],
+      [],
     ]);
     const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => fake.client);
     await expect(repository.recordReceipt(
       dispatchId, "runner-1", token, "receipt-other", receiptHash,
     )).rejects.toBeInstanceOf(RunnerDispatchReceiptConflictError);
-    expect(fake.calls[3]?.text).toBe("ROLLBACK");
+    expect(fake.calls[4]?.text).toBe("ROLLBACK");
   });
 
   it("rejects stale workers before writing a receipt", async () => {
-    const fake = fakeClient([[], [], [], [], []]);
+    const fake = fakeClient([
+      [],
+      [],
+      [{ delivery_state: "PENDING", lease_owner: "runner-new", lease_token: token, lease_active: true }],
+      [],
+      [],
+    ]);
     const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => fake.client);
     await expect(repository.recordReceipt(
       dispatchId, "runner-old", token, "receipt-old", receiptHash,
