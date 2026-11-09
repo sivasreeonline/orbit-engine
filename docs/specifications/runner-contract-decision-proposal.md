@@ -187,4 +187,4 @@ The baseline above is selected. The following are concrete facts that must be es
 
 ## Non-goals
 
-This proposal does not implement protocol v2, select an identity provider or transport, choose actual production quota numbers, define the result DTO, enable a queue consumer, retrieve artifacts, launch gVisor, or execute student code.
+This proposal does not implement protocol v2, configure or prove the selected Cloudflare Access/Tunnel topology, create the runtime registry or signing workflow, define the result DTO, enable a queue consumer, retrieve artifacts, launch gVisor, or execute student code. The selected scratch quotas are policy ceilings/defaults; measured per-action values must still be configured below those ceilings.
