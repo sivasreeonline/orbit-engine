@@ -7,10 +7,16 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 ## Current capabilities
 - Loopback-only HTTP health endpoint: `GET /healthz`.
 - Readiness endpoint returns HTTP 503 until a sandbox executor is configured.
-- Versioned internal execution request types, strict structural validation and a bounded JSON decoder that rejects unknown fields, duplicate object keys and trailing values.
+- Separate strict protocol v1 (legacy/non-executable) and v2 request models; v2 validates immutable runtime digests, exact-byte comparison, absolute deadlines, cancellation references, and hard scratch quota ceilings. Both decoders reject unknown fields, duplicate object keys and trailing values.
 - An executor interface with a safe unconfigured implementation.
 - Unit tests for health/readiness, request validation, strict JSON decoding and disabled execution.
 - Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
+
+## Protocol lifecycle
+
+- Protocol v1 is retained for strict legacy parsing and is permanently non-executable.
+- Protocol v2 has a separate strict request model and decoder. The control-plane producer, authenticated dispatch transport, artifact authorization, and sandbox enforcement are not yet integrated.
+- A valid v2 request is not evidence that execution is enabled or safe; the executor remains unconfigured and readiness remains unavailable.
 
 ## Explicit safety boundary
 - No endpoint accepts source code or starts a process.
@@ -19,7 +25,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - The HTTP server refuses non-loopback bind addresses until an authenticated private transport is implemented.
 - Student source code is referenced by an opaque artifact ID and SHA-256 digest; it is not included in the runner request body.
 - The decoder caps request bodies at 64 KiB and rejects unrecognized fields, including sourceCode, hiddenTests, expectedOutput and credentials.
-- The strict decoder is a tested protocol utility only; no HTTP execution endpoint is registered.
+- The strict decoders are tested protocol utilities only; no HTTP execution endpoint is registered and no request version can execute student code.
 - This skeleton must not be deployed as a production runner.
 
 ## Local development

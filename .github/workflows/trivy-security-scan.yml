@@ -2,7 +2,7 @@ name: Trivy dependency and container scan
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, docs/runner-contract-decision-proposal]
     paths:
       - "apps/web/package.json"
       - "apps/web/package-lock.json"

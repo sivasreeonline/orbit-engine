@@ -1,0 +1,14 @@
+title = "Orbit Engine Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic idempotency key used only by the API repository unit test"
+condition = "AND"
+paths = [
+  '''apps/api/src/db/execution-intake-repository\.test\.ts''',
+]
+regexes = [
+  '''^idempotency-key-001$''',
+]
