@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "apps/web/**"
+      - "apps/api/**"
       - "docs/**"
       - ".github/workflows/**"
       - "AGENTS.md"
@@ -13,6 +14,7 @@ on:
     branches: [main, "feat/**", "fix/**"]
     paths:
       - "apps/web/**"
+      - "apps/api/**"
       - "docs/**"
       - ".github/workflows/**"
       - "AGENTS.md"
@@ -53,6 +55,129 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+  api:
+    name: API typecheck, tests, migrations and dry-run deploy
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: sky_high_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sky_high_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # apps/api is still using exact direct dependency versions but does not
+      # yet have its generated lockfile. Replace npm install with npm ci once
+      # package-lock.json is generated and committed.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Apply problem catalog migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0001_problem_catalog.sql
+
+      - name: Seed and re-apply Two Sum migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0002_seed_two_sum.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0001_problem_catalog.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0002_seed_two_sum.sql
+
+      - name: Verify public fixtures and published immutability
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $block$
+          DECLARE
+            version_id uuid := 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
+            public_count integer;
+            hidden_count integer;
+            blocked boolean := false;
+          BEGIN
+            SELECT count(*) INTO public_count
+            FROM public_problem_test_cases
+            WHERE problem_version_id = version_id;
+
+            SELECT count(*) INTO hidden_count
+            FROM problem_test_cases
+            WHERE problem_version_id = version_id
+              AND visibility = 'HIDDEN';
+
+            IF public_count <> 2 OR hidden_count <> 2 THEN
+              RAISE EXCEPTION 'Expected two public and two hidden fixtures; got public %, hidden %',
+                public_count, hidden_count;
+            END IF;
+
+            BEGIN
+              UPDATE problem_versions
+              SET title = 'Mutation must be rejected'
+              WHERE id = version_id;
+            EXCEPTION WHEN SQLSTATE '55000' THEN
+              blocked := true;
+            END;
+
+            IF NOT blocked THEN
+              RAISE EXCEPTION 'Published problem version mutation was not rejected';
+            END IF;
+
+            blocked := false;
+            BEGIN
+              INSERT INTO problem_test_cases (
+                problem_version_id, sequence, input_data, expected_output, visibility
+              ) VALUES (
+                version_id, 999, convert_to('1 2', 'UTF8'),
+                convert_to('0 1', 'UTF8'), 'PUBLIC'
+              );
+            EXCEPTION WHEN SQLSTATE '55000' THEN
+              blocked := true;
+            END;
+
+            IF NOT blocked THEN
+              RAISE EXCEPTION 'Test fixture insertion into a published version was not rejected';
+            END IF;
+          END
+          $block$;
+          SQL
+
+      - name: Worker deployment dry run
+        run: npx wrangler deploy --dry-run
 
       - name: Dependency audit
         run: npm audit --audit-level=high
