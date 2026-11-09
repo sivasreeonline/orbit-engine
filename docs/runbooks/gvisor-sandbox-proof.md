@@ -28,6 +28,7 @@ The harness creates a disposable container and inspects its effective Docker con
 - Read-only root filesystem.
 - Writable /tmp tmpfs limited to 16 MiB with noexec,nosuid.
 - Memory limit 128 MiB, CPU quota 0.5 CPU, and PID limit 64.
+- `/tmp` tmpfs mount options exactly `rw,noexec,nosuid,size=16m`, verified from Docker's effective container configuration.
 - All Linux capabilities dropped and no-new-privileges enabled.
 - A failed write to the root filesystem, a successful scratch write, and failed outbound requests to both a direct IP and a DNS hostname.
 
