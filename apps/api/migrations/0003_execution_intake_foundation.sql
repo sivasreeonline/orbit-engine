@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS execution_attempts (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT execution_attempt_problem_version_fk
     FOREIGN KEY (problem_version_id, problem_id)
-    REFERENCES problem_versions(id, problem_id) ON DELETE RESTRICT,
+    REFERENCES problem_versions(id, problem_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_execution_attempts_tenant_actor_created
