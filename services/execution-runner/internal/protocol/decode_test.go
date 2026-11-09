@@ -88,8 +88,8 @@ func TestDecodeExecutionRequestRejectsNonCanonicalFieldCasing(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		canonical     string
+		name         string
+		canonical    string
 		nonCanonical string
 	}{
 		{name: "top-level execution id", canonical: `"executionId"`, nonCanonical: `"ExecutionID"`},
