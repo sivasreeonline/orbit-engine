@@ -1,0 +1,26 @@
+{
+  "protocolVersion": "v2",
+  "correlationId": "7d4c8a20-3e19-4b2c-9f10-8a7b6c5d4e3f",
+  "executionId": "exec_123",
+  "attemptId": "attempt_123",
+  "problemVersionId": "problem_v1",
+  "action": "RUN",
+  "language": "java",
+  "runtimeVersion": "25",
+  "runtimeImageDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sourceArtifactId": "artifact_123",
+  "sourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "testBundleId": "bundle_123",
+  "comparisonPolicy": "EXACT_BYTES",
+  "deadlineAt": "2026-11-09T17:05:00Z",
+  "cancellationRef": "cxl_0123456789abcdef0123456789abcdef",
+  "limits": {
+    "cpuQuotaMillis": 1000,
+    "memoryBytes": 134217728,
+    "wallTimeMillis": 5000,
+    "processLimit": 64,
+    "outputBytes": 1048576,
+    "scratchBytes": 268435456,
+    "scratchInodes": 4096
+  }
+}
