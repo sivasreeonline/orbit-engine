@@ -15,13 +15,13 @@ var v2TestNow = time.Date(2026, 11, 9, 17, 0, 0, 0, time.UTC)
 func validRequestV2() ExecutionRequestV2 {
 	return ExecutionRequestV2{
 		ProtocolVersion: ProtocolVersionV2,
-		CorrelationID: "7d4c8a20-3e19-4b2c-9f10-8a7b6c5d4e3f",
-		ExecutionID: "exec_123", AttemptID: "attempt_123", ProblemVersionID: "problem_v1",
+		CorrelationID:   "7d4c8a20-3e19-4b2c-9f10-8a7b6c5d4e3f",
+		ExecutionID:     "exec_123", AttemptID: "attempt_123", ProblemVersionID: "problem_v1",
 		Action: ActionRun, Language: LanguageJava, RuntimeVersion: "25",
 		RuntimeImageDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		SourceArtifactID: "artifact_123", SourceSHA256: strings.Repeat("b", 64),
+		SourceArtifactID:   "artifact_123", SourceSHA256: strings.Repeat("b", 64),
 		TestBundleID: "bundle_123", ComparisonPolicy: ComparisonExactBytes,
-		DeadlineAt: "2026-11-09T17:05:00Z",
+		DeadlineAt:      "2026-11-09T17:05:00Z",
 		CancellationRef: "cxl_0123456789abcdef0123456789abcdef",
 		Limits: ResourceLimitsV2{
 			CPUQuotaMillis: 1000, MemoryBytes: 128 * 1024 * 1024,
@@ -68,11 +68,21 @@ func TestDecodeExecutionRequestV2RejectsUnknownDuplicateAndNonCanonicalKeys(t *t
 		mutate func([]byte) []byte
 	}{
 		{"unknown field", func(b []byte) []byte { return bytes.Replace(b, []byte("{"), []byte("{\"futureField\":true,"), 1) }},
-		{"duplicate key", func(b []byte) []byte { return bytes.Replace(b, []byte("\"protocolVersion\":\"v2\""), []byte("\"protocolVersion\":\"v2\",\"protocolVersion\":\"v2\""), 1) }},
-		{"escaped-equivalent duplicate", func(b []byte) []byte { return bytes.Replace(b, []byte("\"executionId\":\"exec_123\""), []byte("\"executionId\":\"exec_123\",\"execution\\u0049d\":\"attacker\""), 1) }},
-		{"case alias", func(b []byte) []byte { return bytes.Replace(b, []byte("\"executionId\""), []byte("\"ExecutionID\""), 1) }},
-		{"nested unknown", func(b []byte) []byte { return bytes.Replace(b, []byte("\"scratchBytes\":"), []byte("\"scratchUnknown\":1,\"scratchBytes\":"), 1) }},
-		{"nested duplicate", func(b []byte) []byte { return bytes.Replace(b, []byte("\"scratchBytes\":268435456"), []byte("\"scratchBytes\":268435456,\"scratchBytes\":1"), 1) }},
+		{"duplicate key", func(b []byte) []byte {
+			return bytes.Replace(b, []byte("\"protocolVersion\":\"v2\""), []byte("\"protocolVersion\":\"v2\",\"protocolVersion\":\"v2\""), 1)
+		}},
+		{"escaped-equivalent duplicate", func(b []byte) []byte {
+			return bytes.Replace(b, []byte("\"executionId\":\"exec_123\""), []byte("\"executionId\":\"exec_123\",\"execution\\u0049d\":\"attacker\""), 1)
+		}},
+		{"case alias", func(b []byte) []byte {
+			return bytes.Replace(b, []byte("\"executionId\""), []byte("\"ExecutionID\""), 1)
+		}},
+		{"nested unknown", func(b []byte) []byte {
+			return bytes.Replace(b, []byte("\"scratchBytes\":"), []byte("\"scratchUnknown\":1,\"scratchBytes\":"), 1)
+		}},
+		{"nested duplicate", func(b []byte) []byte {
+			return bytes.Replace(b, []byte("\"scratchBytes\":268435456"), []byte("\"scratchBytes\":268435456,\"scratchBytes\":1"), 1)
+		}},
 	}
 	for _, test := range tests {
 		test := test
