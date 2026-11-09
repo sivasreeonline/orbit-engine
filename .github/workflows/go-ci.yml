@@ -1,0 +1,56 @@
+name: Go Runner CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "services/execution-runner/**"
+      - ".github/workflows/go-ci.yml"
+      - "AGENTS.md"
+  push:
+    branches: [main, "feat/**", "fix/**"]
+    paths:
+      - "services/execution-runner/**"
+      - ".github/workflows/go-ci.yml"
+      - "AGENTS.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runner-contract:
+    name: Go format, vet and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/execution-runner
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.27.3"
+          cache: true
+          cache-dependency-path: services/execution-runner/go.mod
+
+      - name: Check formatting
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "The following Go files need gofmt:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test -race -cover ./...
