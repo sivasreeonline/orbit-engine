@@ -14,6 +14,14 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
     const intake = new PostgresExecutionIntakeRepository(databaseUrl);
     const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
     const leases = new PostgresRunnerDispatchLeaseRepository(databaseUrl);
+
+    // The disposable CI database also contains the SQL-acceptance and handoff
+    // integration fixtures. Retire their pending intents so this test owns one row.
+    const leftovers = await leases.claimBatch("integration-cleanup", 100, 60);
+    await Promise.all(leftovers.map((lease) =>
+      leases.markDeadLetter(lease.id, "integration-cleanup", lease.leaseToken),
+    ));
+
     const created = await intake.create({
       principal: { tenantId, userId: actorId, roles: ["STUDENT"] },
       action: "RUN",
