@@ -116,7 +116,6 @@ func TestDecodeExecutionRequestRejectsNonCanonicalFieldCasing(t *testing.T) {
 	}
 }
 
-
 func TestDecodeExecutionRequestRejectsCaseFoldedAliasPairs(t *testing.T) {
 	t.Parallel()
 
