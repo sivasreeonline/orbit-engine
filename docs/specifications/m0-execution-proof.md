@@ -6,6 +6,7 @@
 - Adversarial fixture IDs and expected host-side assertions: `m0-adversarial-fixture-contract.md`.
 - Host supervisor boundary, lifecycle state machine, and recovery design: `m0-runtime-proof-harness-design.md`.
 - Structured evidence manifest: `../schemas/m0-proof-evidence.schema.json`.
+- Independent security review packet: `../security/m0-sandbox-security-review-packet.md`.
 
 These are design and review artifacts only. They do not authorize sandbox launch, student execution, cloud provisioning, or executor activation.
 
