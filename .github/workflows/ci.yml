@@ -202,6 +202,19 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0004_runner_dispatch_outbox.sql
 
+      - name: Apply and re-apply runner dispatch receipt migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0005_runner_dispatch_receipts.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0005_runner_dispatch_receipts.sql
+
+      - name: Verify immutable runner dispatch receipts
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0005_runner_dispatch_receipts.sql
+
       - name: Verify concurrent execution intake against PostgreSQL
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
@@ -223,6 +236,11 @@ jobs:
         run: npx vitest run src/db/runner-dispatch-handoff-repository.integration.test.ts
 
       - name: Verify fenced runner dispatch leases against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-dispatch-lease-repository.integration.test.ts
+
+      - name: Verify durable runner dispatch receipts against PostgreSQL
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/runner-dispatch-lease-repository.integration.test.ts
