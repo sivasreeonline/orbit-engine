@@ -36,4 +36,4 @@ The queue itself is an external Cloudflare resource and has not been created by 
 - Production secrets, account IDs, queue IDs or Hyperdrive IDs.
 - Proof of production delivery throughput or exactly-once delivery.
 
-The next slice is a queue consumer that validates the small metadata envelope, claims the authoritative execution job in PostgreSQL, and safely handles duplicate deliveries. It must not execute student source in the Worker.
+The next slice is a reviewed consumer design, not an automatic Worker consumer implementation. See [Runner Transport Evaluation](../architecture/runner-transport-evaluation.md): Cloudflare documents HTTP pull consumers for external infrastructure, but the required account Queues read/write API token must be scope-reviewed and isolated before a Linux agent is allowed to use it. Any consumer must validate the small metadata envelope, commit the authoritative PostgreSQL handoff intent before acknowledging the queue message, and handle duplicate delivery idempotently. Student source must never be executed in the Worker or in the privileged queue-pull process.
