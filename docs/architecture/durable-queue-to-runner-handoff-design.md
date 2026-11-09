@@ -56,7 +56,7 @@ Queue acknowledgement must never be used as a substitute for durable runner acce
 
 ## Proposed dispatch-intent record
 
-A future migration may add a dedicated `runner_dispatch_outbox` table. Candidate fields:
+The PR #36 branch now contains a prototype migration for the dedicated `runner_dispatch_outbox` table. The table is still an unmerged proposal and must not be applied to production. Its current fields are:
 
 - `id` UUID primary key.
 - `execution_id` UUID unique and FK to `execution_jobs`.
@@ -71,9 +71,9 @@ The insert must be idempotent by execution ID. A database trigger or transaction
 
 ## Linux runner boundary
 
-Cloudflare Queues is accepted for API-to-consumer dispatch; it does not by itself define the network path from Cloudflare to the Linux runner. Do not assume that the runner can consume the Cloudflare queue directly, nor introduce RabbitMQ or a public unauthenticated callback as an implementation shortcut.
+Cloudflare Queues is accepted for API-to-consumer dispatch. Cloudflare also documents a native HTTP pull-consumer mode for external infrastructure. An evidence-backed comparison of native Queue pull, authenticated control-plane API pull, and Workers VPC/Tunnel dispatch is in [Runner Transport Evaluation](runner-transport-evaluation.md). The evaluation recommends testing native Queue HTTP pull first, subject to verifying and containing the scope of its required account Queues read/write API token. This is a preferred prototype direction only; no transport is selected or approved for production.
 
-A separate decision is required for the runner transport and connectivity model. Candidates to evaluate include an authenticated outbound pull/long-poll agent or a private authenticated dispatch endpoint. Whichever is selected must define:
+Do not introduce RabbitMQ or a public unauthenticated callback as an implementation shortcut. Whichever transport is eventually selected must define:
 
 - Service identity and mutual authentication / credential rotation.
 - Network allow-listing and replay protection.
@@ -83,7 +83,7 @@ A separate decision is required for the runner transport and connectivity model.
 - How the runner retrieves source artifacts and authorized test bundles without exposing hidden tests to the API/queue/browser.
 - How result callbacks are authenticated and fenced against stale attempts.
 
-The runner request must be constructed from trusted database policy and artifact metadata, not from student-controlled queue fields. The queue envelope must not contain source code or hidden test material.
+The runner request must be constructed from trusted database policy and artifact metadata, not from student-controlled queue fields. The queue envelope must not contain source code or hidden test material. The proposed machine-to-machine claim/receipt API, service-identity requirements, dispatch-vs-execution lease separation and receipt-schema gap are documented in [Runner Agent Control API Proposal](../specifications/runner-agent-control-api-proposal.md); that proposal is non-normative and adds no routes.
 
 ## Observability and operations
 
@@ -108,19 +108,20 @@ Provide operator-visible counts and oldest-age metrics for pending dispatch inte
 
 ## Decisions still required
 
-1. Select and threat-model the Cloudflare-to-Linux runner transport and network topology.
-2. Approve the normative request/result contracts and complete job state machine.
-3. Define dispatch lease duration, retry classification, backoff, dead-letter threshold and operator replay policy.
-4. Define runner receipt semantics, deduplication retention and crash recovery for a runner that has accepted but not completed an execution.
-5. Define artifact retrieval authorization, R2 object lifecycle, encryption, retention and deletion.
-6. Approve database roles/grants and migration/rollback strategy for the new dispatch table.
-7. Define cancellation and stale `RUNNING` job recovery before enabling execution.
+1. Select and threat-model the Cloudflare-to-Linux runner transport and network topology, including late Queue acknowledgements and token-scope verification.
+2. Select machine identity and approve the runner claim/receipt API and durable receipt schema.
+3. Approve the normative request/result contracts and complete job state machine.
+4. Define dispatch lease duration, retry classification, backoff, dead-letter threshold and operator replay policy.
+5. Define runner receipt semantics, deduplication retention and crash recovery for a runner that has accepted but not completed an execution.
+6. Define artifact retrieval authorization, R2 object lifecycle, encryption, retention and deletion.
+7. Approve database roles/grants and migration/rollback strategy for the new dispatch table.
+8. Define cancellation and stale `RUNNING` job recovery before enabling execution.
 
 ## Explicit non-goals and safety gates
 
-- This proposal does not implement or register a Cloudflare Queue consumer.
-- It does not add a dispatch table or migration.
-- It does not select a Linux runner transport.
+- The PR #36 branch contains a dispatch-intent migration and repository/lease prototypes, but no Cloudflare Queue consumer is registered.
+- The dispatch table and code remain unmerged prototypes and are not production schema.
+- The transport evaluation is a proposal; no Linux runner transport is selected or deployed.
 - It does not enable runner HTTP endpoints, artifact retrieval or student-code execution.
 - It does not change `UnconfiguredExecutor`; execution remains fail-closed.
 - It does not satisfy the gVisor M0 evidence gate. No sandbox approval or production-readiness claim is made.
