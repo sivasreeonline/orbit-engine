@@ -42,6 +42,7 @@ jobs:
 
       - name: Check formatting
         run: |
+          gofmt -d .
           files="$(gofmt -l .)"
           if [ -n "$files" ]; then
             echo "The following Go files need gofmt:"
