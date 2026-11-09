@@ -151,7 +151,9 @@ func isCanonicalUUID(value string) bool {
 			}
 		default:
 			if !((character >= '0' && character <= '9') ||
-				(character >= 'a' && character <= 'f')) { return false }
+				(character >= 'a' && character <= 'f')) {
+				return false
+			}
 		}
 	}
 	return true
