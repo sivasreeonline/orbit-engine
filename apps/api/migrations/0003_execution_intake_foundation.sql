@@ -60,7 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_execution_attempts_problem_version
 CREATE OR REPLACE FUNCTION verify_execution_attempt_snapshot()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $function$
 DECLARE
   snapshot_tenant_id uuid;
   snapshot_actor_user_id uuid;
@@ -81,7 +81,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$;
+$function$;
 
 DROP TRIGGER IF EXISTS trg_execution_attempt_snapshot_consistency ON execution_attempts;
 CREATE TRIGGER trg_execution_attempt_snapshot_consistency
@@ -189,7 +189,7 @@ CREATE TABLE IF NOT EXISTS execution_outbox (
 CREATE OR REPLACE FUNCTION verify_execution_outbox_identity()
 RETURNS trigger
 LANGUAGE plpgsql
-AS $
+AS $function$
 DECLARE
   expected_attempt_id uuid;
 BEGIN
@@ -205,7 +205,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$;
+$function$;
 
 DROP TRIGGER IF EXISTS trg_execution_outbox_identity ON execution_outbox;
 CREATE TRIGGER trg_execution_outbox_identity
