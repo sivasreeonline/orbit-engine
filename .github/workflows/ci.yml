@@ -124,7 +124,7 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 <<'SQL'
-          DO $
+          DO $block$
           DECLARE
             version_id uuid := 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
             public_count integer;
@@ -173,7 +173,7 @@ jobs:
               RAISE EXCEPTION 'Test fixture insertion into a published version was not rejected';
             END IF;
           END
-          $;
+          $block$;
           SQL
 
       - name: Worker deployment dry run
