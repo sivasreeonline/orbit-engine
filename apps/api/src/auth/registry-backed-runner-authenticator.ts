@@ -37,6 +37,24 @@ export interface RunnerIdentityResolver {
   ): Promise<RunnerPrincipal | null>;
 }
 
+function isVerificationResult(
+  value: unknown,
+): value is RunnerCredentialVerificationResult {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.verified === false) {
+    return candidate.reason === "missing" ||
+      candidate.reason === "invalid" ||
+      candidate.reason === "provider_unavailable";
+  }
+  if (candidate.verified !== true ||
+      typeof candidate.identity !== "object" ||
+      candidate.identity === null) return false;
+  const identity = candidate.identity as Record<string, unknown>;
+  return typeof identity.issuer === "string" &&
+    typeof identity.subject === "string";
+}
+
 /**
  * Composes provider credential verification with the trusted runner registry.
  * The provider verifier must validate the credential before returning issuer
@@ -49,13 +67,16 @@ export class RegistryBackedRunnerAuthenticator implements RunnerAuthenticator {
   ) {}
 
   async authenticate(request: Request): Promise<RunnerAuthenticationResult> {
-    let verification: RunnerCredentialVerificationResult;
+    let verification: unknown;
     try {
       verification = await this.verifier.verify(request);
     } catch {
       return { authenticated: false, reason: "provider_unavailable" };
     }
 
+    if (!isVerificationResult(verification)) {
+      return { authenticated: false, reason: "provider_unavailable" };
+    }
     if (!verification.verified) {
       return {
         authenticated: false,
@@ -65,11 +86,9 @@ export class RegistryBackedRunnerAuthenticator implements RunnerAuthenticator {
 
     const { issuer, subject } = verification.identity;
     if (
-      typeof issuer !== "string" ||
       issuer.length < 1 ||
       issuer.length > 512 ||
       issuer !== issuer.trim() ||
-      typeof subject !== "string" ||
       subject.length < 1 ||
       subject.length > 512 ||
       subject !== subject.trim()
