@@ -72,5 +72,6 @@ grep -q 'no-new-privileges' <<< "$security_opt" || { echo "FAIL: no-new-privileg
 
 echo "Verified container policy: runtime=$runtime user=$user network=$network readonly=$readonly memory=$memory nano_cpus=$nano_cpus pids=$pids"
 docker start --attach "$container_id"
-docker wait "$container_id" >/dev/null
+exit_code="$(docker wait "$container_id")"
+[[ "$exit_code" == "0" ]] || { echo "FAIL: sandbox process exited with status $exit_code" >&2; exit 1; }
 echo "PASS: gVisor sandbox smoke checks completed"
