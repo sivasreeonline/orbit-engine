@@ -66,12 +66,13 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
     await expect(leases.recordReceipt(
       original.id, oldWorker, original.leaseToken, randomUUID(), receiptHash,
     )).rejects.toBeInstanceOf(StaleRunnerDispatchLeaseError);
-    await expect(leases.recordReceipt(
-      reclaimed[0]!.id, "dispatcher-c", reclaimed[0]!.leaseToken, receiptId, receiptHash,
-    )).resolves.toEqual({ status: "RECORDED" });
-    await expect(leases.recordReceipt(
-      reclaimed[0]!.id, "dispatcher-c", reclaimed[0]!.leaseToken, receiptId, receiptHash,
-    )).resolves.toEqual({ status: "DUPLICATE" });
+    const receiptReplays = await Promise.all(Array.from({ length: 8 }, () =>
+      leases.recordReceipt(
+        reclaimed[0]!.id, "dispatcher-c", reclaimed[0]!.leaseToken, receiptId, receiptHash,
+      ),
+    ));
+    expect(receiptReplays.filter((result) => result.status === "RECORDED")).toHaveLength(1);
+    expect(receiptReplays.filter((result) => result.status === "DUPLICATE")).toHaveLength(7);
     await expect(leases.recordReceipt(
       reclaimed[0]!.id, "dispatcher-c", reclaimed[0]!.leaseToken, randomUUID(), receiptHash,
     )).rejects.toBeInstanceOf(RunnerDispatchReceiptConflictError);
