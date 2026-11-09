@@ -1819,3 +1819,474 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 .app-shell[data-theme="light"] .problem-content::-webkit-scrollbar-thumb:hover {
   background: #778da9;
 }
+
+
+/* -------------------------------------------------------------------------
+   Sky High Light theme — vibrant editorial palette inspired by the supplied
+   reference: purple, sunshine yellow, peach, warm cream and electric teal.
+   Dark mode is deliberately unaffected by these scoped overrides.
+   ------------------------------------------------------------------------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --navy: #3d2b62;
+  --blue: #2877a2;
+  --cyan: #17e9e0;
+  --yellow: #fccd04;
+  --magenta: #a64ac9;
+  --violet: #a64ac9;
+  --ink: #2c2638;
+  --muted: #71687b;
+  --line: #e8e1e8;
+  --panel: #ffffff;
+  --panel-raised: #fffdf9;
+  --editor: #fffdfa;
+  --background: #f5e6cc;
+  --shadow: 0 14px 36px rgba(76, 49, 91, 0.09);
+  background: #f5e6cc;
+  color: #2c2638;
+}
+:root[data-theme="light"] body {
+  background: #f5e6cc;
+  color: #2c2638;
+}
+.app-shell[data-theme="light"] {
+  background:
+    radial-gradient(circle at 7% 16%, rgba(166, 74, 201, 0.15), transparent 27rem),
+    radial-gradient(circle at 94% 12%, rgba(23, 233, 224, 0.13), transparent 25rem),
+    radial-gradient(circle at 80% 94%, rgba(255, 180, 143, 0.22), transparent 27rem),
+    radial-gradient(circle at 48% 98%, rgba(252, 205, 4, 0.11), transparent 23rem),
+    #f5e6cc;
+}
+.app-shell[data-theme="light"]::before {
+  opacity: 0.035;
+  background-image:
+    radial-gradient(circle, rgba(166, 74, 201, 0.2) 1px, transparent 1.5px);
+  background-size: 22px 22px;
+}
+
+/* Clean white navigation with a bold purple active state. */
+.app-shell[data-theme="light"] .topbar {
+  border-bottom: 1px solid #e9e1e9;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 5px 22px rgba(66, 44, 79, 0.055);
+}
+.app-shell[data-theme="light"] .brand-mark {
+  border-color: rgba(166, 74, 201, 0.22);
+  background: linear-gradient(145deg, #fff, #f3e7f8);
+  box-shadow: 0 5px 16px rgba(166, 74, 201, 0.12);
+}
+.app-shell[data-theme="light"] .brand-copy strong { color: #30233f; }
+.app-shell[data-theme="light"] .brand-copy small { color: #887794; }
+.app-shell[data-theme="light"] .primary-nav {
+  border-color: #eee5ef;
+  background: #fbf8fc;
+}
+.app-shell[data-theme="light"] .primary-nav-item { color: #665a70; }
+.app-shell[data-theme="light"] .primary-nav-item > span:first-child { color: #927c9e; }
+.app-shell[data-theme="light"] .primary-nav-item.active {
+  background: #a64ac9;
+  box-shadow: 0 5px 16px rgba(166, 74, 201, 0.25);
+  color: #fff;
+}
+.app-shell[data-theme="light"] .primary-nav-item.active > span:first-child { color: #fff; }
+.app-shell[data-theme="light"] .nav-soon {
+  border-color: #e7dbea;
+  background: #f6edf8;
+  color: #927c9e;
+}
+.app-shell[data-theme="light"] .environment-pill {
+  border-color: #eadfed;
+  background: #fff;
+  color: #6f6477;
+}
+.app-shell[data-theme="light"] .environment-dot {
+  background: #fccd04;
+  box-shadow: 0 0 0 4px rgba(252, 205, 4, 0.14);
+}
+.app-shell[data-theme="light"] .preview-pill {
+  border-color: rgba(252, 205, 4, 0.55);
+  background: #fff6cc;
+  color: #765d00;
+}
+.app-shell[data-theme="light"] .topbar-link {
+  border-color: #e8dfea;
+  background: #fff;
+  color: #6d4c83;
+}
+.app-shell[data-theme="light"] .topbar-link:hover {
+  border-color: #a64ac9;
+  background: #f8effb;
+}
+.app-shell[data-theme="light"] .profile-avatar {
+  border-color: rgba(23, 180, 174, 0.35);
+  background: linear-gradient(145deg, #e4fffc, #bff8f3);
+  color: #176f70;
+}
+.app-shell[data-theme="light"] .theme-toggle {
+  border-color: #e5d7ea;
+  background: #fff;
+  color: #634174;
+  box-shadow: 0 3px 10px rgba(75, 43, 91, 0.06);
+}
+.app-shell[data-theme="light"] .theme-toggle svg { color: #a64ac9; }
+.app-shell[data-theme="light"] .theme-toggle:hover {
+  border-color: #a64ac9;
+  background: #fbf3fd;
+}
+
+/* Stronger page typography and joyful metadata accents. */
+.app-shell[data-theme="light"] .breadcrumb { color: #887b8c; }
+.app-shell[data-theme="light"] .breadcrumb strong { color: #3c2e4b; }
+.app-shell[data-theme="light"] .breadcrumb-separator { color: #c1b1c5; }
+.app-shell[data-theme="light"] .page-heading h1 { color: #30233f; }
+.app-shell[data-theme="light"] .page-heading p { color: #76697d; }
+.app-shell[data-theme="light"] .problem-overline { color: #86788d; }
+.app-shell[data-theme="light"] .problem-id { color: #a64ac9; }
+.app-shell[data-theme="light"] .overline-divider { color: #d2c1d8; }
+.app-shell[data-theme="light"] .heading-period {
+  color: #fccd04;
+  text-shadow: 0 2px 8px rgba(252, 205, 4, 0.22);
+}
+.app-shell[data-theme="light"] .difficulty-badge {
+  border-color: rgba(252, 205, 4, 0.62);
+  background: #fff5bf;
+  color: #775b00;
+}
+.app-shell[data-theme="light"] .difficulty-dot {
+  background: #e5b800;
+  box-shadow: 0 0 9px rgba(252, 205, 4, 0.5);
+}
+.app-shell[data-theme="light"] .topic-chip {
+  border-color: rgba(166, 74, 201, 0.24);
+  background: #f7eafa;
+  color: #8742a0;
+}
+.app-shell[data-theme="light"] .sample-count {
+  border-color: rgba(23, 180, 174, 0.25);
+  background: #e5fbf8;
+  color: #167a78;
+}
+.app-shell[data-theme="light"] .sample-count-icon { color: #149e9a; }
+.app-shell[data-theme="light"] .workspace-context-badge {
+  border-color: rgba(23, 180, 174, 0.27);
+  background: #e7fbf8;
+  color: #167a78;
+}
+.app-shell[data-theme="light"] .context-badge-dot {
+  background: #17b8b0;
+  box-shadow: 0 0 9px rgba(23, 233, 224, 0.45);
+}
+
+/* White tiled work surfaces, warm borders and round purple/teal medallions. */
+.app-shell[data-theme="light"] .problem-card,
+.app-shell[data-theme="light"] .editor-card {
+  border-color: #e7dfea;
+  background: #fff;
+  box-shadow: 0 15px 38px rgba(75, 48, 91, 0.085);
+}
+.app-shell[data-theme="light"] .problem-panel-heading,
+.app-shell[data-theme="light"] .editor-panel-heading {
+  border-bottom-color: #eee6ed;
+  background:
+    linear-gradient(110deg, rgba(166, 74, 201, 0.085), transparent 48%),
+    #fff;
+}
+.app-shell[data-theme="light"] .panel-heading-icon {
+  border: 1px solid rgba(166, 74, 201, 0.28);
+  border-radius: 50%;
+  background: #f4e4f8;
+  color: #a64ac9;
+  box-shadow: inset 0 0 0 4px rgba(255,255,255,0.35);
+}
+.app-shell[data-theme="light"] .editor-panel-heading .panel-heading-icon {
+  border-color: rgba(23, 180, 174, 0.28);
+  background: #ddfaf6;
+  color: #158f89;
+}
+.app-shell[data-theme="light"] .panel-heading-copy strong { color: #342641; }
+.app-shell[data-theme="light"] .panel-heading-copy span { color: #8c7e91; }
+.app-shell[data-theme="light"] .panel-lockup {
+  border-color: #e6ddea;
+  background: #fbf7fc;
+  color: #826b8d;
+}
+.app-shell[data-theme="light"] .problem-tabs {
+  border-bottom-color: #eee6ed;
+  background: #fff;
+}
+.app-shell[data-theme="light"] .problem-tab { color: #8b7d90; }
+.app-shell[data-theme="light"] .problem-tab.active { color: #3a2b48; }
+.app-shell[data-theme="light"] .problem-tab.active::after {
+  background: #a64ac9;
+  box-shadow: 0 0 12px rgba(166, 74, 201, 0.24);
+}
+
+/* Problem typography, colored index chips and warm example tiles. */
+.app-shell[data-theme="light"] .problem-content {
+  background: #fff;
+  color: #3d3445;
+  scrollbar-color: #a64ac9 #f5e6cc;
+}
+.app-shell[data-theme="light"] .challenge-kicker {
+  border-color: rgba(166, 74, 201, 0.22);
+  background: #f8ecfb;
+  color: #8d3fa8;
+}
+.app-shell[data-theme="light"] .challenge-kicker-dot {
+  background: #a64ac9;
+  box-shadow: 0 0 8px rgba(166, 74, 201, 0.35);
+}
+.app-shell[data-theme="light"] .problem-intro h2 { color: #32223f; }
+.app-shell[data-theme="light"] .problem-intro p,
+.app-shell[data-theme="light"] .detail-section > p { color: #716778; }
+.app-shell[data-theme="light"] .detail-section h3 { color: #44334f; }
+.app-shell[data-theme="light"] .format-list,
+.app-shell[data-theme="light"] .constraints-list { color: #716778; }
+.app-shell[data-theme="light"] .constraints-list code { color: #664978; }
+.app-shell[data-theme="light"] .section-index {
+  border-color: rgba(23, 180, 174, 0.23);
+  border-radius: 50%;
+  background: #e5fbf8;
+  color: #168782;
+}
+.app-shell[data-theme="light"] .example-card {
+  border-color: #e9e0e9;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(71, 49, 83, 0.035);
+}
+.app-shell[data-theme="light"] .example-heading {
+  border-bottom-color: #eee6ed;
+  background: #fffdf9;
+  color: #41304d;
+}
+.app-shell[data-theme="light"] .example-heading-label { color: #a64ac9; }
+.app-shell[data-theme="light"] .example-grid span { color: #8b7d90; }
+.app-shell[data-theme="light"] .example-grid pre {
+  border-color: #e8e0e8;
+  background: #faf6fb;
+  color: #4d3b5b;
+}
+.app-shell[data-theme="light"] .example-explanation { color: #85788b; }
+.app-shell[data-theme="light"] .problem-note {
+  border-top-color: #eee6ed;
+  color: #887b8e;
+}
+
+/* Language picker and focus controls use the same purple/teal identity. */
+.app-shell[data-theme="light"] .editor-panel-heading .editor-controls select {
+  border-color: #e0d5e5;
+  background: #fff;
+  color: #44304f;
+  box-shadow: 0 2px 8px rgba(75, 43, 91, 0.035);
+}
+.app-shell[data-theme="light"] .language-select-label { color: #86788d; }
+.app-shell[data-theme="light"] .panel-focus-button {
+  border-color: rgba(166, 74, 201, 0.3);
+  background: #f8effb;
+  color: #8742a0;
+}
+.app-shell[data-theme="light"] .panel-focus-button > svg { color: #a64ac9; }
+.app-shell[data-theme="light"] .panel-focus-button:hover {
+  border-color: #a64ac9;
+  background: #f1def7;
+  color: #71328c;
+}
+.app-shell[data-theme="light"] .panel-focus-button.active {
+  border-color: #a64ac9;
+  background: #a64ac9;
+  color: #fff;
+}
+.app-shell[data-theme="light"] .panel-focus-button.active > svg { color: #fff; }
+
+/* Bright, distraction-free source editor with turquoise active-line cue. */
+.app-shell[data-theme="light"] .code-editor,
+.app-shell[data-theme="light"] .code-editor > .cm-theme-light {
+  background: #fffdfa !important;
+}
+.app-shell[data-theme="light"] .code-editor .cm-editor,
+.app-shell[data-theme="light"] .code-editor .cm-scroller,
+.app-shell[data-theme="light"] .code-editor .cm-content {
+  background: #fffdfa !important;
+}
+.app-shell[data-theme="light"] .code-editor .cm-gutters {
+  border-right-color: #eee5ed;
+  background: #fbf7fc !important;
+  color: #9586a0;
+}
+.app-shell[data-theme="light"] .code-editor .cm-line { background-color: transparent; }
+.app-shell[data-theme="light"] .code-editor .cm-activeLine {
+  background: rgba(23, 233, 224, 0.105) !important;
+}
+.app-shell[data-theme="light"] .code-editor .cm-activeLineGutter {
+  background: rgba(23, 233, 224, 0.12) !important;
+}
+.app-shell[data-theme="light"] .code-editor .cm-cursor { border-left-color: #6f3488 !important; }
+.app-shell[data-theme="light"] .code-editor .cm-selectionBackground,
+.app-shell[data-theme="light"] .code-editor ::selection {
+  background: rgba(166, 74, 201, 0.19) !important;
+}
+.app-shell[data-theme="light"] .code-editor .cm-scroller {
+  scrollbar-color: #a64ac9 #f5e6cc;
+}
+.app-shell[data-theme="light"] .code-editor .cm-scroller::-webkit-scrollbar-track { background: #f5e6cc; }
+.app-shell[data-theme="light"] .code-editor .cm-scroller::-webkit-scrollbar-thumb {
+  border-color: #f5e6cc;
+  background: #a64ac9;
+}
+.app-shell[data-theme="light"] .code-editor .cm-scroller::-webkit-scrollbar-thumb:hover { background: #8739a8; }
+.app-shell[data-theme="light"] .editor-language-watermark {
+  color: rgba(166, 74, 201, 0.075);
+  text-shadow: none;
+}
+.app-shell[data-theme="light"] .editor-loading {
+  background: #fffdfa;
+  color: #76697d;
+}
+
+/* Distinct action colours: teal Run, purple Submit, peach/cream Reset. */
+.app-shell[data-theme="light"] .editor-action-dock {
+  border: 1px solid #e6dce8;
+  background: linear-gradient(100deg, #fff, #fffaf4);
+  box-shadow: 0 9px 24px rgba(75, 48, 91, 0.075);
+}
+.app-shell[data-theme="light"] .action-reset-button {
+  border-color: #edc4ae;
+  background: #fff2e9;
+  color: #80523e;
+}
+.app-shell[data-theme="light"] .action-reset-button:hover {
+  border-color: #ffb48f;
+  background: #ffe6d8;
+  color: #70412e;
+}
+.app-shell[data-theme="light"] .editor-action-hint { color: #86798d; }
+.app-shell[data-theme="light"] .action-hint-indicator {
+  background: #fccd04;
+  box-shadow: 0 0 0 4px rgba(252, 205, 4, 0.14);
+}
+.app-shell[data-theme="light"] .editor-run-button {
+  border-color: #12bdb5;
+  background: #17e9e0;
+  color: #164d4c;
+  box-shadow: 0 4px 12px rgba(23, 180, 174, 0.14);
+}
+.app-shell[data-theme="light"] .editor-run-button:hover {
+  border-color: #0da7a0;
+  background: #42eee6;
+  color: #103f3e;
+}
+.app-shell[data-theme="light"] .editor-submit-button {
+  border-color: #a64ac9;
+  background: #a64ac9;
+  color: #fff;
+  box-shadow: 0 5px 15px rgba(166, 74, 201, 0.2);
+}
+.app-shell[data-theme="light"] .editor-submit-button:hover {
+  border-color: #8739a8;
+  background: #913db3;
+  box-shadow: 0 8px 18px rgba(166, 74, 201, 0.24);
+}
+
+/* Output and guided-learning surfaces follow the same white editorial tiles. */
+.app-shell[data-theme="light"] .output-panel,
+.app-shell[data-theme="light"] .problem-guide-panel {
+  border-color: #e7dfea;
+  background: #fff;
+  box-shadow: 0 15px 38px rgba(75, 48, 91, 0.085);
+}
+.app-shell[data-theme="light"] .output-panel-header,
+.app-shell[data-theme="light"] .problem-guide-header {
+  border-bottom-color: #eee6ed;
+  background: linear-gradient(100deg, rgba(166, 74, 201, 0.07), #fff 68%);
+}
+.app-shell[data-theme="light"] .output-panel-title strong,
+.app-shell[data-theme="light"] .problem-guide-title strong { color: #342641; }
+.app-shell[data-theme="light"] .output-panel-title small,
+.app-shell[data-theme="light"] .problem-guide-title small { color: #8c7e91; }
+.app-shell[data-theme="light"] .output-tabs,
+.app-shell[data-theme="light"] .problem-guide-tabs {
+  border-bottom-color: #eee6ed;
+  background: #fffdf9;
+}
+.app-shell[data-theme="light"] .output-tab,
+.app-shell[data-theme="light"] .problem-guide-tab { color: #8b7d90; }
+.app-shell[data-theme="light"] .output-tab.active,
+.app-shell[data-theme="light"] .problem-guide-tab.active { color: #493157; }
+.app-shell[data-theme="light"] .output-tab.active::after,
+.app-shell[data-theme="light"] .problem-guide-tab.active::after { background: #a64ac9; }
+.app-shell[data-theme="light"] .output-panel-content,
+.app-shell[data-theme="light"] .problem-guide-content { color: #4c4055; }
+.app-shell[data-theme="light"] .output-empty strong { color: #382746; }
+.app-shell[data-theme="light"] .output-empty p,
+.app-shell[data-theme="light"] .output-disclaimer { color: #82758a; }
+.app-shell[data-theme="light"] .output-sample-card {
+  border-color: #e8dfea;
+  background: #fffdf9;
+}
+.app-shell[data-theme="light"] .output-sample-card > strong { color: #4a3657; }
+.app-shell[data-theme="light"] .output-sample-grid span { color: #8b7d90; }
+.app-shell[data-theme="light"] .output-sample-grid pre {
+  border-color: #e8dfea;
+  background: #f8f2f9;
+  color: #4d3b5b;
+}
+.app-shell[data-theme="light"] .guide-topic-card {
+  border-color: rgba(23, 180, 174, 0.25);
+  background: linear-gradient(120deg, #e5fbf8, #fff);
+}
+.app-shell[data-theme="light"] .guide-topic-card > strong,
+.app-shell[data-theme="light"] .guide-section-heading { color: #3d2a4c; }
+.app-shell[data-theme="light"] .guide-section p,
+.app-shell[data-theme="light"] .guide-section li,
+.app-shell[data-theme="light"] .guide-intro { color: #716778; }
+.app-shell[data-theme="light"] .guide-callout {
+  border-color: rgba(252, 205, 4, 0.42);
+  background: #fff8d9;
+}
+.app-shell[data-theme="light"] .guide-callout strong { color: #705600; }
+.app-shell[data-theme="light"] .guide-callout p { color: #78673d; }
+.app-shell[data-theme="light"] .guide-constraint-row { border-bottom-color: #eee6ed; }
+.app-shell[data-theme="light"] .guide-constraint-row code { color: #654678; }
+.app-shell[data-theme="light"] .guide-hint-card {
+  border-color: rgba(166, 74, 201, 0.2);
+  background: #fcf6fd;
+}
+.app-shell[data-theme="light"] .guide-hint-card p { color: #6e5e78; }
+.app-shell[data-theme="light"] .reveal-hint-button {
+  border-color: rgba(166, 74, 201, 0.32);
+  background: #f5e7f9;
+  color: #873aa3;
+}
+.app-shell[data-theme="light"] .hints-complete { color: #7d7185; }
+
+.app-shell[data-theme="light"] .workspace-footer { color: #8a7d8f; }
+.app-shell[data-theme="light"] .workspace-footer span:first-child { color: #684579; }
+.app-shell[data-theme="light"] .footer-separator { color: #c5b6c9; }
+.app-shell[data-theme="light"] .execution-feedback {
+  border-color: rgba(252, 205, 4, 0.45);
+  background: #fff8d9;
+}
+.app-shell[data-theme="light"] .execution-feedback strong { color: #705600; }
+.app-shell[data-theme="light"] .execution-feedback p,
+.app-shell[data-theme="light"] .execution-feedback small { color: #78673d; }
+
+/* Explicit light scrollbars for both content panes in Chromium/Edge and Firefox. */
+.app-shell[data-theme="light"] .problem-content {
+  scrollbar-color: #a64ac9 #f5e6cc;
+  scrollbar-width: auto;
+}
+.app-shell[data-theme="light"] .problem-content::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.app-shell[data-theme="light"] .problem-content::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: #f5e6cc;
+}
+.app-shell[data-theme="light"] .problem-content::-webkit-scrollbar-thumb {
+  border: 3px solid #f5e6cc;
+  border-radius: 999px;
+  background: #a64ac9;
+}
+.app-shell[data-theme="light"] .problem-content::-webkit-scrollbar-thumb:hover { background: #8739a8; }
