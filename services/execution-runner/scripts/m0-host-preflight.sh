@@ -47,9 +47,12 @@ else
   fail "Expected x86_64; detected $arch"
 fi
 
-kernel="$(uname -r | cut -d- -f1)"
-if [[ "$kernel" =~ ^[0-9]+\.[0-9]+ ]]; then
-  if [[ "$(printf '%s\n' '5.6' "$kernel" | sort -V | head -n1)" == "5.6" ]]; then
+kernel_release="$(uname -r)"
+kernel="${kernel_release%%-*}"
+if [[ "$kernel" =~ ^([0-9]+)\.([0-9]+) ]]; then
+  kernel_major="${BASH_REMATCH[1]}"
+  kernel_minor="${BASH_REMATCH[2]}"
+  if (( kernel_major > 5 || (kernel_major == 5 && kernel_minor >= 6) )); then
     pass "Kernel $kernel meets the Linux 5.6 minimum"
   else
     fail "Kernel $kernel is older than Linux 5.6"
@@ -73,8 +76,7 @@ if command_exists containerd; then
     fail 'Expected containerd 2.3.x LTS'
   fi
 
-  if containerd config dump >/dev/null 2>&1; then
-    config_dump="$(containerd config dump 2>/dev/null)"
+  if config_dump="$(containerd config dump 2>/dev/null)"; then
     if grep -Eq '^version[[:space:]]*=[[:space:]]*3([[:space:]]|$)' <<<"$config_dump"; then
       pass 'containerd configuration uses version 3'
     else
@@ -93,7 +95,51 @@ else
 fi
 
 if command_exists runsc; then
-  runsc_version="$(runsc --version 2>&1 | head -n1)"
+  runsc_version="$(runsc --version 2>&1)"
+  runsc_version="${runsc_version%%
+  if [[ -n "$runsc_version" ]]; then
+    pass 'gVisor runsc binary responds to --version'
+  else
+    fail 'gVisor runsc returned an empty version'
+  fi
+else
+  fail 'gVisor runsc binary is not installed or not on PATH'
+fi
+
+if command_exists containerd-shim-runsc-v1; then
+  pass 'containerd-shim-runsc-v1 is installed'
+else
+  fail 'containerd-shim-runsc-v1 is not installed or not on PATH'
+fi
+
+socket="/run/containerd/containerd.sock"
+if [[ -S "$socket" ]]; then
+  socket_owner="$(stat -c '%U' "$socket")"
+  socket_mode="$(stat -c '%a' "$socket")"
+  info "containerd socket owner=$socket_owner mode=$socket_mode"
+  if [[ "$socket_owner" == "root" ]]; then
+    pass 'containerd socket is root-owned'
+  else
+    fail 'containerd socket must be root-owned'
+  fi
+  if (( (8#$socket_mode & 0022) == 0 )); then
+    pass 'containerd socket is not group/world writable'
+  else
+    fail 'containerd socket is group/world writable'
+  fi
+else
+  fail "$socket is missing or is not a Unix socket"
+fi
+
+printf '\nChecks: %d; failures: %d\n' "$checks" "$failures"
+if (( failures > 0 )); then
+  printf '%s\n' 'RESULT: NOT READY — resolve failures; no runtime proof was performed.' >&2
+  exit 1
+fi
+
+printf '%s\n' 'RESULT: HOST PREFLIGHT PASSED — this is not an isolation or execution approval.'
+printf '%s\n' 'Next: run the separately reviewed gVisor smoke and adversarial proof suite on a disposable host.'
+\n'*}"
   info "$runsc_version"
   if [[ -n "$runsc_version" ]]; then
     pass 'gVisor runsc binary responds to --version'
