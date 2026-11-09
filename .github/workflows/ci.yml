@@ -215,6 +215,24 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0005_runner_dispatch_receipts.sql
 
+      - name: Apply and re-apply runner identity registry migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0006_runner_identity_registry.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0006_runner_identity_registry.sql
+
+      - name: Verify runner identity registry invariants
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0006_runner_identity_registry.sql
+
+      - name: Verify runner identity registry lookup against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-identity-repository.integration.test.ts
+
       - name: Verify concurrent execution intake against PostgreSQL
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test

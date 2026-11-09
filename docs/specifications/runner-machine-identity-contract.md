@@ -3,7 +3,7 @@
 - Status: provider-neutral contract proposal; no authentication mechanism selected.
 - Scope: trusted identity and authorization boundary for future Linux runner-agent control APIs.
 - Depends on: runner-agent control API proposal and the provider-neutral human identity integration boundary.
-- Implementation in this change: TypeScript interface plus a fail-closed default authenticator and tests only.
+- Implementation foundation in this PR stack: TypeScript interface, fail-closed default authenticator, provider-neutral runner registry migration and PostgreSQL acceptance tests. Provider-specific credential verification remains unimplemented.
 
 ## 1. Separate trust domain
 
@@ -43,7 +43,7 @@ A configured adapter must:
 7. Never log credentials, raw authorization headers or sensitive token claims.
 8. Bind each runner to the minimum required pool and operation scopes.
 
-The interface deliberately does not prescribe JWT claims, certificate fields, header names, provider SDKs or key storage. Those depend on the selected mechanism and must not be guessed by a generic adapter.
+The interface deliberately does not prescribe JWT claims, certificate fields, header names, provider SDKs or key storage. Those depend on the selected mechanism and must not be guessed by a generic adapter. Migration 0006 adds a provider-neutral registry mapping exact issuer/subject pairs to server-managed runner IDs, pools and scopes. It stores no credentials and does not itself authenticate requests; see [Runner Identity Registry Foundation](runner-identity-registry-foundation.md).
 
 ## 4. Fail-closed default
 
@@ -77,7 +77,7 @@ No option is selected here. Provider selection requires a separate reviewed ADR 
 
 ## 7. Explicit non-goals
 
-This proposal does not select or configure a provider, add credentials/secrets, add runner registry tables, add HTTP routes/middleware, alter human authentication, expose dispatch operations, retrieve source artifacts, consume queues or enable execution. The runner executor remains fail-closed and gVisor M0 evidence remains a separate prerequisite.
+This proposal does not select or configure a provider, add credentials/secrets, add an authentication adapter or registry-management API, add runner HTTP routes/middleware, alter human authentication, expose dispatch operations, retrieve source artifacts, consume queues or enable execution. The provider-neutral registry schema is only a persistence foundation; it has no production registration workflow or configured resolver. The runner executor remains fail-closed and gVisor M0 evidence remains a separate prerequisite.
 
 
 ## 8. Cloudflare deployment fit — evidence-based candidate comparison
