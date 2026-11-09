@@ -122,8 +122,9 @@ describe("PostgresProblemRepository", () => {
       explanation: publicExample.explanation,
     }]);
     const testCaseQuery = fake.calls[2]?.text ?? "";
-    expect(testCaseQuery).toContain("visibility = 'PUBLIC'");
+    expect(testCaseQuery).toContain("FROM public_problem_test_cases");
     expect(testCaseQuery).toContain("LIMIT 10");
+    expect(testCaseQuery).not.toContain("FROM problem_test_cases");
     expect(testCaseQuery).not.toContain("hidden_test_cases");
     expect(fake.calls[1]?.values).toEqual(["two-sum", tenantId]);
   });
