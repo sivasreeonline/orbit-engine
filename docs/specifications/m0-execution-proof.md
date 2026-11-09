@@ -1,5 +1,14 @@
 # M0 — Isolated Execution Proof
 
+## Related M0 proof contracts
+
+- Host preflight and evidence collection: `m0-host-preflight-and-proof-runbook.md`.
+- Adversarial fixture IDs and expected host-side assertions: `m0-adversarial-fixture-contract.md`.
+- Host supervisor boundary, lifecycle state machine, and recovery design: `m0-runtime-proof-harness-design.md`.
+- Structured evidence manifest: `../schemas/m0-proof-evidence.schema.json`.
+
+These are design and review artifacts only. They do not authorize sandbox launch, student execution, cloud provisioning, or executor activation.
+
 ## Goal
 Prove that the Go runner can execute Java 25 and Python 3.14 programs on separate Linux infrastructure with strict resource limits and reliable cleanup. M0 is a security and operability proof, not a student-facing product release.
 
