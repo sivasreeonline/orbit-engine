@@ -42,6 +42,12 @@ interface ClaimedRow extends Record<string, unknown> {
   readonly lease_expires_at: Date | string;
 }
 interface UpdatedRow extends Record<string, unknown> { readonly id: string; }
+interface DispatchLockRow extends Record<string, unknown> {
+  readonly delivery_state: string;
+  readonly lease_owner: string | null;
+  readonly lease_token: string | null;
+  readonly lease_expires_at: Date | string | null;
+}
 interface ReceiptRow extends Record<string, unknown> {
   readonly dispatch_id: string;
   readonly runner_id: string;
@@ -126,12 +132,25 @@ export class PostgresRunnerDispatchLeaseRepository {
     return this.withClient(async (client) => {
       await client.query("BEGIN");
       try {
+        // Lock the dispatch row first. Concurrent replays then observe the
+        // receipt committed by the first caller instead of misclassifying it
+        // as a stale lease after waiting for that caller's transaction.
+        const dispatch = await client.query<DispatchLockRow>(
+          [
+            "SELECT delivery_state, lease_owner, lease_token, lease_expires_at",
+            "FROM runner_dispatch_outbox WHERE id = $1::uuid",
+            "FOR UPDATE",
+          ].join("\n"),
+          [dispatchId],
+        );
+        const current = dispatch.rows[0];
+        if (!current) throw new StaleRunnerDispatchLeaseError();
+
         const existing = await client.query<ReceiptRow>(
           [
             "SELECT dispatch_id, runner_id, receipt_id, receipt_hash",
             "FROM runner_dispatch_receipts",
             "WHERE dispatch_id = $1::uuid",
-            "FOR UPDATE",
           ].join("\n"),
           [dispatchId],
         );
@@ -146,28 +165,26 @@ export class PostgresRunnerDispatchLeaseRepository {
           throw new RunnerDispatchReceiptConflictError();
         }
 
+        const expiresAt = current.lease_expires_at instanceof Date
+          ? current.lease_expires_at.getTime()
+          : current.lease_expires_at === null ? 0 : new Date(current.lease_expires_at).getTime();
+        if (current.delivery_state !== "PENDING" ||
+            current.lease_owner !== workerId ||
+            current.lease_token !== leaseToken ||
+            !Number.isFinite(expiresAt) ||
+            expiresAt <= Date.now()) {
+          throw new StaleRunnerDispatchLeaseError();
+        }
+
         const reused = await client.query<ReceiptRow>(
           [
             "SELECT dispatch_id, runner_id, receipt_id, receipt_hash",
             "FROM runner_dispatch_receipts",
             "WHERE runner_id = $1 AND receipt_id = $2",
-            "FOR UPDATE",
           ].join("\n"),
           [workerId, receiptId],
         );
         if (reused.rows.length > 0) throw new RunnerDispatchReceiptConflictError();
-
-        const active = await client.query<UpdatedRow>(
-          [
-            "SELECT id FROM runner_dispatch_outbox",
-            "WHERE id = $1::uuid AND delivery_state = 'PENDING'",
-            "  AND lease_owner = $2 AND lease_token = $3::uuid",
-            "  AND lease_expires_at > now()",
-            "FOR UPDATE",
-          ].join("\n"),
-          [dispatchId, workerId, leaseToken],
-        );
-        if (active.rows.length !== 1) throw new StaleRunnerDispatchLeaseError();
 
         await client.query(
           [
