@@ -40,7 +40,7 @@ describe.skipIf(!databaseUrl)("runner identity registry PostgreSQL integration",
 
       await expect(repository.findActivePrincipal(issuer, subject)).resolves.toEqual({
         runnerId,
-        poolId,
+        poolId: poolKey,
         subject,
         scopes: ["dispatch:claim", "dispatch:receipt"],
       });
