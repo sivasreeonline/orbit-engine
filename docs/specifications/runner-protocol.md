@@ -21,6 +21,12 @@ Stable adapter contract between orchestration and independently deployed Go runn
 - bounded stdout/stderr for public tests only.
 - startedAt, completedAt and sandbox cleanup status.
 
+## Strict JSON decoding (request v1)
+
+The runner accepts a JSON object with the exact camelCase field names defined by the request model. Field names are case-sensitive; aliases that differ only by casing are not accepted. The decoder rejects duplicate object keys (including keys that become identical after JSON escape decoding), unknown or non-canonical fields, nested objects outside the documented `limits` object, non-object top-level values, trailing JSON values, and request bodies larger than 64 KiB.
+
+The `limits` object accepts only `cpuQuotaMillis`, `memoryBytes`, `wallTimeMillis`, `processLimit`, and `outputBytes`. This strict wire parsing is performed before semantic request validation.
+
 ## Protocol requirements
 - Authenticate runner service identity; do not trust tenant or resource policy supplied by student.
 - Validate all payload fields and artifact hashes.
