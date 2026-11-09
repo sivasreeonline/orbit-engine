@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS runner_identities (
   pool_id uuid NOT NULL
     REFERENCES runner_pools(id) ON DELETE RESTRICT,
   identity_issuer varchar(512) NOT NULL
-    CHECK (length(btrim(identity_issuer)) BETWEEN 1 AND 512),
+    CHECK (identity_issuer = btrim(identity_issuer) AND length(identity_issuer) BETWEEN 1 AND 512),
   identity_subject varchar(512) NOT NULL
-    CHECK (length(btrim(identity_subject)) BETWEEN 1 AND 512),
+    CHECK (identity_subject = btrim(identity_subject) AND length(identity_subject) BETWEEN 1 AND 512),
   status varchar(16) NOT NULL DEFAULT 'ACTIVE'
     CHECK (status IN ('ACTIVE', 'SUSPENDED', 'REVOKED')),
   scopes text[] NOT NULL
