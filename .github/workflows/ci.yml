@@ -90,12 +90,27 @@ jobs:
         with:
           node-version: 24
 
-      # apps/api is still using exact direct dependency versions but does not
-      # yet have its generated lockfile. Replace npm install with npm ci once
-      # package-lock.json is generated and committed.
-      - name: Install dependencies
+      # Generate the lockfile in CI once, export it for review/commit,
+      # then prove the dependency tree installs reproducibly with npm ci.
+      - name: Generate API lockfile
         run: >-
-          npm install --no-audit --no-fund
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          --fetch-retries=5
+          --fetch-retry-mintimeout=10000
+          --fetch-retry-maxtimeout=120000
+          --fetch-timeout=300000
+
+      - name: Export generated API lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-package-lock-${{ github.sha }}
+          path: apps/api/package-lock.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Install dependencies from lockfile
+        run: >-
+          npm ci --no-audit --no-fund
           --fetch-retries=5
           --fetch-retry-mintimeout=10000
           --fetch-retry-maxtimeout=120000
