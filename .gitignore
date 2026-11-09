@@ -147,3 +147,15 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+
+# Cloudflare local development
+.wrangler/
+.dev.vars*
+apps/web/.wrangler/
+apps/web/.dev.vars*
+
+# Test and coverage output
+playwright-report/
+test-results/
+coverage/
