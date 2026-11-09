@@ -12,6 +12,12 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - Unit tests for health/readiness, request validation and disabled execution.
 - Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
 
+## Protocol contract parity status
+
+The Go request model is an initial validated skeleton, not yet a complete implementation of every requirement in `docs/specifications/runner-protocol.md`. In particular, the current request types do not yet carry the tenant-safe correlation ID, immutable runtime image digest, comparison policy, filesystem limits, explicit deadline, or cancellation reference described by the specification.
+
+Track completion in [issue #13](https://github.com/sivasreeonline/orbit-engine/issues/13). Before adding an executor or API adapter, trace all consumers, define field semantics and trust boundaries, choose a compatibility/versioning approach, and add validation plus serialization tests. Do not infer that a field is enforced merely because it appears in the specification.
+
 ## Explicit safety boundary
 - No endpoint accepts source code or starts a process.
 - No Docker, containerd, gVisor or host command is invoked.
