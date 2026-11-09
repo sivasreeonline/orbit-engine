@@ -47,6 +47,7 @@ interface DispatchLockRow extends Record<string, unknown> {
   readonly lease_owner: string | null;
   readonly lease_token: string | null;
   readonly lease_expires_at: Date | string | null;
+  readonly lease_active: boolean;
 }
 interface ReceiptRow extends Record<string, unknown> {
   readonly dispatch_id: string;
@@ -137,7 +138,7 @@ export class PostgresRunnerDispatchLeaseRepository {
         // as a stale lease after waiting for that caller's transaction.
         const dispatch = await client.query<DispatchLockRow>(
           [
-            "SELECT delivery_state, lease_owner, lease_token, lease_expires_at",
+            "SELECT delivery_state, lease_owner, lease_token, lease_expires_at > now() AS lease_active",
             "FROM runner_dispatch_outbox WHERE id = $1::uuid",
             "FOR UPDATE",
           ].join("\n"),
@@ -165,14 +166,10 @@ export class PostgresRunnerDispatchLeaseRepository {
           throw new RunnerDispatchReceiptConflictError();
         }
 
-        const expiresAt = current.lease_expires_at instanceof Date
-          ? current.lease_expires_at.getTime()
-          : current.lease_expires_at === null ? 0 : new Date(current.lease_expires_at).getTime();
         if (current.delivery_state !== "PENDING" ||
             current.lease_owner !== workerId ||
             current.lease_token !== leaseToken ||
-            !Number.isFinite(expiresAt) ||
-            expiresAt <= Date.now()) {
+            current.lease_active !== true) {
           throw new StaleRunnerDispatchLeaseError();
         }
 
