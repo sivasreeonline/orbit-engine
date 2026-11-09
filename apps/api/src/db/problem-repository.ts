@@ -100,9 +100,8 @@ const publicExamplesSql = [
   "  convert_from(input_data, 'UTF8') AS input,",
   "  convert_from(expected_output, 'UTF8') AS output,",
   "  explanation",
-  "FROM problem_test_cases",
+  "FROM public_problem_test_cases",
   "WHERE problem_version_id = $1::uuid",
-  "  AND visibility = 'PUBLIC'",
   "ORDER BY sequence ASC",
   "LIMIT 10",
 ].join("\n");
