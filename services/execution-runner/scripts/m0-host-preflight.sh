@@ -95,8 +95,9 @@ else
 fi
 
 if command_exists runsc; then
-  runsc_version="$(runsc --version 2>&1)"
-  runsc_version="${runsc_version%%
+  runsc_output="$(runsc --version 2>&1)"
+  IFS= read -r runsc_version <<<"$runsc_output"
+  info "$runsc_version"
   if [[ -n "$runsc_version" ]]; then
     pass 'gVisor runsc binary responds to --version'
   else
