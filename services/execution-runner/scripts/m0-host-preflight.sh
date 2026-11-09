@@ -83,9 +83,9 @@ if command_exists containerd; then
       fail 'containerd configuration is not version 3'
     fi
     if grep -Fq 'io.containerd.runsc.v1' <<<"$config_dump"; then
-      pass 'gVisor containerd runtime handler is configured'
+      pass 'local containerd config dump contains the gVisor runtime handler'
     else
-      fail 'gVisor runtime handler io.containerd.runsc.v1 is not configured'
+      fail 'local containerd config dump lacks runtime handler io.containerd.runsc.v1'
     fi
   else
     fail 'containerd config dump failed; inspect daemon configuration'
