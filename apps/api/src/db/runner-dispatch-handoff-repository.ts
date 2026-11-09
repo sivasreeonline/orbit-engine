@@ -105,7 +105,7 @@ export class PostgresRunnerDispatchHandoffRepository {
             "FROM runner_dispatch_outbox",
             "WHERE execution_id = $1::uuid",
             "FOR UPDATE",
-          ].join("\\n"),
+          ].join("\n"),
           [envelope.executionId],
         );
         const prior = existing.rows[0];
@@ -130,7 +130,7 @@ export class PostgresRunnerDispatchHandoffRepository {
             "  (execution_id, attempt_id, protocol_version, correlation_id)",
             "VALUES ($1::uuid, $2::uuid, $3, $4)",
             "RETURNING id, attempt_id, protocol_version, correlation_id",
-          ].join("\\n"),
+          ].join("\n"),
           [
             envelope.executionId,
             envelope.attemptId,
