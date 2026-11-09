@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { PostgresExecutionIntakeRepository } from "./execution-intake-repository";
 import { PostgresOutboxLeaseRepository } from "./outbox-lease-repository";
 
@@ -31,8 +31,21 @@ describe.skipIf(!databaseUrl)("PostgresOutboxLeaseRepository PostgreSQL integrat
     expect(secondBatch).toHaveLength(1);
     expect(firstBatch[0]?.id).not.toBe(secondBatch[0]?.id);
 
-    const expiredCandidate = (await outbox.claimBatch("publisher-c", 1, 1))[0];
-    expect(expiredCandidate).toBeDefined();
+    await expect(outbox.markPublished(
+      firstBatch[0]!.id, "publisher-a", firstBatch[0]!.leaseToken,
+    )).resolves.toBe(true);
+    await expect(outbox.markPublished(
+      secondBatch[0]!.id, "publisher-b", secondBatch[0]!.leaseToken,
+    )).resolves.toBe(true);
+
+    // Drain any other pending rows in this disposable database so only the
+    // deliberately expiring lease can be reclaimed in the assertion below.
+    const remaining = await outbox.claimBatch("publisher-c", 100, 1);
+    expect(remaining.length).toBeGreaterThan(0);
+    const [expiredCandidate, ...otherClaims] = remaining;
+    await Promise.all(otherClaims.map((lease) =>
+      outbox.markPublished(lease.id, "publisher-c", lease.leaseToken),
+    ));
 
     await new Promise((resolve) => setTimeout(resolve, 1_150));
     const reclaimed = await outbox.claimBatch("publisher-d", 1, 30);
