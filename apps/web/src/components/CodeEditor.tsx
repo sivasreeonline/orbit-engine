@@ -86,6 +86,7 @@ export default function CodeEditor({
   );
   const previousLanguage = useRef(language);
   const [watermarkAnimationId, setWatermarkAnimationId] = useState(0);
+  const [enterSparkleId, setEnterSparkleId] = useState(0);
 
   useEffect(() => {
     if (previousLanguage.current !== language) {
@@ -100,7 +101,7 @@ export default function CodeEditor({
       aria-label="Source code editor"
       onKeyDown={(event) => {
         if (event.key === "Enter" && !event.repeat) {
-          setWatermarkAnimationId((current) => current + 1);
+          setEnterSparkleId((current) => current + 1);
         }
       }}
     >
@@ -130,6 +131,11 @@ export default function CodeEditor({
         aria-hidden="true"
       >
         {language === "java" ? "JAVA" : "PYTHON"}
+        {enterSparkleId > 0 && (
+          <span key={enterSparkleId} className="editor-language-watermark-spark">
+            ✦
+          </span>
+        )}
       </span>
     </div>
   );
