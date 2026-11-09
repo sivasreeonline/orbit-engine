@@ -57,6 +57,37 @@ CREATE INDEX IF NOT EXISTS idx_execution_attempts_tenant_actor_created
 CREATE INDEX IF NOT EXISTS idx_execution_attempts_problem_version
   ON execution_attempts (problem_version_id, created_at DESC);
 
+CREATE OR REPLACE FUNCTION verify_execution_attempt_snapshot()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+DECLARE
+  snapshot_tenant_id uuid;
+  snapshot_actor_user_id uuid;
+  snapshot_sha256 char(64);
+BEGIN
+  SELECT tenant_id, actor_user_id, sha256
+    INTO snapshot_tenant_id, snapshot_actor_user_id, snapshot_sha256
+  FROM source_snapshots
+  WHERE id = NEW.source_snapshot_id;
+
+  IF NOT FOUND
+    OR snapshot_tenant_id IS DISTINCT FROM NEW.tenant_id
+    OR snapshot_actor_user_id IS DISTINCT FROM NEW.actor_user_id
+    OR snapshot_sha256 IS DISTINCT FROM NEW.source_sha256 THEN
+    RAISE EXCEPTION 'execution attempt does not match its source snapshot'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS trg_execution_attempt_snapshot_consistency ON execution_attempts;
+CREATE TRIGGER trg_execution_attempt_snapshot_consistency
+BEFORE INSERT ON execution_attempts
+FOR EACH ROW EXECUTE FUNCTION verify_execution_attempt_snapshot();
+
 CREATE TABLE IF NOT EXISTS execution_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   attempt_id uuid NOT NULL UNIQUE
