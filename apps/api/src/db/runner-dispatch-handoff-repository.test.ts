@@ -97,15 +97,25 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
     const fake = fakeClient({ authoritative: [{
       attempt_id: attemptId,
       job_state: "RUNNING",
-      outbox_attempt_id: attemptId,
+      outbox_attempt_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
       outbox_protocol_version: "v1",
       correlation_id: "corr-1",
-    }] });
+    }], existing: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
     await expect(repository.record(envelope)).rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
     expect(fake.calls.at(-1)?.text).toBe("ROLLBACK");
     expect(fake.calls.some((call) => call.text.includes("INSERT INTO runner_dispatch_outbox"))).toBe(false);
+  });
+
+  it("rejects a first-time handoff when the job is no longer queued", async () => {
+    const fake = fakeClient({ authoritative: [{
+      attempt_id: attemptId, job_state: "RUNNING", outbox_attempt_id: attemptId,
+      outbox_protocol_version: "v1", correlation_id: "corr-1",
+    }], existing: [] });
+    const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
+    await expect(repository.record(envelope)).rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
+    expect(fake.calls.at(-1)?.text).toBe("ROLLBACK");
   });
 
   it("rolls back a failed intent insert so the queue message can be retried", async () => {
