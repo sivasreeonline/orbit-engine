@@ -19,14 +19,12 @@ CREATE TABLE IF NOT EXISTS source_snapshots (
     (storage_kind = 'DATABASE'
       AND source_bytes IS NOT NULL
       AND object_key IS NULL
-      AND octet_length(source_bytes) = byte_length
-      AND byte_length <= 262144)
+      AND octet_length(source_bytes) = byte_length)
     OR
     (storage_kind = 'R2'
       AND source_bytes IS NULL
       AND object_key IS NOT NULL
-      AND length(object_key) BETWEEN 1 AND 512
-      AND byte_length > 262144)
+      AND length(object_key) BETWEEN 1 AND 512)
   )
 );
 
@@ -51,8 +49,6 @@ CREATE TABLE IF NOT EXISTS execution_attempts (
   CONSTRAINT execution_attempt_problem_version_fk
     FOREIGN KEY (problem_version_id, problem_id)
     REFERENCES problem_versions(id, problem_id) ON DELETE RESTRICT,
-  CONSTRAINT execution_attempt_snapshot_hash_fk
-    FOREIGN KEY (source_snapshot_id) REFERENCES source_snapshots(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_execution_attempts_tenant_actor_created
@@ -140,6 +136,8 @@ CREATE TABLE IF NOT EXISTS execution_outbox (
     AND payload ? 'executionId'
     AND payload ? 'attemptId'
     AND payload ? 'protocolVersion'
+    AND payload->>'executionId' = execution_id::text
+    AND payload->>'protocolVersion' = protocol_version
     AND NOT (payload ?| ARRAY[
       'source', 'sourceCode', 'sourceBytes', 'hiddenTests',
       'expectedOutput', 'testBundle', 'databaseUrl', 'credentials'
