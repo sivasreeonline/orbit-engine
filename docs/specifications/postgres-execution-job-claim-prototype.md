@@ -12,7 +12,8 @@
 - A live CLAIMED job returns ALREADY_CLAIMED for duplicate queue deliveries.
 - Missing, delayed and terminal/non-claimable jobs return distinct internal outcomes.
 - markRunning advances only a CLAIMED job with the current worker, token and unexpired lease.
-- State version increments on claim, reclaim and RUNNING transition. The lease remains attached while RUNNING for a future runner adapter to use as a fencing token.
+- State version increments on claim, reclaim and RUNNING transition and is exposed as a decimal string to preserve PostgreSQL bigint precision. The lease remains attached while RUNNING for a future runner adapter to use as a fencing token.
+- Expired CLAIMED leases can be reclaimed. Expired RUNNING jobs are deliberately not reclaimed by this prototype; safe runner recovery, cancellation and duplicate-execution semantics must be defined with the runner contract first.
 
 ## Safety boundary
 
