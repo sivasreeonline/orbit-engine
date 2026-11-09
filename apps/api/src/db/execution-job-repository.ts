@@ -4,7 +4,7 @@ import { DatabaseUnavailableError } from "./database-errors";
 export interface ExecutionJobLease {
   readonly executionId: string;
   readonly attemptId: string;
-  readonly stateVersion: number;
+  readonly stateVersion: string;
   readonly retryCount: number;
   readonly leaseOwner: string;
   readonly leaseToken: string;
@@ -43,7 +43,7 @@ const defaultClientFactory: PgClientFactory = (connectionString) =>
 interface ClaimedJobRow extends Record<string, unknown> {
   readonly id: string;
   readonly attempt_id: string;
-  readonly state_version: number;
+  readonly state_version: string | number;
   readonly retry_count: number;
   readonly lease_owner: string;
   readonly lease_token: string;
@@ -106,7 +106,7 @@ export class PostgresExecutionJobRepository {
           lease: {
             executionId: row.id,
             attemptId: row.attempt_id,
-            stateVersion: row.state_version,
+            stateVersion: String(row.state_version),
             retryCount: row.retry_count,
             leaseOwner: row.lease_owner,
             leaseToken: row.lease_token,
