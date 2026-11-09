@@ -48,6 +48,23 @@ BEGIN
     'SUBMIT', 'python', '3.14', second_snapshot_id, second_source_hash
   );
 
+  blocked := false;
+  BEGIN
+    INSERT INTO execution_attempts (
+      id, tenant_id, actor_user_id, problem_id, problem_version_id,
+      action, language, runtime_version, source_snapshot_id, source_sha256
+    ) VALUES (
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3',
+      tenant, actor, problem, version,
+      'RUN', 'java', '25', snapshot_id, repeat('f', 64)
+    );
+  EXCEPTION WHEN check_violation THEN
+    blocked := true;
+  END;
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'Attempt with a mismatched source hash was accepted';
+  END IF;
+
   INSERT INTO execution_jobs (id, attempt_id)
   VALUES (execution_id, attempt_id);
 
