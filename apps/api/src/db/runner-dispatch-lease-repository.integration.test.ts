@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionIntakeRepository } from "./execution-intake-repository";
 import { PostgresRunnerDispatchHandoffRepository } from "./runner-dispatch-handoff-repository";
-import { PostgresRunnerDispatchLeaseRepository } from "./runner-dispatch-lease-repository";
+import { PostgresRunnerDispatchLeaseRepository, RunnerDispatchReceiptConflictError, StaleRunnerDispatchLeaseError } from "./runner-dispatch-lease-repository";
 
 const databaseUrl = process.env.DATABASE_URL;
 const tenantId = "30000000-0000-4000-8000-000000000001";
@@ -52,10 +52,30 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
     expect(reclaimed[0]?.leaseToken).not.toBe(original.leaseToken);
 
     const oldWorker = firstBatch.length ? "dispatcher-a" : "dispatcher-b";
-    await expect(leases.markDelivered(original.id, oldWorker, original.leaseToken)).resolves.toBe(false);
-    await expect(leases.markDelivered(
-      reclaimed[0]!.id, "dispatcher-c", reclaimed[0]!.leaseToken,
-    )).resolves.toBe(true);
+    const receiptId = randomUUID();
+    const receiptHash = createHash("sha256")
+      .update(JSON.stringify({
+        dispatchId: reclaimed[0]!.id,
+        executionId: reclaimed[0]!.executionId,
+        attemptId: reclaimed[0]!.attemptId,
+        runnerId: "dispatcher-c",
+        receiptId,
+      }))
+      .digest("hex");
+
+    await expect(leases.recordReceipt(
+      original.id, oldWorker, original.leaseToken, randomUUID(), receiptHash,
+    )).rejects.toBeInstanceOf(StaleRunnerDispatchLeaseError);
+    const receiptReplays = await Promise.all(Array.from({ length: 8 }, () =>
+      leases.recordReceipt(
+        reclaimed[0]!.id, "dispatcher-c", reclaimed[0]!.leaseToken, receiptId, receiptHash,
+      ),
+    ));
+    expect(receiptReplays.filter((result) => result.status === "RECORDED")).toHaveLength(1);
+    expect(receiptReplays.filter((result) => result.status === "DUPLICATE")).toHaveLength(7);
+    await expect(leases.recordReceipt(
+      reclaimed[0]!.id, "dispatcher-c", reclaimed[0]!.leaseToken, randomUUID(), receiptHash,
+    )).rejects.toBeInstanceOf(RunnerDispatchReceiptConflictError);
 
     const verifier = new Client({
       connectionString: databaseUrl,
@@ -64,11 +84,26 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
     });
     try {
       await verifier.connect();
-      const state = await verifier.query<{ delivery_state: string; lease_owner: string | null }>(
-        "SELECT delivery_state, lease_owner FROM runner_dispatch_outbox WHERE id = $1::uuid",
+      const state = await verifier.query<{
+        delivery_state: string;
+        lease_owner: string | null;
+        receipt_count: string;
+        receipt_id: string;
+      }>(
+        [
+          "SELECT dispatch.delivery_state, dispatch.lease_owner,",
+          "  count(receipt.id)::text AS receipt_count, max(receipt.receipt_id) AS receipt_id",
+          "FROM runner_dispatch_outbox AS dispatch",
+          "LEFT JOIN runner_dispatch_receipts AS receipt ON receipt.dispatch_id = dispatch.id",
+          "WHERE dispatch.id = $1::uuid",
+          "GROUP BY dispatch.id",
+        ].join("\n"),
         [original.id],
       );
-      expect(state.rows[0]).toEqual({ delivery_state: "DELIVERED", lease_owner: null });
+      expect(state.rows[0]).toEqual({
+        delivery_state: "DELIVERED", lease_owner: null,
+        receipt_count: "1", receipt_id: receiptId,
+      });
     } finally {
       await verifier.end();
     }

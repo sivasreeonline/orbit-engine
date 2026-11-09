@@ -12,6 +12,10 @@ export interface RunnerDispatchLease {
   readonly leaseExpiresAt: string;
 }
 
+export type RunnerDispatchReceiptResult =
+  | { readonly status: "RECORDED" }
+  | { readonly status: "DUPLICATE" };
+
 interface QueryResult<T extends Record<string, unknown>> { readonly rows: T[]; }
 interface PgDispatchClient {
   connect(): Promise<void>;
@@ -38,8 +42,21 @@ interface ClaimedRow extends Record<string, unknown> {
   readonly lease_expires_at: Date | string;
 }
 interface UpdatedRow extends Record<string, unknown> { readonly id: string; }
+interface DispatchLockRow extends Record<string, unknown> {
+  readonly delivery_state: string;
+  readonly lease_owner: string | null;
+  readonly lease_token: string | null;
+  readonly lease_expires_at: Date | string | null;
+  readonly lease_active: boolean;
+}
+interface ReceiptRow extends Record<string, unknown> {
+  readonly dispatch_id: string;
+  readonly runner_id: string;
+  readonly receipt_id: string;
+  readonly receipt_hash: string;
+}
 
-/** Database-only fenced leases for a future authenticated Linux-runner transport. */
+/** Database-only fenced leases and durable acceptance receipts for a future runner agent. */
 export class PostgresRunnerDispatchLeaseRepository {
   constructor(
     private readonly connectionString: string | undefined,
@@ -92,23 +109,108 @@ export class PostgresRunnerDispatchLeaseRepository {
     });
   }
 
-  /** Mark delivered only after the runner transport returns an authenticated receipt. */
-  async markDelivered(dispatchId: string, workerId: string, leaseToken: string): Promise<boolean> {
+  /**
+   * Persist the runner's durable acceptance receipt and mark the dispatch
+   * delivered in one transaction. The runner must journal the execution
+   * durably before submitting this receipt.
+   */
+  async recordReceipt(
+    dispatchId: string,
+    workerId: string,
+    leaseToken: string,
+    receiptId: string,
+    receiptHash: string,
+  ): Promise<RunnerDispatchReceiptResult> {
     if (!this.connectionString) throw new DatabaseUnavailableError();
     this.validateLeaseIdentity(dispatchId, workerId, leaseToken);
+    if (!/^[A-Za-z0-9._:-]{1,128}$/.test(receiptId)) {
+      throw new Error("invalid_runner_dispatch_receipt_id");
+    }
+    if (!/^[0-9a-f]{64}$/.test(receiptHash)) {
+      throw new Error("invalid_runner_dispatch_receipt_hash");
+    }
+
     return this.withClient(async (client) => {
-      const result = await client.query<UpdatedRow>(
-        [
-          "UPDATE runner_dispatch_outbox",
-          "SET delivery_state = 'DELIVERED', delivered_at = now(),",
-          "    lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL",
-          "WHERE id = $1::uuid AND delivery_state = 'PENDING'",
-          "  AND lease_owner = $2 AND lease_token = $3::uuid",
-          "  AND lease_expires_at > now() RETURNING id",
-        ].join("\n"),
-        [dispatchId, workerId, leaseToken],
-      );
-      return result.rows.length === 1;
+      await client.query("BEGIN");
+      try {
+        // Lock the dispatch row first. Concurrent replays then observe the
+        // receipt committed by the first caller instead of misclassifying it
+        // as a stale lease after waiting for that caller's transaction.
+        const dispatch = await client.query<DispatchLockRow>(
+          [
+            "SELECT delivery_state, lease_owner, lease_token, lease_expires_at > now() AS lease_active",
+            "FROM runner_dispatch_outbox WHERE id = $1::uuid",
+            "FOR UPDATE",
+          ].join("\n"),
+          [dispatchId],
+        );
+        const current = dispatch.rows[0];
+        if (!current) throw new StaleRunnerDispatchLeaseError();
+
+        const existing = await client.query<ReceiptRow>(
+          [
+            "SELECT dispatch_id, runner_id, receipt_id, receipt_hash",
+            "FROM runner_dispatch_receipts",
+            "WHERE dispatch_id = $1::uuid",
+          ].join("\n"),
+          [dispatchId],
+        );
+        const prior = existing.rows[0];
+        if (prior) {
+          if (prior.runner_id === workerId &&
+              prior.receipt_id === receiptId &&
+              prior.receipt_hash === receiptHash) {
+            await client.query("COMMIT");
+            return { status: "DUPLICATE" };
+          }
+          throw new RunnerDispatchReceiptConflictError();
+        }
+
+        if (current.delivery_state !== "PENDING" ||
+            current.lease_owner !== workerId ||
+            current.lease_token !== leaseToken ||
+            current.lease_active !== true) {
+          throw new StaleRunnerDispatchLeaseError();
+        }
+
+        const reused = await client.query<ReceiptRow>(
+          [
+            "SELECT dispatch_id, runner_id, receipt_id, receipt_hash",
+            "FROM runner_dispatch_receipts",
+            "WHERE runner_id = $1 AND receipt_id = $2",
+          ].join("\n"),
+          [workerId, receiptId],
+        );
+        if (reused.rows.length > 0) throw new RunnerDispatchReceiptConflictError();
+
+        await client.query(
+          [
+            "INSERT INTO runner_dispatch_receipts",
+            "  (dispatch_id, runner_id, receipt_id, receipt_hash, accepted_at)",
+            "VALUES ($1::uuid, $2, $3, $4, now())",
+          ].join("\n"),
+          [dispatchId, workerId, receiptId, receiptHash],
+        );
+
+        const delivered = await client.query<UpdatedRow>(
+          [
+            "UPDATE runner_dispatch_outbox",
+            "SET delivery_state = 'DELIVERED', delivered_at = now(),",
+            "    lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL",
+            "WHERE id = $1::uuid AND delivery_state = 'PENDING'",
+            "  AND lease_owner = $2 AND lease_token = $3::uuid",
+            "  AND lease_expires_at > now() RETURNING id",
+          ].join("\n"),
+          [dispatchId, workerId, leaseToken],
+        );
+        if (delivered.rows.length !== 1) throw new StaleRunnerDispatchLeaseError();
+
+        await client.query("COMMIT");
+        return { status: "RECORDED" };
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      }
     });
   }
 
@@ -169,10 +271,30 @@ export class PostgresRunnerDispatchLeaseRepository {
       await client.connect();
       await client.query("SET statement_timeout = '5s'");
       return await operation(client);
-    } catch {
+    } catch (error) {
+      if (error instanceof RunnerDispatchReceiptConflictError ||
+          error instanceof StaleRunnerDispatchLeaseError) throw error;
+      if (typeof error === "object" && error !== null &&
+          "code" in error && error.code === "23505") {
+        throw new RunnerDispatchReceiptConflictError();
+      }
       throw new DatabaseUnavailableError();
     } finally {
       await client.end().catch(() => undefined);
     }
+  }
+}
+
+export class RunnerDispatchReceiptConflictError extends Error {
+  constructor() {
+    super("runner_dispatch_receipt_conflict");
+    this.name = "RunnerDispatchReceiptConflictError";
+  }
+}
+
+export class StaleRunnerDispatchLeaseError extends Error {
+  constructor() {
+    super("stale_runner_dispatch_lease");
+    this.name = "StaleRunnerDispatchLeaseError";
   }
 }
