@@ -122,18 +122,22 @@ func (request ExecutionRequestV2) ValidateAt(now time.Time) error {
 }
 
 func (request ExecutionRequestV2) ValidateIntakeBudget(intakeAt, now time.Time) error {
-	deadline, err := time.Parse(time.RFC3339Nano, request.DeadlineAt)
-	if err != nil || !strings.HasSuffix(request.DeadlineAt, "Z") {
-		return fieldError("deadlineAt", "must be a canonical RFC3339 UTC timestamp")
+	// Dispatch must validate the complete request as well as the trusted intake
+	// budget. Do not let callers accidentally treat this as a deadline-only check.
+	if err := request.ValidateAt(now); err != nil {
+		return err
 	}
 	if intakeAt.IsZero() || intakeAt.After(now) {
 		return fieldError("intakeAt", "must be an authoritative timestamp not later than now")
 	}
+	deadline, err := time.Parse(time.RFC3339Nano, request.DeadlineAt)
+	if err != nil {
+		// ValidateAt already enforces canonical RFC3339 UTC syntax. Keep this
+		// defensive guard here in case that validation contract changes.
+		return fieldError("deadlineAt", "must be a canonical RFC3339 UTC timestamp")
+	}
 	if deadline.After(intakeAt.Add(MaxExecutionBudget)) {
 		return fieldError("deadlineAt", "must not exceed ten minutes from trusted API intake")
-	}
-	if !deadline.After(now) {
-		return fieldError("deadlineAt", "must be in the future; expired requests must not start")
 	}
 	return nil
 }
