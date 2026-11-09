@@ -99,6 +99,47 @@ describe("M1 API control plane", () => {
     expect(repository.ping).not.toHaveBeenCalled();
   });
 
+  it("reports readiness only after the database ping succeeds", async () => {
+    const ping = vi.fn(async () => undefined);
+    const { handler, authenticator } = makeHarness({ repository: { ping } });
+
+    const response = await handler(makeRequest("/readyz"));
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toEqual({ status: "ready" });
+    expect(ping).toHaveBeenCalledOnce();
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+  });
+
+  it("returns a non-disclosing retryable readiness failure when the database is unavailable", async () => {
+    const ping = vi.fn(async () => {
+      throw new Error("postgres://secret-user:secret-password@db.internal");
+    });
+    const { handler, authenticator } = makeHarness({ repository: { ping } });
+
+    const response = await handler(makeRequest("/readyz", {
+      headers: { "X-Correlation-ID": "readiness-probe-17" },
+    }));
+    const body = await readJson<{
+      error: { code: string; message: string; retryable: boolean };
+      correlationId: string;
+    }>(response);
+
+    expect(response.status).toBe(503);
+    expect(body).toEqual({
+      error: {
+        code: "DATABASE_NOT_READY",
+        message: "The API database connection is not ready.",
+        retryable: true,
+      },
+      correlationId: "readiness-probe-17",
+    });
+    expect(JSON.stringify(body)).not.toContain("secret-password");
+    expect(response.headers.get("X-Correlation-ID")).toBe("readiness-probe-17");
+    expect(ping).toHaveBeenCalledOnce();
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+  });
+
   it("reflects only an explicitly allowed origin and preserves a valid correlation ID", async () => {
     const { handler } = makeHarness();
 
