@@ -110,6 +110,21 @@ describe("RegistryBackedRunnerAuthenticator", () => {
     expect(findActivePrincipal).not.toHaveBeenCalled();
   });
 
+  it("fails closed when a verifier returns a malformed result", async () => {
+    const verify = vi.fn().mockResolvedValue(undefined);
+    const findActivePrincipal = vi.fn();
+    const authenticator = new RegistryBackedRunnerAuthenticator(
+      { verify },
+      { findActivePrincipal },
+    );
+
+    await expect(authenticator.authenticate(request())).resolves.toEqual({
+      authenticated: false,
+      reason: "provider_unavailable",
+    });
+    expect(findActivePrincipal).not.toHaveBeenCalled();
+  });
+
   it("rejects unknown, suspended, revoked or disabled-pool identities", async () => {
     const { authenticator, findActivePrincipal } = setup(
       undefined,
