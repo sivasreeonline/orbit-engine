@@ -1,0 +1,129 @@
+# Runner Request Contract — Decision Proposal
+
+Status: **PROPOSED — NOT APPROVED / NOT NORMATIVE**
+
+This proposal recommends concrete semantics for the six request-contract gaps identified in issue #13. It does not change the normative protocol, Go types, database schema, API, runner, or deployment. Approval is required before implementation.
+
+## Executive recommendation
+
+Do not silently add the missing fields to protocol v1. The current v1 Go decoder has an exact allowlist and rejects unknown fields. Treat the current v1 shape as a legacy/incomplete contract that remains non-executable. Introduce a deliberate **protocol v2** only after this proposal is approved, with a new exact JSON schema and compatibility tests.
+
+All execution policy values must be selected by trusted server-side policy. The student may supply source and language selection through the API, but must not choose tenant identity, runtime image, test bundle, comparison policy, resource limits, deadline or cancellation authority.
+
+## Proposed v2 field set
+
+The names below are proposals, not accepted wire fields.
+
+| Requirement | Proposed field | Proposed type / shape | Recommendation |
+|---|---|---|---|
+| Tenant-safe correlation | `correlationId` | UUID string | Generate at trusted API intake. It is trace context, not a tenant ID, authorization claim, or idempotency key. Keep tenant ownership in authenticated control-plane context and persistence. |
+| Immutable runtime image | `runtimeImageDigest` | OCI digest string, initially `sha256:` + 64 lowercase hex chars | Resolve from a server-maintained allowlist keyed by language/runtime/platform. Never accept arbitrary registry URLs or image names from students. Pin platform/architecture and image digest together. |
+| Comparison policy | `comparisonPolicy` | Enum string | Start M1 with `EXACT_BYTES` only. Do not trim whitespace or normalize line endings implicitly. Add further policies only with normative byte-level definitions and test vectors. |
+| Filesystem limits | `limits.scratchBytes`, `limits.scratchInodes` | Positive integers | Bound writable scratch separately from immutable runtime image and read-only mounts. Enforce both byte and inode quotas; fail closed if the selected backend cannot enforce either. |
+| Execution deadline | `deadlineAt` | RFC 3339 UTC timestamp | Trusted control plane computes an absolute deadline. Runner rejects expired requests and uses a monotonic local timer for elapsed execution; wall-clock timestamp is for cross-service budget propagation. Retain `wallTimeMillis` as the per-process execution cap; effective stop is the earlier of deadline and wall-time limit. |
+| Cancellation reference | `cancellationRef` | Opaque random identifier (UUID or at least 128 bits of entropy) | Reference only, not a bearer token. Cancellation state is held by the trusted control plane and checked over authenticated service transport or delivered over an authenticated control channel. Never log a secret or let a caller cancel another tenant's execution. |
+
+## Detailed decisions and validation
+
+### 1. Correlation context
+
+- Generate a UUID at authenticated API intake; propagate unchanged through attempt, job, dispatch and runner logs.
+- Correlation is observability metadata only. It must not grant access, identify a tenant, or replace `executionId`.
+- `executionId` remains the runner idempotency key.
+- Do not place tenant IDs or user IDs in the correlation field.
+- Validation: canonical UUID syntax; required for v2; reject empty, malformed or oversized values.
+- Logs: include correlation and execution IDs; avoid logging source, hidden tests, credentials or cancellation secrets.
+
+### 2. Runtime image identity
+
+- Proposed field: `runtimeImageDigest`.
+- Initial grammar: `sha256:[0-9a-f]{64}`.
+- Trusted policy maps the accepted language/runtime/platform tuple to an approved immutable digest. A syntactically valid digest is not proof that an image is trusted.
+- Registry hostname, repository, platform, architecture, signature/attestation policy and vulnerability policy remain server-side allowlist metadata. If a future runtime needs a different registry identity, add a separately reviewed field or registry mapping rather than accepting arbitrary URLs.
+- The runner must verify the fetched image resolves to the exact approved digest before sandbox creation.
+- Validation: required, exact algorithm prefix and lowercase hex length; reject tags and mutable references.
+
+### 3. Comparison policy
+
+- Proposed field: `comparisonPolicy`.
+- M1 v2 initial allowed value: `EXACT_BYTES`.
+- Compare expected and actual stdout bytes exactly, after the protocol-defined output capture boundary. No implicit trimming, whitespace folding, Unicode normalization or newline conversion.
+- Stderr is diagnostic output, not part of the equality comparison unless a future explicit policy says otherwise.
+- Test vectors must cover empty output, final newline, CRLF vs LF, trailing spaces, UTF-8 bytes and invalid UTF-8.
+- Validation: required enum; unknown values rejected. Trainers may select only policies explicitly enabled by trusted problem policy; students cannot override them.
+
+### 4. Filesystem quotas
+
+- Proposed fields nested under `limits`: `scratchBytes` and `scratchInodes`.
+- Both are positive integers with hard policy maximums defined outside the request schema.
+- Apply only to writable scratch space. Runtime image and trusted test input mounts are separate, read-only mounts and must not be counted as writable scratch.
+- Reject unsupported quota enforcement. Do not substitute best-effort monitoring for a hard limit.
+- Acceptance tests: byte quota reached, inode quota reached, read-only runtime mount, no host path visibility, cleanup after success/failure/timeout/cancellation, and concurrent isolation.
+
+### 5. Deadline semantics
+
+- Proposed field: `deadlineAt`, canonical RFC 3339 UTC timestamp (for example, `2026-11-09T17:00:00Z`).
+- Control plane computes the deadline before queueing; student cannot set or extend it.
+- Runner checks expiry immediately before dispatch and uses a monotonic timer after start to avoid wall-clock adjustments extending runtime.
+- `wallTimeMillis` remains a per-execution hard wall-time cap. The effective execution deadline is the earlier of `deadlineAt` and start time plus `wallTimeMillis`.
+- Define queue-wait expiry separately: expired queued work should be marked not-started/expired by the control plane and must not launch.
+- Validation: required, UTC only, bounded maximum future horizon and no unbounded deadlines. The actual horizon value is a product/security policy decision and must be configured server-side.
+
+### 6. Cancellation reference
+
+- Proposed field: `cancellationRef`; opaque, random, non-secret identifier.
+- It is a lookup reference, not an authorization token. Possession alone must not authorize cancellation.
+- Only the authenticated control plane can request cancellation after verifying tenant/attempt ownership.
+- Runner cancellation delivery should use the separately approved authenticated private control channel. Do not add polling URLs, arbitrary callback URLs, bearer tokens or student-supplied endpoints to the request.
+- Cancellation must terminate the process tree, sandbox and descendants, then confirm cleanup; cleanup failure is infrastructure failure and blocks successful completion.
+- Validation: required for v2, bounded opaque syntax, uniqueness scoped to execution; unknown references fail closed. A separate cancellation transport and state transition contract is required before execution.
+
+## Trust and ownership matrix
+
+| Value | Authoritative owner | Student-controlled? |
+|---|---|---|
+| correlationId | API/control plane | No |
+| runtimeImageDigest | Runtime policy registry | No |
+| comparisonPolicy | Published problem version + trusted policy | No |
+| scratchBytes / scratchInodes | Trusted resource policy | No |
+| deadlineAt | Control plane scheduler | No |
+| cancellationRef | Control plane | No |
+| source artifact and language choice | Authenticated API intake, subject to policy | Submitted source/language choice only; reference and hash are server-issued |
+| executionId | Control plane | No |
+
+## Compatibility and migration recommendation
+
+1. Keep current protocol v1 decoder and model unchanged; do not loosen its exact-key allowlist.
+2. Mark v1 as non-executable until it contains all required policy context. Do not silently accept incomplete v1 requests in a future executor.
+3. Approve the v2 field names, semantics, validation and transport envelope before implementation.
+4. Add v2 Go types/decoder as a distinct versioned contract or introduce an explicit version-dispatch decoder. Never decode v2 into the v1 struct.
+5. Add golden JSON fixtures and cross-language serialization tests for the API producer and Go consumer.
+6. Reject unknown versions and unknown fields. Do not silently downgrade v2 to v1.
+7. Implement runtime enforcement only after M0 evidence, authenticated runner identity and transport, artifact authorization, cancellation transport, and result contract are approved.
+
+## Decisions still requiring explicit owner approval
+
+These values should not be guessed in code:
+
+- Maximum allowed `deadlineAt` horizon and behavior when queue delay consumes the budget.
+- Numeric maximums for scratch bytes and inodes per language/problem tier.
+- Runtime registry allowlist, platform/architecture and image signature/attestation requirements.
+- Whether the pilot requires any comparison mode beyond `EXACT_BYTES`.
+- Authenticated cancellation control-channel mechanism and cancellation acknowledgement deadline.
+- Whether v1 remains permanently non-executable or is removed after v2 rollout.
+
+## Acceptance criteria for implementation
+
+- Protocol v2 has a normative schema and versioning policy.
+- TypeScript producer and Go consumer share golden request fixtures.
+- Strict decoder rejects duplicate, unknown, non-canonical, oversized, expired and invalid-policy requests.
+- Resource policy values are server-selected and bounded by platform maxima.
+- Image digest is allowlisted and verified before launch.
+- Filesystem byte and inode quotas are hard-enforced and adversarially tested.
+- Deadline and cancellation stop process trees and sandbox cleanup is evidenced.
+- No hidden test input/expected output or credentials enter untrusted request/response/log surfaces.
+- M0 isolation evidence and security review pass before any student source executes.
+
+## Non-goals
+
+This proposal does not implement protocol v2, select an identity provider or transport, choose actual production quota numbers, define the result DTO, enable a queue consumer, retrieve artifacts, launch gVisor, or execute student code.
