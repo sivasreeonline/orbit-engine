@@ -101,16 +101,77 @@ The names below are proposals, not accepted wire fields.
 6. Reject unknown versions and unknown fields. Do not silently downgrade v2 to v1.
 7. Implement runtime enforcement only after M0 evidence, authenticated runner identity and transport, artifact authorization, cancellation transport, and result contract are approved.
 
-## Decisions still requiring explicit owner approval
+## Delegated architecture decisions — selected M1 baseline
 
-These values should not be guessed in code:
+The product owner delegated selection of the strongest practical defaults to the architecture lead on 2026-11-09. The following choices are therefore the selected M1 design baseline for implementation planning. They remain subject to the acceptance evidence below; documenting a choice does not claim that infrastructure or enforcement already exists.
 
-- Maximum allowed `deadlineAt` horizon and behavior when queue delay consumes the budget.
-- Numeric maximums for scratch bytes and inodes per language/problem tier.
-- Runtime registry allowlist, platform/architecture and image signature/attestation requirements.
-- Whether the pilot requires any comparison mode beyond `EXACT_BYTES`.
-- Authenticated cancellation control-channel mechanism and cancellation acknowledgement deadline.
-- Whether v1 remains permanently non-executable or is removed after v2 rollout.
+### D1. Comparison semantics: EXACT_BYTES only
+
+- Select `EXACT_BYTES` as the sole M1 comparison policy.
+- Compare captured stdout byte-for-byte against the expected output bytes.
+- Do not trim, normalize Unicode, fold whitespace, or convert line endings.
+- Stderr remains bounded diagnostic output and is never part of the verdict comparison.
+- The published problem version fixes this policy; neither students nor individual submissions can override it.
+- Add golden vectors for empty output, trailing newline, CRLF/LF, trailing spaces, UTF-8, invalid UTF-8, and output truncation boundaries.
+- Any future relaxed comparison mode requires a new explicitly named policy, normative semantics, test vectors, and a versioned rollout.
+
+### D2. Deadline and queue budget
+
+- Set a maximum end-to-end request budget of **10 minutes from trusted API intake** for M1.
+- The control plane creates `deadlineAt`; the client cannot set or extend it.
+- Queue wait consumes this budget. A request that reaches the runner after its deadline is expired and must not start.
+- `wallTimeMillis` remains the independent hard per-execution runtime cap. Once execution starts, the effective stop is the earlier of the remaining absolute deadline and the monotonic wall-time cap.
+- The 10-minute value is a platform ceiling, not a promise that every request waits 10 minutes. The server may assign shorter budgets by action or workload tier.
+- Expired queued jobs transition to a terminal not-started/expired state; they are not retried as fresh work.
+- Retries preserve the original execution identity and deadline. They must never reset or extend the budget.
+
+### D3. Writable scratch quotas
+
+- M1 default writable scratch quota: **256 MiB and 4,096 inodes per execution**.
+- Hard platform maximum: **512 MiB and 8,192 inodes per execution**. A trusted policy may assign lower values; no request may exceed these ceilings.
+- Apply quotas to a dedicated writable scratch mount only. Runtime images, compiler/runtime binaries, and authorized read-only test mounts remain immutable/read-only and separately accounted.
+- Java and Python initially share these defaults. Introduce per-runtime profiles only when measured compiler/runtime requirements justify them; never increase limits based on student-supplied fields.
+- The selected sandbox backend must enforce both byte and inode quotas as hard limits. If it cannot, execution is unavailable; best-effort monitoring is not an acceptable substitute.
+- Test quota exhaustion, inode exhaustion, concurrent tenant isolation, cleanup, and host-path non-visibility.
+
+### D4. Runtime image trust and platform
+
+- Initial runner platform: **Linux AMD64**. Do not run an ARM image or silently fall back to another architecture.
+- Use a trusted OCI registry allowlist controlled by deployment configuration. GitHub Container Registry is the preferred initial candidate because the source and CI live in GitHub; it is not considered configured until the repository, permissions, and pull path are verified.
+- The request carries the exact platform-specific OCI manifest digest, not a tag, mutable image name, or multi-platform index whose selected child could vary.
+- Require Cosign signature verification tied to the approved CI workflow identity and repository, plus build provenance for the runtime image. Pin the verifier policy and trusted identity in deployment configuration.
+- The server resolves language/runtime/platform to an approved image digest. The runner independently verifies the exact digest and signature/provenance policy before sandbox creation.
+- Any registry, signature, provenance, platform, or digest verification failure is an infrastructure failure and must fail closed.
+- Runtime image updates are explicit reviewed changes with new digests, vulnerability review, smoke tests, and rollback references.
+
+### D5. Cancellation transport and semantics
+
+- Use a private runner ingress exposed through a Cloudflare Tunnel and protected by Cloudflare Access service identity for the initial Cloudflare-hosted control plane integration.
+- Runner machine identity must validate the Access JWT issuer, audience, expiry, and service identity, then resolve the identity through the runner registry. Never trust caller-supplied runnerId, poolId, tenantId, or scopes.
+- Store Access service-token credentials only as managed secrets on the control-plane side; rotate them. Do not put them in execution requests, images, source snapshots, logs, or student-visible configuration.
+- Cancellation is an authenticated control-plane operation after tenant/attempt ownership is checked. The runner cancellation endpoint is not a student-facing endpoint.
+- Cancellation requests are idempotent and bound to executionId plus cancellationRef. A cancellation reference is a lookup identifier, not authorization.
+- The runner must terminate the full process tree and sandbox, reap descendants, verify cleanup, and return an authenticated acknowledgement. If acknowledgement is lost, the control plane reconciles state; it does not assume cancellation succeeded.
+- Before production use, prove the exact Worker-to-Tunnel-to-Access-to-runner path in a non-production environment, including JWT validation, credential rotation, replay rejection, timeout, duplicate cancellation, and unreachable-runner behavior. If Cloudflare Access cannot provide the required machine identity semantics for this topology, block execution and revisit the transport ADR rather than weakening authentication.
+
+### D6. Protocol v1 lifecycle
+
+- Protocol v1 is permanently **non-executable**. Retain its strict decoder only for compatibility tests, diagnostics, and any explicitly approved migration tooling.
+- All new dispatches use protocol v2 after the v2 producer/consumer golden fixtures and all required enforcement gates pass.
+- Never translate a v1 request into v2 by filling missing security policy with defaults at the runner boundary.
+- Reject unknown versions and downgrade attempts. Remove v1 parsing only through a separately reviewed compatibility/deprecation change after confirming no retained evidence or operational tooling depends on it.
+
+## Implementation prerequisites (evidence, not open-ended design choices)
+
+The baseline above is selected. The following are concrete facts that must be established before the relevant implementation can be enabled:
+
+- Confirm the actual Cloudflare Access application/audience, Tunnel hostname, service-token lifecycle, and Worker secret bindings in a non-production environment.
+- Create and review the runtime registry repository, CI identity, signing/provenance workflow, and immutable Linux AMD64 image digests.
+- Verify that the chosen gVisor/OCI host can hard-enforce scratch byte and inode quotas and all existing CPU, memory, PID, wall-time, and output limits.
+- Demonstrate cancellation delivery, process-tree termination, cleanup acknowledgement, and recovery from lost acknowledgements.
+- Obtain and retain M0 adversarial isolation evidence and security review before enabling any executor.
+- Define numeric per-action/per-problem values below the selected platform ceilings using measured resource profiles; the ceilings above are not automatically granted to every execution.
+
 
 ## Acceptance criteria for implementation
 
