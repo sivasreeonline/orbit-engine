@@ -124,8 +124,6 @@ export default function App() {
           ))}
         </nav>
         <div className="topbar-actions">
-          <div className="environment-pill"><span className="environment-dot" /><span>Development preview</span></div>
-          <span className="preview-pill">MOCK MODE</span>
           <button
             className="theme-toggle"
             type="button"

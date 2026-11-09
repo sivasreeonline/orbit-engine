@@ -2384,3 +2384,47 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 @media (hover: none), (pointer: coarse) {
   .ambient-donuts { display: none; }
 }
+
+
+/* A soft sparkle is triggered by Enter inside the editor, or by changing
+   language. The watermark is otherwise completely still. */
+.editor-language-watermark.is-changing {
+  animation: language-watermark-change 620ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.editor-language-watermark.is-changing::after {
+  content: "✦";
+  position: absolute;
+  top: -0.22em;
+  right: -0.12em;
+  color: #17bfb7;
+  font-size: 0.28em;
+  line-height: 1;
+  opacity: 0;
+  transform: translate3d(-8px, 7px, 0) scale(0.35) rotate(-18deg);
+  transform-origin: center;
+  animation: language-watermark-spark 620ms cubic-bezier(0.18, 0.72, 0.28, 1) both;
+}
+@keyframes language-watermark-spark {
+  0% {
+    opacity: 0;
+    transform: translate3d(-8px, 7px, 0) scale(0.35) rotate(-18deg);
+  }
+  42% {
+    opacity: 0.95;
+    transform: translate3d(0, -2px, 0) scale(1.12) rotate(8deg);
+  }
+  72% {
+    opacity: 0.58;
+    transform: translate3d(2px, -5px, 0) scale(0.9) rotate(18deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(6px, -9px, 0) scale(0.55) rotate(28deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor-language-watermark.is-changing,
+  .editor-language-watermark.is-changing::after {
+    animation: none !important;
+  }
+}
