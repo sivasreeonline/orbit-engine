@@ -84,6 +84,38 @@ func TestDecodeExecutionRequestRejectsDuplicateObjectKeys(t *testing.T) {
 	}
 }
 
+func TestDecodeExecutionRequestRejectsNonCanonicalFieldCasing(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		canonical  string
+		nonCanonical string
+	}{
+		{name: "top-level execution id", canonical: `"executionId"`, nonCanonical: `"ExecutionID"`},
+		{name: "top-level protocol version", canonical: `"protocolVersion"`, nonCanonical: `"ProtocolVersion"`},
+		{name: "nested memory limit", canonical: `"memoryBytes"`, nonCanonical: `"MemoryBytes"`},
+		{name: "nested cpu limit", canonical: `"cpuQuotaMillis"`, nonCanonical: `"CpuQuotaMillis"`},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			body := bytes.Replace(
+				validRequestJSON(t),
+				[]byte(test.canonical),
+				[]byte(test.nonCanonical),
+				1,
+			)
+			_, err := DecodeExecutionRequest(bytes.NewReader(body))
+			if !errors.Is(err, ErrInvalidJSON) {
+				t.Fatalf("error = %v, want ErrInvalidJSON", err)
+			}
+		})
+	}
+}
+
 func TestDecodeExecutionRequestRejectsMalformedOrMultipleValues(t *testing.T) {
 	t.Parallel()
 
@@ -93,6 +125,7 @@ func TestDecodeExecutionRequestRejectsMalformedOrMultipleValues(t *testing.T) {
 	}{
 		{name: "malformed JSON", body: `{"protocolVersion":`},
 		{name: "array instead of object", body: `[]`},
+		{name: "null instead of object", body: `null`},
 		{name: "multiple JSON values", body: string(validRequestJSON(t)) + ` {}`},
 		{name: "trailing garbage", body: string(validRequestJSON(t)) + ` garbage`},
 		{name: "empty body", body: ""},
