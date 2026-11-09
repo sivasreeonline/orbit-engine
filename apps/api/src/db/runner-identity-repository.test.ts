@@ -29,7 +29,7 @@ function fakeClient(rows: Record<string, unknown>[] = [], failure?: Error) {
 const connection = "postgres://test-user:test-password@localhost/test";
 const identityRow = {
   runner_id: "runner-java-01",
-  pool_key: "java-linux",
+  pool_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
   identity_subject: "service-subject-01",
   scopes: ["dispatch:claim", "dispatch:receipt"],
 };
@@ -43,7 +43,7 @@ describe("PostgresRunnerIdentityRepository", () => {
       "https://identity.example.test", "service-subject-01",
     )).resolves.toEqual({
       runnerId: "runner-java-01",
-      poolId: "java-linux",
+      poolId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
       subject: "service-subject-01",
       scopes: ["dispatch:claim", "dispatch:receipt"],
     });
