@@ -22,7 +22,9 @@ cleanup() {
     docker rm -f "$container_id" >/dev/null 2>&1 || true
   fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 container_id="$(docker create \
   --runtime=runsc \
