@@ -63,7 +63,7 @@ No generic JWT claim names or Cloudflare Access subject fields are assumed by th
 - No registration, suspension, revocation or pool-management API exists.
 - No trusted operator attribution exists for lifecycle changes.
 - Database role grants have not yet been split between control-plane runtime, migration owner and read-only audit access.
-- No runner registry lookup repository or configured `RunnerAuthenticator` exists.
+- `PostgresRunnerIdentityRepository` resolves an already-verified issuer/subject pair to an active runner principal, but it does not validate credentials and no configured `RunnerAuthenticator` uses it yet.
 - No credential rotation/revocation integration exists.
 - No route derives `runnerId` from the registry; no dispatch claim/receipt endpoint is exposed.
 - No queue consumer, artifact retrieval or execution is enabled.
