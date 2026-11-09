@@ -89,6 +89,25 @@ BEGIN
 
   blocked := false;
   BEGIN
+    INSERT INTO execution_outbox (
+      execution_id, event_type, protocol_version, correlation_id, payload
+    ) VALUES (
+      execution_id, 'EXECUTION_REQUESTED', 'v1', 'ci-execution-test',
+      jsonb_build_object(
+        'executionId', execution_id::text,
+        'attemptId', second_attempt_id::text,
+        'protocolVersion', 'v1'
+      )
+    );
+  EXCEPTION WHEN check_violation THEN
+    blocked := true;
+  END;
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'Outbox accepted an attempt ID that does not match its execution job';
+  END IF;
+
+  blocked := false;
+  BEGIN
     UPDATE source_snapshots SET object_key = 'changed'
     WHERE id = snapshot_id;
   EXCEPTION WHEN SQLSTATE '55000' THEN
