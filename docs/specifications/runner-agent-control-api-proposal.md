@@ -84,7 +84,7 @@ Rules:
 - Repeating the same receipt must be idempotent. A conflicting receipt for the same dispatch must be rejected and audited.
 - A stale or expired lease must not be accepted merely because the runner still possesses its token.
 
-**Schema gap:** the current `runner_dispatch_outbox` prototype stores delivery state and fencing fields but does not persist a receipt ID or receipt digest. A separate receipt record or reviewed columns with a unique dispatch constraint are needed before an idempotent receipt endpoint can be implemented. Do not pretend the current `markDelivered()` boolean alone proves replay identity.
+**Prototype progress:** migration 0005 and the dispatch lease repository now persist an immutable receipt record with unique dispatch identity, runner ID, receipt ID, receipt hash and server receipt time. Exact replays return the original outcome; conflicting receipts are rejected. This is database-level prototype evidence only: no HTTP receipt endpoint, machine identity or durable runner-side journal exists yet.
 
 ### 2.3 Release a dispatch lease for retry
 
