@@ -27,7 +27,7 @@ Run as an ordinary account with permission to inspect the containerd socket:
 bash services/execution-runner/scripts/m0-host-preflight.sh
 ```
 
-The script checks OS release, architecture, kernel minimum, cgroup v2, containerd LTS version/configuration, gVisor binaries, and containerd socket ownership/permissions.
+The script checks OS release, architecture, kernel minimum, cgroup v2, containerd LTS version, the locally resolved configuration dump, gVisor binaries, and containerd socket ownership/permissions. The configuration check is a preliminary local-file inspection; it does not prove that the running daemon loaded that exact configuration or that the configured handler is operational.
 
 A successful result means only that the host matches these baseline checks. It does not prove that runsc starts, that systrap is active, that network access is blocked, or that resource limits are enforced.
 
@@ -38,11 +38,12 @@ Do not weaken a failed check to make the script pass. Investigate and record the
 On a disposable host only:
 
 1. Record Ubuntu image identifier, kernel build, architecture, containerd package version and provenance, runsc version and provenance, shim version, and containerd config version.
-2. Confirm the containerd runtime handler resolves to runsc.
-3. Launch only a reviewed, digest-pinned, minimal test image through the gVisor handler.
-4. Capture the runtime-reported platform and independently verify that systrap is selected.
-5. Repeat after a host reboot and after a clean service restart.
-6. Record cold-start and warm-start timings; do not extrapolate throughput from a single smoke test.
+2. Identify the actual running containerd daemon: record its systemd unit state, effective ExecStart arguments, process command line, and the configuration file path selected by those arguments. Resolve and record imported configuration files; do not assume that a standalone `containerd config dump` necessarily represents the daemon's effective configuration.
+3. Confirm from the effective daemon configuration that the runtime handler resolves to the expected runsc binary and shim. Record binary paths, ownership, permissions, package provenance, and cryptographic hashes.
+4. Launch only a reviewed, digest-pinned, minimal test image through the gVisor handler.
+5. Capture the runtime-reported platform and independently verify that systrap is selected.
+6. Repeat after a host reboot and after a clean service restart.
+7. Record cold-start and warm-start timings; do not extrapolate throughput from a single smoke test.
 
 No student source, hidden tests, application secrets, or production data may be used.
 
