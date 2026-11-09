@@ -87,6 +87,7 @@ describe("PostgresProblemRepository", () => {
     const listQuery = fake.calls[1];
     expect(listQuery?.text).toContain("FROM problems AS p");
     expect(listQuery?.text).toContain("\nWHERE p.lifecycle_status = 'PUBLISHED'");
+    expect(listQuery?.text).toContain("AND (p.tenant_id IS NULL OR p.tenant_id = $1::uuid)");
     expect(listQuery?.text).not.toContain("\\n");
     expect(listQuery?.values).toEqual([tenantId, 15]);
     expect(fake.isConnected()).toBe(true);
@@ -126,6 +127,10 @@ describe("PostgresProblemRepository", () => {
     expect(testCaseQuery).toContain("LIMIT 10");
     expect(testCaseQuery).not.toContain("FROM problem_test_cases");
     expect(testCaseQuery).not.toContain("hidden_test_cases");
+    const detailQuery = fake.calls[1]?.text ?? "";
+    expect(detailQuery).toContain("p.slug = $1");
+    expect(detailQuery).toContain("AND (p.tenant_id IS NULL OR p.tenant_id = $2::uuid)");
+    expect(detailQuery).not.toContain("two-sum");
     expect(fake.calls[1]?.values).toEqual(["two-sum", tenantId]);
   });
 
