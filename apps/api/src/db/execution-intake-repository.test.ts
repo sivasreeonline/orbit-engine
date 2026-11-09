@@ -29,24 +29,24 @@ function fakeClient(options: {
         throw new Error("sensitive database failure");
       }
       if (text.includes("FROM execution_idempotency AS ei")) {
-        return { rows: (options.existing ?? []) as T[] };
+        return { rows: (options.existing ?? []) as unknown as T[] };
       }
       if (text.includes("FROM problems AS p")) {
         return { rows: (options.problem ?? [{
           problem_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
           problem_version_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
-        }]) as T[] };
+        }]) as unknown as T[] };
       }
       if (text.includes("INSERT INTO source_snapshots")) {
-        return { rows: [{ id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1" }] as T[] };
+        return { rows: [{ id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1" }] as unknown as T[] };
       }
       if (text.includes("INSERT INTO execution_attempts")) {
-        return { rows: [{ id: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1" }] as T[] };
+        return { rows: [{ id: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1" }] as unknown as T[] };
       }
       if (text.includes("INSERT INTO execution_jobs")) {
-        return { rows: [{ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" }] as T[] };
+        return { rows: [{ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1" }] as unknown as T[] };
       }
-      return { rows: [] as T[] };
+      return { rows: [] as unknown as T[] };
     },
     async end() { ended = true; },
   };
