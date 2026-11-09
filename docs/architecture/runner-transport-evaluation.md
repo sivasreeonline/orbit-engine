@@ -43,7 +43,8 @@ Cloudflare documents HTTP pull consumers for external infrastructure and program
 - Cloudflare requires an API bearer token with both Queues read and write permissions; write is needed for acknowledgements. The documentation describes optional account scoping, not a queue-specific scope. Treat the credential as potentially able to affect other queues in that account until a real token policy is verified.
 - The pull API uses short polling, not long polling. An empty pull returns immediately; the agent needs bounded polling backoff with jitter and must not spin.
 - The documented default visibility timeout is 30 seconds and maximum is 12 hours; batch size defaults to 5 and maxes at 100. Select a visibility timeout for the handoff transaction, not for the entire student execution.
-- A lease ID expires with the visibility timeout. A message not acknowledged or explicitly retried is delivered again. Queue leases are not a replacement for PostgreSQL fencing tokens.
+- **Late acknowledgements are permissive:** Cloudflare documents that an acknowledgement using a lease ID may still be accepted after visibility timeout expiry, even if the message was delivered to another consumer in the meantime. Therefore a Queue lease is not an exclusive fencing token and cannot establish which consumer owns the logical work. A stale consumer may acknowledge after redelivery; PostgreSQL unique handoff identity and worker/token/expiry fencing must remain authoritative.
+- The pull-consumer guide says to create a token with both account Queues read and write permissions and describes optional account scoping. The current Pull Queue Messages API reference lists accepted permissions as Queues Write or Workers Scripts Write. This documentation difference must be resolved against the actual account token configuration and tested before choosing the native pull option; do not assume queue-specific token scoping or rely on the narrower API reference wording without validation.
 - The Queue API does not provide a durable execution state machine. PostgreSQL remains authoritative.
 - A pull consumer must decode the Queue content type correctly. External consumers cannot decode the Workers-specific `v8` content type; publish a supported `json`, `text` or `bytes` format and test its encoding.
 - Queue retry exhaustion can delete a message if no dead-letter queue is configured. Configure and test a DLQ, and keep the database handoff idempotent.
@@ -140,10 +141,11 @@ Cloudflare documents Workers VPC routing from a Worker to private services throu
 ## Prototype acceptance tests
 
 - Empty pull uses bounded jittered backoff; no tight polling loop.
-- Concurrent pull consumers receive distinct active message leases.
+- Concurrent pull consumers receive distinct initial deliveries, but tests must also demonstrate that an expired lease can be acknowledged late by the old consumer after redelivery; PostgreSQL idempotency/fencing must still prevent duplicate logical work.
 - Malformed, oversized, duplicate-key, unknown-field and unsupported content-type messages are rejected safely.
 - Queue delivery replay creates exactly one PostgreSQL handoff intent.
 - Queue acknowledgement occurs only after the handoff transaction is confirmed committed.
+- Token scope and the current pull-consumer guide/API-reference permission discrepancy are verified in a dedicated non-production account before native pull is approved.
 - Crash after commit but before acknowledgement is recovered by redelivery and exact duplicate detection.
 - Control-plane outage or unknown transaction outcome does not cause premature acknowledgement.
 - Queue retry exhaustion routes to a configured DLQ and produces an operator-visible alert.
