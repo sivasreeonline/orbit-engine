@@ -1,3 +1,4 @@
+import { Client } from "pg";
 import type { Principal } from "../contracts";
 import { DatabaseUnavailableError } from "./database-errors";
 
@@ -41,8 +42,6 @@ type PgClientFactory = (connectionString: string) => PgTransactionClient;
 const defaultClientFactory: PgClientFactory = (connectionString) =>
   new Client({ connectionString, connectionTimeoutMillis: 5_000,
     application_name: "sky-high-coding-judge-api" }) as unknown as PgTransactionClient;
-
-import { Client } from "pg";
 
 export class ExecutionProblemNotFoundError extends Error {
   constructor() {
