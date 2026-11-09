@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "apps/web/**"
+      - "apps/api/**"
       - "docs/**"
       - ".github/workflows/**"
       - "AGENTS.md"
@@ -13,6 +14,7 @@ on:
     branches: [main, "feat/**", "fix/**"]
     paths:
       - "apps/web/**"
+      - "apps/api/**"
       - "docs/**"
       - ".github/workflows/**"
       - "AGENTS.md"
@@ -53,6 +55,39 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+  api:
+    name: API typecheck, tests and dry-run deploy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # apps/api is still using exact direct dependency versions but does not
+      # yet have its generated lockfile. Replace npm install with npm ci once
+      # package-lock.json is generated and committed.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Worker deployment dry run
+        run: npx wrangler deploy --dry-run
 
       - name: Dependency audit
         run: npm audit --audit-level=high
