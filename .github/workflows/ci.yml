@@ -113,7 +113,7 @@ jobs:
       - name: Commit generated API lockfile
         if: github.event_name == 'push' && github.ref == 'refs/heads/feat/m0-host-preflight-harness'
         run: |
-          if git diff --quiet -- package-lock.json; then
+          if [ -z "$(git status --porcelain -- package-lock.json)" ]; then
             echo "API lockfile is unchanged."
             exit 0
           fi
