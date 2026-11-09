@@ -1,12 +1,6 @@
 name: M0 Host Preflight Harness
 
 on:
-  pull_request:
-    branches: [main, docs/runner-contract-decision-proposal, docs/m0-linux-sandbox-baseline]
-    paths:
-      - "services/execution-runner/scripts/m0-host-preflight.sh"
-      - "docs/specifications/m0-host-preflight-and-proof-runbook.md"
-      - ".github/workflows/m0-preflight-ci.yml"
   push:
     branches: ["feat/**", "docs/**"]
     paths:
