@@ -7,6 +7,7 @@
 - Host supervisor boundary, lifecycle state machine, and recovery design: `m0-runtime-proof-harness-design.md`.
 - Structured evidence manifest: `../schemas/m0-proof-evidence.schema.json`.
 - Independent security review packet: `../security/m0-sandbox-security-review-packet.md`.
+- Proposed launch-boundary decision: `../adr/ADR-0019-m0-host-launch-boundary.md`.
 
 These are design and review artifacts only. They do not authorize sandbox launch, student execution, cloud provisioning, or executor activation.
 
