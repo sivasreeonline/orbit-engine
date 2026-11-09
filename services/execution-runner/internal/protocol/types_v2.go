@@ -2,8 +2,6 @@ package protocol
 
 import (
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -64,14 +62,18 @@ func (request ExecutionRequestV2) ValidateAt(now time.Time) error {
 	if !isCanonicalUUID(request.CorrelationID) {
 		return fieldError("correlationId", "must be a canonical lowercase UUID")
 	}
-	for field, value := range map[string]string{
-		"executionId": request.ExecutionID,
-		"attemptId": request.AttemptID,
-		"problemVersionId": request.ProblemVersionID,
-		"sourceArtifactId": request.SourceArtifactID,
-		"testBundleId": request.TestBundleID,
-	} {
-		if err := validateOpaqueID(field, value); err != nil {
+	ids := []struct {
+		field string
+		value string
+	}{
+		{"executionId", request.ExecutionID},
+		{"attemptId", request.AttemptID},
+		{"problemVersionId", request.ProblemVersionID},
+		{"sourceArtifactId", request.SourceArtifactID},
+		{"testBundleId", request.TestBundleID},
+	}
+	for _, item := range ids {
+		if err := validateOpaqueID(item.field, item.value); err != nil {
 			return err
 		}
 	}
@@ -176,5 +178,3 @@ func isCancellationRef(value string) bool {
 	return err == nil && len(decoded) == 16 && strings.ToLower(value) == value
 }
 
-var _ = errors.Is
-var _ = fmt.Sprintf
