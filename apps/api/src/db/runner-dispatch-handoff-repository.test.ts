@@ -80,7 +80,10 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
   });
 
   it("returns the existing intent for a duplicate delivery", async () => {
-    const fake = fakeClient({ authoritative: [{\n      attempt_id: attemptId, job_state: "RUNNING", outbox_attempt_id: attemptId,\n      outbox_protocol_version: "v1", correlation_id: "corr-1",\n    }], inserted: [] });
+    const fake = fakeClient({ authoritative: [{
+      attempt_id: attemptId, job_state: "RUNNING", outbox_attempt_id: attemptId,
+      outbox_protocol_version: "v1", correlation_id: "corr-1",
+    }], inserted: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
     await expect(repository.record(envelope)).resolves.toEqual({
