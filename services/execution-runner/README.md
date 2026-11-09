@@ -7,7 +7,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 ## Current capabilities
 - Loopback-only HTTP health endpoint: `GET /healthz`.
 - Readiness endpoint returns HTTP 503 until a sandbox executor is configured.
-- Versioned internal execution request types, strict structural validation and a bounded JSON decoder that rejects unknown fields and trailing values.
+- Versioned internal execution request types, strict structural validation and a bounded JSON decoder that rejects unknown fields, duplicate object keys and trailing values.
 - An executor interface with a safe unconfigured implementation.
 - Unit tests for health/readiness, request validation, strict JSON decoding and disabled execution.
 - Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
