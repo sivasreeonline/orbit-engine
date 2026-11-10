@@ -16,6 +16,7 @@
         "byte_count",
         "evidence_root_id",
         "evidence_type",
+        "acquired_by_id",
         "acquired_at",
         "acquisition_tool",
         "tool_version",
@@ -96,6 +97,11 @@
             "redacted",
             "non-sensitive"
           ]
+        },
+        "acquired_by_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Accountable human or service principal that acquired or uploaded this evidence object; must differ from its independent verifier, host owner and security reviewer."
         }
       },
       "allOf": [
