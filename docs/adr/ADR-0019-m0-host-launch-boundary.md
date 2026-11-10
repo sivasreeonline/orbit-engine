@@ -113,7 +113,7 @@ Complete `docs/security/m0-independent-security-review-checklist.md` and the mac
 
 The reviewer must compare the rootful supervisor against rootless containerd with caller-configured user namespaces using the same stable controls and evidence standards. The `runsc --rootless` CLI mode is separate and must not be represented as equivalent.
 
-An architecture recommendation does not authorize privileged implementation. Implementation, Phase A, Phase B, student execution and production execution remain separate gates; the review-record schema keeps all actual authorization flags false.
+An architecture decision does not authorize privileged implementation. Implementation, Phase A, Phase B, student execution and production execution remain separate gates; the review-record schema keeps all actual authorization flags false.
 
 ## Required gates before accepting this ADR
 
