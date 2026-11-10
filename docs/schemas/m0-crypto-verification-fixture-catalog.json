@@ -1,7 +1,7 @@
 {
   "catalog_version": "0.1.0",
   "status": "contract-fixtures-only",
-  "description": "Structural acceptance catalog. These fixtures deliberately contain no fabricated public keys, signatures, or cryptographic PASS results. Algorithm-specific known-answer vectors are gated until an approved profile and library exist.",
+  "description": "Structural and contract-semantic fixture catalog. Fixtures contain no production keys or fabricated cryptographic PASS results. Algorithm-specific known-answer vectors remain gated until an approved profile and library exist.",
   "cryptographic_profile_selected": false,
   "positive_cases": [
     {
@@ -25,6 +25,36 @@
     {
       "id": "CRYPTO-P-004",
       "case": "verification-report-valid-audit-only",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-005",
+      "case": "host-epoch-response-payload-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-006",
+      "case": "provider-fence-attestation-payload-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-007",
+      "case": "cleanup-calibration-authorization-payload-shape-valid-with-distinct-principals",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-008",
+      "case": "key-revocation-payload-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-009",
+      "case": "typed-trust-bundle-envelope-shape-valid",
       "expected": "STRUCTURE_ACCEPT",
       "cryptography_executed": false
     }
@@ -171,5 +201,6 @@
       "outcome": "EXECUTED_SCHEMA_REJECTION",
       "cryptography_executed": false
     }
-  ]
+  ],
+  "required_positive_case_count": 9
 }
