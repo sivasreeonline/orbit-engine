@@ -69,13 +69,14 @@ def main() -> None:
         "m0-provider-fence-attestation-payload.schema.json",
         "m0-phase-a-authorization-payload.schema.json",
         "m0-key-revocation-payload.schema.json",
+        "m0-crypto-key-lifecycle-event.schema.json",
     ]
     schemas = {name: validator(name) for name in schema_names}
     envelope_v = schemas[schema_names[0]]
     bundle_v = schemas[schema_names[1]]
     key_v = schemas[schema_names[2]]
     report_v = schemas[schema_names[3]]
-    host_v, fence_v, phase_v, revoke_v = (schemas[name] for name in schema_names[4:])
+    host_v, fence_v, phase_v, revoke_v, key_event_v = (schemas[name] for name in schema_names[4:])
 
     envelope_schema = load_json(SCHEMAS / schema_names[0])
     payload_schema_map = {
@@ -145,6 +146,29 @@ def main() -> None:
     accepted(fence_v, fence_payload, "provider fence payload")
     accepted(phase_v, phase_payload, "Phase A authorization payload shape")
     accepted(revoke_v, revoke_payload, "key revocation payload")
+    key_event = {
+        "schema_version": "0.1.0", "event_id": "44444444-4444-4444-8444-444444444444",
+        "authority_id": "synthetic-authority", "key_id": "synthetic-key", "key_version": "2",
+        "purpose": "host-epoch", "environment": "test", "prior_state": "NONE",
+        "new_state": "GENERATED", "event_type": "KEY_GENERATED", "trust_bundle_generation": 2,
+        "occurred_at": "2026-01-01T00:00:00Z", "actor_principal_id": "key-custodian",
+        "reason_code": "INITIAL_CREATION", "evidence_ref": "evidence://key-generation/02",
+        "evidence_sha256": "8" * 64, "previous_event_sha256": None,
+        "event_sha256": "9" * 64, "reactivation_permitted": False,
+    }
+    accepted(key_event_v, key_event, "key lifecycle generation event")
+    rejected(key_event_v, dict(key_event, new_state="ACTIVE"), "illegal direct key activation")
+    rejected(key_event_v, dict(key_event, reactivation_permitted=True), "key lifecycle reactivation")
+    activated_event = dict(key_event, prior_state="PENDING", new_state="ACTIVE",
+                            event_type="KEY_ACTIVATED", reason_code="INITIAL_CREATION",
+                            previous_event_sha256="a" * 64)
+    accepted(key_event_v, activated_event, "key activation event")
+    revoked_event = dict(key_event, prior_state="ACTIVE", new_state="REVOKED",
+                         event_type="KEY_REVOKED", reason_code="KEY_COMPROMISE",
+                         previous_event_sha256="b" * 64)
+    accepted(key_event_v, revoked_event, "terminal key revocation event")
+    rejected(key_event_v, dict(revoked_event, new_state="ACTIVE"), "revoked key reactivation")
+
     rejected(host_v, dict(host_payload, incarnation_epoch=0), "zero host epoch")
     rejected(fence_v, dict(fence_payload, fence_state="REQUESTED"), "uncompleted provider fence")
     rejected(phase_v, dict(phase_payload, security_review_control_count=32), "incomplete review controls")
@@ -276,6 +300,110 @@ def main() -> None:
 
     check(not key_admissible(key, "provider-fence", "test"), "purpose-mismatched key admitted")
     check(not key_admissible(revoked_key, "host-epoch", "test"), "revoked key admitted")
+    def valid_key_transition(prior: str, candidate: str, event_type: str) -> bool:
+        allowed = {
+            ("NONE", "GENERATED", "KEY_GENERATED"),
+            ("GENERATED", "PENDING", "KEY_SUBMITTED_FOR_ACTIVATION"),
+            ("PENDING", "ACTIVE", "KEY_ACTIVATED"),
+            ("ACTIVE", "DEPRECATED_VERIFY_ONLY", "KEY_DEPRECATED"),
+            ("GENERATED", "REVOKED", "KEY_REVOKED"),
+            ("PENDING", "REVOKED", "KEY_REVOKED"),
+            ("ACTIVE", "REVOKED", "KEY_REVOKED"),
+            ("DEPRECATED_VERIFY_ONLY", "REVOKED", "KEY_REVOKED"),
+            ("REVOKED", "DESTROYED", "KEY_DESTROYED"),
+            ("DEPRECATED_VERIFY_ONLY", "DESTROYED", "KEY_DESTROYED"),
+        }
+        return (prior, candidate, event_type) in allowed
+    check(valid_key_transition("PENDING", "ACTIVE", "KEY_ACTIVATED"),
+          "valid key activation transition rejected")
+    check(not valid_key_transition("REVOKED", "ACTIVE", "KEY_ACTIVATED"),
+          "revoked key reactivation accepted")
+    check(not valid_key_transition("ACTIVE", "GENERATED", "KEY_GENERATED"),
+          "key lifecycle rollback accepted")
+
+    def trust_bundle_successor_valid(previous: dict, candidate: dict) -> bool:
+        return (candidate["generation"] == previous["generation"] + 1
+                and candidate["previous_bundle_sha256"] == previous["bundle_sha256"]
+                and candidate["environment"] == previous["environment"]
+                and candidate["authority_id"] == previous["authority_id"]
+                and candidate["root_id"] == previous["root_id"])
+    successor = dict(bundle, generation=2, previous_bundle_sha256=bundle["bundle_sha256"],
+                     bundle_id="55555555-5555-4555-8555-555555555555",
+                     bundle_sha256="a" * 64)
+    check(trust_bundle_successor_valid(bundle, successor), "valid trust bundle successor rejected")
+    check(not trust_bundle_successor_valid(bundle, dict(successor, generation=3)),
+          "trust bundle generation skip accepted")
+    check(not trust_bundle_successor_valid(bundle, dict(successor, previous_bundle_sha256="f" * 64)),
+          "trust bundle predecessor digest mismatch accepted")
+    check(not trust_bundle_successor_valid(bundle, dict(successor, environment="production")),
+          "cross-environment trust bundle transition accepted")
+
+    def revocation_matches_bundle(statement: dict, bundle_value: dict) -> bool:
+        matches = [item for item in bundle_value["keys"]
+                   if item["key_id"] == statement["key_id"]
+                   and item["key_version"] == statement["key_version"]]
+        return len(matches) == 1 and matches[0]["status"] == "REVOKED"
+    revoked_bundle = dict(bundle, keys=[dict(bundle["keys"][0], status="REVOKED",
+                                             revoked_at="2026-01-01T00:00:00Z")],
+                          revocations=[{"key_id":"synthetic-key","key_version":"1",
+                                        "effective_at":"2026-01-01T00:00:00Z","reason_code":"KEY_COMPROMISE",
+                                        "revocation_statement_ref":"evidence://revocation/01",
+                                        "revocation_statement_sha256":"b"*64}])
+    check(revocation_matches_bundle(revoked_bundle["revocations"][0], revoked_bundle),
+          "matching bundle revocation statement rejected")
+    check(not revocation_matches_bundle(revoked_bundle["revocations"][0],
+                                        dict(revoked_bundle, keys=[dict(revoked_bundle["keys"][0],
+                                                                        status="ACTIVE")])),
+          "revocation statement with active key accepted")
+
+    def authorization_ledger_binding_valid(payload: dict, receipt: dict, acceptance: dict,
+                                            review: dict, qualification: dict, key_record: dict) -> bool:
+        return (payload["host_enrollment_id"] == receipt["host_enrollment_id"]
+                and payload["provider_instance_id"] == receipt["provider_instance_id"]
+                and payload["incarnation_epoch"] == receipt["epoch"] == acceptance["accepted_epoch"]
+                and payload["host_epoch_receipt_sha256"] == receipt["receipt_sha256"]
+                and payload["host_acceptance_sha256"] == acceptance["acceptance_sha256"]
+                and payload["security_review_record_sha256"] == review["digest"]
+                and review["control_count"] == 33 and review["fence_001"] == "pass"
+                and payload["host_qualification_record_sha256"] == qualification["digest"]
+                and key_record["key_id"] == "synthetic-key"
+                and key_record["key_version"] == "1"
+                and key_admissible(key_record, "phase-a-authorization", "test"))
+    receipt={"host_enrollment_id":"enrollment-01","provider_instance_id":"instance-current",
+             "epoch":7,"receipt_sha256":"1"*64}
+    acceptance={"accepted_epoch":7,"acceptance_sha256":"2"*64}
+    review={"digest":"5"*64,"control_count":33,"fence_001":"pass"}
+    qualification={"digest":"4"*64}
+    authorization_key=dict(key,purpose="phase-a-authorization")
+    check(authorization_ledger_binding_valid(phase_payload,receipt,acceptance,review,qualification,authorization_key),
+          "valid authorization-to-ledger bindings rejected")
+    check(not authorization_ledger_binding_valid(phase_payload,dict(receipt,epoch=6),acceptance,review,qualification,authorization_key),
+          "authorization with stale host epoch accepted")
+    check(not authorization_ledger_binding_valid(phase_payload,receipt,acceptance,dict(review,control_count=32),qualification,authorization_key),
+          "authorization with incomplete security review accepted")
+    check(not authorization_ledger_binding_valid(phase_payload,receipt,acceptance,review,qualification,
+                                                  dict(authorization_key,state="REVOKED")),
+          "authorization signed by revoked key accepted")
+
+    def run_claim_budget_valid(maximum: int, claim_statuses: list[str], consumed: int) -> bool:
+        terminal_claims={"CLAIMED","COMPLETED","FAILED","QUARANTINED"}
+        return (all(status in terminal_claims for status in claim_statuses)
+                and consumed == len(claim_statuses) and 0 <= consumed <= maximum)
+    check(run_claim_budget_valid(3,["COMPLETED","FAILED"],2),
+          "valid consumed run budget rejected")
+    check(not run_claim_budget_valid(3,["COMPLETED","FAILED"],1),
+          "failed run claim was silently refunded")
+    check(not run_claim_budget_valid(1,["COMPLETED","QUARANTINED"],2),
+          "run claim budget over-consumption accepted")
+
+    def restored_ledger_fresh(external_generation: int, restored_generation: int,
+                              external_digest: str, restored_digest: str) -> bool:
+        return (restored_generation == external_generation
+                and restored_digest == external_digest)
+    check(restored_ledger_fresh(12,12,"c"*64,"c"*64), "matching external checkpoint rejected")
+    check(not restored_ledger_fresh(12,11,"c"*64,"b"*64),
+          "restored stale ledger passed external anti-rollback checkpoint")
+
     def trust_generation_advances(previous: int, candidate: int) -> bool:
         return candidate > previous
     check(trust_generation_advances(1, 2), "valid trust bundle generation advance rejected")
