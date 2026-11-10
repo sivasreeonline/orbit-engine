@@ -146,7 +146,7 @@ The independent reviewer must verify and record:
 
 ### Calibration decision and Phase B separation
 
-The Phase A decision must be recorded as one of: not authorized, authorized with explicit constraints, or rejected. It must include the reviewer, date, scope, host/build digests, scenario allowlist, outer safety cutoff, maximum run count, stop conditions, evidence destination, and expiry. Authorization is invalidated by a change to the host image, kernel, runtime, journal, supervisor, watchdog, fixture digest, network boundary, or material configuration.
+The Phase A decision must be recorded as one of: not authorized, authorized with explicit constraints, or rejected. It must include the reviewer, date, scope, host/build digests, scenario allowlist, outer safety cutoff, maximum run count, stop conditions, evidence destination, and expiry. Authorization is invalidated by a change to the host image, kernel, runtime, journal, supervisor, watchdog, fixture digest, network boundary, or material configuration. The authorization manifest must conform to docs/schemas/m0-cleanup-calibration-authorization.schema.json. Its signature reference and evidence hashes must be independently resolved and verified; passing JSON Schema validation does not authenticate the reviewer or prove the host controls.
 
 Phase A results must include raw sanitized trigger-to-verified-cleanup measurements, phase breakdown, outliers, host envelope, uncertainty sources, and the rationale for any candidate engineering margin. Percentiles are descriptive; a p95 or p99 is not a hard deadline. Any sample terminated by the outer VM cutoff or lacking independent absence verification is failed/unverified and cannot support the candidate maximum.
 

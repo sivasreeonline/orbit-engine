@@ -16,6 +16,8 @@ on:
       - "docs/schemas/m0-proof-evidence.schema.json"
       - "scripts/validate_m0_evidence_schema.py"
       - "scripts/validate_m0_cleanup_gate.py"
+      - "docs/schemas/m0-cleanup-calibration-authorization.schema.json"
+      - "scripts/validate_m0_cleanup_calibration_authorization.py"
   workflow_dispatch:
 
 permissions:
@@ -49,6 +51,9 @@ jobs:
 
       - name: Validate cleanup calibration and full-proof gates
         run: python scripts/validate_m0_cleanup_gate.py
+
+      - name: Validate cleanup calibration authorization contract
+        run: python scripts/validate_m0_cleanup_calibration_authorization.py
 
       - name: Verify script is not configured to launch workloads
         shell: bash

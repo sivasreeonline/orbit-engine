@@ -49,7 +49,7 @@ Phase A may begin only after a written, time-bounded calibration authorization r
 
 Phase A uses only fixed synthetic workloads. It may measure explicit cancellation, the sandbox wall watchdog, bounded output-triggered termination, descendants holding inherited pipes, supervisor pause/crash/restart, containerd interruption/recovery, journal write failure, evidence-store outage, repeated/late triggers, and ambiguous partial-resource reconciliation. Each scenario is separately identified and independently evidenced.
 
-The Phase A scenario identifiers are CAL-CLEAN-001 through CAL-CLEAN-009. Their trigger and evidence definitions are normative in the host runbook and runtime harness design; the same identifiers and meanings must be maintained across all three documents.
+The Phase A scenario identifiers are CAL-CLEAN-001 through CAL-CLEAN-009. Their trigger and evidence definitions are normative in the host runbook and runtime harness design; the same identifiers and meanings must be maintained across all three documents. The authorization record is structured by docs/schemas/m0-cleanup-calibration-authorization.schema.json and must be validated before the host owner and independent reviewer sign it; schema validity alone is not approval.
 
 Stop the campaign immediately and quarantine the VM if the external safety cutoff fires, network containment is uncertain, an unowned resource appears, the supervisor/watchdog identity is ambiguous, cleanup cannot be independently verified, evidence exposes prohibited data, or any host-boundary invariant fails. A VM-level hard stop is containment, not proof of successful sandbox cleanup.
 
