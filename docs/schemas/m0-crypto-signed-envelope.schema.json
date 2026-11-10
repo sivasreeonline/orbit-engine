@@ -419,10 +419,18 @@
               "max_run_count",
               "not_before",
               "expires_at",
-              "phase_a_authorized",
               "phase_b_authorized",
               "student_execution_authorized",
-              "production_execution_authorized"
+              "production_execution_authorized",
+              "cleanup_calibration_authorized",
+              "full_m0_proof_authorized",
+              "host_owner_principal_id",
+              "evidence_acquirer_principal_id",
+              "fence_verifier_principal_id",
+              "independent_security_reviewer_principal_id",
+              "authorization_signer_principal_id",
+              "reviewer_role",
+              "independence_attested"
             ],
             "properties": {
               "authorization_id": {
@@ -432,7 +440,7 @@
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
               },
               "authorization_scope": {
-                "const": "M0_HOST_QUALIFICATION_ONLY"
+                "const": "M0_CLEANUP_CALIBRATION_ONLY"
               },
               "environment": {
                 "enum": [
@@ -536,9 +544,6 @@
                 "type": "string",
                 "format": "date-time"
               },
-              "phase_a_authorized": {
-                "const": true
-              },
               "phase_b_authorized": {
                 "const": false
               },
@@ -547,6 +552,48 @@
               },
               "production_execution_authorized": {
                 "const": false
+              },
+              "cleanup_calibration_authorized": {
+                "const": true
+              },
+              "full_m0_proof_authorized": {
+                "const": false
+              },
+              "host_owner_principal_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+              },
+              "evidence_acquirer_principal_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+              },
+              "fence_verifier_principal_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+              },
+              "independent_security_reviewer_principal_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+              },
+              "authorization_signer_principal_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+              },
+              "reviewer_role": {
+                "const": "independent-security-reviewer"
+              },
+              "independence_attested": {
+                "const": true
               }
             }
           }
