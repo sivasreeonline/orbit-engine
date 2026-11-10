@@ -177,8 +177,19 @@ def main() -> int:
             if scenario_id not in contents.get(label, ""):
                 failures.append(f"{label}: missing watchdog fault-injection scenario {scenario_id}")
 
-    for label in ("contract", "journal evaluation"):
-        rows = [line for line in contents.get(label, "").splitlines() if line.startswith("| `")]
+    logical_sections = {
+        "contract": "## 6. Journal logical schema contract",
+        "journal evaluation": "## 4. Minimum logical data model",
+    }
+    for label, heading in logical_sections.items():
+        document = contents.get(label, "")
+        start = document.find(heading)
+        if start < 0:
+            failures.append(f"{label}: missing logical data model section {heading}")
+            continue
+        end = document.find("\n## ", start + len(heading))
+        section = document[start:] if end < 0 else document[start:end]
+        rows = [line for line in section.splitlines() if line.startswith("| `")]
         names = [line.split("`", 2)[1] for line in rows]
         duplicates = sorted({name for name in names if names.count(name) > 1})
         missing = sorted(LOGICAL_RECORD_NAMES - set(names))
