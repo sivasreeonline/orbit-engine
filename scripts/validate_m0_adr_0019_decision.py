@@ -138,6 +138,12 @@ def validate_record(record, validator):
                 add_error(errors, any(ref.get("verification_status") != "verified" or
                                       not ref.get("independent_verifier_id") for ref in refs),
                           f"{cid}/{control_id}: pass requires independently verified references")
+                decision_roles = {record.get("participants", {}).get("reviewer_id"),
+                                  record.get("participants", {}).get("host_owner_id")} - {None, ""}
+                qualification_roles = {qualification.get("reviewer_id"), qualification.get("host_owner_id")} - {None, ""}
+                verifier_roles = decision_roles | qualification_roles
+                add_error(errors, any(ref.get("independent_verifier_id") in verifier_roles for ref in refs),
+                          f"{cid}/{control_id}: evidence verifier must be independent of decision and qualification reviewers/host owners")
                 if expected_class == "host":
                     add_error(errors, not any(ref.get("evidence_type") in HOST_EVIDENCE_TYPES for ref in refs),
                               f"{cid}/{control_id}: host control cannot pass on design-only evidence")
@@ -185,6 +191,12 @@ def validate_record(record, validator):
                 add_error(errors, qualification_evidence.get("verification_status") != "verified" or
                           not qualification_evidence.get("independent_verifier_id"),
                           f"{cid}: qualification record must have independently verified evidence")
+                add_error(errors, qualification_evidence.get("independent_verifier_id") in {
+                    qualification.get("reviewer_id"), qualification.get("host_owner_id"),
+                    record.get("participants", {}).get("reviewer_id"),
+                    record.get("participants", {}).get("host_owner_id")
+                },
+                          f"{cid}: qualification evidence verifier must be independent of reviewer and host owner")
                 add_error(errors, qualification.get("host_profile_digest") != config.get("profile_digest"),
                           f"{cid}: host profile digest mismatch")
                 if cid == "rootless-containerd-userns":
@@ -491,6 +503,20 @@ def main():
     if not any("qualification evidence SHA-256" in error for error in mismatch_errors):
         raise AssertionError("qualification evidence with mismatched record digest was accepted")
     print("PASS  rejects host qualification evidence whose digest does not match the signed record")
+
+    evidence_verifier_owner = deepcopy(complete)
+    owner_candidate = next(c for c in evidence_verifier_owner["candidate_assessments"] if c["candidate_id"] == "rootful-supervisor")
+    owner_candidate["qualification_report"]["qualification_record_evidence"]["independent_verifier_id"] = owner_candidate["qualification_report"]["host_owner_id"]
+    owner_errors = validate_record(evidence_verifier_owner, validator)
+    if not any("qualification evidence verifier must be independent" in error for error in owner_errors):
+        raise AssertionError("qualification host owner was accepted as qualification evidence verifier")
+    evidence_verifier_reviewer = deepcopy(complete)
+    reviewer_candidate = next(c for c in evidence_verifier_reviewer["candidate_assessments"] if c["candidate_id"] == "rootful-supervisor")
+    reviewer_candidate["qualification_report"]["qualification_record_evidence"]["independent_verifier_id"] = reviewer_candidate["qualification_report"]["reviewer_id"]
+    reviewer_errors = validate_record(evidence_verifier_reviewer, validator)
+    if not any("qualification evidence verifier must be independent" in error for error in reviewer_errors):
+        raise AssertionError("qualification reviewer was accepted as qualification evidence verifier")
+    print("PASS  rejects qualification evidence verification by host owner or independent reviewer")
 
     rootless["assessment_status"]="design-assessed"
     rootless["assessment_rationale"]="Synthetic design assessment only."
