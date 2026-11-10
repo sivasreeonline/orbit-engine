@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-proof-evidence.schema.json",
   "title": "Sky High M0 Sandbox Proof Evidence",
-  "description": "Sanitized, structured evidence manifest for a disposable-host M0 gVisor proof. This schema records outcomes and references only; it is not proof that a test was performed or passed.",
+  "description": "Sanitized, structured evidence manifest for a disposable-host M0 gVisor proof. This schema records outcomes and references only; it is not proof that a test was performed or passed. A passed report also records the exact approved M0 proof resource profile.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,6 +12,7 @@
     "baseline",
     "host",
     "runtime",
+    "resource_profile",
     "fixture",
     "tests",
     "overall_result",
@@ -309,6 +310,58 @@
             "null"
           ],
           "maxLength": 96
+        }
+      }
+    },
+    "resource_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "revision",
+        "cpu_quota_millis",
+        "memory_bytes",
+        "wall_time_millis",
+        "process_limit",
+        "output_bytes_total",
+        "stdout_bytes_max",
+        "stderr_bytes_max",
+        "scratch_bytes",
+        "scratch_inodes"
+      ],
+      "properties": {
+        "profile_id": {
+          "const": "m0-proof-small-v1"
+        },
+        "revision": {
+          "const": "1"
+        },
+        "cpu_quota_millis": {
+          "const": 1000
+        },
+        "memory_bytes": {
+          "const": 1073741824
+        },
+        "wall_time_millis": {
+          "const": 60000
+        },
+        "process_limit": {
+          "const": 128
+        },
+        "output_bytes_total": {
+          "const": 1048576
+        },
+        "stdout_bytes_max": {
+          "const": 1048576
+        },
+        "stderr_bytes_max": {
+          "const": 1048576
+        },
+        "scratch_bytes": {
+          "const": 268435456
+        },
+        "scratch_inodes": {
+          "const": 4096
         }
       }
     }
