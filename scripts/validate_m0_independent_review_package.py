@@ -232,6 +232,10 @@ def main():
         raise AssertionError("security packet must retain pending review status")
     if "Snapshot rollback / cloned host split-brain" not in packet or "FENCE-001" not in checklist:
         raise AssertionError("security review package must explicitly cover external host-incarnation fencing")
+    if "complete predecessor enumeration" not in packet or "provider-enforced fencing of every predecessor" not in packet:
+        raise AssertionError("security review packet must require fence-before-epoch review and predecessor completeness")
+    if "33 controls" not in packet or "33-control checklist" not in checklist:
+        raise AssertionError("security review packet/checklist control count must remain 33")
     print("PASS  blank template validates and remains not-reviewed/non-authorizing")
     print("PASS  schema, template, 33-control checklist and evidence classes are synchronized")
     print("PASS  ADR and security packet link the independent review package")
