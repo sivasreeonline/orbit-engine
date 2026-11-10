@@ -156,13 +156,17 @@ CLEANING
 
 A supervisor restart must reconcile every non-terminal journal entry against actual containerd tasks, shim processes, namespaces, cgroups, mounts, and scratch directories. Unknown or unowned resources are quarantined and cleaned under the host recovery procedure; they must never be silently adopted as successful work.
 
-A terminal acknowledgement is allowed only after:
-1. The workload process tree is gone.
-2. The containerd task and container are removed.
-3. Sandbox network state is removed.
-4. Scratch is removed and its absence is verified.
-5. Host-side evidence collection is complete or explicitly marked incomplete.
-6. The terminal state and cleanup result are durably journaled.
+A terminal acknowledgement is allowed only after independent host-side inspection confirms:
+1. The complete workload process tree is absent.
+2. The containerd task and container are absent.
+3. The matching shim process is absent.
+4. All sandbox namespaces and the sandbox cgroup are absent.
+5. All temporary mounts and the per-attempt scratch directory are absent.
+6. The sandbox network namespace and per-attempt network-policy state are removed.
+7. Host-side evidence collection is complete or explicitly marked incomplete.
+8. The terminal state and cleanup result are durably journaled.
+
+`CLEANUP_FAILED` is an infrastructure-failed, non-success state: it must never be mapped to a passed fixture, terminal-success acknowledgement, or host-ready state. The exact cleanup deadline remains an explicit pre-stress-test gate; it must be finite, configured in the approved proof profile, measured from the termination trigger, and validated under worst-case failure and restart conditions. Do not infer or silently choose a value.
 
 ## 5. Lifecycle and idempotency rules
 
