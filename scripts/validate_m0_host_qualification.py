@@ -342,6 +342,8 @@ def main():
     resource = RESOURCE_PATH.read_text(encoding="utf-8")
     checklist = CHECKLIST_PATH.read_text(encoding="utf-8")
 
+    if template.get("schema_version") != schema.get("properties", {}).get("schema_version", {}).get("const"):
+        raise AssertionError("qualification schema and blank template versions must match")
     Draft202012Validator.check_schema(schema)
     schema_validator = Draft202012Validator(schema, format_checker=FormatChecker())
     errors = errors_for(template, schema_validator)
