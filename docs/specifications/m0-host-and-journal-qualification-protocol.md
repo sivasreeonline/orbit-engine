@@ -314,3 +314,7 @@ The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-sou
 ## Cryptographic trust and key lifecycle qualification
 
 The trust hierarchy, canonical signed payload, key custody/rotation/revocation, trust-bundle freshness, anti-rollback witness, independent verification and deterministic crypto test-vector requirements are defined in docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md. Host qualification must verify the exact authority key ID/version, algorithm/profile, trust-bundle generation/digest, revocation freshness, signed response context and independent verifier report. A signature reference or passing synthetic validator is not cryptographic proof. No production key, signer, verifier or host admission is authorized by this protocol.
+
+## Cryptographic schema qualification evidence
+
+The proposed envelope, trust-bundle, key-metadata and verification-report schemas are under docs/schemas/m0-crypto-*. The structural validator and fixture catalog must pass CI, but those results are not runtime cryptographic proof. Any actual host qualification must attach exact immutable signed objects and a separately produced independent verification report; schema-valid placeholder fixtures cannot satisfy host evidence.
