@@ -1,6 +1,6 @@
 # ADR-0019: M0 Host Launch Boundary
 
-- Status: Proposed; Candidate A and Candidate B remain under evaluation. No launch-boundary candidate is selected; independent security review and candidate-specific host evidence are pending.
+- Status: Proposed; Candidate A and Candidate B remain under evaluation. No launch-boundary candidate is selected; pending independent security review and candidate-specific host evidence.
 - Related: ADR-0018, `m0-runtime-proof-harness-design.md`, `m0-sandbox-security-review-packet.md`.
 
 Implementation contract for the proposed supervisor/journal/watchdog boundary: `docs/specifications/m0-supervisor-journal-implementation-contract.md`. It does not change ADR-0019's proposed status or authorize implementation.
