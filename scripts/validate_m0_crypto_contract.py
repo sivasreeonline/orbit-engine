@@ -356,6 +356,18 @@ def main() -> None:
                                         dict(revoked_bundle, keys=[dict(revoked_bundle["keys"][0],
                                                                         status="ACTIVE")])),
           "revocation statement with active key accepted")
+    def bundle_identity_sets_valid(bundle_value: dict) -> bool:
+        key_ids=[(item["key_id"],item["key_version"]) for item in bundle_value["keys"]]
+        revocation_ids=[(item["key_id"],item["key_version"]) for item in bundle_value["revocations"]]
+        return len(key_ids)==len(set(key_ids)) and len(revocation_ids)==len(set(revocation_ids))
+    check(bundle_identity_sets_valid(revoked_bundle), "valid bundle identity sets rejected")
+    check(not bundle_identity_sets_valid(dict(revoked_bundle,
+          keys=revoked_bundle["keys"]+[dict(revoked_bundle["keys"][0]) ])),
+          "duplicate key ID/version accepted in trust bundle")
+    check(not bundle_identity_sets_valid(dict(revoked_bundle,
+          revocations=revoked_bundle["revocations"]+[dict(revoked_bundle["revocations"][0])])),
+          "duplicate revocation identity accepted in trust bundle")
+
 
     def authorization_ledger_binding_valid(payload: dict, receipt: dict, acceptance: dict,
                                             review: dict, qualification: dict, key_record: dict) -> bool:
@@ -396,6 +408,22 @@ def main() -> None:
           "failed run claim was silently refunded")
     check(not run_claim_budget_valid(1,["COMPLETED","QUARANTINED"],2),
           "run claim budget over-consumption accepted")
+    def ledger_transition_valid(prior: str, candidate: str) -> bool:
+        if prior in {"REVOKED","EXPIRED","QUARANTINED"}:
+            return False
+        allowed={
+            "PREPARED":{"ISSUED","REVOKED","EXPIRED","QUARANTINED"},
+            "ISSUED":{"ACCEPTED","REVOKED","EXPIRED","QUARANTINED"},
+            "ACCEPTED":{"CONSUMED","REVOKED","EXPIRED","QUARANTINED"},
+            "CONSUMED":{"CONSUMED","REVOKED","EXPIRED","QUARANTINED"},
+        }
+        return candidate in allowed.get(prior,set())
+    check(ledger_transition_valid("ISSUED","ACCEPTED"), "valid authorization acceptance transition rejected")
+    check(ledger_transition_valid("ACCEPTED","CONSUMED"), "valid run consumption transition rejected")
+    check(not ledger_transition_valid("REVOKED","ACCEPTED"), "revoked authorization became accepted")
+    check(not ledger_transition_valid("EXPIRED","ISSUED"), "expired authorization was reissued")
+    check(not ledger_transition_valid("QUARANTINED","ACCEPTED"), "quarantined authorization was admitted")
+
 
     def restored_ledger_fresh(external_generation: int, restored_generation: int,
                               external_digest: str, restored_digest: str) -> bool:
