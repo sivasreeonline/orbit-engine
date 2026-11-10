@@ -11,6 +11,7 @@
     "witness_id",
     "authority_id",
     "environment",
+    "previous_checkpoint_digest",
     "generation",
     "ledger_event_sequence",
     "ledger_event_digest",
@@ -103,6 +104,10 @@
     },
     "signature_sha256": {
       "$ref": "#/$defs/digest"
+    },
+    "previous_checkpoint_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
     }
   },
   "$defs": {
