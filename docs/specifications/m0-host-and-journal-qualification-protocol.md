@@ -234,3 +234,19 @@ The machine-readable ADR decision record is `docs/schemas/m0-adr-0019-decision-r
 ## Upstream compatibility evidence
 
 `docs/adr/ADR-0019-upstream-compatibility-evidence.md` records the public upstream component facts and outstanding exact-stack compatibility gates. Its source URLs are mutable branch heads; a signed candidate decision requires exact source commit/tag and archived content digest. Do not mark any host qualification test passed from this ledger alone.
+
+## Rootless host profile identity record
+
+For Candidate B, `host_identity.rootless_profile` is a required structured object, not a free-form note. `host_identity.rootless_profile_digest` must equal its `profile_sha256`. The record captures:
+
+- Non-root daemon UID/GID and a digest of the daemon identity/group membership evidence.
+- Explicit `caller-configured-userns` mode; subordinate UID and GID mapping digests and range counts. Preserve sanitized mapping evidence in the reviewer evidence store; do not put unrelated host-user details or secrets in the repository.
+- Exact RootlessKit version and SHA-256, `newuidmap` and `newgidmap` SHA-256, plus a helper inventory digest covering ownership, mode, package provenance and permitted privilege bits.
+- AppArmor profile digest, RootlessKit state-directory policy digest and daemon socket policy digest.
+- Network backend and network-namespace profile digest, including abstract-socket isolation policy.
+- Systemd delegation profile digest and the effective delegated controller set. It must include `cpu`, `memory` and `pids`; a configured unit or a generic cgroup-v2 mount is insufficient.
+- Rootless profile SHA-256 covering the normalized, redacted profile record.
+
+The ADR candidate configuration and signed qualification report must carry the same `rootless_profile` object byte-for-byte after canonical serialization, and its `profile_sha256` must match the candidate `profile_digest` and qualification `rootless_profile_digest`. Any change to daemon UID/GID, mapping, helper binary, AppArmor policy, network backend, socket/state policy, systemd delegation or controller set invalidates the report and requires requalification.
+
+For Candidate A, `rootless_profile` and `rootless_profile_digest` must both be `null`; rootful records cannot claim rootless evidence.
