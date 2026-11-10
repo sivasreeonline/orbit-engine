@@ -353,6 +353,9 @@ def main():
             raise AssertionError(f"independent security checklist missing rootless-only test ID {test['id']}")
     if "m0-host-and-journal-qualification-protocol.md" not in journal_doc or "m0-host-and-journal-qualification-protocol.md" not in runbook:
         raise AssertionError("journal evaluation and host runbook must link qualification protocol")
+    for setting in ["M0_CONTAINERD_CONFIG", "M0_CONTAINERD_SOCKET", "M0_CONTAINERD_SOCKET_OWNER"]:
+        if setting not in runbook:
+            raise AssertionError(f"host runbook must document candidate-specific preflight setting {setting}")
     if "m0-host-and-journal-qualification-protocol.md" not in resource or "m0-host-and-journal-qualification-protocol.md" not in checklist:
         raise AssertionError("resource profile and independent security checklist must link qualification protocol")
     print("PASS  blank qualification record remains not-started and not-qualified")
