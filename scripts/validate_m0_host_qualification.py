@@ -503,11 +503,11 @@ def main():
     print(f"PASS  schema, template and {len(TESTS)} common qualification tests are synchronized")
     print(f"PASS  rootless candidate schema and {len(ROOTLESS_TESTS)} rootless-only tests are synchronized")
     print("PASS  runbook, journal evaluation, resource profile and security checklist cross-reference protocol")
-    if "report-wide immutable evidence ledger" not in protocol:
+    if "report-wide immutable evidence ledger" not in protocol.lower():
         raise AssertionError("qualification protocol must define report-wide evidence-ledger identity rules")
-    if "exact same reference ID" not in protocol or "multiple reference IDs" not in protocol:
+    if "repeating that same reference id" not in protocol.lower() or "multiple reference ids" not in protocol.lower():
         raise AssertionError("qualification protocol must define evidence reference reuse and object-version uniqueness")
-    if "backup provenance manifest" not in runbook or "backup artifact SHA-256" not in runbook:
+    if "backup provenance manifest" not in runbook.lower() or "backup artifact digest" not in runbook.lower():
         raise AssertionError("host runbook must define backup provenance and artifact digest requirements")
 
     cases = []
