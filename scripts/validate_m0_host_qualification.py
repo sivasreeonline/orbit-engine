@@ -588,7 +588,7 @@ def main():
                     "result":"passed","verification_method":"synthetic subtest",
                     "finding_summary":"Synthetic only","severity":"none",
                     "evidence_refs":[{
-                        "reference_id":"synthetic-"+scenario_id,"object_version":"v1","sha256":"a"*64,"byte_count":1,
+                        "reference_id":"synthetic-"+scenario_id,"object_version":"object-"+scenario_id,"sha256":"a"*64,"byte_count":1,
                         "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
                         "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":"fault-injection",
                         "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-reviewer",
@@ -596,7 +596,7 @@ def main():
                     }]
                 }
         finding["evidence_refs"] = [{
-            "reference_id":"synthetic-"+finding["test_id"],"object_version":"v1","sha256":"a"*64,"byte_count":1,
+            "reference_id":"synthetic-"+finding["test_id"],"object_version":"object-"+finding["test_id"],"sha256":"a"*64,"byte_count":1,
             "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
             "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":evidence_types[finding["test_id"]],
             "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-reviewer",
@@ -604,14 +604,14 @@ def main():
         }]
     jrn013 = next(item for item in complete["test_results"] if item["test_id"] == "JRN-013")
     epoch_proof = {
-        "reference_id":"synthetic-JRN-013-epoch-proof","object_version":"v1","sha256":"d"*64,"byte_count":1,
+        "reference_id":"synthetic-JRN-013-epoch-proof","object_version":"object-epoch-proof","sha256":"d"*64,"byte_count":1,
         "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
         "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":"watchdog-control-plane",
         "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-control-plane-verifier",
         "verification_note":"Synthetic only; not a real authority response."
     }
     fence_proof = {
-        "reference_id":"synthetic-JRN-013-fence-proof","object_version":"v1","sha256":"e"*64,"byte_count":1,
+        "reference_id":"synthetic-JRN-013-fence-proof","object_version":"object-fence-proof","sha256":"e"*64,"byte_count":1,
         "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
         "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":"watchdog-control-plane",
         "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-control-plane-verifier",
