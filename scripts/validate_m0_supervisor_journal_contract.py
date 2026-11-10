@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Static consistency checks for the M0 supervisor/journal design contract.
+
+This does not compile or authorize privileged code, inspect a host, prove
+clock behavior, or approve a journal backend.
+"""
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+TARGETS = {
+    "contract": "docs/specifications/m0-supervisor-journal-implementation-contract.md",
+    "runtime harness": "docs/specifications/m0-runtime-proof-harness-design.md",
+    "journal evaluation": "docs/specifications/m0-journal-backend-evaluation.md",
+    "runner README": "services/execution-runner/README.md",
+    "host launch ADR": "docs/adr/ADR-0019-m0-host-launch-boundary.md",
+}
+REQUIRED = {
+    "contract": [
+        "Per-attempt deadline and cleanup controller",
+        "Supervisor liveness and recovery watchdog",
+        "Outer VM safety watchdog",
+        "supervisor_generation", "attempt_generation",
+        "operation_sequence", "state_version", "branch_generation",
+        "Immediate termination exception", "CLOCK_BOOTTIME",
+        "No exactly-once claim", "UnconfiguredExecutor",
+    ],
+    "runtime harness": [
+        "m0-supervisor-journal-implementation-contract.md",
+    ],
+    "journal evaluation": [
+        "m0-supervisor-journal-implementation-contract.md",
+    ],
+    "runner README": [
+        "m0-supervisor-journal-implementation-contract.md",
+    ],
+    "host launch ADR": [
+        "m0-supervisor-journal-implementation-contract.md",
+    ],
+}
+FORBIDDEN_AUTHORIZATION_PHRASES = [
+    "Implementation authorized: true",
+    "student execution enabled by this contract",
+]
+
+def main() -> int:
+    failures = []
+    contents = {}
+    for label, relative in TARGETS.items():
+        path = ROOT / relative
+        if not path.is_file():
+            failures.append(f"{label}: missing {relative}")
+            continue
+        value = path.read_text(encoding="utf-8")
+        contents[label] = value
+        for phrase in REQUIRED[label]:
+            if phrase.casefold() not in value.casefold():
+                failures.append(f"{label}: missing required contract reference/text: {phrase}")
+    for phrase in FORBIDDEN_AUTHORIZATION_PHRASES:
+        if phrase.casefold() in contents.get("contract", "").casefold():
+            failures.append("contract contains an explicitly prohibited authorization marker")
+
+    if "contract" in contents:
+        contract = contents["contract"]
+        if contract.count("Outer VM safety watchdog") < 2:
+            failures.append("contract must define and cross-reference the outer VM watchdog")
+        if "Termination is the deliberate exception" not in contract:
+            failures.append("termination/journal ordering exception must remain explicit")
+        if "No numeric cleanup timeout" not in contract:
+            failures.append("contract must not introduce an unapproved cleanup timeout")
+
+    if failures:
+        for item in failures:
+            print(f"FAIL  {item}", file=sys.stderr)
+        return 1
+
+    for label in TARGETS:
+        print(f"PASS  {label}: supervisor/journal contract aligned")
+    print("PASS  distinct watchdog roles and generation values are documented")
+    print("PASS  termination exception and no-exactly-once boundary are explicit")
+    print("PASS  design-only and fail-closed implementation boundary retained")
+    print("NOTE  static document check only; not host proof or implementation approval")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

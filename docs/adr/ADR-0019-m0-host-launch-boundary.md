@@ -2,6 +2,9 @@
 
 - Status: Proposed; recommended for disposable M0 proof only, pending independent security review and runtime evidence.
 - Related: ADR-0018, `m0-runtime-proof-harness-design.md`, `m0-sandbox-security-review-packet.md`.
+
+Implementation contract for the proposed supervisor/journal/watchdog boundary: `docs/specifications/m0-supervisor-journal-implementation-contract.md`. It does not change ADR-0019's proposed status or authorize implementation.
+
 - No production or student execution is authorized by this proposal.
 
 ## Context

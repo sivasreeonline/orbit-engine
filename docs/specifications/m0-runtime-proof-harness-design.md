@@ -4,6 +4,9 @@
 - Related: ADR-0018, `m0-host-preflight-and-proof-runbook.md`, `m0-adversarial-fixture-contract.md`, `m0-proof-evidence.schema.json`.
 - Security posture: fail closed. The Go runner remains on `UnconfiguredExecutor`; readiness remains HTTP 503.
 
+Implementation detail and review gates are centralized in `docs/specifications/m0-supervisor-journal-implementation-contract.md`. That contract is design-only; it does not authorize a supervisor, journal driver, watchdog service, or execution endpoint.
+
+
 ## 1. Objective and non-goals
 
 Define a reproducible, independently observable harness for proving the selected containerd + gVisor runtime baseline on one disposable Linux AMD64 VM.
