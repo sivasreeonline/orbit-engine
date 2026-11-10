@@ -82,6 +82,9 @@ jobs:
       - name: Validate host and journal qualification protocol
         run: python scripts/validate_m0_host_qualification.py
 
+      - name: Validate ADR-0019 upstream source manifest
+        run: python scripts/validate_m0_upstream_source_manifest.py
+
       - name: Validate ADR-0019 architecture decision dossier
         run: python scripts/validate_m0_adr_0019_decision.py
 
