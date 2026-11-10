@@ -5,6 +5,7 @@ on:
     branches: ["feat/**", "docs/**"]
     paths:
       - "services/execution-runner/scripts/m0-host-preflight.sh"
+      - "services/execution-runner/README.md"
       - "docs/specifications/m0-host-preflight-and-proof-runbook.md"
       - "docs/specifications/m0-proof-resource-profile-v1.md"
       - "docs/specifications/m0-adversarial-fixture-contract.md"
