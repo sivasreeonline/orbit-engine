@@ -33,6 +33,7 @@ REQUIRED = {
         "journal compare-and-set rejects stale state mutations",
         "requests workload termination immediately",
         "journal read alone cannot rule out a trigger",
+        "host-owned trigger arbiter accepts it while the attempt is still active",
     ],
     "journal evaluation": [
         "m0-supervisor-journal-implementation-contract.md",
@@ -54,6 +55,7 @@ FORBIDDEN_RUNTIME_HARNESS_PHRASES = [
     "preferred design candidate",
     "supervisor lease/fencing generation",
     "journal/lease authority",
+    "durable transition wins while the attempt is still active",
 ]
 
 def main() -> int:
