@@ -127,6 +127,8 @@ def errors_for(record, schema_validator):
                     errors.append(f"WDG-002/{scenario_id}: acquirer must be distinct from verifier, reviewer and host owner")
                 if any(ref.get("evidence_type") not in {"fault-injection","host-runtime","host-configuration","watchdog-control-plane","operator-record"} for ref in refs):
                     errors.append(f"WDG-002/{scenario_id}: unsupported watchdog subtest evidence type")
+                if not any(ref.get("evidence_type") == "fault-injection" for ref in refs):
+                    errors.append(f"WDG-002/{scenario_id}: every watchdog subtest requires independently verified fault-injection evidence")
         if finding.get("result") in {"blocked", "deferred"} and not finding.get("finding_summary", "").strip():
             errors.append(f"{test_id}: blocked/deferred requires a reason")
 
@@ -367,8 +369,9 @@ def main():
         if f"| {test['id']} |" not in protocol:
             raise AssertionError(f"protocol missing common test ID {test['id']}")
     for scenario_id in WATCHDOG_SCENARIO_IDS:
-        if f"| {scenario_id} |" not in protocol:
-            raise AssertionError(f"protocol missing watchdog qualification subtest {scenario_id}")
+        row_marker = f"| {scenario_id} |"
+        if protocol.count(row_marker) != 1:
+            raise AssertionError(f"protocol must contain exactly one qualification-table row for watchdog subtest {scenario_id}")
     for test in ROOTLESS_TESTS:
         if f"| {test['id']} |" not in protocol:
             raise AssertionError(f"protocol missing rootless-only test ID {test['id']}")
@@ -394,6 +397,7 @@ def main():
     case = deepcopy(template); case["test_results"][0]["result"] = "passed"; cases.append(("pass without evidence",case))
     case = deepcopy(template); case["test_results"][0]["result"] = "passed"; case["test_results"][0]["verification_method"] = "synthetic"; case["test_results"][0]["finding_summary"] = "synthetic"; case["test_results"][0]["severity"] = "none"; case["test_results"][0]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"host-runtime","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic only"}]; cases.append(("passed test with wrong evidence type",case))
     case = deepcopy(template); wdg = next(item for item in case["test_results"] if item["test_id"] == "WDG-002"); wdg.update(result="passed",verification_method="synthetic",finding_summary="synthetic",severity="none",evidence_refs=[{"reference_id":"synthetic-wdg","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"fault-injection","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic"}]); cases.append(("WDG-002 pass with unrun subtests",case))
+    case = deepcopy(template); wdg = next(item for item in case["test_results"] if item["test_id"] == "WDG-002"); wdg.update(result="passed",verification_method="synthetic",finding_summary="synthetic",severity="none",evidence_refs=[{"reference_id":"synthetic-wdg","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"fault-injection","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic"}]);\n    for subtest in wdg["watchdog_subtests"].values(): subtest.update(result="passed",verification_method="synthetic",finding_summary="synthetic",severity="none",evidence_refs=[{"reference_id":"synthetic-subtest","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"operator-record","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic"}]); cases.append(("WDG-002 subtest without fault-injection evidence",case))
     case = deepcopy(template); case["gates"]["journal_durability"] = "passed"; cases.append(("journal gate without all journal tests",case))
     case = deepcopy(template); case["gates"]["network_boundary"] = "passed"; cases.append(("network gate without both network tests",case))
     case = deepcopy(template); case["qualification_status"] = "candidate-qualified"; cases.append(("qualification without full gates/host identity",case))
