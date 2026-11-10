@@ -767,18 +767,70 @@
                       "format": "date-time"
                     },
                     "revoked_at": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": "string",
                       "format": "date-time"
                     },
                     "public_key_fingerprint_sha256": {
                       "type": "string",
                       "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "revocation_reason": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
                     }
-                  }
-                }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "status": {
+                            "const": "REVOKED"
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ]
+                      },
+                      "then": {
+                        "required": [
+                          "revoked_at",
+                          "revocation_reason"
+                        ],
+                        "properties": {
+                          "revoked_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "status": {
+                            "enum": [
+                              "PENDING",
+                              "ACTIVE",
+                              "DEPRECATED_VERIFY_ONLY"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ]
+                      },
+                      "then": {
+                        "not": {
+                          "required": [
+                            "revoked_at"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "minItems": 1
               },
               "revocations": {
                 "type": "array",
@@ -807,8 +859,14 @@
                       "format": "date-time"
                     },
                     "reason_code": {
-                      "type": "string",
-                      "minLength": 1
+                      "enum": [
+                        "KEY_COMPROMISE",
+                        "KEY_CUSTODY_FAILURE",
+                        "KEY_ROTATION",
+                        "POLICY_CHANGE",
+                        "UNAUTHORIZED_USE",
+                        "OTHER_REVIEWED"
+                      ]
                     },
                     "revocation_statement_ref": {
                       "type": "string",
