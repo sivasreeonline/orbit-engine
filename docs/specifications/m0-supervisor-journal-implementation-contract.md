@@ -321,12 +321,12 @@ The numeric cleanup deadline and evidence reserve remain unset until Phase A mea
 3. Verify trusted host-instance identity, boot ID, supervisor binary digest, journal identity/schema, file ownership/mode, backend durability configuration, and integrity.
 4. Obtain and verify the current externally anchored `host_incarnation_epoch`; require proof that prior restored/cloned/replaced incarnations are stopped or fenced. Compare the external epoch with the journal's last recorded epoch and fail closed on rollback, reuse, or ambiguity.
 5. Allocate and durably commit a new supervisor generation bound to that external host-incarnation epoch.
-5. Enumerate all non-terminal attempts, pending operations, triggers, branch dispositions, terminal results, and quarantine records.
-6. For each attempt, reconcile deterministic supervisor-owned identities against actual containerd tasks/containers, shim processes, process trees, cgroups, namespaces, mounts, scratch, network-policy state, evidence staging, immutable evidence objects, and manifests.
-7. Increment attempt/branch generations under compare-and-set before reclaiming any branch. Stale workers fail closed.
-8. Re-arm original deadlines from the original trigger/intake anchor. If the original anchor cannot be proven, expire and quarantine.
-9. Persist observed state and bounded dispositions. Never issue create/start until absence is proven and the same logical operation is still authorized.
-10. Mark the host healthy for new work only after every non-terminal attempt has been reconciled, the watchdog is healthy, the journal is healthy, and the independent host inventory has no unknown/unowned resources.
+6. Enumerate all non-terminal attempts, pending operations, triggers, branch dispositions, terminal results, and quarantine records.
+7. For each attempt, reconcile deterministic supervisor-owned identities against actual containerd tasks/containers, shim processes, process trees, cgroups, namespaces, mounts, scratch, network-policy state, evidence staging, immutable evidence objects, and manifests.
+8. Increment attempt/branch generations under compare-and-set before reclaiming any branch. Stale workers fail closed.
+9. Re-arm original deadlines from the original trigger/intake anchor. If the original anchor cannot be proven, expire and quarantine.
+10. Persist observed state and bounded dispositions. Never issue create/start until absence is proven and the same logical operation is still authorized.
+11. Mark the host healthy for new work only after every non-terminal attempt has been reconciled, the watchdog is healthy, the journal is healthy, and the independent host inventory has no unknown/unowned resources.
 
 ### 9.2 Required fault-injection matrix
 
