@@ -197,7 +197,7 @@ def main():
         raise AssertionError("blank template invalid: " + "; ".join(errors))
     if template["scope"]["reviewed_commit_sha"] is not None:
         raise AssertionError("blank review template must not pin a stale commit baseline")
-    required_documents = ["docs/adr/ADR-0019-decision-dossier.md","docs/adr/ADR-0019-upstream-compatibility-evidence.md","docs/adr/ADR-0019-upstream-source-manifest.json","docs/specifications/m0-host-and-journal-qualification-protocol.md"]
+    required_documents = ["docs/schemas/m0-adr-0019-decision-record.schema.json","docs/schemas/m0-adr-0019-decision-record.template.json","scripts/validate_m0_adr_0019_decision.py","docs/schemas/ADR-0019-upstream-source-manifest.schema.json","scripts/validate_m0_upstream_source_manifest.py","docs/schemas/m0-host-qualification-record.schema.json","docs/schemas/m0-host-qualification-record.template.json","scripts/validate_m0_host_qualification.py","docs/security/m0-independent-security-review-record.schema.json","scripts/validate_m0_independent_review_package.py","docs/adr/ADR-0019-decision-dossier.md","docs/adr/ADR-0019-upstream-compatibility-evidence.md","docs/adr/ADR-0019-upstream-source-manifest.json","docs/specifications/m0-host-and-journal-qualification-protocol.md"]
     if not set(required_documents).issubset(set(template["scope"]["documents"])):
         raise AssertionError("review template must include the current ADR-0019 dossier, upstream ledger/manifest and host qualification protocol")
     if template["review_status"] != "not-reviewed" or template["decisions"]["review_decision"] != "not-reviewed":
