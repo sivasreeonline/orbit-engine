@@ -82,6 +82,17 @@ func TestDecodeExecutionRequestRejectsDuplicateObjectKeys(t *testing.T) {
 	if !errors.Is(err, ErrInvalidJSON) {
 		t.Fatalf("nested duplicate error = %v, want ErrInvalidJSON", err)
 	}
+
+	escapedDuplicate := bytes.Replace(
+		body,
+		[]byte(`"protocolVersion":"v1"`),
+		[]byte(`"protocolVersion":"v1","protocol\\u0056ersion":"v1"`),
+		1,
+	)
+	_, err = DecodeExecutionRequest(bytes.NewReader(escapedDuplicate))
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("escaped-equivalent duplicate error = %v, want ErrInvalidJSON", err)
+	}
 }
 
 func TestDecodeExecutionRequestRejectsNonCanonicalFieldCasing(t *testing.T) {
