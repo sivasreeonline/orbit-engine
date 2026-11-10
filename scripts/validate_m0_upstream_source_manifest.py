@@ -4,6 +4,7 @@
 This verifies the committed manifest structure and cross-references. It does
 not make network requests or independently re-fetch upstream content.
 """
+from datetime import date
 import json
 from pathlib import Path
 import sys
@@ -14,6 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "docs/adr/ADR-0019-upstream-source-manifest.json"
 SCHEMA_PATH = ROOT / "docs/schemas/ADR-0019-upstream-source-manifest.schema.json"
 LEDGER_PATH = ROOT / "docs/adr/ADR-0019-upstream-compatibility-evidence.md"
+DOSSIER_PATH = ROOT / "docs/adr/ADR-0019-decision-dossier.md"
+ADR_PATH = ROOT / "docs/adr/ADR-0019-m0-host-launch-boundary.md"
+SECURITY_PATH = ROOT / "docs/security/m0-sandbox-security-review-packet.md"
+QUALIFICATION_PATH = ROOT / "docs/specifications/m0-host-and-journal-qualification-protocol.md"
+CHECKLIST_PATH = ROOT / "docs/security/m0-independent-security-review-checklist.md"
+WORKFLOW_PATH = ROOT / ".github/workflows/m0-preflight-ci.yml"
 EXPECTED = {
     "gvisor-rootless": ("google/gvisor", "g3doc/user_guide/rootless.md"),
     "gvisor-containerd": ("google/gvisor", "g3doc/user_guide/containerd/quick_start.md"),
@@ -28,6 +35,14 @@ def main():
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     ledger = LEDGER_PATH.read_text(encoding="utf-8")
+    linked_docs = [
+        DOSSIER_PATH.read_text(encoding="utf-8"),
+        ADR_PATH.read_text(encoding="utf-8"),
+        SECURITY_PATH.read_text(encoding="utf-8"),
+        QUALIFICATION_PATH.read_text(encoding="utf-8"),
+        CHECKLIST_PATH.read_text(encoding="utf-8"),
+    ]
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     errors = [error.message for error in validator.iter_errors(manifest)]
@@ -57,15 +72,36 @@ def main():
             raise AssertionError(f"{source_id}: verified commit must record a valid verification result")
         if entry["immutable_file_url"] not in ledger:
             raise AssertionError(f"{source_id}: immutable source URL missing from compatibility ledger")
-    if not manifest["reviewed_on"] <= "2026-11-10":
+    try:
+        reviewed_on = date.fromisoformat(manifest["reviewed_on"])
+    except (TypeError, ValueError) as exc:
+        raise AssertionError("manifest reviewed_on must be a valid ISO date") from exc
+    if reviewed_on > date(2026, 11, 10):
         raise AssertionError("manifest review date is in the future relative to this capture")
     if "ADR-0019-upstream-source-manifest.json" not in ledger:
         raise AssertionError("compatibility ledger must link the source manifest")
+    for index, content in enumerate(linked_docs):
+        if "ADR-0019-upstream-source-manifest.json" not in content:
+            raise AssertionError(f"review document {index + 1} must link the source manifest")
+    if "validate_m0_upstream_source_manifest.py" not in workflow:
+        raise AssertionError("M0 workflow must execute the upstream source manifest validator")
+    mutable_patterns = [
+        "https://gvisor.dev/docs/",
+        "github.com/google/gvisor/blob/main/",
+        "github.com/google/gvisor/blob/master/",
+        "github.com/containerd/containerd/blob/main/",
+        "github.com/rootless-containers/rootlesskit/blob/master/",
+        "github.com/opencontainers/runc/blob/main/",
+    ]
+    if any(pattern in ledger for pattern in mutable_patterns):
+        raise AssertionError("compatibility ledger contains a mutable upstream documentation URL")
     print("PASS  Draft 2020-12 upstream source manifest schema")
     print("PASS  exactly seven immutable source pins with commit/blob/content hashes")
     print("PASS  immutable file URLs resolve to the recorded commit and path")
     print("PASS  RootlessKit v3.3.0 verified release and unsigned source commits explicitly distinguished")
     print("PASS  compatibility ledger links every immutable source URL and the manifest")
+    print("PASS  ADR, dossier, security packet, qualification protocol and checklist link the manifest")
+    print("PASS  M0 workflow executes this validator and ledger contains no mutable upstream docs URLs")
     print("NOTE  validation checks committed metadata only; it does not re-fetch or re-hash upstream network content")
 
 if __name__ == "__main__":
