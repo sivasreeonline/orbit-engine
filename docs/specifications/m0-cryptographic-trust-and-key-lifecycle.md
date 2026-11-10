@@ -187,3 +187,18 @@ The proposed machine-readable artifacts are:
 - docs/schemas/m0-crypto-verification-fixture-catalog.json
 
 Run scripts/validate_m0_crypto_contract.py for Draft 2020-12 schema meta-validation and structural positive/negative fixtures. These fixtures are contract-only: placeholder values do not represent real keys, signatures, cryptographic verification, trust-bundle authentication or provider fencing. Algorithm-specific known-answer vectors remain blocked until the algorithm/profile/library is independently approved.
+
+
+## 13. Typed message payload contracts and fixture execution boundary
+
+The signed-envelope contract now binds the following message families to strict, message-specific payload shapes:
+- `host-epoch-response`: enrolled host, provider/account/region/instance identity, monotonic incarnation epoch, operation/response IDs, nonce/request/predecessor-set digests, exact fence-attestation reference/digest and authority observation time.
+- `provider-fence-attestation`: exact provider resource and operation identity, predecessor instance/epoch, provider request/response IDs, declared fencing mechanism, terminal `FENCED` state, predecessor-set digest and immutable evidence reference/digest.
+- `phase-a-authorization`: exact host epoch receipt and acceptance, independently verified fence report, host qualification record, 33-control security review with `FENCE-001=pass`, bounded run count and short validity window. The schema expressly denies Phase B, student and production execution.
+- `key-revocation`: authority/key/version/purpose/environment, reason, effective time, trust-bundle generation, affected-artifact inventory and permanent no-reactivation rule.
+
+The envelope contains the same conditional payload constraints inline so offline schema validation does not require network resolution of repository-relative references. The four standalone payload schemas remain the canonical independently reusable definitions; the validator checks their structure and the envelope's embedded equivalents.
+
+The negative-fixture catalog now assigns an explicit execution disposition to all 20 required cases. Structural, parser, policy, chronology, binding, replay and fail-closed cases are exercised by the validator. Canonical-byte equivalence remains blocked because no canonicalization profile has been approved. The catalog deliberately does not claim signature verification or production cryptographic coverage.
+
+These schemas are contract gates, not credentials or authority. A schema-valid Phase A payload is not a signed authorization, a valid signature is not provider-fence proof, and neither grants permission to run privileged or student workloads.
