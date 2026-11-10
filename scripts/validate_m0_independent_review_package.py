@@ -195,6 +195,11 @@ def main():
     errors = validate(validator, template)
     if errors:
         raise AssertionError("blank template invalid: " + "; ".join(errors))
+    if template["scope"]["reviewed_commit_sha"] is not None:
+        raise AssertionError("blank review template must not pin a stale commit baseline")
+    required_documents = ["docs/adr/ADR-0019-decision-dossier.md","docs/adr/ADR-0019-upstream-compatibility-evidence.md","docs/adr/ADR-0019-upstream-source-manifest.json","docs/specifications/m0-host-and-journal-qualification-protocol.md"]
+    if not set(required_documents).issubset(set(template["scope"]["documents"])):
+        raise AssertionError("review template must include the current ADR-0019 dossier, upstream ledger/manifest and host qualification protocol")
     if template["review_status"] != "not-reviewed" or template["decisions"]["review_decision"] != "not-reviewed":
         raise AssertionError("blank template must remain not-reviewed")
     if any(template[key] is not False for key in AUTHORIZATION_FLAGS):
@@ -237,6 +242,7 @@ def main():
         case = deepcopy(template); case[key] = True; cases.append((label + " authorization", case))
     case = deepcopy(template); case["review_status"] = "completed"; case["reviewed_at"] = "2026-11-10T00:00:00Z"; case["expires_at"] = "2026-11-09T00:00:00Z"; cases.append(("expired review", case))
     case = deepcopy(template); case["review_status"] = "completed"; cases.append(("completed review without assigned UUID", case))
+    case = deepcopy(template); case["review_status"] = "completed"; case["scope"]["reviewed_commit_sha"] = None; cases.append(("completed review without pinned commit", case))
 
     for label, record in cases:
         if not validate(validator, record):
@@ -245,6 +251,7 @@ def main():
 
     complete = deepcopy(template)
     complete["review_status"] = "completed"
+    complete["scope"]["reviewed_commit_sha"] = "a" * 40
     complete["review_id"] = "11111111-1111-4111-8111-111111111111"
     complete["participants"] = {
         "reviewer_id":"independent-reviewer", "host_owner_id":"host-owner",
