@@ -208,7 +208,58 @@
       "finding_summary": "",
       "severity": "unassigned",
       "remediation_owner": "",
-      "evidence_refs": []
+      "evidence_refs": [],
+      "watchdog_subtests": {
+        "WD-001": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-002": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-003": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-004": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-005": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-006": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-007": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        }
+      }
     },
     {
       "test_id": "WDG-003",
