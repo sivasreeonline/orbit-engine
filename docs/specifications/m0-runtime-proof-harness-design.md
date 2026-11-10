@@ -199,7 +199,9 @@ The exact durability mode, filesystem, atomicity assumptions, backup/recovery pr
 | Before intent is durable | No operation may have been acknowledged; caller may retry with same idempotency key | No task/container exists for the deterministic sandbox identity |
 | Intent durable, before create | Reconcile by attempt identity; create only if absence is proven | Durable intent plus absence inspection |
 | During container create/start | Inspect containerd, shim, process, cgroup, namespace and mount state; never blindly issue create again | One matching owned resource set or a verified absence; ambiguous state is quarantined |
+| Runner restart during an active attempt | Runner reconnects using the same authorized attempt identity; supervisor lifecycle remains independent and does not launch a duplicate | Durable attempt identity, idempotency key, one task and one terminal result are verified |
 | Workload running during supervisor restart | Reattach only to the exact journal-owned sandbox; otherwise terminate and reconcile | Process/task identity, cgroup membership, runtime handler and journal generation match |
+| Containerd daemon restart or unavailable socket | Stop new launches; reconcile all non-terminal attempts after daemon recovery | Daemon identity/version rechecked; no unowned task or orphan shim |
 | Cancellation races with natural exit | One compare-and-set terminal winner; all paths converge on cleanup | Single terminal record and no surviving process/task |
 | Deadline races with cancellation | Terminate once; record both triggers if observed, but emit one terminal result | Watchdog and journal timestamps plus one terminal transition |
 | Containerd unavailable or restarted | Stop new launches; reconcile all non-terminal attempts after daemon recovery | Daemon identity/version rechecked; no unowned task or orphan shim |
