@@ -289,7 +289,7 @@ The journal and containerd do not share one atomic transaction. The protocol gua
 
 ### 8.1 Within-boot clock
 
-Use an explicitly selected, suspend-aware monotonic clock for elapsed execution, trigger, cleanup, and watchdog deadlines. The recommended Linux candidate is `CLOCK_BOOTTIME`: Linux documents that it includes time spent suspended, whereas `CLOCK_MONOTONIC` does not. The implementation must use an explicit audited clock API and must not assume that a language runtime's default monotonic clock has the required suspend semantics.
+Use an explicitly selected, suspend-aware monotonic clock for in-VM elapsed execution, trigger, cleanup, and supervisor-liveness deadlines. The recommended Linux candidate is `CLOCK_BOOTTIME`: Linux documents that it includes time spent suspended, whereas `CLOCK_MONOTONIC` does not. The implementation must use an explicit audited clock API and must not assume that a language runtime's default monotonic clock has the required suspend semantics. This guest clock does not govern the outer VM safety watchdog: that watchdog must use an independently operated control-plane/hypervisor time source and must not trust guest wall-clock or monotonic-clock values to enforce its hard cutoff.
 
 Use the kernel boot ID as one boot-identity input and record the trusted host-instance identity separately. Persist clock IDs and raw nanosecond values as bounded integer fields; never compare monotonic values across different boot IDs.
 
