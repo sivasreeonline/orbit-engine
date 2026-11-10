@@ -86,7 +86,7 @@ No production DDL or migration may be applied until the external authority/provi
 
 The General CI test harness at `apps/api/src/db/authorization-ledger.integration.test.ts` now exercises a uniquely named disposable schema against PostgreSQL 17. It creates only test-local tables, triggers, a NOLOGIN application role and the `pgcrypto` extension in the ephemeral CI database; it does not apply authorization production DDL.
 
-Nine integration cases currently pass:
+Eleven integration cases are defined in the harness; exact-head CI execution is required before treating the new cases as passing:
 - Independent database sessions race for the final budget slot; exactly one claim is committed.
 - A committed claim is resolved by retrying the same request identity; changed digest conflicts. The test simulates an acknowledgement not consumed by the client after the helper returns; it does not simulate a TCP proxy dropping the COMMIT response.
 - Explicit rollback removes tentative claim, event and counter writes together.
@@ -95,9 +95,11 @@ Nine integration cases currently pass:
 - Deferred constraint triggers reject a transaction that would make the consumed counter differ from the immutable claim count. The attempted drift transaction rolls back, leaving the committed claim and counter intact.
 - A test-only event trigger enforces contiguous event sequence, exact predecessor digest linkage, and a SHA-256 digest over the canonical test tuple; it rejects skipped sequence/forged predecessor inserts and all UPDATE/DELETE operations.
 - PostgreSQL backend termination during an open transaction rolls back the claim, run event and counter update.
+- An independent application-side verifier recomputes every persisted event digest, sequence and predecessor link; altered payload and reordered rows are rejected without relying on the database trigger.
+- Two real PostgreSQL sessions acquire two authorization-row locks in opposite order; PostgreSQL detects the deadlock with SQLSTATE `40P01`, and the surviving transaction is released after the victim aborts.
 
 The test-only event digest is an integrity-chain check, not a signature or independent cryptographic attestation. The database trigger cannot establish trust in an external signer, authority, host or provider. The deferred counter constraint demonstrates prevention of inconsistent committed state in this fixture; it does not provide production quarantine workflows or replace independent ledger reconciliation.
 
-The backend-termination test covers server-side cancellation before COMMIT. A real lost-COMMIT-acknowledgement test still requires a controllable network proxy or fault-injection layer capable of severing the client connection after the server commits but before the response is received. That test remains outstanding.
+The backend-termination test covers server-side cancellation before COMMIT. A real lost-COMMIT-acknowledgement test still requires a controllable network proxy or fault-injection layer capable of severing the client connection after the server commits but before the response is received. That test remains outstanding. Serialization-failure (`40001`) retry behavior is also not yet exercised or implemented; the deadlock test proves PostgreSQL detection only and does not define a production retry policy.
 
 These tests strengthen the proposed transaction semantics but do not approve production migrations, stored procedures, runtime signing, external fencing, guest execution or Phase A/Phase B/student/production authorization.
