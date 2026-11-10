@@ -87,6 +87,8 @@ Evidence publication must follow the crash-safe ordering in Section 7.1 of `m0-r
 
 Exercise crash injection between each publication/journal/manifest/terminal step. Verify that orphan staging objects are never treated as evidence, missing or mismatched objects force an incomplete/non-passed result, and a persisted manifest without a terminal journal transition is reconciled idempotently. Evidence-store failure must never block the independent termination and cleanup controller.
 
+Finalization must run cleanup and evidence handling as two independently supervised branches. Start process termination and cleanup immediately when the attempt enters finalization; do not wait for evidence capture, redaction, hashing, publication, or manifest generation. Persist cleanup disposition and evidence disposition separately. Only after both are durable may the supervisor perform one terminal compare-and-set. A passed result requires successful verified cleanup and complete verified evidence; either branch failing, timing out, or remaining uncertain forces an incomplete/infrastructure-failed outcome. On restart, reconcile each branch independently before resuming finalization.
+
 Store a proof report outside the host and include:
 
 - Host/provider/region and image identifier (once selected).
