@@ -202,5 +202,58 @@
       "cryptography_executed": false
     }
   ],
-  "required_positive_case_count": 9
+  "required_positive_case_count": 9,
+  "key_lifecycle_transition_cases": [
+    {
+      "id": "KEY-LC-001",
+      "transition": "NONE -> GENERATED",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-002",
+      "transition": "GENERATED -> PENDING",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-003",
+      "transition": "PENDING -> ACTIVE",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-004",
+      "transition": "ACTIVE -> DEPRECATED_VERIFY_ONLY",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-005",
+      "transition": "ACTIVE -> REVOKED",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-006",
+      "transition": "DEPRECATED_VERIFY_ONLY -> REVOKED",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-007",
+      "transition": "REVOKED -> DESTROYED",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-008",
+      "transition": "REVOKED -> ACTIVE",
+      "expected": "REJECT"
+    },
+    {
+      "id": "KEY-LC-009",
+      "transition": "ACTIVE -> GENERATED",
+      "expected": "REJECT"
+    },
+    {
+      "id": "KEY-LC-010",
+      "transition": "PENDING -> DESTROYED",
+      "expected": "REJECT"
+    }
+  ],
+  "required_key_lifecycle_transition_case_count": 10
 }
