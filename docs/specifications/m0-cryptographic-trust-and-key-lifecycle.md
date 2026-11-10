@@ -207,3 +207,11 @@ These schemas are contract gates, not credentials or authority. A schema-valid P
 ### Authorization scope and principal separation clarification
 
 The message payload named `phase-a-authorization` is restricted to `M0_CLEANUP_CALIBRATION_ONLY`; it is not a general host-qualification, full-M0-proof, Phase B, student, or production grant. Its payload explicitly binds five distinct principals: host owner, evidence acquirer, fence verifier, independent security reviewer, and authorization signer. The structural validator rejects role collisions. This supplements, and does not replace, the role/evidence checks in the independent security-review record and cleanup-calibration authorization contract.
+
+
+Typed payload schema artifacts:
+- `docs/schemas/m0-host-epoch-response-payload.schema.json`
+- `docs/schemas/m0-provider-fence-attestation-payload.schema.json`
+- `docs/schemas/m0-phase-a-authorization-payload.schema.json`
+- `docs/schemas/m0-key-revocation-payload.schema.json`
+- `scripts/validate_m0_crypto_contract.py`
