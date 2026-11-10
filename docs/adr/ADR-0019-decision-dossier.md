@@ -29,7 +29,7 @@ Include the runner, host controller/daemon, containerd shim, runsc, RootlessKit/
 
 ## 3. Mandatory equivalence rule
 
-Both candidates use the same 32 independent security control IDs and the same 33 host qualification test IDs. No control or test may be omitted because it is harder to satisfy under one privilege model. Any not-applicable claim requires a technical rationale and independent reviewer acceptance; required M0 controls cannot be waived.
+Both candidates use the same 32 independent security control IDs and the same 33 common host qualification test IDs. Candidate B (`rootless-containerd-userns`) must additionally pass RLS-001 through RLS-004; Candidate A must mark the rootless-only gate `not-applicable` and contain no rootless-only results. No control or test may be omitted because it is harder to satisfy under one privilege model. Any not-applicable claim requires a technical rationale and independent reviewer acceptance; required M0 controls cannot be waived.
 
 Design evidence, host configuration evidence, live runtime evidence, fault-injection evidence and signed qualification records must remain distinguishable. CI/schema success is not host evidence. A qualification report for one candidate cannot qualify the other; evidence cannot be mixed across hosts, commits, runtime builds or profile digests.
 
@@ -83,7 +83,16 @@ Design evidence, host configuration evidence, live runtime evidence, fault-injec
 | JRN-001–JRN-015 | Storage durability and integrated lifecycle | Yes |
 | EVID-001 | Evidence integrity and read-back | Yes |
 
-Exact test IDs: `HST-001`, `HST-002`, `HST-003`, `HST-004`, `HST-005`, `AUTH-001`, `RUN-001`, `CG-001`, `NET-001`, `NET-002`, `FS-001`, `OUT-001`, `WDG-001`, `WDG-002`, `WDG-003`, `CLK-001`, `CLK-002`, `EVID-001`, `JRN-001`, `JRN-002`, `JRN-003`, `JRN-004`, `JRN-005`, `JRN-006`, `JRN-007`, `JRN-008`, `JRN-009`, `JRN-010`, `JRN-011`, `JRN-012`, `JRN-013`, `JRN-014`, `JRN-015`.
+Exact common test IDs: `HST-001`, `HST-002`, `HST-003`, `HST-004`, `HST-005`, `AUTH-001`, `RUN-001`, `CG-001`, `NET-001`, `NET-002`, `FS-001`, `OUT-001`, `WDG-001`, `WDG-002`, `WDG-003`, `CLK-001`, `CLK-002`, `EVID-001`, `JRN-001`, `JRN-002`, `JRN-003`, `JRN-004`, `JRN-005`, `JRN-006`, `JRN-007`, `JRN-008`, `JRN-009`, `JRN-010`, `JRN-011`, `JRN-012`, `JRN-013`, `JRN-014`, `JRN-015`.
+
+Rootless-only Candidate B tests:
+
+| Test ID | Required proof |
+|---|---|
+| RLS-001 | Exact containerd 2.3.x + `containerd-shim-runsc-v1` + caller-configured userns + systrap lifecycle and recovery |
+| RLS-002 | Subordinate UID/GID mappings, `newuidmap`/`newgidmap`, RootlessKit helper provenance, private state/socket and AppArmor policy |
+| RLS-003 | Actual systemd/cgroup-v2 delegation and hard CPU, memory and PID enforcement through the rootless containerd/runsc stack |
+| RLS-004 | Rootless network namespace, host abstract-socket isolation, Netstack/TAP/user-mode path and default-deny egress proof |
 
 ## 4. Candidate-specific evidence checklist
 
@@ -98,10 +107,10 @@ Exact test IDs: `HST-001`, `HST-002`, `HST-003`, `HST-004`, `HST-005`, `AUTH-001
 ### Candidate B — rootless containerd with caller-configured user namespaces
 
 - Exact rootless daemon UID/GID, subordinate UID/GID mappings, user namespace ownership and collision/overlap analysis.
-- Exact RootlessKit/helper binaries, profile, state/socket ownership, network backend and helper privilege inventory; retain only allowlisted/redacted evidence.
-- systemd/cgroup v2 delegation chain proving CPU/memory/PID hard limits, not merely configured controller values.
-- Exact create/start/stop/delete through rootless containerd and its shim using caller-configured user namespaces; systrap independently observed.
-- Network and metadata denial through the actual rootless network backend, including IPv4/IPv6, DNS, direct-IP, loopback-to-host and alternate interfaces.
+- RLS-002: exact RootlessKit/helper binaries, `newuidmap`/`newgidmap` provenance, subordinate ID mappings, AppArmor policy, state/socket ownership and helper privilege inventory; retain only allowlisted/redacted evidence.
+- RLS-003: systemd/cgroup v2 delegation chain proving CPU/memory/PID hard limits, not merely configured controller values.
+- RLS-001: exact create/start/stop/delete and restart recovery through rootless containerd and its shim using caller-configured user namespaces; systrap independently observed.
+- RLS-004: network and metadata denial through the actual rootless network backend, including IPv4/IPv6, DNS, direct-IP, loopback-to-host, alternate interfaces and host abstract Unix socket isolation.
 - Pause/crash/restart tests for rootless daemon, helpers, mappings, fencing, journal reconciliation and complete cleanup.
 - Evidence that unrelated host/user processes, sockets, paths or resources do not become controllable by the runner or sandbox.
 
@@ -112,7 +121,7 @@ Never substitute `runsc --rootless` CLI results for Candidate B evidence. Its in
 A candidate is eligible for selection only when:
 
 1. All 32 security control findings are independently reviewed, with no unresolved high/critical issue.
-2. All 33 qualification tests pass in one host qualification record for that exact candidate, host incarnation and profile set.
+2. All 33 common qualification tests pass in one host record for that exact candidate, host incarnation and profile set. Candidate B must additionally pass RLS-001 through RLS-004 with the rootless compatibility gate set to `passed`; Candidate A must record those tests as absent and the gate as `not-applicable`.
 3. The qualification record is `candidate-qualified`, independently signed/reviewed, unexpired and references the exact reviewed commit.
 4. Candidate configuration/profile digests, runtime integration mode, host identity and journal profile digest match the qualification report.
 5. Reviewer and host owner are distinct; independence is attested, conflicts disclosed, and the signed decision rationale records accepted/rejected alternatives.
