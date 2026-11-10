@@ -562,7 +562,8 @@
         },
         "profile_sha256": {
           "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 of compact JSON serialization of this profile with the profile_sha256 property omitted, recursively sorted object keys, separators comma/colon without whitespace, UTF-8 encoding, ensure_ascii=true, and allow_nan=false. Arrays preserve order. Do not hash the profile_sha256 field itself."
         }
       }
     }
