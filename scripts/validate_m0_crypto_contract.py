@@ -133,7 +133,7 @@ def main() -> None:
     check("m0-crypto-verification-report.schema.json" in contract, "crypto contract must link verification report")
     check("m0-crypto-verification-fixture-catalog.json" in contract, "crypto contract must link fixture catalog")
     print("M0 crypto contract schema validation: PASS")
-    print("4 schemas checked; 4 synthetic positive and 4 negative structural cases passed.")
+    print("4 schemas checked; 4 synthetic positive and 5 negative structural cases passed.")
     print("20 required negative-vector IDs verified; cryptographic verification NOT performed.")
 
 
