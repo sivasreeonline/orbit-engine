@@ -84,7 +84,7 @@ Required database constraints include foreign keys, CHECK constraints for enumer
 - Encrypt backups at rest if they leave the host; restrict access to the host/security operators; retain immutable version and checksum metadata.
 - Test restore onto an isolated disposable host with the exact approved SQLite build and schema migration path. Verify integrity, record counts, unique constraints, generation state, and reconciliation behavior before the restored host can accept work.
 - A restored database must never cause a second launch for an already-issued attempt. Reconcile every non-terminal attempt against actual host resources; if the original host state cannot be authoritatively inspected, quarantine rather than adopt.
-- Define retention and secure deletion only after evidence/audit requirements are agreed. Never prune records for active attempts or unresolved cleanup/evidence branches.
+- Define retention periods and secure-deletion controls only after evidence, audit, privacy and legal requirements are agreed. Never prune active attempts, non-terminal operations, unresolved cleanup/evidence branches, idempotency records still inside the retry/replay horizon, or unresolved quarantine/audit records. Retention eligibility must be an explicit reviewed policy with a dry-run inventory before deletion. Do not use live `VACUUM`, ad-hoc SQL deletion, or journal-file manipulation as an emergency capacity-recovery mechanism. SQLite page deletion/VACUUM is not, by itself, proof of secure erasure on copy-on-write, snapshotting, or flash storage; any secure-erasure claim needs a separately reviewed storage/encryption/key-destruction design.
 
 ## 6. Required fault-injection and acceptance matrix
 
