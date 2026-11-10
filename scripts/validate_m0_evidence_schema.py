@@ -228,6 +228,15 @@ def main():
     for label, manifest in cases:
         expect_invalid(manifest_validator, manifest, label)
 
+    # The JSON Schema alone must enforce exact fixture coverage. The custom
+    # Python guard above remains an independent second layer.
+    for label, manifest in (
+        ("missing fixture", missing_fixture),
+        ("duplicate fixture", duplicate_fixture),
+        ("unapproved fixture", unexpected_fixture),
+    ):
+        expect_invalid(validator, manifest, "schema-only " + label)
+
     incomplete = valid_manifest()
     incomplete["overall_result"] = "incomplete"
     incomplete["tests"][0]["status"] = "blocked"
@@ -241,7 +250,8 @@ def main():
     for label, _ in cases:
         print(f"PASS  rejects {label}")
     print("PASS  accepts incomplete manifest with blocked fixture and pending review")
-    print(f"PASS  requires exact, unique coverage of all {len(REQUIRED_FIXTURE_IDS)} contract fixtures")
+    print(f"PASS  schema-only exact, unique coverage of all {len(REQUIRED_FIXTURE_IDS)} contract fixtures")
+    print("PASS  Python invariant layer independently rejects missing, duplicate and unapproved fixture IDs")
     print(f"RESULT: {len(cases) + 4} evidence-schema checks passed")
 
 
