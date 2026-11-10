@@ -302,6 +302,11 @@ The verifier recomputes this digest; comparing two caller-supplied digest string
 
 For Candidate A, `rootless_profile` and `rootless_profile_digest` must both be `null`; rootful records cannot claim rootless evidence.
 
+
+## Authorization ledger storage qualification
+
+Review `docs/specifications/m0-authorization-ledger-data-model.md` with the lifecycle contract. Neon is the application-side ledger; external host epoch issuance and provider fencing remain separate authorities. The ledger schema and procedures are not approved for deployment until role separation, serializable transaction behavior, immutable R2 version/retention, anti-rollback witness recovery and deterministic concurrency/crash tests are independently demonstrated.
+
 ## Immutable upstream source baseline
 
 The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-source-manifest.json`; the exact manifest SHA-256 must be embedded in any completed ADR-0019 decision record. A reviewer must check all eight source pins and their recorded signature-verification status. The branch-head URLs are discovery references only; the manifest points to immutable commit URLs and records Git blob SHA-1 plus content SHA-256.
