@@ -197,17 +197,22 @@ def main() -> int:
         if duplicates or missing or extra:
             failures.append(f"{label}: logical record inventory mismatch; duplicates={duplicates}, missing={missing}, extra={extra}")
 
+    terminal_rows_by_label = {}
     for label in ("contract", "journal evaluation"):
         terminal_rows = [line for line in contents.get(label, "").splitlines() if line.startswith("| `terminal_results` |")]
         if len(terminal_rows) != 1:
             failures.append(f"{label}: exactly one canonical terminal_results logical record must be defined")
-        elif not all(phrase.casefold() in terminal_rows[0].casefold() for phrase in (
-            "winning trigger ID/cause",
-            "sealed trigger watermark",
-            "cleanup/evidence branch generations and state versions",
-            "append-only",
-        )):
-            failures.append(f"{label}: terminal_results row is missing required recovery/immutability fields")
+        else:
+            terminal_rows_by_label[label] = terminal_rows[0]
+            if not all(phrase.casefold() in terminal_rows[0].casefold() for phrase in (
+                "winning trigger ID/cause",
+                "sealed trigger watermark",
+                "cleanup/evidence branch generations and state versions",
+                "append-only",
+            )):
+                failures.append(f"{label}: terminal_results row is missing required recovery/immutability fields")
+    if len(terminal_rows_by_label) == 2 and terminal_rows_by_label["contract"] != terminal_rows_by_label["journal evaluation"]:
+        failures.append("contract and journal evaluation must use the exact same canonical terminal_results row")
 
     for phrase in FORBIDDEN_ADR_SELECTION_PHRASES:
         if phrase.casefold() in contents.get("host launch ADR", "").casefold():
