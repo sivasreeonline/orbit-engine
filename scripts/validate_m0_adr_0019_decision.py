@@ -141,6 +141,22 @@ def validate_record(record, validator):
                           f"{cid}: qualification commit does not match decision baseline")
                 add_error(errors, qualification.get("host_profile_digest") != config.get("profile_digest"),
                           f"{cid}: host profile digest mismatch")
+                if cid == "rootless-containerd-userns":
+                    report_profile = qualification.get("rootless_profile")
+                    config_profile = config.get("rootless_profile")
+                    add_error(errors, not isinstance(report_profile, dict) or report_profile != config_profile,
+                              f"{cid}: qualified rootless host profile must exactly match candidate configuration")
+                    add_error(errors, qualification.get("rootless_profile_digest") != config.get("profile_digest"),
+                              f"{cid}: qualified rootless profile digest must match candidate profile digest")
+                    if isinstance(report_profile, dict):
+                        add_error(errors, report_profile.get("daemon_uid", 0) == 0 or report_profile.get("daemon_gid", 0) == 0,
+                                  f"{cid}: qualification rootless daemon identity must be non-root")
+                        add_error(errors, not {"cpu", "memory", "pids"}.issubset(set(report_profile.get("delegated_controllers", []))),
+                                  f"{cid}: qualification rootless profile must delegate cpu, memory and pids")
+                else:
+                    add_error(errors, qualification.get("rootless_profile") is not None or
+                              qualification.get("rootless_profile_digest") is not None,
+                              f"{cid}: rootful qualification cannot carry rootless profile identity")
                 for report_field in ["runtime_profile_digest", "resource_profile_digest", "journal_profile_digest",
                                      "supervisor_digest", "watchdog_digest", "test_harness_digest"]:
                     add_error(errors, qualification.get(report_field) != config.get(report_field),
@@ -477,6 +493,7 @@ def main():
         "test_ids":TEST_IDS, "candidate_specific_test_ids":ROOTLESS_TEST_IDS,
         "rootless_userns_compatibility_gate":"passed",
         "rootless_profile":rootless["configuration"]["rootless_profile"],"rootless_profile_digest":"a"*64,
+        "rootless_profile":rootless["configuration"]["rootless_profile"],"rootless_profile_digest":"a"*64,
         "reviewer_id":"synthetic-independent-reviewer", "host_owner_id":"synthetic-host-owner",
         "independence_attested":True, "reviewed_at":"2026-11-10T00:00:00Z",
         "expires_at":"2026-12-10T00:00:00Z", "signature_reference":"synthetic-rootless-qualification"
@@ -490,6 +507,24 @@ def main():
     if not validate_record(rootless_missing, validator):
         raise AssertionError("rootless selection with a missing RLS test was accepted")
     print("PASS  accepts rootless selection only with all four candidate-specific qualification tests")
+    profile_uid_zero = deepcopy(rootless_complete)
+    selected_profile = next(c for c in profile_uid_zero["candidate_assessments"] if c["candidate_id"] == "rootless-containerd-userns")
+    selected_profile["configuration"]["rootless_profile"]["daemon_uid"] = 0
+    selected_profile["qualification_report"]["rootless_profile"]["daemon_uid"] = 0
+    if not validate_record(profile_uid_zero, validator):
+        raise AssertionError("rootless candidate with UID zero was accepted")
+    profile_mismatch = deepcopy(rootless_complete)
+    selected_profile = next(c for c in profile_mismatch["candidate_assessments"] if c["candidate_id"] == "rootless-containerd-userns")
+    selected_profile["qualification_report"]["rootless_profile"]["apparmor_profile_sha256"] = "f"*64
+    if not validate_record(profile_mismatch, validator):
+        raise AssertionError("rootless candidate with a mismatched AppArmor/profile digest was accepted")
+    profile_cpu_missing = deepcopy(rootless_complete)
+    selected_profile = next(c for c in profile_cpu_missing["candidate_assessments"] if c["candidate_id"] == "rootless-containerd-userns")
+    selected_profile["configuration"]["rootless_profile"]["delegated_controllers"] = ["memory", "pids"]
+    selected_profile["qualification_report"]["rootless_profile"]["delegated_controllers"] = ["memory", "pids"]
+    if not validate_record(profile_cpu_missing, validator):
+        raise AssertionError("rootless candidate without CPU delegation was accepted")
+    print("PASS  rejects rootless daemon UID zero, profile mismatch and missing CPU delegation")
     print("PASS  rejects rootless selection with a missing candidate-specific test")
     print("PASS  accepts synthetic selection only with candidate-specific complete qualification")
     print("PASS  ADR acceptance leaves implementation and all execution authorizations false")
