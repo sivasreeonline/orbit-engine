@@ -91,6 +91,11 @@ def custom_errors(record):
             if ref.get("verification_status") == "verified":
                 if not ref.get("independent_verifier_id") or not ref.get("verifier_note", "").strip():
                     errors.append(f"{control_id}: verified evidence requires independent verifier identity and note")
+                elif ref.get("independent_verifier_id") in {
+                    record.get("participants", {}).get("reviewer_id"),
+                    record.get("participants", {}).get("host_owner_id"),
+                }:
+                    errors.append(f"{control_id}: evidence verifier must be distinct from reviewer and host owner")
             participants = record.get("participants", {})
             if ref.get("acquired_by_id") in {
                 participants.get("reviewer_id"),
@@ -257,6 +262,13 @@ def main():
         "redaction_status":"non-sensitive", "verification_status":"verified",
         "independent_verifier_id":"independent-verifier", "verifier_note":"synthetic"
     }
+    for actor, label in [("host-owner", "host owner"), ("reviewer", "reviewer")]:
+        case = deepcopy(template)
+        case["participants"] = {"reviewer_id":"reviewer", "host_owner_id":"host-owner", "reviewer_independence_attested":True, "independence_basis":"synthetic", "conflict_disclosure":"none"}
+        finding = case["control_findings"][2]
+        finding.update(result="pass", verification_method="synthetic", reviewer_finding="synthetic", severity="none", evidence_refs=[dict(evidence_ref, independent_verifier_id=actor)])
+        cases.append((f"evidence verified by {label}", case))
+
     for actor, label in [("host-owner", "host owner"), ("reviewer", "reviewer"), ("independent-verifier", "evidence verifier")]:
         case = deepcopy(template)
         case["participants"] = {"reviewer_id":"reviewer", "host_owner_id":"host-owner",
