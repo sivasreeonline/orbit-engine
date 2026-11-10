@@ -72,11 +72,11 @@ Resource values are injected from the versioned proof profile, not chosen by the
 
 | Fixture ID | Stimulus | Required outcome | Independent assertion |
 |---|---|---|---|
-| `M0-LIFE-CLEAN-001` | Normal successful execution | Sandbox and scratch removed before completion is acknowledged | Host-side container/task and scratch inventory is empty |
-| `M0-LIFE-CLEAN-002` | Compile error, runtime error, timeout, cancellation, OOM, output overflow, and forced termination | Cleanup completes for every terminal path | Each path has a separate cleanup record; no process, mount, task, or scratch residue remains |
+| `M0-LIFE-CLEAN-001` | Normal successful execution | All sandbox resources are removed before completion is acknowledged | Independent host inventory confirms absence of workload process tree, containerd task/container, shim, namespaces, cgroup, scratch, temporary mounts, and network policy state |
+| `M0-LIFE-CLEAN-002` | Compile error, runtime error, timeout, cancellation, OOM, output overflow, and forced termination | Cleanup completes for every terminal path | Each path has a separate cleanup record; independent inventory confirms no process, task/container, shim, namespace, cgroup, mount, scratch, or network-policy residue |
 | `M0-LIFE-CANCEL-001` | Cancel while workload and child process are active | Complete process tree terminated; cancellation acknowledged only after cleanup | Host supervisor verifies all process IDs/tasks are gone and scratch is removed |
 | `M0-LIFE-DUP-001` | Deliver the same logical job more than once | One logical execution and one terminal result | Persistent idempotency/claim record and result count prove deduplication |
-| `M0-LIFE-RESTART-001` | Restart runner or host supervisor during active execution | Workload is terminated or safely reconciled; no orphan remains | Post-restart inventory finds no unowned task, process, mount, or scratch directory |
+| `M0-LIFE-RESTART-001` | In separate subcases, restart the runner, host supervisor, and containerd daemon during an active attempt | Each restart is reconciled safely; no duplicate workload or orphan remains | For every subcase, durable journal and post-restart inventory prove one logical attempt and no unowned task/container, shim, process, namespace, cgroup, mount, scratch, or network-policy residue |
 | `M0-LIFE-REPEAT-001` | Repeat each fixture on a clean sandbox | Same expected classification and bounded variance | Each repetition has an independent correlation ID and evidence record |
 
 ## 7. Result classification
