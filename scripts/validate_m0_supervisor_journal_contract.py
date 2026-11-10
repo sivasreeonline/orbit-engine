@@ -37,6 +37,7 @@ REQUIRED = {
         "complete supervisor cgroup",
         "implicit automatic restart must not race",
         "no generic root command or containerd authority",
+        "WD-001", "WD-002", "WD-003", "WD-004", "WD-005", "WD-006", "WD-007",
         "Watchdog SIGSTOP/deadlock",
         "Watchdog service-manager authorization denied",
         "Supervisor unit/drop-in or executable digest substitution",
@@ -71,6 +72,7 @@ REQUIRED = {
         "Candidate B must prove the protected non-root socket-publication boundary",
         "exactly two candidates",
         "not a third ADR candidate",
+        "WD-001", "WD-002", "WD-003", "WD-004", "WD-005", "WD-006", "WD-007",
         "Watchdog process pause/deadlock",
         "Watchdog service-manager authorization denial",
         "Supervisor unit-file, drop-in, executable-digest",
@@ -156,6 +158,14 @@ def main() -> int:
         for phrase in REQUIRED[label]:
             if phrase.casefold() not in value.casefold():
                 failures.append(f"{label}: missing required contract reference/text: {phrase}")
+    # Stable watchdog IDs must be present in both design matrices so a test
+    # cannot silently disappear from one side of the contract.
+    watchdog_ids = [f"WD-{number:03d}" for number in range(1, 8)]
+    for scenario_id in watchdog_ids:
+        for label in ("contract", "runtime harness"):
+            if scenario_id not in contents.get(label, ""):
+                failures.append(f"{label}: missing watchdog fault-injection scenario {scenario_id}")
+
     for phrase in FORBIDDEN_ADR_SELECTION_PHRASES:
         if phrase.casefold() in contents.get("host launch ADR", "").casefold():
             failures.append(f"host launch ADR contains stale candidate-selection language: {phrase}")
