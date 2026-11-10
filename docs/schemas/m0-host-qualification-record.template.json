@@ -5,7 +5,7 @@
   "qualification_status": "not-qualified",
   "scope": {
     "repository": "sivasreeonline/orbit-engine",
-    "reviewed_commit_sha": "ef664972f106f315e4ab7e32c8149ce2106d2aa1",
+    "reviewed_commit_sha": null,
     "qualification_protocol_digest": null,
     "qualification_harness_digest": null,
     "target_architecture": "not-selected",
