@@ -96,6 +96,7 @@ The reviewer must explicitly answer each item:
 13. Can a runner identity spoof or bypass Unix peer-credential checks, socket-path ownership checks, per-attempt authorization, or request framing limits?
 14. Can a supervisor crash at every journal/containerd boundary cause duplicate launch, lost ownership, false terminal success, or orphaned resources?
 15. Is the supervisor's effective privilege set genuinely minimal, and does its systemd hardening preserve only the required containerd operations?
+16. Can every restored, cloned, rolled-back or replacement VM prove a unique fresh externally anchored epoch, complete predecessor enumeration, authenticated issuance and provider-enforced fencing of every predecessor before the new instance can enable admission or privileged work?
 
 Every answer must cite evidence or remain marked unresolved.
 
@@ -109,6 +110,7 @@ Reject the proof design or stop testing if any of the following occurs:
 - Any resource limit that is best-effort, unbounded, or not independently measured.
 - Any surviving process/task, mount, namespace, or scratch resource after terminal acknowledgement.
 - Any duplicate terminal result or scoring of an infrastructure failure as a student verdict.
+- Any missing, ambiguous or merely requested predecessor-instance fence; no restored/cloned host may be admitted using guest-journal generation or heartbeat as a substitute for provider-enforced fencing.
 - Any evidence containing secrets, student source, hidden test content, or unredacted daemon environment/command lines.
 - Any missing, inconsistent, or unverifiable evidence for a required fixture.
 - Any unreviewed change to the host baseline, runtime, fixture image, supervisor API, or security profile.
