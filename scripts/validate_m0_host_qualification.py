@@ -244,7 +244,7 @@ def errors_for(record, schema_validator):
         baseline_sha = record.get("scope", {}).get("reviewed_commit_sha")
         if not isinstance(baseline_sha, str) or len(baseline_sha) != 40:
             errors.append("candidate-qualified requires an exact 40-character reviewed commit SHA")
-        required_host = ["provider", "region", "vm_shape", "host_instance_id", "boot_id", "image_digest",
+        required_host = ["provider", "region", "vm_shape", "host_instance_id", "host_incarnation_epoch", "prior_incarnation_fence_evidence_ref", "boot_id", "image_digest",
             "os_release", "kernel_release", "architecture", "filesystem_type", "storage_device_identity",
             "storage_class", "containerd_version", "containerd_config_digest", "runsc_version", "shim_version",
             "host_profile_digest", "runtime_profile_digest", "resource_profile_digest", "supervisor_digest",
@@ -435,7 +435,8 @@ def main():
     })
     complete["host_identity"].update({
         "selected":True,"provider":"synthetic-provider","region":"synthetic-region","vm_shape":"synthetic-shape",
-        "host_instance_id":"synthetic-host-instance","boot_id":"synthetic-boot-id","image_digest":"c"*64,
+        "host_instance_id":"synthetic-host-instance","host_incarnation_epoch":"synthetic-host-epoch",
+        "prior_incarnation_fence_evidence_ref":"synthetic-prior-incarnation-fence-evidence","boot_id":"synthetic-boot-id","image_digest":"c"*64,
         "os_release":"synthetic-os","kernel_release":"synthetic-kernel","architecture":"x86_64",
         "filesystem_type":"synthetic-fs","mount_options":["synthetic-option"],"storage_device_identity":"synthetic-device",
         "storage_class":"synthetic-storage","cgroup_mode":"unified-v2","containerd_version":"synthetic-containerd",
