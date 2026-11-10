@@ -237,6 +237,39 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     expect(state.rows[0]).toEqual({ consumed_runs: 0, revoked: true });
   });
 
+  it("preserves a claim committed before a waiting revocation", async () => {
+    const setup = await connect();
+    await seedAuthorization(setup, 2);
+    const claimant = await connect(true);
+    const revoker = await connect(true);
+    await claimant.query("BEGIN");
+    await claimant.query(
+      "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
+      [authId],
+    );
+    await claimant.query(
+      "INSERT INTO authorization_run_claims (authorization_id, claim_id, request_id, request_digest, claim_sequence) VALUES ($1, $2, 'claim-before-revoke', 'sha256:claim-before-revoke', 1)",
+      [authId, randomUUID()],
+    );
+    await claimant.query(
+      "INSERT INTO authorization_run_events (authorization_id, request_id, event_type, event_digest) VALUES ($1, 'claim-before-revoke', 'CLAIMED', 'sha256:claim-before-revoke')",
+      [authId],
+    );
+    await claimant.query(
+      "UPDATE authorization_state SET consumed_runs = 1, state_version = state_version + 1 WHERE authorization_id = $1",
+      [authId],
+    );
+    const waitingRevocation = revoke(revoker);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await claimant.query("COMMIT");
+    await waitingRevocation;
+    const result = await setup.query(
+      "SELECT s.consumed_runs, s.revoked, count(c.claim_id)::int AS claims FROM authorization_state s LEFT JOIN authorization_run_claims c USING (authorization_id) WHERE s.authorization_id = $1 GROUP BY s.authorization_id",
+      [authId],
+    );
+    expect(result.rows[0]).toEqual({ consumed_runs: 1, revoked: true, claims: 1 });
+  });
+
   it("denies mutation and deletion of claim and event history to the application role", async () => {
     const setup = await connect();
     await seedAuthorization(setup, 1);
