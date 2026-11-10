@@ -97,14 +97,14 @@ def synthetic_manifest() -> dict:
             "uses_target_journal_path": True,
         },
         "stop_conditions": {
-            "outer_cutoff_fired": True,
-            "network_boundary_uncertain": True,
-            "unowned_resource_detected": True,
-            "cleanup_unverified": True,
-            "clock_ambiguous": True,
-            "evidence_leak_detected": True,
-            "unexplained_host_mutation": True,
-            "independent_reviewer_stop": True,
+            "stop_on_outer_cutoff_fired": True,
+            "stop_on_network_boundary_uncertain": True,
+            "stop_on_unowned_resource_detected": True,
+            "stop_on_cleanup_unverified": True,
+            "stop_on_clock_ambiguous": True,
+            "stop_on_evidence_leak_detected": True,
+            "stop_on_unexplained_host_mutation": True,
+            "stop_on_independent_reviewer_stop": True,
         },
         "evidence": {
             "destination": "synthetic-evidence-store",
@@ -177,6 +177,9 @@ def main() -> int:
     duplicate_scenario = deepcopy(valid)
     duplicate_scenario["calibration"]["scenario_ids"][-1] = duplicate_scenario["calibration"]["scenario_ids"][0]
     cases.append(("duplicate calibration scenario", duplicate_scenario))
+    disabled_stop_policy = deepcopy(valid)
+    disabled_stop_policy["stop_conditions"]["stop_on_cleanup_unverified"] = False
+    cases.append(("cleanup uncertainty stop policy disabled", disabled_stop_policy))
     no_outer_watchdog = deepcopy(valid)
     no_outer_watchdog["outer_safety"]["independence_attested"] = False
     cases.append(("outer watchdog independence not attested", no_outer_watchdog))

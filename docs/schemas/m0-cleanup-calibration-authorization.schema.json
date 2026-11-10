@@ -425,38 +425,38 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "outer_cutoff_fired",
-        "network_boundary_uncertain",
-        "unowned_resource_detected",
-        "cleanup_unverified",
-        "clock_ambiguous",
-        "evidence_leak_detected",
-        "unexplained_host_mutation",
-        "independent_reviewer_stop"
+        "stop_on_outer_cutoff_fired",
+        "stop_on_network_boundary_uncertain",
+        "stop_on_unowned_resource_detected",
+        "stop_on_cleanup_unverified",
+        "stop_on_clock_ambiguous",
+        "stop_on_evidence_leak_detected",
+        "stop_on_unexplained_host_mutation",
+        "stop_on_independent_reviewer_stop"
       ],
       "properties": {
-        "outer_cutoff_fired": {
+        "stop_on_outer_cutoff_fired": {
           "const": true
         },
-        "network_boundary_uncertain": {
+        "stop_on_network_boundary_uncertain": {
           "const": true
         },
-        "unowned_resource_detected": {
+        "stop_on_unowned_resource_detected": {
           "const": true
         },
-        "cleanup_unverified": {
+        "stop_on_cleanup_unverified": {
           "const": true
         },
-        "clock_ambiguous": {
+        "stop_on_clock_ambiguous": {
           "const": true
         },
-        "evidence_leak_detected": {
+        "stop_on_evidence_leak_detected": {
           "const": true
         },
-        "unexplained_host_mutation": {
+        "stop_on_unexplained_host_mutation": {
           "const": true
         },
-        "independent_reviewer_stop": {
+        "stop_on_independent_reviewer_stop": {
           "const": true
         }
       }
