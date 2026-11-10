@@ -381,7 +381,8 @@ def main() -> None:
                                         "effective_at":"2026-01-01T00:00:00Z","reason_code":"KEY_COMPROMISE",
                                         "revocation_statement_ref":"evidence://revocation/01",
                                         "revocation_statement_sha256":"b"*64}])
-    revoked_bundle["keys"][0]["revocation_reason"] = "synthetic compromise fixture"\n    check(revocation_matches_bundle(revoked_bundle["revocations"][0], revoked_bundle),
+    revoked_bundle["keys"][0]["revocation_reason"] = "synthetic compromise fixture"
+    check(revocation_matches_bundle(revoked_bundle["revocations"][0], revoked_bundle),
           "matching bundle revocation statement rejected")
     accepted(bundle_v, revoked_bundle, "revoked key and matching trust-bundle revocation")
     check(not revocation_matches_bundle(revoked_bundle["revocations"][0],
