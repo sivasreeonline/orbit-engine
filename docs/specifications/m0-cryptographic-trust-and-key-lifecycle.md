@@ -202,3 +202,8 @@ The envelope contains the same conditional payload constraints inline so offline
 The negative-fixture catalog now assigns an explicit execution disposition to all 20 required cases. Structural, parser, policy, chronology, binding, replay and fail-closed cases are exercised by the validator. Canonical-byte equivalence remains blocked because no canonicalization profile has been approved. The catalog deliberately does not claim signature verification or production cryptographic coverage.
 
 These schemas are contract gates, not credentials or authority. A schema-valid Phase A payload is not a signed authorization, a valid signature is not provider-fence proof, and neither grants permission to run privileged or student workloads.
+
+
+### Authorization scope and principal separation clarification
+
+The message payload named `phase-a-authorization` is restricted to `M0_CLEANUP_CALIBRATION_ONLY`; it is not a general host-qualification, full-M0-proof, Phase B, student, or production grant. Its payload explicitly binds five distinct principals: host owner, evidence acquirer, fence verifier, independent security reviewer, and authorization signer. The structural validator rejects role collisions. This supplements, and does not replace, the role/evidence checks in the independent security-review record and cleanup-calibration authorization contract.
