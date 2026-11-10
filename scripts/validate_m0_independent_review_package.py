@@ -268,7 +268,7 @@ def main():
         case = deepcopy(template)
         case["participants"] = {"reviewer_id":"reviewer", "host_owner_id":"host-owner", "reviewer_independence_attested":True, "independence_basis":"synthetic", "conflict_disclosure":"none"}
         finding = case["control_findings"][2]
-        finding.update(result="pass", verification_method="synthetic", reviewer_finding="synthetic", severity="none", evidence_refs=[dict(evidence_ref, independent_verifier_id=actor)])
+        finding.update(result="pass", verification_method="synthetic", reviewer_finding="synthetic", severity="none", evidence_refs=[dict(evidence_ref, acquired_by_id="evidence-acquirer", independent_verifier_id=actor)])
         cases.append((f"evidence verified by {label}", case))
 
     for actor, label in [("host-owner", "host owner"), ("reviewer", "reviewer"), ("independent-verifier", "evidence verifier")]:
