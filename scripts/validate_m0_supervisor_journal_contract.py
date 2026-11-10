@@ -34,6 +34,12 @@ REQUIRED = {
         "Candidate A requires a root-owned directory",
         "Candidate B must prove an equivalent protected publication mechanism",
         "Candidate B requires a lock file owned by its dedicated non-root supervisor identity",
+        "Containerd operation reconciliation",
+        "DISPATCH_POSSIBLE",
+        "terminalization_trigger_watermark",
+        "trigger_stream_sealed",
+        "insert exactly one `terminal_results` row",
+        "append-only: no update, upsert, replacement, or delete is permitted",
     ],
     "runtime harness": [
         "m0-supervisor-journal-implementation-contract.md",
@@ -46,6 +52,8 @@ REQUIRED = {
         "current `supervisor_generation` and `attempt_generation`",
         "`branch_state_version`",
         "Every branch mutation must compare all four ownership/version values atomically",
+        "verify the trigger stream is sealed and every trigger through the watermark is durable",
+        "one immutable terminal row and attempt transition in one transaction",
         "Candidate A requires the root-owned socket boundary",
         "Candidate B must prove the protected non-root socket-publication boundary",
         "exactly two candidates",
@@ -65,6 +73,9 @@ REQUIRED = {
         "current `supervisor_generation` and current `attempt_generation`",
         "branch_state_version",
         "Every finalization-branch mutation must compare supervisor_generation, attempt_generation, branch_generation, and branch_state_version together in one conditional update",
+        "a unique terminal_results.attempt_id",
+        "Install database-level guards",
+        "sealed trigger watermark",
         "Candidate A requires root ownership; Candidate B requires ownership by its dedicated non-root supervisor identity",
     ],
     "runner README": [
@@ -87,6 +98,8 @@ REQUIRED = {
         "current `supervisor_generation`, `attempt_generation`, `branch_generation`, and expected branch state version",
         "database lease or generation integer alone cannot fence a paused process",
         "full lifetime of the selected supervisor",
+        "seals a trigger watermark after final output-drain/quiescence",
+        "Database constraints/guards must reject a second terminal insert",
     ],
 }
 FORBIDDEN_ADR_SELECTION_PHRASES = [
