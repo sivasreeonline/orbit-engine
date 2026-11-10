@@ -36,7 +36,9 @@
     "resource_profile_digest": null,
     "supervisor_digest": null,
     "watchdog_digest": null,
-    "test_harness_digest": null
+    "test_harness_digest": null,
+    "rootless_profile": null,
+    "rootless_profile_digest": null
   },
   "journal_profile": {
     "backend_candidate": "not-selected",
