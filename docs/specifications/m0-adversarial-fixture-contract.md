@@ -12,7 +12,7 @@
 2. A fixture is successful only when both the in-sandbox stimulus and the independent host-side assertion agree. A non-zero exit code alone is never proof of isolation or enforcement.
 3. The test controller, not the workload, owns the wall-clock watchdog, output byte counters, process-tree observation, sandbox lifecycle, and cleanup verification.
 4. Student source, production data, real credentials, and hidden assessment tests are prohibited. Use synthetic inputs and inert sentinel values only.
-5. Network probes use controlled destinations and packet observation. They must not call public services or send callbacks to the Internet.
+5. Network probes use controlled destinations and packet observation. They must not call public services or send callbacks to the Internet. The metadata-address probe is a narrowly defined exception to the reserved-range rule: it attempts the metadata link-local IP only from inside the sandbox, while an independently verified outer-VM deny/blackhole rule drops that destination before any host uplink or metadata service can receive it. Never run this probe until the outer rule and its counters have been verified; never query metadata from the host.
 6. Every resource-exhaustion fixture runs inside a disposable VM with an outer host-level cgroup and watchdog that remain effective even if the inner sandbox limit fails.
 7. Record expected and observed outcomes, timestamps, fixture revision, runtime/image digests, resource measurements, and sanitized evidence references in the M0 evidence manifest.
 8. A fixture marked `blocked` or `not_run` is not a pass. Any unexplained result blocks M0.
@@ -41,7 +41,7 @@
 
 ## 4. Network-denial fixtures
 
-All probes target reserved test ranges or a host-local sentinel listener bound only to the disposable proof network. No public endpoint is contacted.
+All ordinary probes target reserved test/documentation ranges, a controlled proof resolver, or a host-local sentinel listener bound only to the disposable proof network. No public endpoint is contacted. `M0-NET-006` is the sole special case: the sandbox attempts the metadata link-local destination (for example, IPv4 `169.254.169.254`) only after an independently verified outer-VM deny/blackhole rule is active. The rule must drop the destination before it can reach a host uplink or real metadata service, and host-side counters/packet observation must prove the drop. The probe must never retrieve metadata, and the host itself must never issue a metadata request. If the outer deny cannot be independently verified, mark the fixture `blocked` and do not run it.
 
 | Fixture ID | Probe | Required outcome | Independent assertion |
 |---|---|---|---|
@@ -50,7 +50,7 @@ All probes target reserved test ranges or a host-local sentinel listener bound o
 | `M0-NET-003` | DNS query to the controlled proof resolver | Blocked | Resolver receives no query from the workload network namespace |
 | `M0-NET-004` | Direct-IP connection bypassing DNS | Blocked | Host-side network policy counters show the attempted flow denied |
 | `M0-NET-005` | Connection to a host-local sentinel listener | Blocked | Sentinel listener accepts no connection from the sandbox |
-| `M0-NET-006` | Connection attempt to the cloud metadata link-local address | Blocked | Host policy counters show denial; no metadata response is received |
+| `M0-NET-006` | From inside the sandbox only, attempt a bounded connection to the metadata link-local address after the outer-VM deny/blackhole rule is independently verified | Blocked before host uplink or metadata service | Host-side deny counters and packet observation prove the drop; no metadata service receives the packet and no metadata response is received |
 
 ## 5. Resource-enforcement fixtures
 
