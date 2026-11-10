@@ -46,7 +46,7 @@ async function appendRunEvent(
     `INSERT INTO authorization_run_events
       (authorization_id, event_sequence, previous_event_digest, request_id, event_type, request_digest, event_digest)
      VALUES ($1, $2, $3, $4, $5, $6,
-       encode(digest(convert_to(concat_ws('|', $1, $2::integer::text, $4, $5, $6, $3), 'UTF8'), 'sha256'), 'hex'))`,
+       encode(digest(convert_to(concat_ws('|', $1::text, $2::integer::text, $4::text, $5::text, $6::text, $3::text), 'UTF8'), 'sha256'), 'hex'))`,
     [authId, eventSequence, previousDigest, requestId, eventType, requestDigest],
   );
 }
