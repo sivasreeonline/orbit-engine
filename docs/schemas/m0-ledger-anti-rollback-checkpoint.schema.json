@@ -24,7 +24,8 @@
     "issued_at",
     "nonce",
     "signature_ref",
-    "signature_sha256"
+    "signature_sha256",
+    "checkpoint_sha256"
   ],
   "properties": {
     "schema_version": {
@@ -106,6 +107,10 @@
       "$ref": "#/$defs/digest"
     },
     "previous_checkpoint_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "checkpoint_sha256": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
     }
