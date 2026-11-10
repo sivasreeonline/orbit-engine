@@ -77,6 +77,7 @@ REQUIRED = {
         "Candidates under evaluation",
         "Candidate A", "Candidate B",
         "Candidate A — rootful host supervisor requirements",
+        "Candidate B — rootless containerd experiment",
         "persist the trigger and `TERMINATING` transition concurrently",
         "supervisor_generation",
         "attempt_generation",
@@ -88,6 +89,7 @@ REQUIRED = {
 FORBIDDEN_ADR_SELECTION_PHRASES = [
     "recommended for disposable M0 proof only",
     "For the initial M0 proof, use a dedicated",
+    "Before the proposed rootful supervisor is accepted",
     "Recommended candidate, not yet approved",
     "An architecture recommendation does not authorize privileged implementation",
 ]
