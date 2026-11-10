@@ -181,6 +181,6 @@ The dated public-source review is maintained in `docs/adr/ADR-0019-upstream-comp
 
 Candidate B must carry a structured `rootless_profile` in both the candidate configuration and its own host qualification report. The exact object includes non-root daemon UID/GID, daemon identity digest, caller-configured userns mode, subordinate UID/GID mapping digests/range counts, RootlessKit/newuidmap/newgidmap binary hashes, helper inventory, AppArmor, private state directory and daemon socket policies, network backend/namespace profile, systemd delegation profile, delegated controllers and profile SHA-256.
 
-The candidate profile digest must equal `rootless_profile.profile_sha256`; the qualification report must include the identical profile object and matching rootless profile digest. CPU, memory and PID controllers must all be delegated. Rootful records must carry a null rootless profile and null rootless profile digest.
+`rootless_profile.profile_sha256` must match the host record's `rootless_profile_digest`, the candidate configuration's `rootless_profile_digest` and the qualification report's `rootless_profile_digest`. Separately, the overall host profile digest must match the candidate `profile_digest`. CPU, memory and PID controllers must all be delegated. Rootful records must carry a null rootless profile and null rootless profile digest.
 
 A change in any of these fields invalidates the previous candidate qualification evidence.
