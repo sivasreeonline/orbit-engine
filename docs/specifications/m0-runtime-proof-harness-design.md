@@ -95,17 +95,17 @@ Reject unknown fields and duplicate JSON keys. Fail closed if a profile is missi
 
 ### 3.3 Unix-socket authorization and service isolation
 
-The initial transport candidate is a local Unix stream socket only. Before implementation, record and independently review the exact socket path, service UID/GID, socket owner/group/mode, parent-directory permissions, systemd unit, and containerd socket access mechanism.
+The common supervisor transport candidate is a local Unix stream socket. Before implementation, record and independently review the exact socket path, service UID/GID, socket owner/group/mode, parent-directory permissions, systemd unit, and candidate-specific containerd socket access mechanism. Candidate A requires the root-owned socket boundary; Candidate B must prove the protected non-root socket-publication boundary defined in the supervisor/journal implementation contract.
 
 Minimum design requirements:
 
-1. The socket lives under a root-owned directory that is not writable by the runner, guest, or other unprivileged accounts. Reject symlinked socket paths and verify the parent directory and socket inode/owner/mode at service startup.
+1. For Candidate A, the socket lives under a root-owned directory that is not writable by the runner, guest, or other unprivileged accounts. Candidate B must use its dedicated non-root supervisor identity and an independently reviewed protected socket-publication mechanism; the runner must never gain directory-write access. For both candidates, reject symlinked socket paths and verify the parent directory and socket inode/owner/mode at service startup.
 2. Use Linux peer credentials (for example, `SO_PEERCRED`) on every accepted connection and compare the authenticated UID/GID against one explicitly configured runner identity. Do not trust a caller-supplied UID, PID, username, or role field.
 3. Authenticate and authorize each operation and each referenced proof run/attempt. A valid local socket connection is not blanket authorization to operate on arbitrary attempts.
 4. Apply a small fixed maximum request size, strict UTF-8/JSON parsing, duplicate-key rejection, unknown-field rejection, bounded strings, and operation-specific required fields. Reject trailing JSON and malformed framing.
 5. Set bounded connection, request, response, and concurrent-operation limits. A disconnected client must not cancel cleanup or leave a partially created task.
 6. Do not pass client file descriptors, environment, working directory, or inherited capabilities into the sandbox. Do not accept SCM_RIGHTS descriptors unless a future reviewed contract explicitly requires them.
-7. The runner service identity must not belong to the containerd socket's access group. Only the dedicated supervisor identity may access the root-owned containerd socket; no broad interactive-user group membership is allowed.
+7. The runner service identity must not belong to any containerd socket access group. Only the selected candidate's dedicated supervisor identity may access its daemon socket; Candidate A's daemon socket is root-owned. No broad interactive-user group membership is allowed.
 8. Keep the supervisor's journal, profiles, evidence staging area, and runtime socket in separate directories with explicit owner/mode policy. The guest receives none of these paths or descriptors.
 9. The systemd hardening profile must be tested against the exact containerd operations. Record effective unit settings and capabilities; fail deployment if an unexpected capability, writable host path, or network listener is present.
 10. The supervisor must not expose a generic command runner, shell, arbitrary file API, arbitrary OCI-spec API, or generic containerd proxy.
@@ -114,14 +114,11 @@ Peer credentials and socket permissions authenticate the local process identity;
 
 ### 3.4 Privilege and compromise analysis
 
-A process that can issue unrestricted requests to the rootful containerd socket has host-level authority. The supervisor must therefore be treated as a high-value privileged component, not as a harmless adapter.
+For Candidate A, a process that can issue unrestricted requests to the rootful containerd socket has host-level authority. Its supervisor must therefore be treated as a high-value privileged component, not as a harmless adapter. Candidate B's daemon is non-root, but its user-namespace, helper, cgroup-delegation, network and socket boundaries still require independent review.
 
-The design review must explicitly compare:
-- A narrowly scoped supervisor that directly accesses containerd.
-- A split design with an unprivileged request coordinator and a minimal privileged broker.
-- Rootless containerd with caller-configured user namespaces.
+The ADR-0019 comparison has exactly two candidates: Candidate A (rootful containerd with a typed host supervisor) and Candidate B (rootless containerd with caller-configured user namespaces). Within Candidate A, the reviewer may compare a single-process supervisor with an internal split between an unprivileged request coordinator and a minimal privileged broker; that is an implementation variation within Candidate A, not a third ADR candidate.
 
-Do not assume that splitting processes automatically removes risk: the privileged broker still needs independent validation, and the broker's API must be narrower than the containerd API. Any helper that can accept arbitrary OCI settings or forward arbitrary containerd requests is rejected.
+Do not assume that splitting Candidate A automatically removes risk: the privileged broker still needs independent validation, and its API must be narrower than the containerd API. Any helper that can accept arbitrary OCI settings or forward arbitrary containerd requests is rejected.
 
 Before selecting the rootful path, document the effective capability set, systemd sandboxing, writable paths, syscalls, socket access, update/rollback procedure, and recovery access. If the required containerd operations force broad ambient privileges that cannot be acceptably constrained, stop and revisit the rootless alternative rather than weakening the threat model.
 
