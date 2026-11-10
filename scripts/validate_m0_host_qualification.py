@@ -129,11 +129,16 @@ def errors_for(record, schema_validator):
         if review.get("reviewed_commit_sha") != record.get("scope", {}).get("reviewed_commit_sha"):
             errors.append("reviewed commit must equal the qualification record baseline")
         try:
-            reviewed_at = datetime.fromisoformat(review["reviewed_at"].replace("Z", "+00:00"))
-            expires_at = datetime.fromisoformat(review["expires_at"].replace("Z", "+00:00"))
-            if expires_at <= reviewed_at:
-                errors.append("independent review is expired at issuance")
-        except (KeyError, ValueError, TypeError):
+            review_date = review.get("reviewed_at")
+            expiry_date = review.get("expires_at")
+            if not review_date or not expiry_date:
+                errors.append("candidate-qualified requires valid review dates")
+            else:
+                reviewed_at = datetime.fromisoformat(review_date.replace("Z", "+00:00"))
+                expires_at = datetime.fromisoformat(expiry_date.replace("Z", "+00:00"))
+                if expires_at <= reviewed_at:
+                    errors.append("independent review is expired at issuance")
+        except (ValueError, TypeError):
             errors.append("candidate-qualified requires valid review dates")
         if not record.get("qualification_rationale", "").strip():
             errors.append("candidate-qualified requires a written qualification rationale")
@@ -261,12 +266,13 @@ def main():
         "status":"completed","reviewer_id":"synthetic-independent-reviewer","host_owner_id":"synthetic-host-owner",
         "independence_attested":True,"independence_basis":"synthetic identity separation",
         "conflict_disclosure":"synthetic none","decision":"accept-host-candidate",
-        "reviewed_commit_sha":"5"*40,"reviewed_at":"2026-11-10T00:00:00Z",
+        "reviewed_commit_sha":complete["scope"]["reviewed_commit_sha"],"reviewed_at":"2026-11-10T00:00:00Z",
         "expires_at":"2026-12-10T00:00:00Z","signature_reference":"synthetic-signature"
     })
     complete["reviewed_at"]="2026-11-10T00:00:00Z"
     complete["expires_at"]="2026-12-10T00:00:00Z"
     complete["signature_reference"]="synthetic-signature"
+    complete["qualification_rationale"]="Synthetic positive test case only; no real host qualification is asserted."
     if errors_for(complete,schema_validator):
         raise AssertionError("synthetic fully-qualified record failed: " + "; ".join(errors_for(complete,schema_validator)))
     if any(complete[flag] is not False for flag in AUTH_FLAGS):
