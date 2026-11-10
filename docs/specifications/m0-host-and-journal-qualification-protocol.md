@@ -173,9 +173,21 @@ Network proof is independent of the guest's reported state. Outer deny/blackhole
 
 The machine-readable qualification record contains one immutable host/profile identity and exactly one result for every test ID in the schema. A passed test requires a non-empty verification method and at least one independently verified evidence reference. Evidence includes immutable object/source reference, exact version, SHA-256, byte count, evidence root, acquisition timestamp/tool/version, redaction result, independent verifier identity and verification note.
 
+**Mandatory evidence re-verification procedure (not a metadata-only check):**
+
+1. The evidence verifier obtains the object through an independently authorized, read-only path using the recorded `evidence_root_id`, `reference_id` and exact immutable `object_version`. A mutable alias, latest-version lookup, uploader-provided local copy or unversioned URL is insufficient.
+2. The verifier records the resolved immutable object identity and confirms that it belongs to the declared evidence root and expected evidence type. If the storage system exposes retention lock, object-lock or version-retention metadata, verify and record the effective retention state and expiry.
+3. Download the exact object bytes to a controlled verification workspace. Recompute SHA-256 over the complete byte stream and count the exact bytes; compare both values with the record. Do not trust a provider ETag as a SHA-256 unless the provider explicitly documents that exact semantic for the selected upload mode.
+4. Verify any detached signature or attestation against the expected signer identity and pinned trust material; record the verification command/tool version, signer identity, trust-root identity and result. A signature reference string or schema-valid record is not signature verification.
+5. Inspect redaction and provenance, confirm that the evidence actually supports the named test and reviewed host/boot/profile/commit, then record the verifier's independent result and sanitized note. A mismatch, missing version, inaccessible object, unverifiable signature, digest/size mismatch or ambiguous provenance means `verification_status=failed` or the test remains blocked—not passed.
+6. The evidence verifier must be a third role, distinct from both the host owner/acquirer and the independent security reviewer. The same person may not acquire/own the host, verify the evidence and independently review the security decision. The validator enforces verifier-ID separation from the recorded host owner and reviewer for every passed common and rootless test.
+7. Preserve the verified object version and sanitized verification output in the evidence ledger. Reverification is required if the object is replaced, retention/version identity changes, the host/profile baseline changes, or the reviewed commit changes.
+
+The machine validator checks the record's metadata and role separation; it cannot fetch external evidence objects, recompute their bytes, validate storage retention or cryptographically verify signatures. Those are mandatory human/operator verification steps and must not be represented as CI-proven.
+
 Do not store raw `/proc` cmdline/environment, credentials, private URLs, student code, hidden tests, source archives or metadata responses. Host tests require host/runtime/storage/network/watchdog evidence; design documents, CI and synthetic schema tests are never sufficient to pass them.
 
-Review decisions require distinct host owner and independent reviewer identities, independence/conflict disclosure, reviewed commit and exact host/profile digests, signed/auditable record, expiry and re-review triggers.
+Review decisions require distinct host owner and independent reviewer identities, independence/conflict disclosure, reviewed commit and exact host/profile digests, signed/auditable record, expiry and re-review triggers. The evidence verifier is a separate third role as specified above.
 
 ## 9. Qualification gate computation
 
