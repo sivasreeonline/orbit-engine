@@ -585,6 +585,12 @@ def main():
         } for evidence_type in evidence_types]
     rootless["qualification_report"] = {
         "record_id":"22222222-2222-4222-8222-222222222222", "record_sha256":"3"*64,
+        "qualification_record_evidence":{"reference_id":"22222222-2222-4222-8222-222222222222",
+            "object_version":"v1","sha256":"3"*64,"byte_count":1,"evidence_root_id":"synthetic-root",
+            "evidence_type":"host-qualification-record","acquired_at":"2026-11-10T00:00:00Z",
+            "acquisition_tool":"synthetic-validator","tool_version":"1","verification_status":"verified",
+            "independent_verifier_id":"synthetic-evidence-verifier","verification_note":"Synthetic only",
+            "redaction_status":"non-sensitive"},
         "record_commit_sha":"a"*40, "target_architecture":"rootless-containerd-userns",
         "qualification_status":"candidate-qualified", "host_instance_id":"synthetic-rootless-host",
         "boot_id":"synthetic-rootless-boot", "host_profile_digest":rootless["configuration"]["profile_digest"],
