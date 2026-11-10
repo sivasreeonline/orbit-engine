@@ -243,6 +243,14 @@ def main() -> None:
     check(catalog["required_negative_case_count"] == len(catalog["negative_cases"]) == 20,
           "negative case inventory must contain exactly 20 unique cases")
     check(len(set(catalog["negative_cases"])) == 20, "negative case IDs must be unique")
+    coverage = catalog.get("negative_case_coverage", [])
+    check(len(coverage) == 20, "every negative case must have an explicit execution disposition")
+    check({item["id"] for item in coverage} == set(catalog["negative_cases"]),
+          "negative fixture coverage must exactly match the canonical inventory")
+    check(all(item["cryptography_executed"] is False for item in coverage),
+          "structural fixture catalog must not claim cryptography")
+    check(sum(item["outcome"] == "BLOCKED_PROFILE_NOT_SELECTED" for item in coverage) == 1,
+          "only profile-dependent canonical-byte fixture should remain blocked")
     check(catalog["known_answer_vectors"]["status"] == "blocked-pending-profile-selection",
           "known-answer vectors must remain blocked pending profile selection")
     check(catalog["safety_invariants"] == {
