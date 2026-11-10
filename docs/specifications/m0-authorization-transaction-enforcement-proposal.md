@@ -80,3 +80,24 @@ This is not PostgreSQL integration. Before migration approval, exact procedures 
 ## 7. Approval gate
 
 No production DDL or migration may be applied until the external authority/provider protocol, cryptographic profile and custody, witness implementation, evidence-store retention behavior, Neon role model and independent security review are approved. This proposal does not select Neon deployment settings or claim current Neon/R2 services meet these requirements.
+
+
+## 8. Disposable PostgreSQL integration evidence
+
+The General CI test harness at `apps/api/src/db/authorization-ledger.integration.test.ts` now exercises a uniquely named disposable schema against PostgreSQL 17. It creates only test-local tables, triggers, a NOLOGIN application role and the `pgcrypto` extension in the ephemeral CI database; it does not apply authorization production DDL.
+
+Nine integration cases currently pass:
+- Independent database sessions race for the final budget slot; exactly one claim is committed.
+- A committed claim is resolved by retrying the same request identity; changed digest conflicts. The test simulates an acknowledgement not consumed by the client after the helper returns; it does not simulate a TCP proxy dropping the COMMIT response.
+- Explicit rollback removes tentative claim, event and counter writes together.
+- Revocation-first and claim-first orderings serialize on the same authorization row.
+- The application role cannot update/delete immutable claim or run-event rows.
+- Deferred constraint triggers reject a transaction that would make the consumed counter differ from the immutable claim count. The attempted drift transaction rolls back, leaving the committed claim and counter intact.
+- A test-only event trigger enforces contiguous event sequence, exact predecessor digest linkage, and a SHA-256 digest over the canonical test tuple; it rejects skipped sequence/forged predecessor inserts and all UPDATE/DELETE operations.
+- PostgreSQL backend termination during an open transaction rolls back the claim, run event and counter update.
+
+The test-only event digest is an integrity-chain check, not a signature or independent cryptographic attestation. The database trigger cannot establish trust in an external signer, authority, host or provider. The deferred counter constraint demonstrates prevention of inconsistent committed state in this fixture; it does not provide production quarantine workflows or replace independent ledger reconciliation.
+
+The backend-termination test covers server-side cancellation before COMMIT. A real lost-COMMIT-acknowledgement test still requires a controllable network proxy or fault-injection layer capable of severing the client connection after the server commits but before the response is received. That test remains outstanding.
+
+These tests strengthen the proposed transaction semantics but do not approve production migrations, stored procedures, runtime signing, external fencing, guest execution or Phase A/Phase B/student/production authorization.
