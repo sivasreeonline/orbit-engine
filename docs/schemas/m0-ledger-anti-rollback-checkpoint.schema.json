@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orbit-engine.invalid/schemas/m0-ledger-anti-rollback-checkpoint.schema.json",
+  "title": "M0 external ledger anti-rollback checkpoint",
+  "description": "Proposed signed-witness checkpoint metadata. Schema validation does not authenticate the witness or prove independent custody.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "checkpoint_id",
+    "witness_id",
+    "authority_id",
+    "environment",
+    "generation",
+    "ledger_event_sequence",
+    "ledger_event_digest",
+    "authorization_ledger_digest",
+    "trust_bundle_generation",
+    "trust_bundle_digest",
+    "revocation_generation",
+    "revocation_digest",
+    "host_epoch_high_watermarks",
+    "issued_at",
+    "nonce",
+    "signature_ref",
+    "signature_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "checkpoint_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "witness_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authority_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "environment": {
+      "enum": [
+        "development",
+        "test",
+        "staging",
+        "production"
+      ]
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854776000
+    },
+    "ledger_event_sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854776000
+    },
+    "ledger_event_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "authorization_ledger_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "trust_bundle_generation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854776000
+    },
+    "trust_bundle_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "revocation_generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854776000
+    },
+    "revocation_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "host_epoch_high_watermarks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/hostEpoch"
+      },
+      "uniqueItems": true
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nonce": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 256
+    },
+    "signature_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature_sha256": {
+      "$ref": "#/$defs/digest"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "hostEpoch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_enrollment_id",
+        "epoch"
+      ],
+      "properties": {
+        "host_enrollment_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854776000
+        }
+      }
+    }
+  }
+}
