@@ -25,6 +25,12 @@ REQUIRED = {
         "Immediate termination exception", "CLOCK_BOOTTIME",
         "No exactly-once claim", "UnconfiguredExecutor",
         "`acquired_by_id` principal", "independent verifier ID",
+        "Supervisor socket authentication and authorization",
+        "kernel-supplied peer credentials",
+        "socket inode", "unexpected ancillary data/file descriptors",
+        "Stable kernel lock-file contract",
+        "Never unlink, rename, or recreate the lock file",
+        "close-on-exec", "exact service instance",
     ],
     "runtime harness": [
         "m0-supervisor-journal-implementation-contract.md",
@@ -51,6 +57,9 @@ REQUIRED = {
     ],
     "host launch ADR": [
         "m0-supervisor-journal-implementation-contract.md",
+        "No launch-boundary candidate is selected",
+        "Candidates under evaluation",
+        "Candidate A", "Candidate B",
         "persist the trigger and `TERMINATING` transition concurrently",
         "supervisor_generation",
         "attempt_generation",
@@ -58,6 +67,11 @@ REQUIRED = {
         "database lease or generation integer alone cannot fence a paused process",
     ],
 }
+FORBIDDEN_ADR_SELECTION_PHRASES = [
+    "recommended for disposable M0 proof only",
+    "For the initial M0 proof, use a dedicated",
+    "Recommended candidate, not yet approved",
+]
 FORBIDDEN_AUTHORIZATION_PHRASES = [
     "Implementation authorized: true",
     "student execution enabled by this contract",
@@ -82,6 +96,9 @@ def main() -> int:
         for phrase in REQUIRED[label]:
             if phrase.casefold() not in value.casefold():
                 failures.append(f"{label}: missing required contract reference/text: {phrase}")
+    for phrase in FORBIDDEN_ADR_SELECTION_PHRASES:
+        if phrase.casefold() in contents.get("host launch ADR", "").casefold():
+            failures.append(f"host launch ADR contains stale candidate-selection language: {phrase}")
     for phrase in FORBIDDEN_AUTHORIZATION_PHRASES:
         if phrase.casefold() in contents.get("contract", "").casefold():
             failures.append("contract contains an explicitly prohibited authorization marker")
