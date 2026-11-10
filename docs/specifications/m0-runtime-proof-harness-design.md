@@ -55,7 +55,7 @@ A request may contain only:
 - Absolute deadline / remaining wall-clock budget.
 - An idempotency key.
 
-The supervisor resolves image digests, entrypoints, environment allowlists, user/group IDs, mount layout, network policy, capabilities, seccomp profile, cgroup limits, output ceilings, and scratch layout from root-owned immutable profiles.
+The supervisor resolves image digests, entrypoints, environment allowlists, user/group IDs, mount layout, network policy, capabilities, seccomp profile, cgroup limits, output ceilings, and scratch layout from root-owned immutable profiles. The proposed M0 proof-only values are documented in `m0-proof-resource-profile-v1.md` and must be recorded in every evidence manifest.
 
 ### 3.2 Forbidden request fields
 
@@ -137,7 +137,7 @@ Use independent layers so a single misconfiguration does not exhaust the disposa
 3. gVisor provides the userspace-kernel boundary with explicitly verified systrap platform.
 4. Root filesystem is immutable/read-only; scratch is per-attempt, size- and inode-bounded, and never a host bind mount.
 5. Network policy defaults to deny IPv4/IPv6 egress, DNS, direct-IP traffic, loopback-to-host, and metadata routes. Controlled probes use reserved test destinations and host-side counters only.
-6. stdout and stderr have independent byte counters and hard storage ceilings; truncation/termination behavior is explicit and measured.
+6. stdout and stderr have independent byte counters; a shared 1 MiB combined hard storage ceiling is enforced. On the first per-stream or combined ceiling breach, terminate the complete process tree, retain no more than the first 1 MiB combined, and drain/discard remaining pipe data with fixed-size buffers while reaping.
 7. The host watchdog remains outside the sandbox and terminates the complete process tree on deadline, cancellation, or resource-policy breach.
 
 The outer VM controls are mandatory before running CPU, memory, PID, filesystem, or output stress fixtures.
@@ -145,6 +145,7 @@ The outer VM controls are mandatory before running CPU, memory, PID, filesystem,
 ## 7. Host-side evidence and observability
 
 For each attempt capture:
+- Resource profile ID/revision and every applied CPU, memory, PID, wall-time, output, scratch-byte, and scratch-inode limit.
 - Proof run, fixture, attempt, correlation IDs, fixture source revision and immutable image digest.
 - Runtime profile revision, OCI image digest, containerd/runsc/shim versions, actual gVisor platform, kernel and cgroup mode.
 - UTC wall timestamps and monotonic durations for queue, create, start, run, terminate, collect, cleanup, and acknowledgement.
