@@ -31,7 +31,7 @@ NETWORK_IDS = {"NET-001", "NET-002"}
 WATCHDOG_IDS = {"WDG-001", "WDG-002", "WDG-003"}
 OUTER_IDS = {"WDG-003"}
 CLOCK_IDS = {"CLK-001", "CLK-002"}
-JOURNAL_IDS = {f"JRN-{i:03d}" for i in range(1, 16)}
+JOURNAL_IDS = {f"JRN-{i:03d}" for i in range(1, 10)} | {f"JRN-{i:03d}" for i in range(12, 16)}
 INTEGRATED_IDS = {"JRN-010", "JRN-011"}
 EVIDENCE_IDS = {"EVID-001"}
 
