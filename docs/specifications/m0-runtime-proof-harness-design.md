@@ -204,7 +204,6 @@ The exact durability mode, filesystem, atomicity assumptions, backup/recovery pr
 | Containerd daemon restart or unavailable socket | Stop new launches; reconcile all non-terminal attempts after daemon recovery | Daemon identity/version rechecked; no unowned task or orphan shim |
 | Cancellation races with natural exit | One compare-and-set terminal winner; all paths converge on cleanup | Single terminal record and no surviving process/task |
 | Deadline races with cancellation | Terminate once; record both triggers if observed, but emit one terminal result | Watchdog and journal timestamps plus one terminal transition |
-| Containerd unavailable or restarted | Stop new launches; reconcile all non-terminal attempts after daemon recovery | Daemon identity/version rechecked; no unowned task or orphan shim |
 | Shim exits unexpectedly | Treat as infrastructure failure; inspect and clean all associated resources | No process, task, namespace, mount or scratch remains |
 | OOM/PID/output enforcement | Host watchdog terminates remaining descendants and performs cleanup | cgroup events, output counters and post-cleanup inventory |
 | Evidence collector/store unavailable | Do not mark proof passed; retain bounded local evidence staging or mark evidence incomplete | Hashes and byte counts for retained evidence; explicit incomplete state |
