@@ -406,7 +406,7 @@ def main():
     rootless["assessment_status"]="design-assessed"
     rootless["assessment_rationale"]="Synthetic design assessment only."
     rootless["configuration"].update({
-        "profile_id":"synthetic-rootless-profile", "profile_digest":"a"*64,"rootless_profile":{
+        "profile_id":"synthetic-rootless-profile", "profile_digest":"b"*64,"rootless_profile_digest":"a"*64,"rootless_profile":{
             "daemon_uid":1000,"daemon_gid":1000,"daemon_identity_digest":"a"*64,"user_namespace_mode":"caller-configured-userns",
             "subuid_map_digest":"b"*64,"subgid_map_digest":"c"*64,"subuid_range_count":1,"subgid_range_count":1,
             "rootlesskit_version":"synthetic-rootlesskit","rootlesskit_sha256":"d"*64,"newuidmap_sha256":"e"*64,"newgidmap_sha256":"f"*64,
