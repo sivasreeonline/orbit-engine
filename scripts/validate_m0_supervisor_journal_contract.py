@@ -250,6 +250,40 @@ def main() -> int:
 
     if "contract" in contents:
         contract = contents["contract"]
+        cross_document_requirements = {
+            "journal evaluation": [
+                "The trigger seal and final output snapshot are committed durably before terminal CAS",
+                "post-seal triggers are recorded as late incidents and cannot alter the watermark or output snapshot",
+                "Every finalization-branch mutation must compare supervisor_generation, attempt_generation, branch_generation, and branch_state_version together in one conditional update",
+                "Terminal commit must additionally compare the sealed trigger watermark",
+                "verify contiguous durable trigger records through that watermark",
+                "Output counters must be monotonic before finalization",
+                "terminal commit requires that finalized snapshot",
+            ],
+            "runtime harness": [
+                "capture the earliest host-observed termination trigger's monotonic timestamp and boot identity",
+                "Secondary triggers do not reset the interval",
+                "A cancellation arriving after natural exit has been observed by that same arbiter is late",
+                "Cleanup and evidence finalization remain independent branches",
+                "The terminal compare-and-set may run only after both branch dispositions are durably recorded",
+                "Cleanup requests are idempotent and fenced by the exclusive host lock",
+            ],
+            "host launch ADR": [
+                "seals a trigger watermark after final output-drain/quiescence",
+                "current `supervisor_generation`, `attempt_generation`, `branch_generation`, and expected branch state version",
+            ],
+        }
+        for label, phrases in cross_document_requirements.items():
+            document = contents.get(label, "")
+            for phrase in phrases:
+                if phrase.casefold() not in document.casefold():
+                    failures.append(f"{label}: missing terminalization/cleanup invariant: {phrase}")
+        for phrase in (
+            "REQUESTED", "VALIDATING", "QUEUED", "CREATING", "STARTING",
+            "RUNNING", "TERMINATING", "FINALIZING", "QUARANTINED",
+        ):
+            if phrase not in contract:
+                failures.append(f"contract: lifecycle transition model missing state {phrase}")
         if contract.count("Outer VM safety watchdog") < 2:
             failures.append("contract must define and cross-reference the outer VM watchdog")
         if "Termination is the deliberate exception" not in contract:
