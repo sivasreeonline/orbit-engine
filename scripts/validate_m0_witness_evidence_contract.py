@@ -36,7 +36,7 @@ def parse_time(value):
 def checkpoint_alignment(restored, witness):
     """Exact anchor equality is required before authorization operations reopen."""
     fields = (
-        "generation", "ledger_event_sequence", "ledger_event_digest",
+        "generation", "previous_checkpoint_digest", "ledger_event_sequence", "ledger_event_digest",
         "authorization_ledger_digest", "trust_bundle_generation",
         "trust_bundle_digest", "revocation_generation", "revocation_digest",
         "host_epoch_high_watermarks",
@@ -44,9 +44,28 @@ def checkpoint_alignment(restored, witness):
     return all(restored.get(field) == witness.get(field) for field in fields)
 
 
+def checkpoint_successor_valid(previous, successor):
+    """Check monotonic witness continuity; signature and witness custody remain external."""
+    if successor["generation"] != previous["generation"] + 1:
+        return False
+    if successor["previous_checkpoint_digest"] != previous["signature_sha256"]:
+        return False
+    for field in ("authority_id", "environment", "witness_id"):
+        if successor[field] != previous[field]:
+            return False
+    for field in ("ledger_event_sequence", "trust_bundle_generation", "revocation_generation"):
+        if successor[field] < previous[field]:
+            return False
+    prior_epochs = {row["host_enrollment_id"]: row["epoch"] for row in previous["host_epoch_high_watermarks"]}
+    next_epochs = {row["host_enrollment_id"]: row["epoch"] for row in successor["host_epoch_high_watermarks"]}
+    if len(next_epochs) != len(successor["host_epoch_high_watermarks"]):
+        return False
+    return all(next_epochs.get(host_id, -1) >= epoch for host_id, epoch in prior_epochs.items())
+
+
 def evidence_receipt_acceptable(receipt):
     """Reject unverifiable immutability, version substitution, or principal collision."""
-    if receipt["retention_mode"] not in {"governance", "compliance", "provider-immutable"}:
+    if receipt["retention_mode"] not in {"compliance", "provider-immutable"}:
         return False
     if receipt["object_version_id"] != receipt["readback_version_id"]:
         return False
@@ -69,7 +88,7 @@ def main():
     checkpoint = {
         "schema_version": "1.0.0", "checkpoint_id": "00000000-0000-4000-8000-000000000001",
         "witness_id": "independent-witness-a", "authority_id": "authority-a",
-        "environment": "test", "generation": 7, "ledger_event_sequence": 41,
+        "environment": "test", "generation": 7, "previous_checkpoint_digest": "9" * 64, "ledger_event_sequence": 41,
         "ledger_event_digest": digest, "authorization_ledger_digest": "b" * 64,
         "trust_bundle_generation": 3, "trust_bundle_digest": "c" * 64,
         "revocation_generation": 5, "revocation_digest": "d" * 64,
@@ -79,6 +98,23 @@ def main():
     }
     validate(checkpoint_schema, checkpoint, "valid checkpoint")
     assert checkpoint_alignment(checkpoint, dict(checkpoint))
+    successor = dict(checkpoint)
+    successor.update({"checkpoint_id": "00000000-0000-4000-8000-000000000004", "generation": 8,
+                      "previous_checkpoint_digest": checkpoint["signature_sha256"],
+                      "ledger_event_sequence": 42, "ledger_event_digest": "1" * 64,
+                      "authorization_ledger_digest": "2" * 64,
+                      "issued_at": "2026-11-10T10:02:00Z", "nonce": "m" * 32,
+                      "signature_ref": "evidence://checkpoint-signature/2", "signature_sha256": "3" * 64})
+    assert checkpoint_successor_valid(checkpoint, successor)
+    for field, changed in (("generation", 9), ("previous_checkpoint_digest", "8" * 64),
+                           ("revocation_generation", 4), ("trust_bundle_generation", 2),
+                           ("ledger_event_sequence", 40), ("environment", "production")):
+        altered = dict(successor)
+        altered[field] = changed
+        assert not checkpoint_successor_valid(checkpoint, altered), f"unsafe successor {field} must reject
+    regression = dict(successor)
+    regression["host_epoch_high_watermarks"] = [{"host_enrollment_id": "00000000-0000-4000-8000-000000000002", "epoch": 8}]
+    assert not checkpoint_successor_valid(checkpoint, regression), "host epoch rollback must reject"
     for field, changed in (
         ("generation", 6), ("ledger_event_sequence", 40),
         ("ledger_event_digest", "f" * 64), ("revocation_generation", 4),
