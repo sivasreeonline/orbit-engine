@@ -24,7 +24,8 @@
     "phase_a_authorized",
     "phase_b_authorized",
     "student_execution_authorized",
-    "production_execution_authorized"
+    "production_execution_authorized",
+    "candidate_specific_test_results"
   ],
   "$defs": {
     "evidenceReference": {
@@ -203,6 +204,127 @@
             "integrated-lifecycle",
             "evidence"
           ]
+        },
+        "result": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "blocked",
+            "deferred"
+          ]
+        },
+        "verification_method": {
+          "type": "string"
+        },
+        "finding_summary": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "unassigned",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "remediation_owner": {
+          "type": "string"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "passed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "verification_method": {
+                "minLength": 1
+              },
+              "finding_summary": {
+                "minLength": 1
+              },
+              "severity": {
+                "const": "none"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "finding_summary": {
+                "minLength": 1
+              },
+              "severity": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              },
+              "remediation_owner": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "candidateSpecificTestFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "test_id",
+        "domain",
+        "result",
+        "verification_method",
+        "finding_summary",
+        "severity",
+        "remediation_owner",
+        "evidence_refs"
+      ],
+      "properties": {
+        "test_id": {
+          "enum": [
+            "RLS-001",
+            "RLS-002",
+            "RLS-003",
+            "RLS-004"
+          ]
+        },
+        "domain": {
+          "const": "rootless-compatibility"
         },
         "result": {
           "enum": [
@@ -701,7 +823,8 @@
         "clock_recovery",
         "journal_durability",
         "integrated_lifecycle",
-        "evidence_integrity"
+        "evidence_integrity",
+        "rootless_userns_compatibility"
       ],
       "properties": {
         "baseline_inspection": {
@@ -771,6 +894,15 @@
         "evidence_integrity": {
           "enum": [
             "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        },
+        "rootless_userns_compatibility": {
+          "enum": [
+            "not-run",
+            "not-applicable",
             "passed",
             "failed",
             "deferred"
@@ -949,6 +1081,14 @@
     },
     "production_execution_authorized": {
       "const": false
+    },
+    "candidate_specific_test_results": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/candidateSpecificTestFinding"
+      }
     }
   }
 }
