@@ -6,6 +6,10 @@ on:
     paths:
       - "services/execution-runner/scripts/m0-host-preflight.sh"
       - "docs/specifications/m0-host-preflight-and-proof-runbook.md"
+      - "docs/specifications/m0-proof-resource-profile-v1.md"
+      - "docs/specifications/m0-adversarial-fixture-contract.md"
+      - "docs/specifications/m0-runtime-proof-harness-design.md"
+      - "docs/specifications/m0-execution-proof.md"
       - ".github/workflows/m0-preflight-ci.yml"
       - "docs/schemas/m0-proof-evidence.schema.json"
       - "scripts/validate_m0_evidence_schema.py"
