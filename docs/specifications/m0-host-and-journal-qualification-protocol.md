@@ -180,6 +180,7 @@ The common `WDG-002` host qualification test is not passed by a generic supervis
 | WD-007 | Stop, crash or make the watchdog unit unavailable while supervisor recovery is required | No alternate privileged path; admission remains stopped and the outer-VM watchdog is the only containment fallback |
 
 Each subtest must capture the exact injected boundary, service-manager result, unit/executable/cgroup identity, supervisor process/cgroup observations, lock inode and release observation, generation transitions, admission state and immutable evidence references. A missing or ambiguous observation is a failed WDG-002 result, not a waived subtest.
+Each WD-001–WD-007 record must include at least one independently retrieved and verified evidence object classified as `fault-injection`, bound to the exact host/boot/build/profile under test. Host-configuration, host-runtime, watchdog-control-plane and operator records may supplement that object but cannot replace proof of the injected fault and observed response.
 
 Network proof is independent of the guest's reported state. Outer deny/blackhole for metadata link-local must be installed and evidenced before uplink. Probe only from inside the disposable sandbox after authorization; never issue a metadata request from the host or accept/store a metadata response. Prove IPv4/IPv6/DNS/direct-IP/loopback/alternate interface denial with host counters or equivalent independent observation.
 
