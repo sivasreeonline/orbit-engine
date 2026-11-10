@@ -19,6 +19,7 @@ on:
       - "docs/schemas/m0-cleanup-calibration-authorization.schema.json"
       - "scripts/validate_m0_cleanup_calibration_authorization.py"
       - "docs/specifications/m0-supervisor-journal-implementation-contract.md"
+      - "docs/specifications/m0-journal-backend-evaluation.md"
       - "scripts/validate_m0_supervisor_journal_contract.py"
       - "docs/security/m0-independent-security-review-checklist.md"
       - "docs/security/m0-independent-security-review-record.schema.json"
