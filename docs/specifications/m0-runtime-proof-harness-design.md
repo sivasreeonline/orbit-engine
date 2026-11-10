@@ -71,6 +71,38 @@ Never accept caller-supplied:
 
 Reject unknown fields and duplicate JSON keys. Fail closed if a profile is missing, stale, untrusted, or fails signature/digest verification.
 
+### 3.3 Unix-socket authorization and service isolation
+
+The initial transport candidate is a local Unix stream socket only. Before implementation, record and independently review the exact socket path, service UID/GID, socket owner/group/mode, parent-directory permissions, systemd unit, and containerd socket access mechanism.
+
+Minimum design requirements:
+
+1. The socket lives under a root-owned directory that is not writable by the runner, guest, or other unprivileged accounts. Reject symlinked socket paths and verify the parent directory and socket inode/owner/mode at service startup.
+2. Use Linux peer credentials (for example, `SO_PEERCRED`) on every accepted connection and compare the authenticated UID/GID against one explicitly configured runner identity. Do not trust a caller-supplied UID, PID, username, or role field.
+3. Authenticate and authorize each operation and each referenced proof run/attempt. A valid local socket connection is not blanket authorization to operate on arbitrary attempts.
+4. Apply a small fixed maximum request size, strict UTF-8/JSON parsing, duplicate-key rejection, unknown-field rejection, bounded strings, and operation-specific required fields. Reject trailing JSON and malformed framing.
+5. Set bounded connection, request, response, and concurrent-operation limits. A disconnected client must not cancel cleanup or leave a partially created task.
+6. Do not pass client file descriptors, environment, working directory, or inherited capabilities into the sandbox. Do not accept SCM_RIGHTS descriptors unless a future reviewed contract explicitly requires them.
+7. The runner service identity must not belong to the containerd socket's access group. Only the dedicated supervisor identity may access the root-owned containerd socket; no broad interactive-user group membership is allowed.
+8. Keep the supervisor's journal, profiles, evidence staging area, and runtime socket in separate directories with explicit owner/mode policy. The guest receives none of these paths or descriptors.
+9. The systemd hardening profile must be tested against the exact containerd operations. Record effective unit settings and capabilities; fail deployment if an unexpected capability, writable host path, or network listener is present.
+10. The supervisor must not expose a generic command runner, shell, arbitrary file API, arbitrary OCI-spec API, or generic containerd proxy.
+
+Peer credentials and socket permissions authenticate the local process identity; they do not make a compromised runner trustworthy. The supervisor must still authorize every operation against its durable attempt record and immutable profile.
+
+### 3.4 Privilege and compromise analysis
+
+A process that can issue unrestricted requests to the rootful containerd socket has host-level authority. The supervisor must therefore be treated as a high-value privileged component, not as a harmless adapter.
+
+The design review must explicitly compare:
+- A narrowly scoped supervisor that directly accesses containerd.
+- A split design with an unprivileged request coordinator and a minimal privileged broker.
+- Rootless containerd with caller-configured user namespaces.
+
+Do not assume that splitting processes automatically removes risk: the privileged broker still needs independent validation, and the broker's API must be narrower than the containerd API. Any helper that can accept arbitrary OCI settings or forward arbitrary containerd requests is rejected.
+
+Before selecting the rootful path, document the effective capability set, systemd sandboxing, writable paths, syscalls, socket access, update/rollback procedure, and recovery access. If the required containerd operations force broad ambient privileges that cannot be acceptably constrained, stop and revisit the rootless alternative rather than weakening the threat model.
+
 ## 4. Sandbox lifecycle state machine
 
 The lifecycle is controlled by the host supervisor and recorded in a durable host-side journal.
@@ -127,6 +159,48 @@ A terminal acknowledgement is allowed only after:
 - One attempt has at most one terminal result. Conflicting terminal results are an infrastructure failure.
 - A retry after uncertain cleanup must first reconcile and prove the prior sandbox is gone.
 - Duplicate delivery is tested at the coordinator/supervisor boundary, not by relying on containerd's incidental behavior.
+
+### 5.1 Durable journal and crash consistency
+
+The journal is the source of truth for logical proof attempts. Its storage location must be host-only, root-owned, permission-restricted, and excluded from all guest mounts. Select and document a storage engine and durability settings before implementation; a database commit that has not reached durable storage is not a safe acknowledgement.
+
+For every lifecycle operation:
+
+1. Validate caller identity, authorization, request schema, profile revision, and deadline.
+2. Persist the operation intent and unique idempotency key before performing an external side effect.
+3. Perform exactly one bounded containerd/lifecycle operation using a deterministic sandbox identity derived from the persisted attempt record.
+4. Inspect actual host/runtime state and persist the observed result.
+5. Acknowledge the caller only after the journal transition is durable.
+
+Enforce unique constraints for the idempotency key and for the logical attempt identity (proof run + fixture + attempt). Persist terminal state with a compare-and-set transition so racing exit, timeout, cancellation, and output-overflow handlers cannot create conflicting terminal results.
+
+A journal record must include the request digest, authenticated caller identity, profile IDs/revisions, deterministic sandbox identity, current lifecycle state, operation generation, timestamps, last observed runtime state, cleanup state, and evidence references. Do not persist source code, hidden tests, credentials, raw command lines, or arbitrary caller-supplied payloads.
+
+The exact durability mode, filesystem, atomicity assumptions, backup/recovery procedure, and corruption behavior remain design gates. If the journal is corrupt, unavailable, or cannot prove a unique attempt state, stop accepting new work and quarantine the host for reconciliation.
+
+### 5.2 Restart and failure reconciliation matrix
+
+| Failure point | Required restart/retry behavior | Required host-side proof |
+|---|---|---|
+| Before intent is durable | No operation may have been acknowledged; caller may retry with same idempotency key | No task/container exists for the deterministic sandbox identity |
+| Intent durable, before create | Reconcile by attempt identity; create only if absence is proven | Durable intent plus absence inspection |
+| During container create/start | Inspect containerd, shim, process, cgroup, namespace and mount state; never blindly issue create again | One matching owned resource set or a verified absence; ambiguous state is quarantined |
+| Workload running during supervisor restart | Reattach only to the exact journal-owned sandbox; otherwise terminate and reconcile | Process/task identity, cgroup membership, runtime handler and journal generation match |
+| Cancellation races with natural exit | One compare-and-set terminal winner; all paths converge on cleanup | Single terminal record and no surviving process/task |
+| Deadline races with cancellation | Terminate once; record both triggers if observed, but emit one terminal result | Watchdog and journal timestamps plus one terminal transition |
+| Containerd unavailable or restarted | Stop new launches; reconcile all non-terminal attempts after daemon recovery | Daemon identity/version rechecked; no unowned task or orphan shim |
+| Shim exits unexpectedly | Treat as infrastructure failure; inspect and clean all associated resources | No process, task, namespace, mount or scratch remains |
+| OOM/PID/output enforcement | Host watchdog terminates remaining descendants and performs cleanup | cgroup events, output counters and post-cleanup inventory |
+| Evidence collector/store unavailable | Do not mark proof passed; retain bounded local evidence staging or mark evidence incomplete | Hashes and byte counts for retained evidence; explicit incomplete state |
+| Journal corruption or disk full | Fail closed; no new work; quarantine host | Recovery report, journal integrity check and full host inventory |
+
+The reconciler must enumerate resources by deterministic supervisor-owned labels and journal ownership, not by guest-controlled names. It must never adopt an unknown resource as successful work. If ownership or cleanup cannot be proven, quarantine the host and require operator intervention.
+
+### 5.3 Cleanup completion and acknowledgement
+
+A cleanup result is successful only after independent inspection confirms all of the following are absent: workload process tree, containerd task/container, shim process, sandbox namespaces, sandbox cgroup, scratch directory, temporary mounts, and network policy state. The exact cleanup deadline must be specified before stress testing and measured under worst-case failure conditions.
+
+A client disconnect, timeout, or supervisor restart does not stop cleanup. Cleanup runs under a host-side lifecycle controller independent of the request connection. If any absence check is inconclusive, retain `CLEANUP_FAILED` / infrastructure-failed state, quarantine the host, and do not acknowledge terminal success or return the host to a ready pool.
 
 ## 6. Resource and isolation enforcement layers
 
