@@ -25,6 +25,48 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+expected_runtime_owner="${M0_RUNTIME_OWNER:-root}"
+
+inspect_runtime_binary() {
+  local path="$1"
+  local label="$2"
+  local owner mode digest
+
+  if [[ ! -f "$path" || -L "$path" ]]; then
+    fail "$label is not a regular non-symlink file: $path"
+    return
+  fi
+
+  owner="$(stat -c '%U' "$path")"
+  mode="$(stat -c '%a' "$path")"
+  info "$label path=$path owner=$owner mode=$mode"
+
+  if [[ "$owner" == "$expected_runtime_owner" ]]; then
+    pass "$label owner matches expected runtime owner $expected_runtime_owner"
+  else
+    fail "$label owner mismatch; expected $expected_runtime_owner, detected $owner"
+  fi
+
+  if (( (8#$mode & 0022) == 0 )); then
+    pass "$label is not group/world writable"
+  else
+    fail "$label is group/world writable"
+  fi
+
+  if [[ -x "$path" ]]; then
+    pass "$label is executable"
+  else
+    fail "$label is not executable"
+  fi
+
+  if command_exists sha256sum; then
+    digest="$(sha256sum -- "$path" | awk '{print $1}')"
+    info "$label sha256=$digest"
+  else
+    fail 'sha256sum is required for runtime binary integrity inventory'
+  fi
+}
+
 printf '%s\n' 'Sky High M0 host preflight (read-only)'
 printf '%s\n' '======================================'
 
@@ -116,24 +158,46 @@ if command_exists runsc; then
     fail 'gVisor runsc returned an empty version'
   fi
 
-  # Since the 2026-07 multi-file release transition, runsc requires its
-  # adjacent gvisor-bin/ sidecar binaries. Do not rely on runsc install's
-  # legacy best-effort auto-download behavior.
   if command_exists readlink; then
     if runsc_path="$(readlink -f "$runsc_command" 2>/dev/null)" && [[ -n "$runsc_path" ]]; then
+      inspect_runtime_binary "$runsc_path" 'gVisor runsc'
+
+      # Since the 2026-07 multi-file release transition, runsc requires its
+      # adjacent gvisor-bin/ sidecar binaries. Do not rely on legacy
+      # best-effort auto-download behavior.
       sidecar_dir="$(dirname "$runsc_path")/gvisor-bin"
-      if [[ -d "$sidecar_dir" ]]; then
-        mapfile -t sidecar_binaries < <(find "$sidecar_dir" -mindepth 1 -maxdepth 1 -type f -perm /111 -print)
+      if [[ -d "$sidecar_dir" && ! -L "$sidecar_dir" ]]; then
+        sidecar_owner="$(stat -c '%U' "$sidecar_dir")"
+        sidecar_mode="$(stat -c '%a' "$sidecar_dir")"
+        info "gVisor sidecar directory=$sidecar_dir owner=$sidecar_owner mode=$sidecar_mode"
+        if [[ "$sidecar_owner" == "$expected_runtime_owner" ]]; then
+          pass 'gVisor sidecar directory owner matches expected runtime owner'
+        else
+          fail "gVisor sidecar directory owner mismatch; expected $expected_runtime_owner, detected $sidecar_owner"
+        fi
+        if (( (8#$sidecar_mode & 0022) == 0 )); then
+          pass 'gVisor sidecar directory is not group/world writable'
+        else
+          fail 'gVisor sidecar directory is group/world writable'
+        fi
+
+        if [[ -n "$(find "$sidecar_dir" -mindepth 1 -maxdepth 1 -type l -print -quit)" ]]; then
+          fail 'gVisor sidecar directory contains a symlink entry'
+        else
+          pass 'gVisor sidecar directory contains no symlink entries'
+        fi
+
+        mapfile -d '' -t sidecar_binaries < <(find "$sidecar_dir" -mindepth 1 -maxdepth 1 -type f -perm /111 -print0)
         if (( ${#sidecar_binaries[@]} > 0 )); then
           pass "gVisor sidecar directory contains ${#sidecar_binaries[@]} executable file(s)"
           for sidecar in "${sidecar_binaries[@]}"; do
-            info "gVisor sidecar $(basename "$sidecar") mode=$(stat -c '%a' "$sidecar")"
+            inspect_runtime_binary "$sidecar" "gVisor sidecar $(basename "$sidecar")"
           done
         else
           fail 'gVisor gvisor-bin directory contains no executable sidecar files'
         fi
       else
-        fail "gVisor sidecar directory is missing: $sidecar_dir"
+        fail "gVisor sidecar directory is missing, not a directory, or is a symlink: $sidecar_dir"
       fi
     else
       fail 'Could not resolve the installed runsc binary path'
@@ -146,7 +210,12 @@ else
 fi
 
 if command_exists containerd-shim-runsc-v1; then
-  pass 'containerd-shim-runsc-v1 is installed'
+  shim_command="$(command -v containerd-shim-runsc-v1)"
+  if shim_path="$(readlink -f "$shim_command" 2>/dev/null)" && [[ -n "$shim_path" ]]; then
+    inspect_runtime_binary "$shim_path" 'gVisor containerd shim'
+  else
+    fail 'Could not resolve the installed containerd-shim-runsc-v1 path'
+  fi
 else
   fail 'containerd-shim-runsc-v1 is not installed or not on PATH'
 fi
