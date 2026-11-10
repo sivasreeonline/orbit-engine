@@ -78,7 +78,21 @@ The phrase **external watchdog** is too ambiguous for implementation. M0 must di
 
 **Open deployment dependency:** the provider/control-plane mechanism cannot be selected until the host/provider decision is approved. No provider, region, VM size, or spend is selected here.
 
-### 3.4 Failure-domain matrix
+### 3.4 Supervisor socket authentication and authorization
+
+The private Unix-domain socket is an authentication boundary, not merely a local transport choice. Before implementation, the host-specific plan must freeze the socket type/framing, path, service identity, runner identity, and kernel credential mechanism.
+
+- Place the socket below a root-owned directory that the runner and workload cannot write, rename, mount over, or traverse through a symlink. Validate the directory chain without following symlinks and pin the expected device/inode identity for the service lifetime.
+- At bind and before accepting connections, verify the socket is the expected socket inode with the approved owner, group, and mode. Refuse startup or stop admission if the path is replaced, the parent identity changes, or permissions drift. Do not unlink an unexpected path as an automatic recovery action.
+- Authenticate every accepted connection from kernel-supplied peer credentials (Linux SO_PEERCRED or an independently reviewed equivalent). Compare the exact configured runner UID and GID; do not trust UID/GID, role, or service-name fields supplied in the request. Filesystem permissions are defense in depth, not a substitute for per-connection peer authentication.
+- After peer authentication, authorize each operation against the durable proof-run, fixture, attempt, profile, deadline, and idempotency records. Authentication does not imply authorization for an arbitrary attempt.
+- Bound framing, message bytes, concurrent connections, per-operation duration, and queued work. Reject malformed UTF-8/JSON, duplicate decoded keys, unknown fields, trailing bytes, and unexpected ancillary data/file descriptors. Never pass received descriptors or caller-controlled paths to containerd.
+- Keep the runner outside every group that grants containerd access. The supervisor socket must not be mounted or exposed inside a guest workload. No TCP listener, generic RPC proxy, shell, or arbitrary command operation is permitted.
+- Test unauthorized UID/GID, same-UID wrong-attempt, stale attempt, socket replacement, symlink substitution, permission drift, malformed framing, descriptor passing, connection floods, and service restart behavior on the exact host.
+
+The host qualification record must retain sanitized socket path/inode/owner/mode observations, the configured peer identity, negative authorization results, and the exact service/configuration digests. Never record secrets or raw privileged process environments.
+
+### 3.5 Failure-domain matrix
 
 | Failure | Per-attempt cleanup controller | Supervisor recovery watchdog | Outer VM safety watchdog | Required disposition |
 |---|---|---|---|---|
@@ -120,6 +134,20 @@ All values are distinct from the immutable external `attempt_id`, `operation_id`
 7. If a restored/replicated VM cannot prove a unique trusted `host_instance_id`, it is not eligible to accept work. A restored journal does not itself prove host incarnation or fencing.
 
 Do not claim that an arbitrary generation integer fences containerd. Containerd does not consume this application generation; exclusivity must be proven at the host process/lock boundary.
+
+### 4.2 Stable kernel lock-file contract
+
+The lock is the exclusion primitive for privileged containerd access. A database lease, PID file, heartbeat, or generation integer is not a substitute.
+
+- Use one fixed lock-file path below a root-owned directory that untrusted users and workloads cannot modify. The host-specific plan must select and document the exact Linux kernel lock primitive and its process/descriptor semantics before implementation; do not silently switch primitives.
+- Open the file relative to a trusted directory descriptor with no-follow semantics and close-on-exec. Require a regular file, expected root ownership and restrictive mode, and exactly one hard link. Reject symlinks, device changes, unexpected link counts, ownership/mode drift, and path substitution.
+- Never unlink, rename, or recreate the lock file as a handoff mechanism. Record and verify its device/inode identity. A replacement must open and lock the same stable inode; a new inode is a host-integrity failure requiring quarantine.
+- Hold the kernel lock for the entire lifetime of privileged containerd access. The supervisor must not fork after acquiring it. Lock descriptors must not be inherited by helper processes; use close-on-exec and verify descriptor ownership/closure for every child-launch path.
+- A replacement may proceed only after the old supervisor has exited and the kernel has released the lock. A watchdog must identify and stop the exact service instance using a reviewed service-manager/cgroup identity, not a reusable PID alone; it must independently establish process exit and lock availability before restart.
+- Before every privileged side effect, revalidate lock ownership and the pinned lock-file identity together with current supervisor and attempt generations. Loss or uncertainty causes immediate fail-stop, admission stop, and quarantine; it must never trigger automatic lock-file repair.
+- Qualification must inject pause/SIGSTOP, SIGKILL, abrupt process crash, child-process descriptor inheritance, lock-file replacement, symlink substitution, and concurrent replacement attempts. Evidence must prove that no two live processes can issue privileged operations concurrently.
+
+The lock primitive, service-manager stop/restart authority, and exact host filesystem semantics remain implementation gates; this contract does not select them or claim they have been tested.
 
 ## 5. Lifecycle state and trigger contract
 
