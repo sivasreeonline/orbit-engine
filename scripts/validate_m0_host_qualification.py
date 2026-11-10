@@ -511,6 +511,10 @@ def main():
         raise AssertionError("qualification protocol must define evidence reference reuse and object-version uniqueness")
     if "immutable provenance manifest" not in runbook.lower() or "backup artifact digest" not in runbook.lower():
         raise AssertionError("host runbook must define backup provenance and artifact digest requirements")
+    jrn011 = next((line for line in protocol.splitlines() if line.startswith("| JRN-011 |")), "")
+    for phrase in ("evidence staging", "immutable object publication", "exact-version readback", "journal-reference commit", "manifest readback/verification", "terminal CAS is blocked until evidence and cleanup dispositions are independently verified"):
+        if phrase.casefold() not in jrn011.casefold():
+            raise AssertionError(f"JRN-011 must cover evidence publication crash ordering: {phrase}")
 
     cases = []
     case = deepcopy(template); case["test_results"].pop(); cases.append(("missing test",case))
