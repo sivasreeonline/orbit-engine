@@ -8,11 +8,17 @@ import copy
 import hashlib
 import json
 import sys
+from pathlib import Path
 
 
 def digest(value):
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return hashlib.sha256(raw).hexdigest()
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CATALOG = ROOT / "docs/schemas/m0-authorization-transaction-fixture-catalog.json"
+REQUIRED_CASE_IDS = {f"TX-{number:03d}" for number in range(1, 16)}
 
 
 class Conflict(Exception):
@@ -158,6 +164,12 @@ def expect(exception, callback, label):
 
 
 def main():
+    catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
+    case_ids = [case["id"] for case in catalog["cases"]]
+    assert catalog["status"] == "synthetic-contract-fixtures"
+    assert catalog["required_case_count"] == 15
+    assert len(case_ids) == len(set(case_ids)) and set(case_ids) == REQUIRED_CASE_IDS
+    assert all(case["expected"] == "PASS" and case["execution"] == "scripts/validate_m0_authorization_transaction_contract.py" for case in catalog["cases"])
     ledger = Ledger(1)
     result = ledger.consume("r1", "a" * 64, "q1", 1, 0, "before_commit")
     assert result["result"] == "ROLLED_BACK"
@@ -233,6 +245,7 @@ def main():
     expect(Denied, lambda: stale.consume("r5", "f" * 64, "q5", 2, 0),
            "stale witness generation must deny consumption")
 
+    print("PASS  transaction fixture catalog: exactly 15 unique TX-001 through TX-015 cases")
     print("PASS  atomic rollback before commit and durable claim after lost acknowledgement")
     print("PASS  idempotency, digest conflict and final-slot budget enforcement")
     print("PASS  both serializable claim/revocation orderings and resume denial")
