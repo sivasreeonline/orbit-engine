@@ -1,6 +1,6 @@
 # ADR-0019: M0 Host Launch Boundary
 
-- Status: Proposed; recommended for disposable M0 proof only, pending independent security review and runtime evidence.
+- Status: Proposed; Candidate A and Candidate B remain under evaluation. No launch-boundary candidate is selected; independent security review and candidate-specific host evidence are pending.
 - Related: ADR-0018, `m0-runtime-proof-harness-design.md`, `m0-sandbox-security-review-packet.md`.
 
 Implementation contract for the proposed supervisor/journal/watchdog boundary: `docs/specifications/m0-supervisor-journal-implementation-contract.md`. It does not change ADR-0019's proposed status or authorize implementation.
@@ -21,11 +21,12 @@ A rootless alternative is attractive because it can reduce the host privilege ex
 
 Therefore, rootless containerd with caller-configured user namespaces remains a candidate for an explicit compatibility experiment, but it is not assumed to satisfy M0 requirements.
 
-## Proposed decision
+## Candidates under evaluation
 
-For the initial M0 proof, use a dedicated, narrowly scoped host supervisor as the only caller of rootful containerd. Keep the Go runner unprivileged and deny it direct access to the containerd socket.
+- **Candidate A:** a dedicated, narrowly scoped host supervisor is the only application principal permitted to call rootful containerd; the Go runner remains unprivileged and has no direct containerd socket access.
+- **Candidate B:** rootless containerd with caller-configured user namespaces, subject to the exact compatibility and isolation proof requirements below.
 
-This is a proposed proof boundary, not permission to implement or provision it before the gates below are met.
+Neither candidate is selected. The same control set and evidence standard apply to both. The decision may select exactly one candidate, reject both, or defer; this proposal is not permission to implement or provision either candidate before all review and qualification gates are met.
 
 ### Host supervisor requirements
 
@@ -90,7 +91,7 @@ If any criterion is unsupported or cannot be proven, record the rootless path as
 | Network isolation | Host firewall/network namespace policy must be proven | Rootless network namespace/RootlessKit behavior adds another layer to prove |
 | gVisor lifecycle compatibility | Expected containerd integration path; exact versions still need proof | Must prove caller-configured userns + containerd shim path; do not infer from CLI rootless mode |
 | Operational complexity | Dedicated privileged service and API hardening | User namespaces, subordinate IDs, RootlessKit, cgroup delegation and networking |
-| M0 disposition | Recommended candidate, not yet approved | Alternative proof candidate; not yet tested |
+| M0 disposition | Candidate A; not selected or qualified | Candidate B; not selected or qualified |
 
 ## Cleanup calibration authorization boundary
 
