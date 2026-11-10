@@ -38,6 +38,11 @@ REQUIRED = {
     ],
     "journal evaluation": [
         "m0-supervisor-journal-implementation-contract.md",
+        "supervisor_generation",
+        "attempt_generation",
+        "operation_sequence",
+        "trigger_sequence",
+        "branch_generation",
     ],
     "runner README": [
         "m0-supervisor-journal-implementation-contract.md",
@@ -46,6 +51,11 @@ REQUIRED = {
     ],
     "host launch ADR": [
         "m0-supervisor-journal-implementation-contract.md",
+        "persist the trigger and `TERMINATING` transition concurrently",
+        "supervisor_generation",
+        "attempt_generation",
+        "branch_generation",
+        "database lease or generation integer alone cannot fence a paused process",
     ],
 }
 FORBIDDEN_AUTHORIZATION_PHRASES = [
