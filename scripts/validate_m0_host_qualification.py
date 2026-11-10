@@ -565,6 +565,24 @@ def main():
         if not any("exact selected host/runtime/storage identity" in error for error in errors_for(missing_proof,schema_validator)):
             raise AssertionError(f"candidate-qualified record accepted without {field}")
     print("PASS  requires authenticated epoch authority, nonce, predecessor-set and provider-fence evidence")
+    mismatched_fence_digest = deepcopy(complete)
+    mismatched_fence_digest["host_identity"]["provider_fence_evidence_digest"] = "f"*64
+    if not any("digest must match its immutable evidence record" in error for error in errors_for(mismatched_fence_digest,schema_validator)):
+        raise AssertionError("candidate-qualified record accepted with a mismatched provider fence digest")
+    unverified_epoch = deepcopy(complete)
+    for finding in unverified_epoch["test_results"]:
+        for evidence in finding.get("evidence_refs", []):
+            if evidence.get("reference_id") == unverified_epoch["host_identity"]["host_incarnation_epoch_evidence_ref"]:
+                evidence["verification_status"] = "unverified"
+    if not any("independently verified watchdog-control-plane evidence" in error for error in errors_for(unverified_epoch,schema_validator)):
+        raise AssertionError("candidate-qualified record accepted with unverified epoch authority evidence")
+    duplicate_fence_ref = deepcopy(complete)
+    fence_ref = duplicate_fence_ref["host_identity"]["prior_incarnation_fence_evidence_ref"]
+    jrn013_duplicate = next(item for item in duplicate_fence_ref["test_results"] if item["test_id"] == "JRN-013")
+    jrn013_duplicate["evidence_refs"].append(deepcopy(next(item for item in jrn013_duplicate["evidence_refs"] if item["reference_id"] == fence_ref)))
+    if not any("exactly one evidence record" in error for error in errors_for(duplicate_fence_ref,schema_validator)):
+        raise AssertionError("candidate-qualified record accepted duplicate provider fence evidence references")
+    print("PASS  rejects mismatched, unverified and duplicate epoch/fence evidence")
 
     verifier_is_host_owner = deepcopy(complete)
     verifier_is_host_owner["test_results"][0]["evidence_refs"][0]["independent_verifier_id"] = verifier_is_host_owner["review"]["host_owner_id"]
