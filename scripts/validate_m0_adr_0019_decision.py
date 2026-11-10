@@ -65,8 +65,12 @@ def validate_record(record, validator):
                           "rootless daemon identity must be non-root")
                 add_error(errors, profile.get("user_namespace_mode") != "caller-configured-userns",
                           "rootless profile must use caller-configured user namespaces")
-                add_error(errors, profile.get("profile_sha256") != config.get("profile_digest"),
-                          "rootless profile digest must match candidate profile digest")
+                add_error(errors, profile.get("profile_sha256") != config.get("rootless_profile_digest"),
+                          "rootless profile digest must match candidate rootless_profile_digest")
+                add_error(errors, profile.get("network_backend") != config.get("network_backend"),
+                          "rootless network backend must match structured rootless profile")
+                add_error(errors, profile.get("rootlesskit_version") != config.get("rootlesskit_version"),
+                          "RootlessKit version must match structured rootless profile")
                 add_error(errors, not {"cpu", "memory", "pids"}.issubset(set(profile.get("delegated_controllers", []))),
                           "rootless profile must delegate CPU, memory and PID controllers")
         if candidate.get("assessment_status") != "not-assessed":
@@ -146,8 +150,8 @@ def validate_record(record, validator):
                     config_profile = config.get("rootless_profile")
                     add_error(errors, not isinstance(report_profile, dict) or report_profile != config_profile,
                               f"{cid}: qualified rootless host profile must exactly match candidate configuration")
-                    add_error(errors, qualification.get("rootless_profile_digest") != config.get("profile_digest"),
-                              f"{cid}: qualified rootless profile digest must match candidate profile digest")
+                    add_error(errors, qualification.get("rootless_profile_digest") != config.get("rootless_profile_digest"),
+                              f"{cid}: qualified rootless profile digest must match candidate rootless_profile_digest")
                     if isinstance(report_profile, dict):
                         add_error(errors, report_profile.get("daemon_uid", 0) == 0 or report_profile.get("daemon_gid", 0) == 0,
                                   f"{cid}: qualification rootless daemon identity must be non-root")
@@ -415,7 +419,7 @@ def main():
         "runner_identity":"synthetic-runner", "host_controller_identity":"synthetic-rootless-daemon",
         "containerd_access_principal":"synthetic-rootless-daemon", "privilege_inventory_digest":"c"*64,
         "syscall_inventory_digest":"d"*64,"writable_path_inventory_digest":"e"*64,
-        "service_hardening_digest":"f"*64,"socket_policy_digest":"1"*64,"network_backend":"synthetic-rootless-network",
+        "service_hardening_digest":"f"*64,"socket_policy_digest":"1"*64,"network_backend":"synthetic-slirp",
         "cgroup_delegation_reference":"synthetic-cgroup-delegation",
         "user_namespace_mapping_reference":"synthetic-subuid-map", "rootlesskit_version":"synthetic-rootlesskit"
     })
@@ -453,7 +457,7 @@ def main():
     rootless["assessment_status"] = "host-qualified"
     rootless["assessment_rationale"] = "Synthetic fully-qualified rootless candidate."
     rootless["configuration"].update({
-        "profile_id":"synthetic-rootless", "profile_digest":"a"*64,
+        "profile_id":"synthetic-rootless", "profile_digest":"b"*64,"rootless_profile_digest":"a"*64,
         "runtime_profile_digest":"4"*64, "resource_profile_digest":"5"*64,
         "journal_profile_digest":"6"*64, "supervisor_digest":"7"*64,
         "watchdog_digest":"8"*64, "test_harness_digest":"9"*64,
@@ -461,7 +465,7 @@ def main():
         "containerd_access_principal":"synthetic-rootless-daemon", "privilege_inventory_digest":"c"*64,
         "syscall_inventory_digest":"d"*64, "writable_path_inventory_digest":"e"*64,
         "service_hardening_digest":"f"*64, "socket_policy_digest":"1"*64,
-        "network_backend":"synthetic-rootless-network", "cgroup_delegation_reference":"synthetic-delegation",
+        "network_backend":"synthetic-slirp", "cgroup_delegation_reference":"synthetic-delegation",
         "user_namespace_mapping_reference":"synthetic-subuid-map", "rootlesskit_version":"synthetic-rootlesskit"
     })
     for finding in rootless["design_findings"]:
@@ -486,7 +490,7 @@ def main():
         "record_id":"22222222-2222-4222-8222-222222222222", "record_sha256":"3"*64,
         "record_commit_sha":"a"*40, "target_architecture":"rootless-containerd-userns",
         "qualification_status":"candidate-qualified", "host_instance_id":"synthetic-rootless-host",
-        "boot_id":"synthetic-rootless-boot", "host_profile_digest":"a"*64,
+        "boot_id":"synthetic-rootless-boot", "host_profile_digest":"b"*64,
         "runtime_profile_digest":"4"*64, "resource_profile_digest":"5"*64,
         "journal_profile_digest":"6"*64, "supervisor_digest":"7"*64,
         "watchdog_digest":"8"*64, "test_harness_digest":"9"*64,
