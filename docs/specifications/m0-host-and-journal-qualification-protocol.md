@@ -247,6 +247,13 @@ On stop: reject new work, continue best-effort independent termination when appl
 - Privileged supervisor/journal implementation remains blocked by ADR-0019 and the independent review gates.
 - No sandbox launch, arbitrary command, student source, student endpoint or general queue consumer is authorized by passing this qualification protocol.
 
+
+## Authorization lifecycle qualification
+
+The mandatory authorization lifecycle and recovery requirements are defined in `docs/specifications/m0-authorization-lifecycle-and-recovery-contract.md`. This contract supplements, and does not replace, JRN-013 (external epoch/restore fencing) or JRN-015 (replay/idempotency retention). Independent review must verify the authority state machine, fence-before-issue order, authenticated response binding, durable guest readback before readiness, terminal revocation, replay tombstones, bounded run claims and all ten C-01 through C-10 deterministic concurrency cases.
+
+A schema-valid Phase A manifest is only an immutable signed decision payload. It is not proof that the authorization is currently valid, unrevoked, unconsumed, within budget, accepted by the exact host/epoch, or cryptographically authentic. Those properties require the external authorization ledger, trusted time, pinned signer/key verification, provider fence evidence, and durable acceptance/readback. Until those mechanisms and their independent host evidence exist, Phase A remains unauthorized and the host remains ineligible for admission.
+
 ## 12. References
 
 - `docs/specifications/m0-host-preflight-and-proof-runbook.md`
