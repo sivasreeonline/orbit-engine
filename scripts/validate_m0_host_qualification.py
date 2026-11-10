@@ -24,6 +24,14 @@ CHECKLIST_PATH = ROOT / "docs/security/m0-independent-security-review-checklist.
 TESTS = [{"id":"HST-001","domain":"host-baseline","evidenceTypes":["host-configuration"]},{"id":"HST-002","domain":"host-baseline","evidenceTypes":["host-configuration"]},{"id":"HST-003","domain":"host-baseline","evidenceTypes":["filesystem-storage"]},{"id":"HST-004","domain":"host-baseline","evidenceTypes":["host-configuration"]},{"id":"HST-005","domain":"host-baseline","evidenceTypes":["supply-chain"]},{"id":"AUTH-001","domain":"runtime","evidenceTypes":["host-configuration","fault-injection"]},{"id":"RUN-001","domain":"runtime","evidenceTypes":["host-runtime","fault-injection"]},{"id":"CG-001","domain":"runtime","evidenceTypes":["host-runtime","fault-injection"]},{"id":"NET-001","domain":"network","evidenceTypes":["network-observation","host-configuration"]},{"id":"NET-002","domain":"network","evidenceTypes":["network-observation","host-configuration"]},{"id":"FS-001","domain":"runtime","evidenceTypes":["host-runtime","fault-injection"]},{"id":"OUT-001","domain":"runtime","evidenceTypes":["host-runtime","fault-injection"]},{"id":"WDG-001","domain":"watchdog","evidenceTypes":["fault-injection","host-runtime"]},{"id":"WDG-002","domain":"watchdog","evidenceTypes":["fault-injection","host-configuration"]},{"id":"WDG-003","domain":"watchdog","evidenceTypes":["watchdog-control-plane","operator-record"]},{"id":"CLK-001","domain":"clock","evidenceTypes":["host-runtime","fault-injection"]},{"id":"CLK-002","domain":"clock","evidenceTypes":["fault-injection","host-runtime"]},{"id":"JRN-001","domain":"journal","evidenceTypes":["journal-durability","host-configuration"]},{"id":"JRN-002","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-003","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-004","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-005","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-006","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-007","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-008","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-009","domain":"journal","evidenceTypes":["fault-injection","host-configuration"]},{"id":"JRN-010","domain":"integrated-lifecycle","evidenceTypes":["fault-injection","host-runtime"]},{"id":"JRN-011","domain":"integrated-lifecycle","evidenceTypes":["fault-injection","journal-durability"]},{"id":"JRN-012","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-013","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-014","domain":"journal","evidenceTypes":["host-configuration","fault-injection"]},{"id":"JRN-015","domain":"journal","evidenceTypes":["filesystem-storage","fault-injection"]},{"id":"EVID-001","domain":"evidence","evidenceTypes":["host-runtime","fault-injection"]}]
 TEST_IDS = [test["id"] for test in TESTS]
 TEST_BY_ID = {test["id"]: test for test in TESTS}
+ROOTLESS_TESTS = [
+    {"id":"RLS-001","evidenceTypes":["host-runtime","fault-injection"]},
+    {"id":"RLS-002","evidenceTypes":["host-configuration","supply-chain","fault-injection"]},
+    {"id":"RLS-003","evidenceTypes":["host-runtime","fault-injection"]},
+    {"id":"RLS-004","evidenceTypes":["network-observation","host-configuration","fault-injection"]},
+]
+ROOTLESS_TEST_IDS = {test["id"] for test in ROOTLESS_TESTS}
+ROOTLESS_TEST_BY_ID = {test["id"]: test for test in ROOTLESS_TESTS}
 AUTH_FLAGS = ["phase_a_authorized", "phase_b_authorized", "student_execution_authorized", "production_execution_authorized"]
 BASELINE_IDS = {"HST-001", "HST-002", "HST-003", "HST-004", "HST-005"}
 RUNTIME_IDS = {"AUTH-001", "RUN-001", "CG-001", "FS-001", "OUT-001"}
@@ -45,6 +53,18 @@ def errors_for(record, schema_validator):
         errors.append("every required qualification test ID must appear exactly once")
     by_id = {item.get("test_id"): item for item in results}
 
+    rootless_results = record.get("candidate_specific_test_results", [])
+    rootless_ids = [item.get("test_id") for item in rootless_results]
+    if len(rootless_ids) != len(set(rootless_ids)):
+        errors.append("duplicate rootless candidate-specific test IDs are prohibited")
+    target_architecture = record.get("scope", {}).get("target_architecture")
+    if target_architecture == "rootless-containerd-userns" and set(rootless_ids) != ROOTLESS_TEST_IDS:
+        errors.append("rootless candidate requires all four candidate-specific qualification tests exactly once")
+    if target_architecture == "rootful-supervisor" and rootless_results:
+        errors.append("rootful candidate must not claim rootless-only qualification tests")
+    if target_architecture == "not-selected" and rootless_results:
+        errors.append("unselected architecture cannot contain candidate-specific test results")
+
     for test_id, finding in by_id.items():
         expected = TEST_BY_ID.get(test_id)
         if not expected:
@@ -65,6 +85,27 @@ def errors_for(record, schema_validator):
                 errors.append(f"{test_id}: failed requires severity and finding")
         if finding.get("result") in {"blocked", "deferred"} and not finding.get("finding_summary", "").strip():
             errors.append(f"{test_id}: blocked/deferred requires a reason")
+
+    for finding in rootless_results:
+        test_id = finding.get("test_id")
+        expected = ROOTLESS_TEST_BY_ID.get(test_id)
+        if not expected:
+            continue
+        if finding.get("domain") != "rootless-compatibility":
+            errors.append(f"{test_id}: rootless test domain mismatch")
+        refs = finding.get("evidence_refs", [])
+        if finding.get("result") == "passed":
+            if not finding.get("verification_method", "").strip() or not refs:
+                errors.append(f"{test_id}: passed rootless test requires method and evidence")
+            if any(ref.get("verification_status") != "verified" or not ref.get("independent_verifier_id") for ref in refs):
+                errors.append(f"{test_id}: passed rootless test requires independently verified evidence")
+            if not any(ref.get("evidence_type") in set(expected["evidenceTypes"]) for ref in refs):
+                errors.append(f"{test_id}: passed rootless test requires a test-specific evidence type")
+        if finding.get("result") == "failed":
+            if finding.get("severity") in {"unassigned", "none"} or not finding.get("finding_summary", "").strip():
+                errors.append(f"{test_id}: failed rootless test requires severity and finding")
+        if finding.get("result") in {"blocked", "deferred"} and not finding.get("finding_summary", "").strip():
+            errors.append(f"{test_id}: blocked/deferred rootless test requires a reason")
 
     gates = record.get("gates", {})
     if gates.get("baseline_inspection") == "passed":
@@ -93,6 +134,18 @@ def errors_for(record, schema_validator):
         errors.append("integrated lifecycle gate requires JRN-010 and JRN-011")
     if gates.get("evidence_integrity") == "passed" and not EVIDENCE_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
         errors.append("evidence gate requires EVID-001")
+    rootless_gate = gates.get("rootless_userns_compatibility")
+    rootless_passed_ids = {f.get("test_id") for f in rootless_results if f.get("result") == "passed"}
+    if target_architecture == "rootless-containerd-userns":
+        if rootless_gate == "passed" and rootless_passed_ids != ROOTLESS_TEST_IDS:
+            errors.append("rootless userns compatibility gate requires RLS-001 through RLS-004 to pass")
+        if rootless_gate == "not-applicable":
+            errors.append("rootless candidate cannot mark its compatibility gate not-applicable")
+    elif target_architecture == "rootful-supervisor":
+        if rootless_gate != "not-applicable":
+            errors.append("rootful candidate must mark rootless userns compatibility not-applicable")
+    elif rootless_gate not in {"not-run", None}:
+        errors.append("unselected architecture must leave rootless compatibility not-run")
 
     if record.get("qualification_status") == "candidate-qualified":
         passed_ids = {i for i, f in by_id.items() if f.get("result") == "passed"}
@@ -103,6 +156,14 @@ def errors_for(record, schema_validator):
             "watchdog_boundary", "clock_recovery", "journal_durability", "integrated_lifecycle", "evidence_integrity"
         ]):
             errors.append("candidate-qualified requires every qualification sub-gate to pass")
+        if target_architecture == "rootless-containerd-userns":
+            if gates.get("rootless_userns_compatibility") != "passed" or rootless_passed_ids != ROOTLESS_TEST_IDS:
+                errors.append("rootless candidate-qualified requires all four rootless-specific tests and compatibility gate to pass")
+        elif target_architecture == "rootful-supervisor":
+            if gates.get("rootless_userns_compatibility") != "not-applicable" or rootless_results:
+                errors.append("rootful candidate-qualified cannot claim rootless-specific tests")
+        else:
+            errors.append("candidate-qualified requires rootful or rootless architecture identity")
         host = record.get("host_identity", {})
         baseline_sha = record.get("scope", {}).get("reviewed_commit_sha")
         if not isinstance(baseline_sha, str) or len(baseline_sha) != 40:
@@ -158,8 +219,11 @@ def errors_for(record, schema_validator):
         unresolved = [risk for risk in record.get("residual_risks", []) if risk.get("severity") in {"high", "critical"} and risk.get("status") != "closed"]
         if unresolved:
             errors.append("candidate-qualified cannot retain unresolved high/critical risks")
-    if record.get("qualification_status") == "failed" and not any(f.get("result") == "failed" for f in results):
-        errors.append("failed qualification requires at least one failed test")
+    if record.get("qualification_status") == "failed" and not (
+        any(f.get("result") == "failed" for f in results) or
+        any(f.get("result") == "failed" for f in rootless_results)
+    ):
+        errors.append("failed qualification requires at least one failed common or candidate-specific test")
     if record.get("record_status") == "not-started":
         if record.get("qualification_status") != "not-qualified":
             errors.append("not-started record must remain not-qualified")
@@ -167,6 +231,8 @@ def errors_for(record, schema_validator):
             errors.append("not-started record cannot have a selected host or executed test")
         if any(value != "not-run" for value in gates.values()):
             errors.append("not-started record cannot have a passed/failed qualification gate")
+        if rootless_results:
+            errors.append("not-started record cannot contain candidate-specific tests")
         if record.get("scope", {}).get("target_architecture") != "not-selected":
             errors.append("not-started record must have no selected architecture")
         if record.get("journal_profile", {}).get("backend_candidate") != "not-selected":
@@ -209,6 +275,9 @@ def main():
     template_ids = {item["test_id"] for item in template["test_results"]}
     if schema_ids != set(TEST_IDS) or template_ids != set(TEST_IDS):
         raise AssertionError("schema/template/test inventory IDs diverge")
+    rootless_schema_ids = set(schema["$defs"]["candidateSpecificTestFinding"]["properties"]["test_id"]["enum"])
+    if rootless_schema_ids != ROOTLESS_TEST_IDS or template["candidate_specific_test_results"] != []:
+        raise AssertionError("rootless-specific schema/template test inventory diverges")
     for test in TESTS:
         if f"| {test['id']} |" not in protocol:
             raise AssertionError(f"protocol missing test ID {test['id']}")
@@ -228,6 +297,10 @@ def main():
     case = deepcopy(template); case["gates"]["journal_durability"] = "passed"; cases.append(("journal gate without all journal tests",case))
     case = deepcopy(template); case["gates"]["network_boundary"] = "passed"; cases.append(("network gate without both network tests",case))
     case = deepcopy(template); case["qualification_status"] = "candidate-qualified"; cases.append(("qualification without full gates/host identity",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["gates"]["rootless_userns_compatibility"] = "passed"; cases.append(("rootless gate without four passing tests",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["candidate_specific_test_results"] = [{"test_id":"RLS-001","domain":"rootless-compatibility","result":"passed","verification_method":"synthetic","finding_summary":"synthetic","severity":"none","remediation_owner":"","evidence_refs":[]}]; cases.append(("partial rootless-specific test inventory",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootful-supervisor"; case["gates"]["rootless_userns_compatibility"] = "passed"; cases.append(("rootful record claiming rootless compatibility",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["candidate_specific_test_results"] = [{"test_id":"RLS-001","domain":"rootless-compatibility","result":"passed","verification_method":"synthetic","finding_summary":"synthetic","severity":"none","remediation_owner":"","evidence_refs":[{"reference_id":"synthetic","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic","verification_note":"synthetic"}]}]; cases.append(("rootless test with wrong evidence type",case))
     case = deepcopy(template); case["phase_a_authorized"] = True; cases.append(("Phase A authorization",case))
     case = deepcopy(template); case["phase_b_authorized"] = True; cases.append(("Phase B authorization",case))
     case = deepcopy(template); case["student_execution_authorized"] = True; cases.append(("student execution authorization",case))
@@ -266,6 +339,7 @@ def main():
     })
     for gate in complete["gates"]:
         complete["gates"][gate] = "passed"
+    complete["gates"]["rootless_userns_compatibility"] = "not-applicable"
     evidence_types = {test["id"]:test["evidenceTypes"][0] for test in TESTS}
     for finding in complete["test_results"]:
         finding.update(result="passed",verification_method="synthetic test",finding_summary="Synthetic positive case only",severity="none")
@@ -291,6 +365,27 @@ def main():
         raise AssertionError("synthetic fully-qualified record failed: " + "; ".join(errors_for(complete,schema_validator)))
     if any(complete[flag] is not False for flag in AUTH_FLAGS):
         raise AssertionError("synthetic qualification improperly authorizes execution")
+    rootless_complete = deepcopy(complete)
+    rootless_complete["scope"]["target_architecture"] = "rootless-containerd-userns"
+    rootless_complete["gates"]["rootless_userns_compatibility"] = "passed"
+    rootless_types = {test["id"]: test["evidenceTypes"][0] for test in ROOTLESS_TESTS}
+    rootless_complete["candidate_specific_test_results"] = [{
+        "test_id": test["id"], "domain":"rootless-compatibility", "result":"passed",
+        "verification_method":"Synthetic rootless compatibility test",
+        "finding_summary":"Synthetic only; not a real host measurement.",
+        "severity":"none", "remediation_owner":"",
+        "evidence_refs":[{
+            "reference_id":"synthetic-"+test["id"],"object_version":"v1","sha256":"b"*64,"byte_count":1,
+            "evidence_root_id":"synthetic-root","acquired_at":"2026-11-10T00:00:00Z",
+            "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":rootless_types[test["id"]],
+            "redaction_status":"non-sensitive","verification_status":"verified",
+            "independent_verifier_id":"synthetic-reviewer","verification_note":"Synthetic only; not a real host measurement."
+        }]
+    } for test in ROOTLESS_TESTS]
+    rootless_errors = errors_for(rootless_complete, schema_validator)
+    if rootless_errors:
+        raise AssertionError("synthetic rootless candidate-qualified record rejected: " + "; ".join(rootless_errors))
+    print("PASS  accepts rootless qualification only with all four candidate-specific tests")
     print("PASS  accepts synthetic complete qualification while all execution authorizations remain false")
     print("NOTE  synthetic contract tests only; no host selected/tested and no real evidence/signature")
 
