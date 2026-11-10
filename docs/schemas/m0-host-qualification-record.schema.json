@@ -776,7 +776,7 @@
   },
   "properties": {
     "schema_version": {
-      "const": "1.1.0"
+      "const": "1.2.0"
     },
     "record_id": {
       "type": [
@@ -862,6 +862,14 @@
         "host_instance_id",
         "host_incarnation_epoch",
         "prior_incarnation_fence_evidence_ref",
+        "host_incarnation_authority_id",
+        "host_incarnation_authority_key_version",
+        "host_incarnation_epoch_evidence_ref",
+        "host_incarnation_issuance_nonce_digest",
+        "predecessor_incarnation_set_digest",
+        "provider_fence_method",
+        "provider_fence_verified_at",
+        "provider_fence_evidence_digest",
         "boot_id",
         "image_digest",
         "os_release",
@@ -1068,6 +1076,62 @@
           ]
         },
         "rootless_profile_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "host_incarnation_authority_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "host_incarnation_authority_key_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "host_incarnation_epoch_evidence_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "host_incarnation_issuance_nonce_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "predecessor_incarnation_set_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "provider_fence_method": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "provider_fence_verified_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "provider_fence_evidence_digest": {
           "type": [
             "string",
             "null"
