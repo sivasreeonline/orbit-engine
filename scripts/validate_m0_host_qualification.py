@@ -100,6 +100,9 @@ def errors_for(record, schema_validator):
             review_roles = {review.get("reviewer_id"), review.get("host_owner_id")} - {None, ""}
             if any(ref.get("independent_verifier_id") in review_roles for ref in refs):
                 errors.append(f"{test_id}: evidence verifier must be independent of reviewer and host owner")
+            if any(ref.get("acquired_by_id") in review_roles or
+                   ref.get("acquired_by_id") == ref.get("independent_verifier_id") for ref in refs):
+                errors.append(f"{test_id}: evidence acquirer must be distinct from verifier, reviewer and host owner")
             allowed = set(expected["evidenceTypes"])
             if not any(ref.get("evidence_type") in allowed for ref in refs):
                 errors.append(f"{test_id}: passed requires a test-specific evidence type")
@@ -125,6 +128,9 @@ def errors_for(record, schema_validator):
             review_roles = {review.get("reviewer_id"), review.get("host_owner_id")} - {None, ""}
             if any(ref.get("independent_verifier_id") in review_roles for ref in refs):
                 errors.append(f"{test_id}: rootless evidence verifier must be independent of reviewer and host owner")
+            if any(ref.get("acquired_by_id") in review_roles or
+                   ref.get("acquired_by_id") == ref.get("independent_verifier_id") for ref in refs):
+                errors.append(f"{test_id}: rootless evidence acquirer must be distinct from verifier, reviewer and host owner")
             if not any(ref.get("evidence_type") in set(expected["evidenceTypes"]) for ref in refs):
                 errors.append(f"{test_id}: passed rootless test requires a test-specific evidence type")
         if finding.get("result") == "failed":
@@ -358,14 +364,14 @@ def main():
     case = deepcopy(template); case["test_results"].pop(); cases.append(("missing test",case))
     case = deepcopy(template); case["test_results"][-1]["test_id"] = case["test_results"][0]["test_id"]; cases.append(("duplicate test ID",case))
     case = deepcopy(template); case["test_results"][0]["result"] = "passed"; cases.append(("pass without evidence",case))
-    case = deepcopy(template); case["test_results"][0]["result"] = "passed"; case["test_results"][0]["verification_method"] = "synthetic"; case["test_results"][0]["finding_summary"] = "synthetic"; case["test_results"][0]["severity"] = "none"; case["test_results"][0]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"host-runtime","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic only"}]; cases.append(("passed test with wrong evidence type",case))
+    case = deepcopy(template); case["test_results"][0]["result"] = "passed"; case["test_results"][0]["verification_method"] = "synthetic"; case["test_results"][0]["finding_summary"] = "synthetic"; case["test_results"][0]["severity"] = "none"; case["test_results"][0]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"host-runtime","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic only"}]; cases.append(("passed test with wrong evidence type",case))
     case = deepcopy(template); case["gates"]["journal_durability"] = "passed"; cases.append(("journal gate without all journal tests",case))
     case = deepcopy(template); case["gates"]["network_boundary"] = "passed"; cases.append(("network gate without both network tests",case))
     case = deepcopy(template); case["qualification_status"] = "candidate-qualified"; cases.append(("qualification without full gates/host identity",case))
     case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["gates"]["rootless_userns_compatibility"] = "passed"; cases.append(("rootless gate without four passing tests",case))
     case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["candidate_specific_test_results"] = [{"test_id":"RLS-001","domain":"rootless-compatibility","result":"passed","verification_method":"synthetic","finding_summary":"synthetic","severity":"none","remediation_owner":"","evidence_refs":[]}]; cases.append(("partial rootless-specific test inventory",case))
     case = deepcopy(template); case["scope"]["target_architecture"] = "rootful-supervisor"; case["gates"]["rootless_userns_compatibility"] = "passed"; cases.append(("rootful record claiming rootless compatibility",case))
-    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["candidate_specific_test_results"] = [{"test_id":"RLS-001","domain":"rootless-compatibility","result":"passed","verification_method":"synthetic","finding_summary":"synthetic","severity":"none","remediation_owner":"","evidence_refs":[{"reference_id":"synthetic","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic","verification_note":"synthetic"}]}]; cases.append(("rootless test with wrong evidence type",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["candidate_specific_test_results"] = [{"test_id":"RLS-001","domain":"rootless-compatibility","result":"passed","verification_method":"synthetic","finding_summary":"synthetic","severity":"none","remediation_owner":"","evidence_refs":[{"reference_id":"synthetic","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic","verification_note":"synthetic"}]}]; cases.append(("rootless test with wrong evidence type",case))
     case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; cases.append(("rootless host profile missing",case))
     case = deepcopy(template); case["scope"]["target_architecture"] = "rootful-supervisor"; case["host_identity"]["rootless_profile"] = {"daemon_uid":1000}; cases.append(("rootful record carrying rootless profile",case))
     profile={"daemon_uid":1000,"daemon_gid":1000,"daemon_identity_digest":"a"*64,"user_namespace_mode":"caller-configured-userns","subuid_map_digest":"b"*64,"subgid_map_digest":"c"*64,"subuid_range_count":1,"subgid_range_count":1,"rootlesskit_version":"synthetic-rootlesskit","rootlesskit_sha256":"d"*64,"newuidmap_sha256":"e"*64,"newgidmap_sha256":"f"*64,"helper_inventory_sha256":"1"*64,"state_directory_policy_sha256":"2"*64,"daemon_socket_policy_sha256":"3"*64,"apparmor_profile_sha256":"4"*64,"network_backend":"synthetic-slirp","network_namespace_profile_sha256":"5"*64,"systemd_delegation_profile_sha256":"6"*64,"delegated_controllers":["cpu","memory","pids"],"profile_sha256":"7"*64}
@@ -416,7 +422,7 @@ def main():
         finding.update(result="passed",verification_method="synthetic test",finding_summary="Synthetic positive case only",severity="none")
         finding["evidence_refs"] = [{
             "reference_id":"synthetic-"+finding["test_id"],"object_version":"v1","sha256":"a"*64,"byte_count":1,
-            "evidence_root_id":"synthetic-root","acquired_at":"2026-11-10T00:00:00Z",
+            "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
             "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":evidence_types[finding["test_id"]],
             "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-reviewer",
             "verification_note":"Synthetic only; not a real host measurement."
@@ -444,6 +450,16 @@ def main():
     if not any("evidence verifier must be independent" in error for error in errors_for(verifier_is_reviewer,schema_validator)):
         raise AssertionError("security reviewer was accepted as independent evidence verifier")
     print("PASS  rejects evidence verification by host owner or independent security reviewer")
+
+    acquired_by_owner = deepcopy(complete)
+    acquired_by_owner["test_results"][0]["evidence_refs"][0]["acquired_by_id"] = acquired_by_owner["review"]["host_owner_id"]
+    if not any("evidence acquirer must be distinct" in error for error in errors_for(acquired_by_owner, schema_validator)):
+        raise AssertionError("host owner was accepted as evidence acquirer")
+    acquired_by_verifier = deepcopy(complete)
+    acquired_by_verifier["test_results"][0]["evidence_refs"][0]["acquired_by_id"] = acquired_by_verifier["test_results"][0]["evidence_refs"][0]["independent_verifier_id"]
+    if not any("evidence acquirer must be distinct" in error for error in errors_for(acquired_by_verifier, schema_validator)):
+        raise AssertionError("evidence verifier was accepted as evidence acquirer")
+    print("PASS  rejects evidence acquisition by host owner or evidence verifier")
 
     expired_complete = deepcopy(complete)
     expired_complete["review"]["expires_at"] = "2020-01-02T00:00:00Z"
@@ -479,7 +495,7 @@ def main():
         "severity":"none", "remediation_owner":"",
         "evidence_refs":[{
             "reference_id":"synthetic-"+test["id"],"object_version":"v1","sha256":"b"*64,"byte_count":1,
-            "evidence_root_id":"synthetic-root","acquired_at":"2026-11-10T00:00:00Z",
+            "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
             "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":rootless_types[test["id"]],
             "redaction_status":"non-sensitive","verification_status":"verified",
             "independent_verifier_id":"synthetic-reviewer","verification_note":"Synthetic only; not a real host measurement."
