@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/specifications/m0-authorization-lifecycle-and-recovery-contract.md"
 PROTOCOL = ROOT / "docs/specifications/m0-host-and-journal-qualification-protocol.md"
 SECURITY_PACKET = ROOT / "docs/security/m0-sandbox-security-review-packet.md"
+LEDGER_MODEL = ROOT / "docs/specifications/m0-authorization-ledger-data-model.md"
 SUPERVISOR = ROOT / "docs/specifications/m0-supervisor-journal-implementation-contract.md"
 CALIBRATION_VALIDATOR = ROOT / "scripts/validate_m0_cleanup_calibration_authorization.py"
 M0_WORKFLOW = ROOT / ".github/workflows/m0-preflight-ci.yml"
@@ -25,6 +26,7 @@ def main() -> int:
     contract = CONTRACT.read_text(encoding="utf-8")
     protocol = PROTOCOL.read_text(encoding="utf-8")
     packet = SECURITY_PACKET.read_text(encoding="utf-8")
+    ledger = LEDGER_MODEL.read_text(encoding="utf-8")
     supervisor = SUPERVISOR.read_text(encoding="utf-8")
     calibration = CALIBRATION_VALIDATOR.read_text(encoding="utf-8")
     workflow = M0_WORKFLOW.read_text(encoding="utf-8")
@@ -61,6 +63,17 @@ def main() -> int:
         "atomic run-budget claims",
     ]:
         require(packet, term, "independent security review packet linkage")
+    for term in [
+        "host_epoch_receipts", "host_epoch_acceptances", "phase_a_authorizations",
+        "authorization_events", "authorization_run_claims", "authorization_signing_keys",
+        "serializable transaction", "SELECT FOR UPDATE", "anti-rollback",
+        "Neon does not become the provider fencing authority",
+        "Do not create or apply a production migration until",
+    ]:
+        require(ledger, term, "authorization ledger data model invariant")
+    require(life, "m0-authorization-ledger-data-model.md", "lifecycle-to-ledger linkage")
+    require(protocol, "m0-authorization-ledger-data-model.md", "protocol-to-ledger linkage")
+    require(packet, "m0-authorization-ledger-data-model.md", "review packet-to-ledger linkage")
     if "## 10. Authorization lifecycle qualification" not in packet or "## 11. Current decision" not in packet:
         raise AssertionError("security review packet section numbering must remain unique and ordered")
     for term in [
