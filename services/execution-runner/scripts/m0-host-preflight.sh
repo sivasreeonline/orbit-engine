@@ -181,20 +181,23 @@ if command_exists runsc; then
           fail 'gVisor sidecar directory is group/world writable'
         fi
 
-        if [[ -n "$(find "$sidecar_dir" -mindepth 1 -maxdepth 1 -type l -print -quit)" ]]; then
-          fail 'gVisor sidecar directory contains a symlink entry'
+        if [[ -n "$(find "$sidecar_dir" -mindepth 1 -maxdepth 1 ! -type f -print -quit)" ]]; then
+          fail 'gVisor sidecar directory contains a non-regular entry (symlink, directory or special file)'
         else
-          pass 'gVisor sidecar directory contains no symlink entries'
+          pass 'gVisor sidecar directory contains only regular files'
         fi
 
+        mapfile -d '' -t sidecar_files < <(find "$sidecar_dir" -mindepth 1 -maxdepth 1 -type f -print0)
         mapfile -d '' -t sidecar_binaries < <(find "$sidecar_dir" -mindepth 1 -maxdepth 1 -type f -perm /111 -print0)
-        if (( ${#sidecar_binaries[@]} > 0 )); then
-          pass "gVisor sidecar directory contains ${#sidecar_binaries[@]} executable file(s)"
+        if (( ${#sidecar_files[@]} > 0 && ${#sidecar_files[@]} == ${#sidecar_binaries[@]} )); then
+          pass "gVisor sidecar directory contains ${#sidecar_binaries[@]} regular executable file(s)"
           for sidecar in "${sidecar_binaries[@]}"; do
             inspect_runtime_binary "$sidecar" "gVisor sidecar $(basename "$sidecar")"
           done
+        elif (( ${#sidecar_files[@]} == 0 )); then
+          fail 'gVisor gvisor-bin directory contains no sidecar files'
         else
-          fail 'gVisor gvisor-bin directory contains no executable sidecar files'
+          fail 'gVisor sidecar directory contains a non-executable regular file'
         fi
       else
         fail "gVisor sidecar directory is missing, not a directory, or is a symlink: $sidecar_dir"
