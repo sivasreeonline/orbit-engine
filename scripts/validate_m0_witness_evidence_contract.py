@@ -36,7 +36,7 @@ def parse_time(value):
 def checkpoint_alignment(restored, witness):
     """Exact anchor equality is required before authorization operations reopen."""
     fields = (
-        "generation", "previous_checkpoint_digest", "ledger_event_sequence", "ledger_event_digest",
+        "witness_id", "authority_id", "environment", "generation", "previous_checkpoint_digest", "checkpoint_sha256", "ledger_event_sequence", "ledger_event_digest",
         "authorization_ledger_digest", "trust_bundle_generation",
         "trust_bundle_digest", "revocation_generation", "revocation_digest",
         "host_epoch_high_watermarks",
@@ -48,7 +48,7 @@ def checkpoint_successor_valid(previous, successor):
     """Check monotonic witness continuity; signature and witness custody remain external."""
     if successor["generation"] != previous["generation"] + 1:
         return False
-    if successor["previous_checkpoint_digest"] != previous["signature_sha256"]:
+    if successor["previous_checkpoint_digest"] != previous["checkpoint_sha256"]:
         return False
     for field in ("authority_id", "environment", "witness_id"):
         if successor[field] != previous[field]:
@@ -94,27 +94,30 @@ def main():
         "revocation_generation": 5, "revocation_digest": "d" * 64,
         "host_epoch_high_watermarks": [{"host_enrollment_id": "00000000-0000-4000-8000-000000000002", "epoch": 9}],
         "issued_at": "2026-11-10T10:00:00Z", "nonce": "n" * 32,
-        "signature_ref": "evidence://checkpoint-signature/1", "signature_sha256": "e" * 64
+        "signature_ref": "evidence://checkpoint-signature/1", "signature_sha256": "e" * 64, "checkpoint_sha256": "f" * 64
     }
     validate(checkpoint_schema, checkpoint, "valid checkpoint")
     assert checkpoint_alignment(checkpoint, dict(checkpoint))
     successor = dict(checkpoint)
     successor.update({"checkpoint_id": "00000000-0000-4000-8000-000000000004", "generation": 8,
-                      "previous_checkpoint_digest": checkpoint["signature_sha256"],
+                      "previous_checkpoint_digest": checkpoint["checkpoint_sha256"],
                       "ledger_event_sequence": 42, "ledger_event_digest": "1" * 64,
                       "authorization_ledger_digest": "2" * 64,
                       "issued_at": "2026-11-10T10:02:00Z", "nonce": "m" * 32,
-                      "signature_ref": "evidence://checkpoint-signature/2", "signature_sha256": "3" * 64})
+                      "signature_ref": "evidence://checkpoint-signature/2", "signature_sha256": "3" * 64, "checkpoint_sha256": "4" * 64})
     assert checkpoint_successor_valid(checkpoint, successor)
     for field, changed in (("generation", 9), ("previous_checkpoint_digest", "8" * 64),
                            ("revocation_generation", 4), ("trust_bundle_generation", 2),
                            ("ledger_event_sequence", 40), ("environment", "production")):
         altered = dict(successor)
         altered[field] = changed
-        assert not checkpoint_successor_valid(checkpoint, altered), f"unsafe successor {field} must reject
+        assert not checkpoint_successor_valid(checkpoint, altered), f"unsafe successor {field} must reject"
     regression = dict(successor)
     regression["host_epoch_high_watermarks"] = [{"host_enrollment_id": "00000000-0000-4000-8000-000000000002", "epoch": 8}]
     assert not checkpoint_successor_valid(checkpoint, regression), "host epoch rollback must reject"
+    duplicate_hosts = dict(successor)
+    duplicate_hosts["host_epoch_high_watermarks"] = successor["host_epoch_high_watermarks"] * 2
+    assert not checkpoint_successor_valid(checkpoint, duplicate_hosts), "duplicate host identity must reject"
     for field, changed in (
         ("generation", 6), ("ledger_event_sequence", 40),
         ("ledger_event_digest", "f" * 64), ("revocation_generation", 4),
