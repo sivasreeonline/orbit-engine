@@ -106,6 +106,14 @@ The outer VM safety cutoff exists only to contain a failed experiment. If it fir
 
 Neither Phase A nor Phase B authorizes student or production execution. The runner remains unprivileged and UnconfiguredExecutor remains fail-closed.
 
+## Independent review package
+
+Complete `docs/security/m0-independent-security-review-checklist.md` and the machine-readable record schema/template before accepting this ADR.
+
+The reviewer must compare the rootful supervisor against rootless containerd with caller-configured user namespaces using the same stable controls and evidence standards. The `runsc --rootless` CLI mode is separate and must not be represented as equivalent.
+
+An architecture recommendation does not authorize privileged implementation. Implementation, Phase A, Phase B, student execution and production execution remain separate gates; the review-record schema keeps all actual authorization flags false.
+
 ## Required gates before accepting this ADR
 
 1. Independent reviewer evaluates both privilege models and the exact gVisor rootless-mode distinctions.

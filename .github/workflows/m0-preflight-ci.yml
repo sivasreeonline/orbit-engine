@@ -20,6 +20,10 @@ on:
       - "scripts/validate_m0_cleanup_calibration_authorization.py"
       - "docs/specifications/m0-supervisor-journal-implementation-contract.md"
       - "scripts/validate_m0_supervisor_journal_contract.py"
+      - "docs/security/m0-independent-security-review-checklist.md"
+      - "docs/security/m0-independent-security-review-record.schema.json"
+      - "docs/security/m0-independent-security-review-record.template.json"
+      - "scripts/validate_m0_independent_review_package.py"
   workflow_dispatch:
 
 permissions:
@@ -59,6 +63,9 @@ jobs:
 
       - name: Validate supervisor, journal and watchdog contract alignment
         run: python scripts/validate_m0_supervisor_journal_contract.py
+
+      - name: Validate independent security review package
+        run: python scripts/validate_m0_independent_review_package.py
 
       - name: Verify script is not configured to launch workloads
         shell: bash

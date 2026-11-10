@@ -112,6 +112,16 @@ Reject the proof design or stop testing if any of the following occurs:
 - Any missing, inconsistent, or unverifiable evidence for a required fixture.
 - Any unreviewed change to the host baseline, runtime, fixture image, supervisor API, or security profile.
 
+## 7. Independent review checklist and decision record
+
+Use `docs/security/m0-independent-security-review-checklist.md` as the controlled reviewer workbook and the schema/template in this directory for the evidence-bound decision record.
+
+The record starts as `not-reviewed`. Every finding has a stable control ID, evidence class, verification method, severity, remediation owner and immutable evidence references. Host/runtime controls cannot pass based on documentation, CI or schema tests alone.
+
+The record may recommend an architecture candidate and separately record recommendations for implementation, Phase A and Phase B. It hard-codes actual privileged implementation, Phase A, Phase B, student and production authorization flags to `false`; any real authorization requires its own separately reviewed process/artifact.
+
+Compare rootful supervisor and rootless containerd with caller-configured user namespaces against the same control register. Do not conflate the `runsc --rootless` CLI mode with caller-configured user namespaces.
+
 ## 7. Reviewer deliverables
 
 The independent reviewer should produce:
@@ -154,4 +164,4 @@ Phase B approval is a separate reviewer decision. It requires approval of the ca
 
 ## 9. Current decision
 
-**Independent review: pending.** No reviewer signoff is recorded. No cloud host has been selected or provisioned. No sandbox workload has been launched. No executor activation is authorized.
+**Independent review: pending.** The controlled checklist and machine-readable decision template are available, but no reviewer signoff is recorded. No cloud host has been selected or provisioned. No sandbox workload has been launched. No executor activation is authorized. Passing CI is not a security review or approval.
