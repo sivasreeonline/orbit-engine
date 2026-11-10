@@ -71,6 +71,7 @@ FORBIDDEN_ADR_SELECTION_PHRASES = [
     "recommended for disposable M0 proof only",
     "For the initial M0 proof, use a dedicated",
     "Recommended candidate, not yet approved",
+    "An architecture recommendation does not authorize privileged implementation",
 ]
 FORBIDDEN_AUTHORIZATION_PHRASES = [
     "Implementation authorized: true",
