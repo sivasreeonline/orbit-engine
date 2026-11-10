@@ -300,7 +300,9 @@
         "independence_attested",
         "reviewed_at",
         "expires_at",
-        "signature_reference"
+        "signature_reference",
+        "candidate_specific_test_ids",
+        "rootless_userns_compatibility_gate"
       ],
       "properties": {
         "record_id": {
@@ -425,6 +427,26 @@
         "signature_reference": {
           "type": "string",
           "minLength": 1
+        },
+        "candidate_specific_test_ids": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "RLS-001",
+              "RLS-002",
+              "RLS-003",
+              "RLS-004"
+            ]
+          }
+        },
+        "rootless_userns_compatibility_gate": {
+          "enum": [
+            "passed",
+            "not-applicable"
+          ]
         }
       }
     },
