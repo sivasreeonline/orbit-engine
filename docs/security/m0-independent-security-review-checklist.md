@@ -136,3 +136,8 @@ Add the candidate comparison in `docs/adr/ADR-0019-decision-dossier.md` to the i
 ## Upstream rootless and runtime integration evidence
 
 Include `docs/adr/ADR-0019-upstream-compatibility-evidence.md` in the reviewer packet. In particular, assess RootlessKit helper binaries/subordinate IDs, namespace/socket isolation, network backend, systemd CPU delegation, exact containerd-shim + caller-userns compatibility, and source revision pinning. These are independent review items, not documentation-based passes.
+
+
+## Rootless-only qualification requirements
+
+For Candidate B, assess RLS-001 exact containerd-shim/caller-userns/systrap integration; RLS-002 subordinate UID/GID mappings and helper provenance; RLS-003 systemd CPU/memory/PID delegation; and RLS-004 RootlessKit network namespace and host abstract-socket isolation. Each requires independently verified host evidence. The shared 33-test catalogue does not replace these additional Candidate B tests. Candidate A must mark the rootless-only gate not-applicable and include no RLS test results.
