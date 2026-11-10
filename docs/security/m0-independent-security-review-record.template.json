@@ -256,6 +256,16 @@
       "evidence_refs": []
     },
     {
+      "control_id": "FENCE-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
       "control_id": "JOURNAL-001",
       "evidence_class": "host",
       "result": "not-reviewed",
