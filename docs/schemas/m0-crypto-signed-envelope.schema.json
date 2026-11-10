@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-crypto-signed-envelope.schema.json",
+  "title": "M0 Cryptographic Signed Envelope (Proposal)",
+  "description": "Contract schema only. It does not verify signatures, select a production algorithm, authenticate provider fencing, or authorize execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "envelope_id",
+    "message_type",
+    "profile_version",
+    "canonicalization",
+    "domain",
+    "issuer_id",
+    "key_id",
+    "key_version",
+    "algorithm",
+    "audience",
+    "issued_at",
+    "not_before",
+    "expires_at",
+    "payload",
+    "payload_sha256",
+    "signature_encoding",
+    "signature"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "envelope_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "message_type": {
+      "enum": [
+        "host-epoch-response",
+        "provider-fence-attestation",
+        "phase-a-authorization",
+        "trust-bundle",
+        "key-revocation"
+      ]
+    },
+    "profile_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonicalization": {
+      "enum": [
+        "jcs-rfc8785-candidate",
+        "deterministic-cbor-candidate"
+      ]
+    },
+    "domain": {
+      "type": "string",
+      "minLength": 1
+    },
+    "issuer_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "key_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "algorithm": {
+      "enum": [
+        "Ed25519-candidate",
+        "ECDSA-P256-SHA256-candidate"
+      ]
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "not_before": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "payload_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "signature_encoding": {
+      "const": "base64"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+      "minLength": 8
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "message_type": {
+            "const": "host-epoch-response"
+          }
+        },
+        "required": [
+          "message_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "domain": {
+            "const": "ORBIT-M0-HOST-EPOCH-RESPONSE/v1"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "message_type": {
+            "const": "provider-fence-attestation"
+          }
+        },
+        "required": [
+          "message_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "domain": {
+            "const": "ORBIT-M0-PROVIDER-FENCE-ATTESTATION/v1"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "message_type": {
+            "const": "phase-a-authorization"
+          }
+        },
+        "required": [
+          "message_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "domain": {
+            "const": "ORBIT-M0-PHASE-A-AUTHORIZATION/v1"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "message_type": {
+            "const": "trust-bundle"
+          }
+        },
+        "required": [
+          "message_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "domain": {
+            "const": "ORBIT-M0-TRUST-BUNDLE/v1"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "message_type": {
+            "const": "key-revocation"
+          }
+        },
+        "required": [
+          "message_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "domain": {
+            "const": "ORBIT-M0-KEY-REVOCATION/v1"
+          }
+        }
+      }
+    }
+  ]
+}
