@@ -343,8 +343,11 @@
           "const": "sivasreeonline/orbit-engine"
         },
         "reviewed_commit_sha": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{40}$"
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{40})?$"
         },
         "qualification_protocol_digest": {
           "type": [
