@@ -66,7 +66,7 @@ The schema is a starting outline; it requires a separate reviewed migration and 
 | Record | Required fields / constraints |
 |---|---|
 | `host_meta` | Schema version, host identity, durable supervisor generation, approved profile revision, last clean shutdown marker |
-| `attempts` | Unique (proof_run_id, fixture_id, attempt_id); immutable request digest; original intake timestamp and absolute deadline; lifecycle state and state_version; deterministic sandbox identity; current supervisor_generation and attempt_generation |
+| `attempts` | Unique (proof_run_id, fixture_id, attempt_id); immutable request digest; original intake timestamp and absolute deadline; lifecycle state and state_version; deterministic sandbox identity; current `supervisor_generation` and `attempt_generation` |
 | `idempotency_keys` | Unique key; canonical digest; operation_id; attempt identity; bounded response descriptor; committed state |
 | `operations` | Unique operation_id; attempt_id; operation type; supervisor_generation; attempt_generation; operation_sequence; expected state/version; desired state; durable intent timestamp; observed outcome; completion disposition |
 | `triggers` | Unique trigger_id; attempt_id; supervisor_generation; attempt_generation; trigger type/time; trigger_sequence; primary/secondary classification; immutable winner |
