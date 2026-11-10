@@ -210,11 +210,15 @@ else
 fi
 
 if command_exists containerd-shim-runsc-v1; then
-  shim_command="$(command -v containerd-shim-runsc-v1)"
-  if shim_path="$(readlink -f "$shim_command" 2>/dev/null)" && [[ -n "$shim_path" ]]; then
-    inspect_runtime_binary "$shim_path" 'gVisor containerd shim'
+  if command_exists readlink; then
+    shim_command="$(command -v containerd-shim-runsc-v1)"
+    if shim_path="$(readlink -f "$shim_command" 2>/dev/null)" && [[ -n "$shim_path" ]]; then
+      inspect_runtime_binary "$shim_path" 'gVisor containerd shim'
+    else
+      fail 'Could not resolve the installed containerd-shim-runsc-v1 path'
+    fi
   else
-    fail 'Could not resolve the installed containerd-shim-runsc-v1 path'
+    fail 'readlink is required to resolve the containerd shim binary path'
   fi
 else
   fail 'containerd-shim-runsc-v1 is not installed or not on PATH'
