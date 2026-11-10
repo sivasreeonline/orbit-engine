@@ -28,6 +28,7 @@ on:
       - "scripts/validate_m0_witness_evidence_contract.py"
       - "docs/specifications/m0-authorization-transaction-enforcement-proposal.md"
       - "scripts/validate_m0_authorization_transaction_contract.py"
+      - "docs/schemas/m0-authorization-transaction-fixture-catalog.json"
       - "docs/schemas/m0-crypto-signed-envelope.schema.json"
       - "docs/schemas/m0-crypto-trust-bundle.schema.json"
       - "docs/schemas/m0-crypto-key-metadata.schema.json"
