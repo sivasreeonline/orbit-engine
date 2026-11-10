@@ -65,9 +65,9 @@ Neither candidate is selected. The same control set and evidence standard apply 
 - Allowing guest-controlled image pulls, registries, network destinations, host paths, devices, or resource ceilings.
 - Treating gVisor as a substitute for host isolation, patching, or a separate security review.
 
-## Alternative: rootless containerd experiment
+## Candidate B — rootless containerd experiment
 
-Before the proposed rootful supervisor is accepted, the M0 design review should consider a disposable-host experiment using rootless containerd plus the gVisor caller-configured user-namespace path.
+Candidate B is eligible only through a disposable-host experiment using rootless containerd plus the gVisor caller-configured user-namespace path. It is evaluated against the same security controls and host qualification evidence as Candidate A.
 
 It is eligible only if the exact pinned versions demonstrate all of the following:
 - containerd and runsc lifecycle works through the actual containerd shim, including create/start/stop/delete.
@@ -126,8 +126,8 @@ An architecture decision does not authorize privileged implementation. Implement
 ## Consequences
 
 - The runner remains unprivileged and `UnconfiguredExecutor` remains the only executor implementation.
-- The rootful supervisor is only a proposed M0 proof candidate; its privileged attack surface is an explicit review item.
-- Rootless containerd is not discarded categorically; it must prove the exact required controls before it can replace the proposed candidate.
+- Neither Candidate A nor Candidate B is selected. Candidate A's privileged attack surface and Candidate B's user-namespace, helper, cgroup-delegation and network boundaries remain explicit independent review items.
+- Candidate B is not discarded categorically; it must prove the exact required controls to be eligible for selection.
 - No cloud provider, region, VM size, or spend is selected or authorized.
 - No implementation, workload launch, or student execution is authorized until independent review and evidence gates pass.
 
