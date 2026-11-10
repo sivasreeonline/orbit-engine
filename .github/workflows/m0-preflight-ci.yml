@@ -19,6 +19,8 @@ on:
       - "scripts/validate_m0_cleanup_gate.py"
       - "docs/schemas/m0-cleanup-calibration-authorization.schema.json"
       - "scripts/validate_m0_cleanup_calibration_authorization.py"
+      - "docs/specifications/m0-authorization-lifecycle-and-recovery-contract.md"
+      - "scripts/validate_m0_authorization_lifecycle_contract.py"
       - "docs/specifications/m0-supervisor-journal-implementation-contract.md"
       - "docs/specifications/m0-journal-backend-evaluation.md"
       - "scripts/validate_m0_supervisor_journal_contract.py"
@@ -74,6 +76,9 @@ jobs:
 
       - name: Validate cleanup calibration authorization contract
         run: python scripts/validate_m0_cleanup_calibration_authorization.py
+
+      - name: Validate authorization lifecycle contract linkage
+        run: python scripts/validate_m0_authorization_lifecycle_contract.py
 
       - name: Validate supervisor, journal and watchdog contract alignment
         run: python scripts/validate_m0_supervisor_journal_contract.py
