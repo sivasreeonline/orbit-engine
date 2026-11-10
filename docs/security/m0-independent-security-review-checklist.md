@@ -98,6 +98,10 @@ A finding is not closed merely because a change was committed or CI passed. Clos
 
 Each evidence reference identifies the immutable source/object and exact version, SHA-256, byte count, evidence root, acquisition timestamp/tool, redaction status, independent verification status and reviewer note. Do not include private object URLs, credentials, source code, hidden tests or raw sensitive logs.
 
+Evidence verification is an actual byte-level and provenance check, not acceptance of metadata fields: independently retrieve the exact immutable object version; recompute full-object SHA-256 and byte count; confirm the evidence root, retention/version identity and test/host/profile provenance; verify detached signatures/attestations against pinned signer trust material; and retain sanitized verification output. Never treat an ETag as SHA-256 without provider documentation for the exact upload mode. Missing or inaccessible objects, digest/size mismatch, invalid signatures or ambiguous provenance block the evidence.
+
+Evidence verification is a separate third role. The verifier must be distinct from both the host owner/acquirer and the independent security reviewer. A person who owns/acquires the host or signs the security review cannot verify that same evidence. The machine validator enforces verifier-ID separation for passed host qualification tests; it does not retrieve objects or perform cryptographic verification.
+
 Evidence types: `design-document`, `ci-run`, `schema-test`, `host-runtime`, `host-configuration`, `fault-injection`, `supply-chain`, and `operator-record`.
 
 A host/runtime control cannot pass using documentation, CI or schema tests alone. Host-class controls require independently verified host/runtime/configuration/fault-injection evidence.
