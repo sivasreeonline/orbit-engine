@@ -90,6 +90,13 @@ def custom_errors(record):
             if ref.get("verification_status") == "verified":
                 if not ref.get("independent_verifier_id") or not ref.get("verifier_note", "").strip():
                     errors.append(f"{control_id}: verified evidence requires independent verifier identity and note")
+            participants = record.get("participants", {})
+            if ref.get("acquired_by_id") in {
+                participants.get("reviewer_id"),
+                participants.get("host_owner_id"),
+                ref.get("independent_verifier_id")
+            }:
+                errors.append(f"{control_id}: evidence acquirer must be distinct from verifier, reviewer and host owner")
 
         if finding.get("result") == "pass":
             if not refs or not finding.get("verification_method", "").strip():
@@ -233,8 +240,25 @@ def main():
     case = deepcopy(template); case["control_findings"][0]["result"] = "pass"; cases.append(("pass without evidence", case))
     case = deepcopy(template); case["participants"] = {"reviewer_id":"same","host_owner_id":"same","reviewer_independence_attested":True,"independence_basis":"synthetic","conflict_disclosure":"none"}; cases.append(("same reviewer and host owner", case))
     case = deepcopy(template); case["control_findings"][2]["evidence_class"] = "design"; cases.append(("host control mislabeled as design", case))
-    case = deepcopy(template); case["control_findings"][2]["result"] = "pass"; case["control_findings"][2]["verification_method"] = "synthetic"; case["control_findings"][2]["reviewer_finding"] = "synthetic"; case["control_findings"][2]["severity"] = "none"; case["control_findings"][2]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"reviewer","verifier_note":"synthetic"}]; cases.append(("host pass supported only by design document", case))
-    case = deepcopy(template); case["control_findings"][0]["result"] = "pass"; case["control_findings"][0]["verification_method"] = "synthetic"; case["control_findings"][0]["reviewer_finding"] = "synthetic"; case["control_findings"][0]["severity"] = "none"; case["control_findings"][0]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":None,"verifier_note":""}]; cases.append(("verified evidence without independent verifier", case))
+    case = deepcopy(template); case["control_findings"][2]["result"] = "pass"; case["control_findings"][2]["verification_method"] = "synthetic"; case["control_findings"][2]["reviewer_finding"] = "synthetic"; case["control_findings"][2]["severity"] = "none"; case["control_findings"][2]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"reviewer","verifier_note":"synthetic"}]; cases.append(("host pass supported only by design document", case))
+    case = deepcopy(template); case["control_findings"][0]["result"] = "pass"; case["control_findings"][0]["verification_method"] = "synthetic"; case["control_findings"][0]["reviewer_finding"] = "synthetic"; case["control_findings"][0]["severity"] = "none"; case["control_findings"][0]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":None,"verifier_note":""}]; cases.append(("verified evidence without independent verifier", case))
+    evidence_ref = {
+        "reference_id":"synthetic-evidence", "object_version":"v1", "sha256":"a"*64,
+        "byte_count":1, "evidence_root_id":"synthetic-root",
+        "acquired_by_id":"host-owner", "acquired_at":"2026-11-10T00:00:00Z",
+        "acquisition_tool":"validator", "evidence_type":"host-configuration",
+        "redaction_status":"non-sensitive", "verification_status":"verified",
+        "independent_verifier_id":"independent-verifier", "verifier_note":"synthetic"
+    }
+    for actor, label in [("host-owner", "host owner"), ("reviewer", "reviewer"), ("independent-verifier", "evidence verifier")]:
+        case = deepcopy(template)
+        case["participants"] = {"reviewer_id":"reviewer", "host_owner_id":"host-owner",
+            "reviewer_independence_attested":True, "independence_basis":"synthetic", "conflict_disclosure":"none"}
+        finding = case["control_findings"][2]
+        finding.update(result="pass", verification_method="synthetic", reviewer_finding="synthetic",
+            severity="none", evidence_refs=[dict(evidence_ref, acquired_by_id=actor)])
+        cases.append((f"evidence acquired by {label}", case))
+
     for key, label in [
         ("privileged_implementation_authorized", "privileged implementation"),
         ("phase_a_authorized", "Phase A"), ("phase_b_authorized", "Phase B"),
@@ -277,7 +301,7 @@ def main():
             item["evidence_refs"] = [{
                 "reference_id":"synthetic-" + item["control_id"], "object_version":"v1",
                 "sha256":"a"*64, "byte_count":1, "evidence_root_id":"synthetic",
-                "acquired_at":"2026-11-10T00:00:00Z", "acquisition_tool":"validator",
+                "acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z", "acquisition_tool":"validator",
                 "evidence_type":"design-document", "redaction_status":"non-sensitive",
                 "verification_status":"verified", "independent_verifier_id":"synthetic-verifier",
                 "verifier_note":"synthetic only"
