@@ -30,7 +30,8 @@
         "supervisor_digest": null,
         "watchdog_digest": null,
         "test_harness_digest": null,
-        "rootless_profile": null
+        "rootless_profile": null,
+        "rootless_profile_digest": null
       },
       "design_findings": [
         {
@@ -384,7 +385,8 @@
         "supervisor_digest": null,
         "watchdog_digest": null,
         "test_harness_digest": null,
-        "rootless_profile": null
+        "rootless_profile": null,
+        "rootless_profile_digest": null
       },
       "design_findings": [
         {
