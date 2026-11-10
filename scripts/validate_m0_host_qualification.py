@@ -277,7 +277,7 @@ def errors_for(record, schema_validator):
                 errors.append(f"{reference_field} digest must match its immutable evidence record")
             if evidence.get("independent_verifier_id") in {review_context.get("host_owner_id"), review_context.get("reviewer_id")}:
                 errors.append(f"{reference_field} must be verified by a principal independent of host owner and security reviewer")
-            if evidence.get("acquired_by_id") in {review.get("host_owner_id"), review.get("reviewer_id"), evidence.get("independent_verifier_id")}:
+            if evidence.get("acquired_by_id") in {review_context.get("host_owner_id"), review_context.get("reviewer_id"), evidence.get("independent_verifier_id")}:
                 errors.append(f"{reference_field} evidence acquirer must be distinct from host owner, reviewer and verifier")
         scope = record.get("scope", {})
         if not scope.get("host_provisioning_authorization_ref") or scope.get("target_architecture") == "not-selected":
