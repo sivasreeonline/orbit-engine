@@ -47,6 +47,9 @@ Health does not imply readiness.
 
 The host supervisor, durable lifecycle journal, watchdog, evidence publisher/verifier, and containerd integration are still design-only. They are not implemented by this runner skeleton. Do not implement direct containerd access or sandbox lifecycle inside the unprivileged runner.
 
+Implementation readiness contract: `docs/specifications/m0-supervisor-journal-implementation-contract.md`. It defines the three watchdog roles, distinct generation/fencing values, journal record invariants, transaction boundaries, recovery sequence, and Linux clock requirements. It is a design contract only; the runner remains fail-closed.
+
+
 The approved direction is a separate, narrowly scoped host supervisor as the only rootful containerd caller. The runner must communicate through a strict authenticated private transport after the supervisor boundary, journal design, watchdog recovery, and security review are approved. The runner remains unprivileged; `UnconfiguredExecutor` remains fail-closed until a separately reviewed integration is authorized.
 
 Before any M0 workload is launched:

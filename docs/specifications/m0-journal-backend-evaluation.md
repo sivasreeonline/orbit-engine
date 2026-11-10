@@ -2,6 +2,9 @@
 
 - Status: **PROPOSED — NOT APPROVED; no implementation authorized.**
 - Scope: disposable M0 proof host's privileged supervisor journal only.
+
+Before implementation, use `docs/specifications/m0-supervisor-journal-implementation-contract.md` for the generation/fencing model, logical journal records, transaction ordering, watchdog failure domains, and recovery matrix. This does not approve SQLite or any host-specific backend.
+
 - Related: `m0-runtime-proof-harness-design.md`, `m0-proof-resource-profile-v1.md`, `m0-host-preflight-and-proof-runbook.md`, ADR-0019.
 - Decision owner: pending independent architecture and security review.
 
