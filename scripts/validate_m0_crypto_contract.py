@@ -245,6 +245,13 @@ def main() -> None:
           "valid envelope chronology rejected")
     check(not chronology_valid("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z",
                                "2025-12-31T23:59:59Z"), "expired envelope chronology accepted")
+    check(chronology_valid(phase_payload["not_before"], phase_payload["not_before"],
+                           phase_payload["expires_at"]),
+          "cleanup-calibration authorization validity window is invalid")
+    check(chronology_valid(bundle["issued_at"], bundle["issued_at"], bundle["expires_at"]),
+          "trust bundle expiry must follow issuance")
+    check(chronology_valid(key["created_at"], key["valid_from"], key["valid_until"]),
+          "key validity window is invalid")
     try:
         json.loads('{"envelope_id":"first","envelope_id":"second"}', object_pairs_hook=reject_duplicate_keys)
         raise AssertionError("duplicate JSON object keys unexpectedly parsed")
