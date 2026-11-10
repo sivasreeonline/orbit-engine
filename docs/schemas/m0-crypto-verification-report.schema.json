@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-crypto-verification-report.schema.json",
+  "title": "M0 Cryptographic Verification Report (Proposal)",
+  "description": "Auditable verification outcome. A report is not itself proof that provider fencing occurred.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_id",
+    "artifact_type",
+    "artifact_ref",
+    "artifact_version",
+    "artifact_sha256",
+    "decision",
+    "reason_codes",
+    "verifier_principal_id",
+    "verifier_build_digest",
+    "policy_version",
+    "trust_bundle_generation",
+    "trust_bundle_sha256",
+    "key_id",
+    "key_version",
+    "algorithm",
+    "profile_version",
+    "canonicalization",
+    "signature_check",
+    "canonical_bytes_check",
+    "revocation_check",
+    "anti_rollback_check",
+    "context_binding_check",
+    "evidence_binding_check",
+    "trusted_time",
+    "verified_at",
+    "report_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "report_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "artifact_type": {
+      "enum": [
+        "host-epoch-response",
+        "provider-fence-attestation",
+        "phase-a-authorization",
+        "trust-bundle",
+        "key-revocation"
+      ]
+    },
+    "artifact_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifact_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifact_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "decision": {
+      "enum": [
+        "ACCEPT_FOR_FURTHER_GATES",
+        "REJECT",
+        "QUARANTINE",
+        "AUDIT_ONLY"
+      ]
+    },
+    "reason_codes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "verifier_principal_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verifier_build_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trust_bundle_generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "trust_bundle_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "key_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "algorithm": {
+      "enum": [
+        "Ed25519-candidate",
+        "ECDSA-P256-SHA256-candidate"
+      ]
+    },
+    "profile_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canonicalization": {
+      "enum": [
+        "jcs-rfc8785-candidate",
+        "deterministic-cbor-candidate"
+      ]
+    },
+    "signature_check": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NOT_RUN"
+      ]
+    },
+    "canonical_bytes_check": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NOT_RUN"
+      ]
+    },
+    "revocation_check": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "UNKNOWN"
+      ]
+    },
+    "anti_rollback_check": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "UNKNOWN"
+      ]
+    },
+    "context_binding_check": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NOT_RUN"
+      ]
+    },
+    "evidence_binding_check": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NOT_RUN"
+      ]
+    },
+    "trusted_time": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "observed_at",
+        "uncertainty_ms",
+        "evidence_ref"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "uncertainty_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "verified_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "report_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "ACCEPT_FOR_FURTHER_GATES"
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "properties": {
+          "signature_check": {
+            "const": "PASS"
+          },
+          "canonical_bytes_check": {
+            "const": "PASS"
+          },
+          "revocation_check": {
+            "const": "PASS"
+          },
+          "anti_rollback_check": {
+            "const": "PASS"
+          },
+          "context_binding_check": {
+            "const": "PASS"
+          },
+          "evidence_binding_check": {
+            "const": "PASS"
+          }
+        }
+      }
+    }
+  ]
+}
