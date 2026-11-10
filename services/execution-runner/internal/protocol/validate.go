@@ -9,6 +9,9 @@ import (
 
 var ErrInvalidRequest = errors.New("invalid execution request")
 
+// Validate checks protocol shape and basic field bounds only. It does not
+// authorize the request or establish that runtime/resource values match a
+// server-owned profile; callers must perform those checks at the trusted boundary.
 func (request ExecutionRequest) Validate() error {
 	if request.ProtocolVersion != "v1" {
 		return fieldError("protocolVersion", "must be v1")
