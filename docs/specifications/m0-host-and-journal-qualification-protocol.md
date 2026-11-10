@@ -245,7 +245,7 @@ For Candidate B, `host_identity.rootless_profile` is a required structured objec
 - AppArmor profile digest, RootlessKit state-directory policy digest and daemon socket policy digest.
 - Network backend and network-namespace profile digest, including abstract-socket isolation policy.
 - Systemd delegation profile digest and the effective delegated controller set. It must include `cpu`, `memory` and `pids`; a configured unit or a generic cgroup-v2 mount is insufficient.
-- Rootless profile SHA-256 covering the normalized, redacted profile record. The checksum is defined as SHA-256 over UTF-8 bytes of compact JSON with recursively sorted object keys, separators `",":"` without whitespace, ASCII escaping enabled, non-finite numbers forbidden, and array order preserved. The `profile_sha256` property is excluded from its own hash input. The profile schema restricts values to strings, bounded integers and arrays, so this serialization is deterministic.
+- Rootless profile SHA-256 covering the normalized, redacted profile record. The checksum is defined as SHA-256 over UTF-8 bytes of compact JSON with recursively sorted object keys, separators `(",", ":")` without whitespace, ASCII escaping enabled, non-finite numbers forbidden, and array order preserved. The `profile_sha256` property is excluded from its own hash input. The profile schema restricts values to strings, bounded integers and arrays, so this serialization is deterministic.
 
 The ADR candidate configuration and signed qualification report must carry the same `rootless_profile` object byte-for-byte after canonical serialization.
 
