@@ -137,7 +137,7 @@ Use `docs/specifications/m0-host-and-journal-qualification-protocol.md` and its 
 
 ## ADR-0019 candidate decision
 
-Add the candidate comparison in `docs/adr/ADR-0019-decision-dossier.md` to the independent review scope. Review both deployment models against the same 33 control IDs and map their evidence to the 33 host qualification tests. Use `docs/schemas/m0-adr-0019-decision-record.schema.json`; a selected candidate must have its own independently reviewed host qualification report.
+Add the candidate comparison in `docs/adr/ADR-0019-decision-dossier.md` to the independent review scope. Review both deployment models against the same 33-control checklist (33 control IDs) and map their evidence to the 33 host qualification tests. Use `docs/schemas/m0-adr-0019-decision-record.schema.json`; a selected candidate must have its own independently reviewed host qualification report.
 
 
 ## Upstream rootless and runtime integration evidence
