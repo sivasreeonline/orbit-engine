@@ -239,7 +239,7 @@ def main():
     for content in [adr, security, qualification, checklist]:
         if "ADR-0019-decision-dossier.md" not in content:
             raise AssertionError("ADR/security/qualification/checklist cross-reference missing")
-    if "Proposed" not in adr or "pending independent review" not in adr.lower():
+    if "Proposed" not in adr or "pending independent security review" not in adr.lower():
         raise AssertionError("ADR-0019 must remain proposed pending actual review")
     print("PASS  blank ADR decision record is pending, unassigned and non-authorizing")
     print("PASS  both candidate definitions use the exact allowed integration modes")
