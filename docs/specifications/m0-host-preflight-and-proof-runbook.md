@@ -81,6 +81,12 @@ A test passes only with captured host-side evidence and an assertion that checks
 
 Use `docs/specifications/m0-proof-resource-profile-v1.md` as the proposed versioned resource profile and `docs/schemas/m0-proof-evidence.schema.json` as the versioned manifest contract for the proof report. The evidence manifest must record the exact resource-profile ID, revision, and applied limits. The manifest records structured outcomes and references to sanitized evidence files; it must not embed raw logs, student code, hidden test data, credentials, or private artifact URLs. A schema-valid manifest is a completeness aid, not proof that the underlying tests actually ran or passed.
 
+Before a proof can be classified as passed, a separate host-side evidence verifier must resolve every manifest reference against the immutable evidence store and independently verify the exact published object version, SHA-256, byte count, approved evidence root, and redaction disposition. JSON Schema validation checks manifest structure only; it does not establish object existence, integrity, durability, or provenance.
+
+Evidence publication must follow the crash-safe ordering in Section 7.1 of `m0-runtime-proof-harness-design.md`: sanitize before publication; durably stage and publish immutable content-addressed objects; read back and verify bytes; durably journal verified references; persist the final manifest; then commit the terminal result. A terminal acknowledgement must not precede durable evidence disposition and independently verified cleanup disposition.
+
+Exercise crash injection between each publication/journal/manifest/terminal step. Verify that orphan staging objects are never treated as evidence, missing or mismatched objects force an incomplete/non-passed result, and a persisted manifest without a terminal journal transition is reconciled idempotently. Evidence-store failure must never block the independent termination and cleanup controller.
+
 Store a proof report outside the host and include:
 
 - Host/provider/region and image identifier (once selected).
