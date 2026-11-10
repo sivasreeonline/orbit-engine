@@ -106,6 +106,7 @@ else
 fi
 
 if command_exists runsc; then
+  runsc_command="$(command -v runsc)"
   runsc_output="$(runsc --version 2>&1)"
   IFS= read -r runsc_version <<<"$runsc_output"
   info "$runsc_version"
@@ -113,6 +114,32 @@ if command_exists runsc; then
     pass 'gVisor runsc binary responds to --version'
   else
     fail 'gVisor runsc returned an empty version'
+  fi
+
+  # Since the 2026-07 multi-file release transition, runsc requires its
+  # adjacent gvisor-bin/ sidecar binaries. Do not rely on runsc install's
+  # legacy best-effort auto-download behavior.
+  if command_exists readlink; then
+    if runsc_path="$(readlink -f "$runsc_command" 2>/dev/null)" && [[ -n "$runsc_path" ]]; then
+      sidecar_dir="$(dirname "$runsc_path")/gvisor-bin"
+      if [[ -d "$sidecar_dir" ]]; then
+        mapfile -t sidecar_binaries < <(find "$sidecar_dir" -mindepth 1 -maxdepth 1 -type f -perm /111 -print)
+        if (( ${#sidecar_binaries[@]} > 0 )); then
+          pass "gVisor sidecar directory contains ${#sidecar_binaries[@]} executable file(s)"
+          for sidecar in "${sidecar_binaries[@]}"; do
+            info "gVisor sidecar $(basename "$sidecar") mode=$(stat -c '%a' "$sidecar")"
+          done
+        else
+          fail 'gVisor gvisor-bin directory contains no executable sidecar files'
+        fi
+      else
+        fail "gVisor sidecar directory is missing: $sidecar_dir"
+      fi
+    else
+      fail 'Could not resolve the installed runsc binary path'
+    fi
+  else
+    fail 'readlink is required to resolve the installed runsc binary path'
   fi
 else
   fail 'gVisor runsc binary is not installed or not on PATH'
