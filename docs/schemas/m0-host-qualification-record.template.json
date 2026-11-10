@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1.0",
+  "schema_version": "1.2.0",
   "record_id": null,
   "record_status": "not-started",
   "qualification_status": "not-qualified",
@@ -40,7 +40,15 @@
     "watchdog_digest": null,
     "test_harness_digest": null,
     "rootless_profile": null,
-    "rootless_profile_digest": null
+    "rootless_profile_digest": null,
+    "host_incarnation_authority_id": null,
+    "host_incarnation_authority_key_version": null,
+    "host_incarnation_epoch_evidence_ref": null,
+    "host_incarnation_issuance_nonce_digest": null,
+    "predecessor_incarnation_set_digest": null,
+    "provider_fence_method": null,
+    "provider_fence_verified_at": null,
+    "provider_fence_evidence_digest": null
   },
   "journal_profile": {
     "backend_candidate": "not-selected",
