@@ -7,6 +7,8 @@ on:
       - "services/execution-runner/scripts/m0-host-preflight.sh"
       - "docs/specifications/m0-host-preflight-and-proof-runbook.md"
       - ".github/workflows/m0-preflight-ci.yml"
+      - "docs/schemas/m0-proof-evidence.schema.json"
+      - "scripts/validate_m0_evidence_schema.py"
   workflow_dispatch:
 
 permissions:
@@ -26,6 +28,17 @@ jobs:
 
       - name: Validate Bash syntax
         run: bash -n services/execution-runner/scripts/m0-host-preflight.sh
+
+      - name: Set up Python for evidence schema checks
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned JSON Schema validator
+        run: python -m pip install --disable-pip-version-check --retries 5 --timeout 30 "jsonschema==4.25.1"
+
+      - name: Validate evidence schema and fail-closed invariants
+        run: python scripts/validate_m0_evidence_schema.py
 
       - name: Verify script is not configured to launch workloads
         shell: bash
