@@ -435,8 +435,8 @@
                 "duration_ms"
               ]
             },
-            "minItems": 33,
-            "maxItems": 33,
+            "minItems": 35,
+            "maxItems": 35,
             "allOf": [
               {
                 "contains": {
@@ -908,7 +908,37 @@
                   "type": "object",
                   "properties": {
                     "test_id": {
-                      "const": "m0-life-restart-001"
+                      "const": "m0-life-restart-runner-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-restart-supervisor-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-restart-containerd-001"
                     }
                   },
                   "required": [
