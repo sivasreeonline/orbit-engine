@@ -345,6 +345,9 @@ def validate_record(record, validator):
     return errors
 
 def main():
+    synthetic_now = datetime.now(timezone.utc)
+    synthetic_reviewed_at = (synthetic_now - timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    synthetic_expires_at = (synthetic_now + timedelta(days=30)).isoformat(timespec="seconds").replace("+00:00", "Z")
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     template = json.loads(TEMPLATE_PATH.read_text(encoding="utf-8"))
     dossier = DOSSIER_PATH.read_text(encoding="utf-8")
@@ -362,10 +365,10 @@ def main():
     source_manifest_errors = [error.message for error in source_manifest_validator.iter_errors(source_manifest)]
     if source_manifest_errors:
         raise AssertionError("upstream source manifest schema invalid: " + "; ".join(source_manifest_errors))
-    expected_source_ids = {"gvisor-rootless", "gvisor-containerd", "gvisor-platforms", "gvisor-networking", "containerd-rootless", "rootlesskit-v3.3.0", "runc-cgroup"}
+    expected_source_ids = {"gvisor-rootless", "gvisor-containerd", "gvisor-platforms", "gvisor-networking", "gvisor-install", "containerd-rootless", "rootlesskit-v3.3.0", "runc-cgroup"}
     source_ids = [entry["source_id"] for entry in source_manifest["entries"]]
     if len(source_ids) != len(set(source_ids)) or set(source_ids) != expected_source_ids:
-        raise AssertionError("upstream source manifest must contain exactly seven unique pinned source IDs")
+        raise AssertionError("upstream source manifest must contain exactly eight unique pinned source IDs")
     for entry in source_manifest["entries"]:
         expected_url = f"https://github.com/{entry['repository']}/blob/{entry['commit_sha']}/{entry['path']}"
         if entry["immutable_file_url"] != expected_url or entry["immutable_file_url"] not in upstream_evidence:
@@ -456,9 +459,6 @@ def main():
 
     # Synthetic positive record: the selected candidate has its own independent
     # qualification record; the alternative is at least design-assessed.
-    synthetic_now = datetime.now(timezone.utc)
-    synthetic_reviewed_at = (synthetic_now - timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
-    synthetic_expires_at = (synthetic_now + timedelta(days=30)).isoformat(timespec="seconds").replace("+00:00", "Z")
     complete=deepcopy(template)
     complete["record_status"]="completed"
     complete["upstream_source_manifest_sha256"] = manifest_digest
