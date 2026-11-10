@@ -63,6 +63,7 @@ INTEGRATED_IDS = {"JRN-010", "JRN-011"}
 EVIDENCE_IDS = {"EVID-001"}
 
 def errors_for(record, schema_validator):
+    review = record.get("review", {})
     errors = [error.message for error in schema_validator.iter_errors(record)]
     results = record.get("test_results", [])
     ids = [item.get("test_id") for item in results]
