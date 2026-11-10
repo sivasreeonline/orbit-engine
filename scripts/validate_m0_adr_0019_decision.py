@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "docs/schemas/m0-adr-0019-decision-record.schema.json"
 TEMPLATE_PATH = ROOT / "docs/schemas/m0-adr-0019-decision-record.template.json"
 DOSSIER_PATH = ROOT / "docs/adr/ADR-0019-decision-dossier.md"
+UPSTREAM_EVIDENCE_PATH = ROOT / "docs/adr/ADR-0019-upstream-compatibility-evidence.md"
 ADR_PATH = ROOT / "docs/adr/ADR-0019-m0-host-launch-boundary.md"
 SECURITY_PATH = ROOT / "docs/security/m0-sandbox-security-review-packet.md"
 QUALIFICATION_PATH = ROOT / "docs/specifications/m0-host-and-journal-qualification-protocol.md"
@@ -222,6 +223,7 @@ def main():
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     template = json.loads(TEMPLATE_PATH.read_text(encoding="utf-8"))
     dossier = DOSSIER_PATH.read_text(encoding="utf-8")
+    upstream_evidence = UPSTREAM_EVIDENCE_PATH.read_text(encoding="utf-8")
     adr = ADR_PATH.read_text(encoding="utf-8")
     security = SECURITY_PATH.read_text(encoding="utf-8")
     qualification = QUALIFICATION_PATH.read_text(encoding="utf-8")
@@ -253,6 +255,19 @@ def main():
     for content in [adr, security, qualification, checklist]:
         if "ADR-0019-decision-dossier.md" not in content:
             raise AssertionError("ADR/security/qualification/checklist cross-reference missing")
+    required_upstream_facts = [
+        "`runsc --rootless` CLI mode does not support `create`",
+        "newuidmap", "newgidmap", "subordinate", "RootlessKit", "CPU",
+        "containerd-shim-runsc-v1", "not proven", "No architecture choice is made"
+    ]
+    missing_facts = [fact for fact in required_upstream_facts if fact.lower() not in upstream_evidence.lower()]
+    if missing_facts:
+        raise AssertionError("upstream compatibility evidence missing required fact(s): " + ", ".join(missing_facts))
+    if "ADR-0019-upstream-compatibility-evidence.md" not in dossier or "ADR-0019-upstream-compatibility-evidence.md" not in adr:
+        raise AssertionError("ADR decision dossier and ADR-0019 must link upstream compatibility ledger")
+    if "ADR-0019-upstream-compatibility-evidence.md" not in security or "ADR-0019-upstream-compatibility-evidence.md" not in qualification or "ADR-0019-upstream-compatibility-evidence.md" not in checklist:
+        raise AssertionError("security/qualification/checklist must link upstream compatibility ledger")
+    print("PASS  upstream compatibility ledger covers rootless CLI limits, userns helpers, cgroup delegation and exact shim gap")
     if "Proposed" not in adr or "pending independent security review" not in adr.lower():
         raise AssertionError("ADR-0019 must remain proposed pending actual review")
     print("PASS  blank ADR decision record is pending, unassigned and non-authorizing")

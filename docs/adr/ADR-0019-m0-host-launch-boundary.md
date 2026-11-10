@@ -145,3 +145,8 @@ The candidate definitions, same-control comparison, evidence rules, permitted ou
 ADR-0019 remains **Proposed** until a real independent reviewer completes the comparison and the selected candidate has its own exact-host qualification record. The rootless candidate means rootless containerd with caller-configured user namespaces; it does not mean the separate `runsc --rootless` CLI mode.
 
 An accepted M0 proof boundary does not authorize privileged implementation. The decision schema keeps implementation, Phase A, Phase B, student and production authorization flags false.
+
+
+## Upstream compatibility evidence
+
+The current upstream compatibility review is recorded in `docs/adr/ADR-0019-upstream-compatibility-evidence.md`. It is documentary evidence only; ADR-0019 remains Proposed and neither candidate is qualified or selected. Any completed review must pin the exact upstream source revisions/content digests before relying on branch-head documentation.

@@ -163,3 +163,7 @@ Any such condition makes the candidate rejected or deferred; it cannot be waived
 - `docs/specifications/m0-host-and-journal-qualification-protocol.md`
 - `docs/specifications/m0-supervisor-journal-implementation-contract.md`
 - `docs/specifications/m0-runtime-proof-harness-design.md`
+
+## Upstream compatibility evidence ledger
+
+The dated public-source review is maintained in `docs/adr/ADR-0019-upstream-compatibility-evidence.md`. It distinguishes documented component capabilities from the unproven exact M0 integration, records the RootlessKit/helper/cgroup/network proof obligations, and requires immutable upstream source pins before a signed decision. This ledger does not select or qualify a candidate.

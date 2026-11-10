@@ -215,3 +215,8 @@ On stop: reject new work, continue best-effort independent termination when appl
 `docs/adr/ADR-0019-decision-dossier.md` defines the candidate-specific configuration and evidence rules. Candidate A and Candidate B must each use the same 32 security control IDs and 33 host qualification tests. A host qualification report is candidate-, host-, commit- and profile-specific; it cannot be transferred between rootful and rootless deployments.
 
 The machine-readable ADR decision record is `docs/schemas/m0-adr-0019-decision-record.template.json`. Its blank state is pending and grants no implementation, Phase A, Phase B, student or production authorization.
+
+
+## Upstream compatibility evidence
+
+`docs/adr/ADR-0019-upstream-compatibility-evidence.md` records the public upstream component facts and outstanding exact-stack compatibility gates. Its source URLs are mutable branch heads; a signed candidate decision requires exact source commit/tag and archived content digest. Do not mark any host qualification test passed from this ledger alone.

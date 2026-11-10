@@ -131,3 +131,8 @@ Use `docs/specifications/m0-host-and-journal-qualification-protocol.md` and its 
 ## ADR-0019 candidate decision
 
 Add the candidate comparison in `docs/adr/ADR-0019-decision-dossier.md` to the independent review scope. Review both deployment models against the same 32 control IDs and map their evidence to the 33 host qualification tests. Use `docs/schemas/m0-adr-0019-decision-record.schema.json`; a selected candidate must have its own independently reviewed host qualification report.
+
+
+## Upstream rootless and runtime integration evidence
+
+Include `docs/adr/ADR-0019-upstream-compatibility-evidence.md` in the reviewer packet. In particular, assess RootlessKit helper binaries/subordinate IDs, namespace/socket isolation, network backend, systemd CPU delegation, exact containerd-shim + caller-userns compatibility, and source revision pinning. These are independent review items, not documentation-based passes.

@@ -29,6 +29,7 @@ on:
       - "docs/schemas/m0-host-qualification-record.template.json"
       - "scripts/validate_m0_host_qualification.py"
       - "docs/adr/ADR-0019-decision-dossier.md"
+      - "docs/adr/ADR-0019-upstream-compatibility-evidence.md"
       - "docs/schemas/m0-adr-0019-decision-record.schema.json"
       - "docs/schemas/m0-adr-0019-decision-record.template.json"
       - "scripts/validate_m0_adr_0019_decision.py"
