@@ -119,7 +119,7 @@ Before selecting the rootful path, document the effective capability set, system
 
 ## 4. Sandbox lifecycle state machine
 
-The lifecycle is controlled by the host supervisor and recorded in a durable host-side journal.
+The lifecycle is controlled by the host supervisor and recorded in a durable host-side journal. Process termination/cleanup and evidence collection are independent finalization branches; neither branch may wait for the other to begin or make progress.
 
 ```text
 REQUESTED
@@ -137,24 +137,34 @@ CREATING
 STARTING
    |
    v
-RUNNING ------ deadline exceeded ----------> TERMINATING
-   |  \
-   |   +---- cancellation ----------------> TERMINATING
-   |   +---- output/resource violation ---> TERMINATING
-   |   +---- runtime exit ----------------> COLLECTING
-   |
-   v
-COLLECTING
-   |
-   v
-CLEANING
-   |
-   +---- cleanup verified ----------------> TERMINAL
-   |
-   +---- cleanup uncertain ---------------> CLEANUP_FAILED (not terminal-success)
+RUNNING ------ deadline/cancel/policy breach -> TERMINATING
+   |                                             |
+   +---- natural exit ---------------------------+
+                                                 |
+                                                 v
+                                           FINALIZING
+                                            /       \
+                                           v         v
+                                      CLEANING    COLLECTING
+                                           |         |
+                                           v         v
+                                     CLEANUP      EVIDENCE
+                                     DISPOSITION  DISPOSITION
+                                            \       /
+                                             v     v
+                                      DURABLE FINALIZATION
+                                         /          \
+                                        v            v
+                                   TERMINAL       INCOMPLETE /
+                                   (eligible      INFRA_FAILED
+                                    for success)
 ```
 
-A supervisor restart must reconcile every non-terminal journal entry against actual containerd tasks, shim processes, namespaces, cgroups, mounts, and scratch directories. Unknown or unowned resources are quarantined and cleaned under the host recovery procedure; they must never be silently adopted as successful work.
+Entering `FINALIZING` must schedule cleanup immediately, without waiting for evidence collection, redaction, hashing, object-store availability, or manifest generation. The cleanup controller owns termination and resource removal independently of the collector and client connection. Evidence collection may observe already captured bounded host-side buffers and immutable metadata, but it must not retain a live workload or sandbox merely to finish writing evidence.
+
+The two branches report explicit, durable dispositions. Cleanup is successful only after all required host-side absence checks pass. Evidence is complete only after every referenced object and the final manifest are durably published and independently verified. A failure or timeout in either branch produces an incomplete or infrastructure-failed result; it cannot be converted to a passed fixture. The terminal compare-and-set may run only after both branch dispositions are durably recorded. A success acknowledgement additionally requires both dispositions to be successful and the terminal journal transition to be durable.
+
+A supervisor restart must reconcile every non-terminal journal entry and both finalization branches against actual containerd tasks, shim processes, namespaces, cgroups, mounts, scratch directories, evidence staging objects, immutable evidence objects, and manifest state. Unknown or unowned resources are quarantined and cleaned under the host recovery procedure; they must never be silently adopted as successful work.
 
 A terminal acknowledgement is allowed only after independent host-side inspection confirms:
 1. The complete workload process tree is absent.
