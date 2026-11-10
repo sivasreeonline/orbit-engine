@@ -236,6 +236,16 @@ def main() -> None:
     accepted(report_v, report, "audit-only verification report")
     rejected(report_v, dict(report, decision="ACCEPT_FOR_FURTHER_GATES", signature_check="FAIL"),
              "acceptance with failed signature")
+
+    signature_valid_fence_unknown = dict(
+        report, signature_check="PASS", canonical_bytes_check="PASS",
+        revocation_check="PASS", anti_rollback_check="PASS", context_binding_check="PASS",
+        evidence_binding_check="NOT_RUN"
+    )
+    accepted(report_v, signature_valid_fence_unknown,
+             "valid signature with provider fence evidence not independently verified")
+    check(signature_valid_fence_unknown["decision"] == "AUDIT_ONLY",
+          "valid signature alone must not satisfy provider fencing")
     rejected(report_v, dict(report, decision="ACCEPT_FOR_FURTHER_GATES", signature_check="PASS",
                             canonical_bytes_check="PASS", revocation_check="PASS", anti_rollback_check="PASS",
                             context_binding_check="PASS", evidence_binding_check="NOT_RUN"),
@@ -266,7 +276,10 @@ def main() -> None:
 
     check(not key_admissible(key, "provider-fence", "test"), "purpose-mismatched key admitted")
     check(not key_admissible(revoked_key, "host-epoch", "test"), "revoked key admitted")
-    check(2 > 1 and not (1 > 2), "trust bundle generation rollback comparison failed")
+    def trust_generation_advances(previous: int, candidate: int) -> bool:
+        return candidate > previous
+    check(trust_generation_advances(1, 2), "valid trust bundle generation advance rejected")
+    check(not trust_generation_advances(2, 1), "trust bundle generation rollback accepted")
     check(host_payload["fence_attestation_ref"] != "evidence://fence/other"
           or host_payload["fence_attestation_sha256"] == "d" * 64,
           "evidence reference/digest pair is inconsistent")
