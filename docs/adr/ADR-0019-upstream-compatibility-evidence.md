@@ -81,3 +81,7 @@ Reviewed: 2026-11-10.
 ## 8. Machine-enforced rootless-only qualification
 
 The host qualification record now defines `RLS-001` through `RLS-004` in `candidate_specific_test_results` and a separate `rootless_userns_compatibility` gate. The ADR decision qualification report also carries those exact test IDs and requires its gate to be `passed` before Candidate B can be selected. Candidate A must record the rootless-only gate as `not-applicable` and have no RLS results. These are separate from the 33 common tests; passing RUN-001, CG-001, NET-001/002 or AUTH-001 alone does not satisfy a rootless-specific item.
+
+## Rootless profile evidence binding
+
+The host qualification record now requires an exact `rootless_profile` object for Candidate B, including the non-root daemon identity, subordinate-ID map digests, RootlessKit/newuidmap/newgidmap hashes, helper inventory, AppArmor, private state/socket policy, network namespace/backend, systemd delegation and effective `cpu`/`memory`/`pids` controller set. The ADR candidate and its qualification report must carry the identical object and matching profile digest. Candidate A must not carry any rootless profile fields.
