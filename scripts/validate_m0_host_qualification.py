@@ -280,13 +280,19 @@ def main():
         raise AssertionError("rootless-specific schema/template test inventory diverges")
     for test in TESTS:
         if f"| {test['id']} |" not in protocol:
-            raise AssertionError(f"protocol missing test ID {test['id']}")
+            raise AssertionError(f"protocol missing common test ID {test['id']}")
+    for test in ROOTLESS_TESTS:
+        if f"| {test['id']} |" not in protocol:
+            raise AssertionError(f"protocol missing rootless-only test ID {test['id']}")
+        if test["id"] not in checklist:
+            raise AssertionError(f"independent security checklist missing rootless-only test ID {test['id']}")
     if "m0-host-and-journal-qualification-protocol.md" not in journal_doc or "m0-host-and-journal-qualification-protocol.md" not in runbook:
         raise AssertionError("journal evaluation and host runbook must link qualification protocol")
     if "m0-host-and-journal-qualification-protocol.md" not in resource or "m0-host-and-journal-qualification-protocol.md" not in checklist:
         raise AssertionError("resource profile and independent security checklist must link qualification protocol")
     print("PASS  blank qualification record remains not-started and not-qualified")
-    print(f"PASS  schema, template and {len(TESTS)}-test protocol catalogue are synchronized")
+    print(f"PASS  schema, template and {len(TESTS)} common qualification tests are synchronized")
+    print(f"PASS  rootless candidate schema and {len(ROOTLESS_TESTS)} rootless-only tests are synchronized")
     print("PASS  runbook, journal evaluation, resource profile and security checklist cross-reference protocol")
 
     cases = []
