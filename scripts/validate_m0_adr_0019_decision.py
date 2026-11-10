@@ -5,7 +5,7 @@ This does not conduct a security review, qualify a real host, verify real signat
 provision infrastructure, or authorize execution.
 """
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -443,7 +443,7 @@ def main():
     case=deepcopy(template); case["candidate_assessments"][0]["design_findings"][-1]["control_id"]=case["candidate_assessments"][0]["design_findings"][0]["control_id"]; cases.append(("duplicate security control",case))
     case=deepcopy(template); case["candidate_assessments"][0]["design_findings"][0]["result"]="pass"; cases.append(("pass without evidence",case))
     case=deepcopy(template); case["candidate_assessments"][0]["assessment_status"]="host-qualified"; cases.append(("host-qualified without report",case))
-    case=deepcopy(template); case["candidate_assessments"][1]["assessment_status"]="host-qualified"; case["candidate_assessments"][1]["configuration"].update({"profile_id":"x","profile_digest":"a"*64,"runtime_profile_digest":"a"*64,"resource_profile_digest":"a"*64,"journal_profile_digest":"a"*64,"supervisor_digest":"a"*64,"watchdog_digest":"a"*64,"test_harness_digest":"a"*64,"runner_identity":"x","host_controller_identity":"x","containerd_access_principal":"x","privilege_inventory_digest":"a"*64,"syscall_inventory_digest":"a"*64,"writable_path_inventory_digest":"a"*64,"service_hardening_digest":"a"*64,"socket_policy_digest":"a"*64,"network_backend":"x","cgroup_delegation_reference":"x","user_namespace_mapping_reference":"x","rootlesskit_version":"x"}); case["candidate_assessments"][1]["qualification_report"]={"record_id":"11111111-1111-4111-8111-111111111111","record_sha256":"a"*64,"record_commit_sha":"a"*40,"target_architecture":"rootless-containerd-userns","qualification_status":"candidate-qualified","host_instance_id":"x","boot_id":"x","host_profile_digest":"a"*64,"runtime_profile_digest":"a"*64,"resource_profile_digest":"a"*64,"journal_profile_digest":"a"*64,"supervisor_digest":"a"*64,"watchdog_digest":"a"*64,"test_harness_digest":"a"*64,"test_ids":TEST_IDS,"candidate_specific_test_ids":[],"rootless_userns_compatibility_gate":"not-applicable","reviewer_id":"reviewer","host_owner_id":"owner","independence_attested":True,"reviewed_at":"2026-11-10T00:00:00Z","expires_at":"2026-12-10T00:00:00Z","signature_reference":"synthetic"}; cases.append(("rootless qualification missing four candidate-specific tests",case))
+    case=deepcopy(template); case["candidate_assessments"][1]["assessment_status"]="host-qualified"; case["candidate_assessments"][1]["configuration"].update({"profile_id":"x","profile_digest":"a"*64,"runtime_profile_digest":"a"*64,"resource_profile_digest":"a"*64,"journal_profile_digest":"a"*64,"supervisor_digest":"a"*64,"watchdog_digest":"a"*64,"test_harness_digest":"a"*64,"runner_identity":"x","host_controller_identity":"x","containerd_access_principal":"x","privilege_inventory_digest":"a"*64,"syscall_inventory_digest":"a"*64,"writable_path_inventory_digest":"a"*64,"service_hardening_digest":"a"*64,"socket_policy_digest":"a"*64,"network_backend":"x","cgroup_delegation_reference":"x","user_namespace_mapping_reference":"x","rootlesskit_version":"x"}); case["candidate_assessments"][1]["qualification_report"]={"record_id":"11111111-1111-4111-8111-111111111111","record_sha256":"a"*64,"record_commit_sha":"a"*40,"target_architecture":"rootless-containerd-userns","qualification_status":"candidate-qualified","host_instance_id":"x","boot_id":"x","host_profile_digest":"a"*64,"runtime_profile_digest":"a"*64,"resource_profile_digest":"a"*64,"journal_profile_digest":"a"*64,"supervisor_digest":"a"*64,"watchdog_digest":"a"*64,"test_harness_digest":"a"*64,"test_ids":TEST_IDS,"candidate_specific_test_ids":[],"rootless_userns_compatibility_gate":"not-applicable","reviewer_id":"reviewer","host_owner_id":"owner","independence_attested":True,"reviewed_at":synthetic_reviewed_at,"expires_at":synthetic_expires_at,"signature_reference":"synthetic"}; cases.append(("rootless qualification missing four candidate-specific tests",case))
     case=deepcopy(template); case["outcome"]="select-rootful-for-m0-proof"; case["selected_candidate"]="rootful-supervisor"; cases.append(("selection while pending",case))
     case=deepcopy(template); case.update(record_status="completed",outcome="defer",adr_status="deferred",reviewed_commit_sha="a"*40,reviewed_at="2026-11-10T00:00:00Z",expires_at="2026-12-10T00:00:00Z",signature_reference="synthetic"); case["participants"]={"reviewer_id":"reviewer","host_owner_id":"owner","independence_attested":True,"independence_basis":"synthetic","conflict_disclosure":"none"}; cases.append(("completed decision without UUID",case))
     case=deepcopy(template); case.update(record_status="completed",decision_record_id="22222222-2222-4222-8222-222222222222",outcome="defer",adr_status="deferred",reviewed_commit_sha="a"*40,reviewed_at="2026-11-01T00:00:00Z",expires_at="2026-11-02T00:00:00Z",signature_reference="synthetic"); case["participants"]={"reviewer_id":"reviewer","host_owner_id":"owner","independence_attested":True,"independence_basis":"synthetic","conflict_disclosure":"none"}; cases.append(("expired decision record",case))
@@ -456,6 +456,9 @@ def main():
 
     # Synthetic positive record: the selected candidate has its own independent
     # qualification record; the alternative is at least design-assessed.
+    synthetic_now = datetime.now(timezone.utc)
+    synthetic_reviewed_at = (synthetic_now - timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    synthetic_expires_at = (synthetic_now + timedelta(days=30)).isoformat(timespec="seconds").replace("+00:00", "Z")
     complete=deepcopy(template)
     complete["record_status"]="completed"
     complete["upstream_source_manifest_sha256"] = manifest_digest
@@ -468,8 +471,8 @@ def main():
     complete["decision_rationale"]="Synthetic contract test only."
     complete["participants"]={"reviewer_id":"synthetic-independent-reviewer","host_owner_id":"synthetic-host-owner",
         "independence_attested":True,"independence_basis":"Synthetic separation","conflict_disclosure":"Synthetic none"}
-    complete["reviewed_at"]="2026-11-10T00:00:00Z"
-    complete["expires_at"]="2026-12-10T00:00:00Z"
+    complete["reviewed_at"]=synthetic_reviewed_at
+    complete["expires_at"]=synthetic_expires_at
     complete["signature_reference"]="synthetic-signature"
     rootful=next(c for c in complete["candidate_assessments"] if c["candidate_id"]=="rootful-supervisor")
     rootful["assessment_status"]="host-qualified"
