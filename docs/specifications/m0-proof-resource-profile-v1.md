@@ -22,6 +22,10 @@
 
 The protocol hard ceilings remain 512 MiB scratch and 8,192 scratch inodes. The proof profile uses the lower defaults. No caller or workload may raise these values.
 
+The 10-minute end-to-end deadline is measured from the control plane's durably persisted API intake timestamp and includes queue wait, retries, reconnects, and recovery. The 60-second sandbox wall time begins at host-observed workload start. Persist both origins/deadlines; neither may be reset by runner/supervisor/containerd restart or retry. The host watchdog must re-arm from the original deadline after restart, using trusted wall-clock/monotonic-clock handling. Caller- or runner-supplied timestamps are never authoritative.
+
+A finite cleanup deadline is still deliberately unset. It must be added to a reviewed revision of this profile, measured from the first durable termination trigger, and validated under cancellation, deadline, output-overflow, inherited-pipe, supervisor restart, containerd outage, and evidence-store failure conditions. Pipe drain/EOF waiting is bounded by this cleanup deadline and may not extend it. No stress fixture or host proof may start until the cleanup deadline and its clock/restart semantics are explicitly approved; do not invent a default.
+
 ## 2. Output-limit behavior
 
 1. Count stdout and stderr independently at the host-side collector, before writing to evidence storage.
