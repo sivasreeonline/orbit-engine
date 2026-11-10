@@ -29,6 +29,7 @@ BASELINE_IDS = {"HST-001", "HST-002", "HST-003", "HST-004", "HST-005"}
 RUNTIME_IDS = {"AUTH-001", "RUN-001", "CG-001", "FS-001", "OUT-001"}
 NETWORK_IDS = {"NET-001", "NET-002"}
 WATCHDOG_IDS = {"WDG-001", "WDG-002", "WDG-003"}
+OUTER_IDS = {"WDG-003"}
 CLOCK_IDS = {"CLK-001", "CLK-002"}
 JOURNAL_IDS = {f"JRN-{i:03d}" for i in range(1, 16)}
 INTEGRATED_IDS = {"JRN-010", "JRN-011"}
@@ -72,8 +73,11 @@ def errors_for(record, schema_validator):
         errors.append("runtime smoke gate requires AUTH-001, RUN-001, CG-001, FS-001 and OUT-001")
     if gates.get("network_boundary") == "passed" and not NETWORK_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
         errors.append("network gate requires NET-001 and NET-002")
-    if gates.get("watchdog_boundary") == "passed" and not WATCHDOG_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
+    passed_ids = {i for i, f in by_id.items() if f.get("result") == "passed"}
+    if gates.get("watchdog_boundary") == "passed" and not WATCHDOG_IDS.issubset(passed_ids):
         errors.append("watchdog gate requires all three watchdog test IDs")
+    if gates.get("outer_safety_boundary") == "passed" and not OUTER_IDS.issubset(passed_ids):
+        errors.append("outer safety gate requires WDG-003 and external stop/rebuild evidence")
     if gates.get("clock_recovery") == "passed" and not CLOCK_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
         errors.append("clock gate requires CLK-001 and CLK-002")
     if gates.get("journal_durability") == "passed" and not JOURNAL_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
@@ -100,7 +104,11 @@ def errors_for(record, schema_validator):
             "watchdog_digest", "test_harness_digest"]
         if not host.get("selected") or any(not host.get(field) for field in required_host):
             errors.append("candidate-qualified requires exact selected host/runtime/storage identity")
+        if not host.get("mount_options") or host.get("cgroup_mode") != "unified-v2":
+            errors.append("candidate-qualified requires recorded mount options and unified cgroup v2")
         journal = record.get("journal_profile", {})
+        if journal.get("backend_candidate") != "sqlite-delete-extra":
+            errors.append("current M0 host-candidate qualification is limited to the proposed SQLite DELETE+EXTRA candidate; another backend requires an ADR/schema revision")
         if journal.get("backend_candidate") == "sqlite-delete-extra":
             required_journal = ["sqlite_version", "sqlite_source_id", "go_driver_module", "go_driver_version",
                 "schema_revision", "journal_owner", "journal_mode_bits", "lock_mechanism",
@@ -116,6 +124,19 @@ def errors_for(record, schema_validator):
             errors.append("candidate-qualified requires independence attestation, reviewed commit and signature reference")
         if review.get("decision") != "accept-host-candidate":
             errors.append("candidate-qualified requires independent accept-host-candidate decision")
+        if not review.get("independence_basis", "").strip() or not review.get("reviewed_at") or not review.get("expires_at"):
+            errors.append("candidate-qualified requires independence basis and review validity dates")
+        if review.get("reviewed_commit_sha") != record.get("scope", {}).get("reviewed_commit_sha"):
+            errors.append("reviewed commit must equal the qualification record baseline")
+        try:
+            reviewed_at = datetime.fromisoformat(review["reviewed_at"].replace("Z", "+00:00"))
+            expires_at = datetime.fromisoformat(review["expires_at"].replace("Z", "+00:00"))
+            if expires_at <= reviewed_at:
+                errors.append("independent review is expired at issuance")
+        except (KeyError, ValueError, TypeError):
+            errors.append("candidate-qualified requires valid review dates")
+        if not record.get("qualification_rationale", "").strip():
+            errors.append("candidate-qualified requires a written qualification rationale")
         unresolved = [risk for risk in record.get("residual_risks", []) if risk.get("severity") in {"high", "critical"} and risk.get("status") != "closed"]
         if unresolved:
             errors.append("candidate-qualified cannot retain unresolved high/critical risks")
@@ -126,6 +147,20 @@ def errors_for(record, schema_validator):
             errors.append("not-started record must remain not-qualified")
         if record.get("host_identity", {}).get("selected") or any(f.get("result") != "not-run" for f in results):
             errors.append("not-started record cannot have a selected host or executed test")
+        if any(value != "not-run" for value in gates.values()):
+            errors.append("not-started record cannot have a passed/failed qualification gate")
+        if record.get("scope", {}).get("target_architecture") != "not-selected":
+            errors.append("not-started record must have no selected architecture")
+        if record.get("journal_profile", {}).get("backend_candidate") != "not-selected":
+            errors.append("not-started record must have no selected journal backend")
+    review = record.get("review", {})
+    if review.get("status") == "completed":
+        if not review.get("reviewer_id") or not review.get("host_owner_id") or review.get("reviewer_id") == review.get("host_owner_id"):
+            errors.append("completed review requires distinct reviewer and host owner")
+        if not review.get("independence_attested") or not review.get("independence_basis", "").strip():
+            errors.append("completed review requires an independence attestation and basis")
+        if not review.get("reviewed_at") or not review.get("signature_reference"):
+            errors.append("completed review requires date and signature reference")
     for flag in AUTH_FLAGS:
         if record.get(flag) is not False:
             errors.append(f"{flag} must remain false in the qualification record")
