@@ -81,7 +81,7 @@ def expect_valid(validator, manifest, label):
 
 
 def expect_invalid(manifest_validator, manifest, label):
-    errors = list(validator.iter_errors(manifest))
+    errors = list(manifest_validator.iter_errors(manifest))
     if not errors:
         raise AssertionError(f"{label} should be rejected")
 
@@ -142,7 +142,7 @@ def main():
     cases.append(("passed result with not-run fixture", not_run_fixture))
 
     for label, manifest in cases:
-        expect_invalid(validator, manifest, label)
+        expect_invalid(manifest_validator, manifest, label)
 
     incomplete = valid_manifest()
     incomplete["overall_result"] = "incomplete"
