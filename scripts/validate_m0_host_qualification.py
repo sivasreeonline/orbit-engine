@@ -668,8 +668,11 @@ def main():
         "independent_verifier_id": None,
         "verification_note": ""
     })
-    if errors_for(unverified_auxiliary, schema_validator):
-        raise AssertionError("unverified supplementary evidence should not invalidate an otherwise passed finding")
+    if not any("passed requires independently verified evidence" in error for error in errors_for(unverified_auxiliary, schema_validator)):
+        raise AssertionError("unverified supplementary evidence on a passed finding was accepted")
+    unverified_auxiliary["test_results"][0]["evidence_refs"][-1]["verification_status"] = "verified"
+    unverified_auxiliary["test_results"][0]["evidence_refs"][-1]["independent_verifier_id"] = "synthetic-third-party-verifier"
+    unverified_auxiliary["test_results"][0]["evidence_refs"][-1]["verification_note"] = "Synthetic independently verified supplementary object."
     unverified_auxiliary["test_results"][0]["evidence_refs"][-1]["acquired_by_id"] = unverified_auxiliary["review"]["host_owner_id"]
     if not any("evidence acquirer must be distinct" in error for error in errors_for(unverified_auxiliary, schema_validator)):
         raise AssertionError("host owner acquisition of supplementary evidence was accepted")
