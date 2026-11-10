@@ -28,7 +28,7 @@ def synthetic_manifest() -> dict:
     issued_at = now.isoformat(timespec="seconds").replace("+00:00", "Z")
     expires_at = (now + timedelta(hours=24)).isoformat(timespec="seconds").replace("+00:00", "Z")
     return {
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "authorization_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
         "phase": "cleanup-calibration-only",
         "status": "authorized",
@@ -36,6 +36,20 @@ def synthetic_manifest() -> dict:
         "expires_at": expires_at,
         "host": {
             "provider": "synthetic-provider",
+            "host_instance_id": "synthetic-host-instance-001",
+            "host_incarnation_epoch": "synthetic-monotonic-epoch-42",
+            "host_incarnation_authority_id": "synthetic-authority",
+            "host_incarnation_authority_key_version": "key-v3",
+            "host_incarnation_epoch_evidence_ref": "immutable://synthetic/epoch/v42",
+            "host_incarnation_epoch_evidence_digest": digest("9"),
+            "host_incarnation_issuance_nonce_digest": digest("a"),
+            "predecessor_incarnation_set_digest": digest("b"),
+            "prior_incarnation_fence_evidence_ref": "immutable://synthetic/fence/predecessors-41",
+            "provider_fence_method": "provider-hard-stop-and-storage-write-fence",
+            "provider_fence_verified_at": "2026-11-10T00:00:00Z",
+            "provider_fence_evidence_digest": digest("c"),
+            "host_qualification_record_ref": "immutable://synthetic/qualification/host-record",
+            "host_qualification_record_digest": digest("d"),
             "region": "synthetic-region",
             "vm_image_digest": digest("a"),
             "os_release": "Ubuntu Server 24.04 LTS",
@@ -114,6 +128,10 @@ def synthetic_manifest() -> dict:
             "redaction_policy_id": "synthetic-redaction-policy-v1",
             "immutable_storage_required": True,
             "sanitized_only": True,
+            "host_fencing_verifier_id": "independent-fence-verifier",
+            "host_fencing_verification_report_ref": "immutable://synthetic/fence-verification/report",
+            "host_fencing_verification_report_digest": digest("e"),
+            "host_fencing_acquired_by_id": "evidence-acquirer",
         },
         "signoff": {
             "host_owner_id": "host-owner-synthetic",
@@ -138,6 +156,25 @@ def custom_errors(manifest: dict) -> list[str]:
     if set(scenario_ids) != set(REQUIRED_SCENARIOS):
         errors.append("the authorization must include every CAL-CLEAN scenario exactly once")
     signoff = manifest.get("signoff", {})
+    evidence = manifest.get("evidence", {})
+    verifier = evidence.get("host_fencing_verifier_id")
+    acquirer = evidence.get("host_fencing_acquired_by_id")
+    owner = signoff.get("host_owner_id")
+    reviewer = signoff.get("independent_reviewer_id")
+    if verifier in {owner, reviewer, acquirer}:
+        errors.append("host-fencing evidence verifier must be distinct from acquirer, host owner and independent reviewer")
+    if acquirer in {owner, reviewer}:
+        errors.append("host-fencing evidence acquirer must be distinct from host owner and independent reviewer")
+    try:
+        fence_verified = datetime.fromisoformat(manifest["host"]["provider_fence_verified_at"].replace("Z", "+00:00"))
+        reviewed_at = datetime.fromisoformat(signoff["reviewed_at"].replace("Z", "+00:00"))
+        issued_at = datetime.fromisoformat(manifest["issued_at"].replace("Z", "+00:00"))
+        if fence_verified.tzinfo is None or reviewed_at.tzinfo is None or issued_at.tzinfo is None:
+            errors.append("fence verification, review and issuance timestamps must be timezone-aware")
+        elif fence_verified > reviewed_at or reviewed_at > issued_at:
+            errors.append("provider predecessor fence must be verified before independent review and authorization issuance")
+    except (KeyError, ValueError, TypeError):
+        errors.append("provider fence, review and issuance timestamps must be parseable")
     if signoff.get("host_owner_id") == signoff.get("independent_reviewer_id"):
         errors.append("host owner and independent reviewer must be different identities")
     try:
@@ -189,6 +226,18 @@ def main() -> int:
     no_network_deny = deepcopy(valid)
     no_network_deny["network_containment"]["metadata_link_local_denied_before_host_uplink"] = False
     cases.append(("metadata network deny not proven", no_network_deny))
+    same_fence_verifier = deepcopy(valid)
+    same_fence_verifier["evidence"]["host_fencing_verifier_id"] = same_fence_verifier["signoff"]["independent_reviewer_id"]
+    cases.append(("fence evidence verifier is also independent reviewer", same_fence_verifier))
+    same_fence_acquirer = deepcopy(valid)
+    same_fence_acquirer["evidence"]["host_fencing_acquired_by_id"] = same_fence_acquirer["signoff"]["host_owner_id"]
+    cases.append(("fence evidence acquired by host owner", same_fence_acquirer))
+    late_fence = deepcopy(valid)
+    late_fence["host"]["provider_fence_verified_at"] = "2026-11-10T00:02:00Z"
+    cases.append(("provider fence verified after independent review", late_fence))
+    missing_epoch = deepcopy(valid)
+    del missing_epoch["host"]["host_incarnation_epoch"]
+    cases.append(("missing externally anchored host incarnation epoch", missing_epoch))
     same_reviewer = deepcopy(valid)
     same_reviewer["signoff"]["independent_reviewer_id"] = same_reviewer["signoff"]["host_owner_id"]
     cases.append(("host owner also acts as independent reviewer", same_reviewer))
