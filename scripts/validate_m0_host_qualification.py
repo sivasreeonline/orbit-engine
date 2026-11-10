@@ -805,7 +805,7 @@ def main():
         "finding_summary":"Synthetic only; not a real host measurement.",
         "severity":"none", "remediation_owner":"",
         "evidence_refs":[{
-            "reference_id":"synthetic-"+test["id"],"object_version":"v1","sha256":"b"*64,"byte_count":1,
+            "reference_id":"synthetic-"+test["id"],"object_version":"object-"+test["id"],"sha256":"b"*64,"byte_count":1,
             "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
             "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":rootless_types[test["id"]],
             "redaction_status":"non-sensitive","verification_status":"verified",
