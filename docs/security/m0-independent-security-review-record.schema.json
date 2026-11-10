@@ -5,6 +5,34 @@
   "description": "Evidence-bound review record; it can record recommendations but cannot itself authorize implementation, Phase A, Phase B, student or production execution.",
   "type": "object",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "review_status": { "const": "not-reviewed" }
+        },
+        "required": ["review_status"]
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "properties": {
+              "reviewed_commit_sha": { "type": "null" }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "scope": {
+            "properties": {
+              "reviewed_commit_sha": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+            }
+          }
+        }
+      }
+    }
+  ],
   "required": [
     "schema_version",
     "review_id",
@@ -326,8 +354,8 @@
           "const": "sivasreeonline/orbit-engine"
         },
         "reviewed_commit_sha": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{40}$"
+          "type": ["string", "null"],
+          "pattern": "^([a-f0-9]{40})?$"
         },
         "review_scope": {
           "enum": [
