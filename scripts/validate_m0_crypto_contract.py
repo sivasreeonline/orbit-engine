@@ -107,7 +107,7 @@ def main() -> None:
         "security_review_control_count": 33, "fence_001_result": "pass",
         "authorization_manifest_sha256": "6" * 64, "max_run_count": 1,
         "not_before": "2026-01-01T00:00:00Z", "expires_at": "2026-01-01T00:05:00Z",
-        "cleanup_calibration_authorized": True, "full_m0_proof_authorized": False,
+        "cleanup_calibration_authorized": True, "full_m0_proof_authorized": False,\n        "host_owner_principal_id": "principal-owner", "evidence_acquirer_principal_id": "principal-acquirer",\n        "fence_verifier_principal_id": "principal-fence-verifier",\n        "independent_security_reviewer_principal_id": "principal-reviewer",\n        "authorization_signer_principal_id": "principal-signer",\n        "reviewer_role": "independent-security-reviewer", "independence_attested": True,
         "student_execution_authorized": False, "production_execution_authorized": False,
     }
     revoke_payload = {
@@ -128,6 +128,14 @@ def main() -> None:
     rejected(phase_v, dict(phase_payload, security_review_control_count=32), "incomplete review controls")
     rejected(phase_v, dict(phase_payload, phase_b_authorized=True), "Phase B privilege escalation")
     rejected(phase_v, dict(phase_payload, student_execution_authorized=True), "student execution escalation")
+    principal_roles = ["host_owner_principal_id", "evidence_acquirer_principal_id",
+                       "fence_verifier_principal_id", "independent_security_reviewer_principal_id",
+                       "authorization_signer_principal_id"]
+    def principals_separated(payload: dict) -> bool:
+        return len({payload[field] for field in principal_roles}) == len(principal_roles)
+    check(principals_separated(phase_payload), "distinct authorization principals rejected")
+    collided = dict(phase_payload, fence_verifier_principal_id="principal-owner")
+    check(not principals_separated(collided), "owner/verifier role collision was accepted")
     rejected(revoke_v, dict(revoke_payload, reactivation_permitted=True), "key reactivation")
 
     envelope = {
