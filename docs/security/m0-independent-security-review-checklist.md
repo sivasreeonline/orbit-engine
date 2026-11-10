@@ -1,7 +1,7 @@
 # M0 Independent Security and Architecture Review Checklist
 
 - Status: **review package prepared; independent review not yet performed**.
-- Review baseline commit: `48fc52fc049bac8b8004fda7ac84b1a152872023`.
+- Review baseline commit: **must be pinned in the signed review record at review kickoff**. The blank template intentionally carries no commit SHA; never reuse a historical baseline for a new review.
 - Scope: M0 disposable synthetic proof only. This is not production approval.
 - Machine-readable schema: `m0-independent-security-review-record.schema.json`.
 - Blank record: `m0-independent-security-review-record.template.json`.
