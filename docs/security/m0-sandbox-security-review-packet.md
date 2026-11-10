@@ -177,3 +177,8 @@ The review remains pending. The dossier and its synthetic CI examples are not se
 ## Upstream candidate compatibility evidence
 
 Review `docs/adr/ADR-0019-upstream-compatibility-evidence.md` alongside the independent 32-control checklist. The rootless review must explicitly address `newuidmap`/`newgidmap`, subordinate-ID mappings, RootlessKit state/network namespaces, systemd CPU-controller delegation and exact gVisor shim compatibility. Documentary sources do not constitute host proof.
+
+
+## Immutable upstream source baseline
+
+The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-source-manifest.json`; the exact manifest SHA-256 must be embedded in any completed ADR-0019 decision record. A reviewer must check the seven source pins and recorded signature-verification status. The branch-head URLs are discovery references only; the manifest points to immutable commit URLs and records Git blob SHA-1 plus content SHA-256.
