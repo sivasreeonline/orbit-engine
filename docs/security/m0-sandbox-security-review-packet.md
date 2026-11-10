@@ -125,6 +125,33 @@ The independent reviewer should produce:
 
 A pass for disposable-host proof does not constitute production approval. Production execution requires a separate security review after the real host, supervisor, runtime, and operational controls have been implemented and tested.
 
-## 8. Current decision
+## 8. Phase A calibration review requirements
+
+Phase A is a limited cleanup-deadline calibration campaign. It requires an explicit review decision separate from any later approval for the full 35-fixture M0 proof. A reviewer must not infer Phase A authorization from this packet's existence, passing CI, or a passing read-only preflight.
+
+### Required Phase A approval evidence
+
+The independent reviewer must verify and record:
+
+1. Dedicated disposable VM identity and evidence that no student data, production credentials, API secrets, or unrelated tenants are present.
+2. Exact VM image, kernel, filesystem, containerd, runsc, shim, supervisor, journal, watchdog, calibration image, and scenario-bundle digests/versions.
+3. Independently enforced outer VM CPU, memory, PID, disk, and wall-time ceilings, plus a hard-stop/rebuild path outside the supervisor/journal/containerd failure domain. The outer cutoff is a safety limit only; firing it is a failed/unverified cleanup sample.
+4. Default-deny network containment and independent evidence that all workload egress, including metadata link-local traffic, is blocked before host uplink. No metadata request is made by the host or accepted by the proof harness.
+5. The candidate journal backend has passed its separate exact-host durability, power-loss, disk-full, corruption, restore, and lock/fencing gates before it is used by calibration.
+6. Fixed, source-reviewed, digest-pinned synthetic calibration scenarios; a strict scenario allowlist; no arbitrary source/command/OCI input; no network callback; and no student or hidden-test material.
+7. The calibration control path is not exposed through public HTTP, the student API, a general execution endpoint, or the ordinary job queue. It is restricted to the exact signed/approved run manifest.
+8. The measurements exercise the same cleanup controller, journal, and host-side absence verifier proposed for M0. Any mock, bypass, or alternate cleanup path invalidates the measurements.
+9. The first-trigger monotonic timestamp and boot identity are captured before or at termination; repeated triggers and restarts cannot reset the clock; evidence-store and journal failures cannot delay termination.
+10. Cleanup and evidence dispositions are independently supervised and persisted. Any uncertain cleanup, unowned resource, failed outer guard, network uncertainty, clock ambiguity, or evidence leak stops the campaign and quarantines the VM.
+
+### Calibration decision and Phase B separation
+
+The Phase A decision must be recorded as one of: not authorized, authorized with explicit constraints, or rejected. It must include the reviewer, date, scope, host/build digests, scenario allowlist, outer safety cutoff, maximum run count, stop conditions, evidence destination, and expiry. Authorization is invalidated by a change to the host image, kernel, runtime, journal, supervisor, watchdog, fixture digest, network boundary, or material configuration.
+
+Phase A results must include raw sanitized trigger-to-verified-cleanup measurements, phase breakdown, outliers, host envelope, uncertainty sources, and the rationale for any candidate engineering margin. Percentiles are descriptive; a p95 or p99 is not a hard deadline. Any sample terminated by the outer VM cutoff or lacking independent absence verification is failed/unverified and cannot support the candidate maximum.
+
+Phase B approval is a separate reviewer decision. It requires approval of the candidate numeric cleanup deadline, evidence/terminal-finalization reserve, original 10-minute admission rule, clock/reboot semantics, watchdog independence, exact resource-profile revision, and Phase A raw evidence. Only then may the full 35-fixture adversarial campaign begin. Neither decision authorizes student or production execution.
+
+## 9. Current decision
 
 **Independent review: pending.** No reviewer signoff is recorded. No cloud host has been selected or provisioned. No sandbox workload has been launched. No executor activation is authorized.

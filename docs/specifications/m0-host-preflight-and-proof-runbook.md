@@ -34,7 +34,39 @@ A successful result means only that the host matches these baseline checks. It d
 
 Do not weaken a failed check to make the script pass. Investigate and record the host deviation; update the ADR before changing the baseline.
 
-## Phase 1 — Runtime compatibility proof
+## Phase A — Cleanup deadline calibration (separate authorization)
+
+Phase A is a narrow synthetic-only measurement campaign. It exists to derive a candidate cleanup deadline; it is not the full 35-fixture M0 proof and does not authorize a student execution path.
+
+### Authorization preconditions
+
+Do not start Phase A until every item below is recorded and independently checked:
+
+- The read-only host preflight passes, and the exact host/runtime/configuration inventory is preserved.
+- The VM is dedicated and disposable. It contains no student data, production credentials, API secrets, unrelated tenants, or valuable host state.
+- An outer VM safety boundary independently enforces CPU, memory, PID, disk, and wall-time ceilings. Its stop/rebuild control is outside the supervisor, journal, and containerd failure domain being measured. The approved finite safety cutoff is recorded before the run.
+- Default-deny network containment is enforced outside the sandbox and verified with host-side counters or equivalent independent evidence before the first workload. The metadata link-local destination is denied before host uplink; no metadata request is sent from the host.
+- The candidate journal configuration has passed its separately required exact-host durability, crash, power-loss, disk-full, corruption, and restore gates. Phase A does not waive the journal backend proof gate below.
+- A fixed calibration image and scenario bundle have been source-reviewed, digest-pinned, and checked to contain no network callbacks, host-destructive operation, credential access, or student/hidden-test material.
+- The supervisor, journal, watchdog, evidence collector, and runtime versions/builds are frozen and recorded. The calibration must exercise the same cleanup controller and durable state path intended for M0; mocks do not produce qualifying timing evidence.
+- An independent reviewer and host owner authorize an immutable calibration manifest naming exact digests, profile revisions, allowed CAL-CLEAN scenario IDs, finite run count, external safety cutoff, evidence destination, expiry, and emergency stop authority.
+- The calibration control path is host-local and restricted to the allowlisted scenario IDs. It is not exposed through the student API, general execution endpoint, public HTTP route, or ordinary job queue. No arbitrary command or source field is accepted.
+
+An external safety cutoff is only an experiment-containment mechanism. If it fires, power off or isolate the disposable VM, mark the sample and campaign failed, and quarantine the host. Never record the outer cutoff as successful sandbox cleanup or adopt its duration as the cleanup deadline.
+
+### Phase A execution order
+
+1. Complete the runtime and containment smoke checks in Phase A.1 below.
+2. Confirm the independent outer resource and network controls remain active immediately before each campaign.
+3. Run only the fixed synthetic CAL-CLEAN scenarios listed in the cleanup qualification section. Do not run the full 35-fixture contract during Phase A.
+4. Capture the original termination trigger timestamp and boot identity before or at the termination request; continue measuring until independent resource-absence verification and durable cleanup disposition.
+5. Inject journal and evidence-store failures independently. Verify that the termination/cleanup branch progresses without waiting for either subsystem.
+6. Stop and quarantine on any uncertain cleanup, unowned resource, clock ambiguity, failed outer control, forbidden network flow, evidence leak, or unexplained host mutation.
+7. Preserve raw measurements and sanitized evidence, then obtain independent review before proposing a numeric deadline.
+
+## Phase A.1 — Runtime compatibility and containment smoke checks
+
+These checks are limited prerequisites for the calibration campaign. They are not the full M0 fixture suite. They may run only after the Phase A authorization preconditions above are approved.
 
 On a disposable host only:
 
@@ -49,9 +81,9 @@ On a disposable host only:
 
 No student source, hidden tests, application secrets, or production data may be used.
 
-## Phase 2 — Isolation and resource proof
+## Phase B.1 — Full M0 isolation and resource proof (blocked pending Phase A approval)
 
-Run the reviewed fixture matrix in `docs/specifications/m0-adversarial-fixture-contract.md` inside a disposable gVisor sandbox. The suite must be digest-pinned, source-reviewed, and contain no network callbacks or destructive host operations. Do not implement or execute fixture payloads until the disposable VM outer cgroup, watchdog, network containment, and recovery controls have been independently verified. In particular, before `M0-NET-006`, install and independently verify an outer-VM deny/blackhole rule for the metadata link-local destination (for example, IPv4 `169.254.169.254`); prove with host-side counters/packet observation that packets are dropped before any host uplink or metadata service can receive them. The probe originates only inside the sandbox. Never issue metadata requests from the host, never accept or store metadata responses, and mark the fixture blocked rather than running it if the outer deny cannot be proven.
+Only after Phase A measurements, the numeric cleanup deadline, evidence/finalization reserve, clock semantics, watchdog design, and new resource-profile revision have independent approval may the full reviewed 35-fixture matrix in `docs/specifications/m0-adversarial-fixture-contract.md` run inside a disposable gVisor sandbox. The suite must be digest-pinned, source-reviewed, and contain no network callbacks or destructive host operations. Do not implement or execute fixture payloads until the disposable VM outer cgroup, watchdog, network containment, and recovery controls have been independently verified. In particular, before `M0-NET-006`, install and independently verify an outer-VM deny/blackhole rule for the metadata link-local destination (for example, IPv4 `169.254.169.254`); prove with host-side counters/packet observation that packets are dropped before any host uplink or metadata service can receive them. The probe originates only inside the sandbox. Never issue metadata requests from the host, never accept or store metadata responses, and mark the fixture blocked rather than running it if the outer deny cannot be proven.
 
 | Area | Required evidence |
 |---|---|
@@ -68,7 +100,7 @@ Run the reviewed fixture matrix in `docs/specifications/m0-adversarial-fixture-c
 
 A test passes only with captured host-side evidence and an assertion that checks the expected failure mode. A command returning non-zero by itself is not sufficient proof.
 
-## Phase 3 — Cancellation, recovery, and repeatability
+## Phase B.2 — Full M0 cancellation, recovery, and repeatability proof
 
 - Cancel while the workload is running; verify the complete process tree is terminated.
 - Race cancellation against natural exit, the 10-minute intake-based deadline, the 60-second sandbox watchdog, and output overflow. Verify one durable arbitration winner, immutable primary cause, retained secondary trigger records, and one terminal result.
@@ -85,24 +117,46 @@ A test passes only with captured host-side evidence and an assertion that checks
 - Repeat each failure-path test enough times to expose races.
 - Preserve correlation IDs and timestamps without logging student source, hidden inputs, expected outputs, or secrets.
 
-## Cleanup deadline qualification gate
+## Phase A measurement evidence and Phase B release gate
 
-The numeric cleanup deadline is intentionally unset in profile revision 1. Before any stress fixture or host proof, follow the measurement and approval protocol in Section 2.1 of `m0-proof-resource-profile-v1.md`.
+The numeric cleanup deadline remains intentionally unset in resource-profile revision 1. Phase A may collect calibration measurements only after its separate authorization preconditions pass. This resolves the measurement/approval sequence without weakening the gate on the full M0 proof.
 
-The qualification evidence must include:
+### Fixed Phase A calibration scenarios
 
-- The earliest host-observed termination trigger timestamp, boot identity, and the immediate termination-request timestamp. The cleanup clock is anchored to trigger detection, not the later durable journal commit or client acknowledgement.
-- Phase timings from trigger through process-tree/cgroup empty, containerd task/container removal, shim exit, namespace/mount/scratch/network-policy cleanup, independent absence verification, and durable cleanup disposition.
-- Separate measurements for cancellation, sandbox watchdog, end-to-end expiry, stdout/stderr/combined overflow, OOM/PID limits, natural exit with inherited pipes, supervisor/containerd restart, journal failure, evidence-store outage, and ambiguous partial state.
-- Repeated cold/warm and bounded-load measurements, with sample count, distribution, maximum, outliers, and clock/scheduler/storage uncertainty. Percentiles are descriptive and do not prove a hard upper bound.
-- Explicit proof that a paused/deadlocked supervisor cannot disable the external watchdog and that restart/reboot never grants a fresh cleanup interval.
-- An independently reviewed margin rationale and numeric deadline in a new resource-profile revision.
+| Scenario ID | Trigger/fault being measured | Required evidence focus |
+|---|---|---|
+| CAL-CLEAN-001 | Explicit cancellation | Trigger-to-termination and verified complete resource absence |
+| CAL-CLEAN-002 | Sandbox wall watchdog | Original wall-deadline trigger retained through termination and cleanup |
+| CAL-CLEAN-003 | Output-limit termination | Termination begins before pipe drain or evidence I/O can block it |
+| CAL-CLEAN-004 | Descendants holding inherited stdout/stderr pipes | Complete cgroup/process cleanup; bounded drain/EOF handling |
+| CAL-CLEAN-005 | Supervisor pause, crash, and same-boot restart | Original monotonic anchor and fencing; no fresh cleanup interval |
+| CAL-CLEAN-006 | Containerd interruption/recovery | No blind retry; deterministic reconciliation and independent cleanup outcome |
+| CAL-CLEAN-007 | Journal delay or SQLITE_BUSY/FULL/IOERR injection | Termination is issued immediately; journal failure does not extend the cleanup clock |
+| CAL-CLEAN-008 | Evidence-store unavailable or delayed | Cleanup proceeds independently; evidence branch records incomplete disposition |
+| CAL-CLEAN-009 | Repeated/late triggers and ambiguous partial resources | First trigger remains the anchor; unknown resources force quarantine |
 
-**Do not use an average or p99 as the deadline.** Select a candidate only from the worst verified case plus a justified, reviewed margin. If the required cleanup budget plus the maximum sandbox wall time and evidence/terminal reserve cannot fit the remaining 10-minute intake deadline, admission must reject the launch before creating a sandbox.
+These calibration scenario IDs are separate from the 35 approved M0 fixture IDs. Phase A evidence must use a distinct calibration report and must never be inserted into a full-proof manifest as passed fixture results.
 
-The cleanup branch and evidence branch remain independent. Evidence-store or journal failure must not delay termination. At the absolute intake deadline, any unresolved cleanup/evidence branch is incomplete and quarantined; it must never be acknowledged as successful. Continue independent best-effort cleanup after quarantine.
+### Measurement and report requirements
 
-No numeric deadline has been chosen, no measurements have been collected, and no stress fixture or host proof is authorized by this runbook update.
+- Record the earliest host-observed termination trigger's monotonic timestamp and boot identity, plus the immediate termination-request timestamp. The cleanup clock starts at the trigger, not at a later journal commit or acknowledgement.
+- Record phase timings through process-tree/cgroup empty, containerd task/container removal, shim exit, namespace/mount/scratch/network-policy cleanup, independent absence verification, and durable cleanup disposition.
+- Keep cleanup and evidence collection independently supervised. A journal or evidence-store failure must not delay termination; unresolved evidence may make the report incomplete but cannot preserve a live sandbox.
+- Preserve raw monotonic measurements and sanitized host evidence. Report sample count, min, median, p95, p99, maximum, phase breakdown, outliers, host envelope, exact versions/digests, fault setup, and uncertainty sources. Percentiles are descriptive only and do not establish a hard upper bound.
+- Repeat relevant cases across cold/warm runtime state and bounded load. Test same-boot supervisor recovery; test host reboot only after the external recovery/watchdog boundary is independently verified.
+- A sample interrupted by the external VM safety cutoff, failed clock reconstruction, missing resource inventory, or ambiguous cleanup is a failed/unverified sample. It cannot contribute as a successful maximum.
+- Derive a candidate deadline only from the worst verified trigger-to-verified-cleanup result plus a separately justified engineering uncertainty margin. Do not use an arbitrary multiplier, average, or p99 as the hard deadline.
+- Independently review raw evidence, watchdog independence, clock semantics, the uncertainty-margin rationale, and the proposed numeric value.
+
+### Phase B release gate
+
+Before Phase B, add the numeric cleanup deadline and the independently measured/bounded evidence-and-terminal-finalization reserve together to a new reviewed resource-profile revision. Record the exact clock/reboot semantics, watchdog mechanism, host envelope, journal profile, and admission behavior in that revision.
+
+Admission must reserve the maximum 60-second sandbox wall interval, the approved cleanup deadline, and the evidence/terminal-finalization reserve from the same original 10-minute API-intake budget. If the remaining budget is insufficient, reject before sandbox creation. Queueing, retries, recovery, cleanup, evidence publication, and terminal commit never reset the original budget.
+
+**Phase B remains blocked** until the independent reviewer approves the Phase A measurements and profile revision. Only then may the full 35-fixture adversarial suite and its runner/supervisor/containerd restart, network, quota, journal, cleanup, and evidence-integrity cases run. Phase A does not itself authorize student execution.
+
+At the absolute intake deadline or the approved cleanup boundary, unresolved cleanup/evidence is incomplete and quarantined. Continue independent best-effort cleanup; never acknowledge success when either branch is failed or uncertain.
 
 ## Journal backend proof gate
 

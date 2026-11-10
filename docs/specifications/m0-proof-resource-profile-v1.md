@@ -24,11 +24,34 @@ The protocol hard ceilings remain 512 MiB scratch and 8,192 scratch inodes. The 
 
 The 10-minute end-to-end deadline is measured from the control plane's durably persisted API intake timestamp and includes queue wait, retries, reconnects, and recovery. The 60-second sandbox wall time begins at host-observed workload start. Persist both origins/deadlines; neither may be reset by runner/supervisor/containerd restart or retry. The host watchdog must re-arm from the original deadline after restart, using trusted wall-clock/monotonic-clock handling. Caller- or runner-supplied timestamps are never authoritative.
 
-A finite cleanup deadline is still deliberately unset. It must be added to a reviewed revision of this profile, measured from the first durable termination trigger, and validated under cancellation, deadline, output-overflow, inherited-pipe, supervisor restart, containerd outage, and evidence-store failure conditions. Pipe drain/EOF waiting is bounded by this cleanup deadline and may not extend it. No stress fixture or host proof may start until the cleanup deadline and its clock/restart semantics are explicitly approved; do not invent a default.
+A finite cleanup deadline is deliberately unset in revision 1. It must be derived from Phase A controlled calibration measurements, measured from the earliest host-observed termination trigger, and added to a reviewed profile revision together with the evidence/finalization reserve and clock/restart semantics. Pipe drain/EOF waiting is bounded by the approved cleanup deadline and may not extend it. Phase A calibration is governed by the separate authorization boundary below; the full M0 adversarial campaign and general execution remain blocked until Phase B approval. Do not invent a default.
 
 ## 2.1 Cleanup deadline qualification — required before profile approval
 
 The numeric cleanup deadline is intentionally **unset** in revision 1. It must not be guessed from a developer workstation, a clean cancellation, or an average runtime. This section defines how a future revision may qualify and approve it.
+
+### Authorization phases
+
+The cleanup-deadline work has two separately authorized phases. They must not be conflated.
+
+**Phase A — controlled cleanup-deadline calibration.** Phase A collects bounded, reproducible measurements solely to derive a candidate trigger-to-verified-cleanup deadline and its uncertainty margin. It is not the 35-fixture M0 adversarial proof, a security certification, a production test, or permission to enable student execution.
+
+Phase A may begin only after a written, time-bounded calibration authorization records all of the following:
+
+1. A dedicated disposable VM with no student data, production credentials, API secrets, unrelated tenants, or valuable host state.
+2. A passing read-only host preflight and an independently recorded inventory of the exact VM image, kernel, filesystem, containerd, runsc, shim, supervisor build, journal build, and configuration.
+3. An independently verified outer safety boundary: VM CPU, memory, PID, disk, and wall-time ceilings plus a control-plane or hypervisor-side stop/rebuild path that does not depend on the supervisor, journal, or containerd process being measured.
+4. Default-deny network containment enforced outside the sandbox and verified before any sandbox workload starts. The metadata link-local destination must be dropped before host uplink; no host-side metadata request is permitted.
+5. A digest-pinned, source-reviewed calibration image and fixed synthetic scenario allowlist. Scenarios may create bounded process trees and exercise only the named lifecycle fault; they must not accept arbitrary source, commands, OCI settings, mounts, devices, network destinations, or caller-selected limits.
+6. A separately approved calibration envelope with finite per-run and whole-VM safety cutoffs. These cutoffs exist only to stop and quarantine a failed experiment; they are not the cleanup deadline, are not used as successful cleanup samples, and must not be copied into the resource profile as the measured value.
+7. A signed or otherwise independently auditable authorization record naming the host owner and independent reviewer, exact digests/profile revisions, allowed scenario IDs, maximum run count, outer cutoffs, evidence location, expiry, and stop authority.
+8. A calibration-only control path that is unavailable to public HTTP execution routes, student APIs, ordinary queues, and general-purpose commands. It must invoke the same supervisor cleanup controller and journal path intended for M0; a mock or alternate cleanup implementation cannot supply qualification measurements.
+
+Phase A uses only fixed synthetic workloads. It may measure explicit cancellation, the sandbox wall watchdog, bounded output-triggered termination, descendants holding inherited pipes, supervisor pause/crash/restart, containerd interruption/recovery, journal write failure, evidence-store outage, repeated/late triggers, and ambiguous partial-resource reconciliation. Each scenario is separately identified and independently evidenced.
+
+Stop the campaign immediately and quarantine the VM if the external safety cutoff fires, network containment is uncertain, an unowned resource appears, the supervisor/watchdog identity is ambiguous, cleanup cannot be independently verified, evidence exposes prohibited data, or any host-boundary invariant fails. A VM-level hard stop is containment, not proof of successful sandbox cleanup.
+
+**Phase B — full M0 proof.** The 35-fixture adversarial campaign remains blocked until Phase A measurements are reviewed, a finite cleanup deadline and evidence/finalization reserve are approved together, clock/reboot semantics and the independent watchdog are accepted, and a new resource-profile revision records those decisions. Phase A samples never count toward the 35-fixture manifest and cannot be represented as a passed full proof.
 
 ### Scope and start point
 
@@ -68,7 +91,7 @@ The 10-minute API-intake budget is an absolute upper bound through terminal fina
 - The cleanup watchdog uses the earlier of the cleanup deadline and the remaining absolute intake deadline as its effective stop boundary. At the absolute deadline, unresolved cleanup is marked unverified/quarantined and independent cleanup continues; the API must not claim success.
 - The evidence branch must also have a bounded finalization policy that fits the same absolute intake budget. Its timeout/incompleteness cannot block the cleanup branch; terminal outcome remains incomplete/infrastructure-failed if evidence is not durably verified by the terminal deadline.
 
-**Approval gate:** the numeric cleanup deadline, clock/reboot semantics, watchdog mechanism, evidence-finalization reserve, and admission rule must be added together to a new reviewed resource-profile revision. Until then, no stress fixture, host proof, or execution enablement is authorized.
+**Phase B approval gate:** the numeric cleanup deadline, clock/reboot semantics, independently enforced watchdog mechanism, evidence-finalization reserve, and admission rule must be added together to a new reviewed resource-profile revision after Phase A evidence is independently reviewed. Until then, the full 35-fixture M0 adversarial proof and all general/student execution remain unauthorized. Phase A is permitted only under its own written calibration authorization and external VM safety cutoff.
 
 ## 2. Output-limit behavior
 

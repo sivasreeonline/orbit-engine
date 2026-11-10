@@ -15,6 +15,7 @@ on:
       - ".github/workflows/m0-preflight-ci.yml"
       - "docs/schemas/m0-proof-evidence.schema.json"
       - "scripts/validate_m0_evidence_schema.py"
+      - "scripts/validate_m0_cleanup_gate.py"
   workflow_dispatch:
 
 permissions:
@@ -45,6 +46,9 @@ jobs:
 
       - name: Validate evidence schema and fail-closed invariants
         run: python scripts/validate_m0_evidence_schema.py
+
+      - name: Validate cleanup calibration and full-proof gates
+        run: python scripts/validate_m0_cleanup_gate.py
 
       - name: Verify script is not configured to launch workloads
         shell: bash

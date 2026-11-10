@@ -122,6 +122,47 @@ Do not assume that splitting processes automatically removes risk: the privilege
 
 Before selecting the rootful path, document the effective capability set, systemd sandboxing, writable paths, syscalls, socket access, update/rollback procedure, and recovery access. If the required containerd operations force broad ambient privileges that cannot be acceptably constrained, stop and revisit the rootless alternative rather than weakening the threat model.
 
+### 3.5 Cleanup deadline calibration mode (Phase A)
+
+Phase A is a restricted mode of the proof harness used only to measure cleanup behavior on an independently authorized disposable VM. It is separate from the full 35-fixture M0 proof and must not be reachable from the student API, public execution routes, general queue consumer, or a general-purpose command interface.
+
+#### Typed calibration admission
+
+A calibration request may contain only an authorized calibration-run ID, one allowlisted CAL-CLEAN scenario ID, attempt ID, correlation ID, immutable calibration-profile ID/revision, and idempotency key. The supervisor must resolve the image digest, scenario payload, runtime settings, resource limits, and outer safety envelope from root-owned immutable configuration. It must reject arbitrary source, commands, arguments, images, registries, mounts, devices, environment values, network settings, deadlines, or resource limits.
+
+Use a distinct calibration profile and evidence report. Do not classify CAL-CLEAN records as members of the 35-fixture contract, and never use Phase A measurements to create a passed full-proof manifest. The calibration profile must record the exact host/runtime/supervisor/journal/watchdog builds and the authorization-manifest digest.
+
+#### Controls and measurement semantics
+
+- The VM must be dedicated and disposable. The outer CPU, memory, PID, disk, and wall-time safety boundary plus its hard-stop/rebuild control must be independent of the supervisor, journal, and containerd process under test.
+- Network denial must be enforced outside the sandbox and verified before any calibration workload starts. No workload network callbacks or metadata requests are allowed.
+- The external VM cutoff is a fail-safe for the experiment, not the cleanup deadline. If it fires, quarantine or destroy the VM and classify the calibration sample as failed/unverified; it is never evidence of successful cleanup.
+- Calibration must execute the same supervisor cleanup controller, journal transition path, and host-side absence verifier intended for M0. A mock cleanup implementation, alternate code path, or timing measured only on a developer workstation is not qualifying evidence.
+- The first host-observed termination trigger's monotonic timestamp and boot identity anchor the cleanup clock. Repeated triggers, supervisor restart, journal delay/failure, containerd recovery, and evidence-store delay never reset it.
+- Termination is issued immediately. Journal persistence, client acknowledgement, pipe EOF, evidence hashing, and evidence publication are not prerequisites for the termination request.
+- Cleanup and evidence finalization remain independent branches. The evidence branch may fail or time out without blocking termination; unverified cleanup forces quarantine.
+- The campaign has a separately approved finite run count and external safety cutoff. No numeric cleanup deadline is implied by those guardrails.
+
+#### Phase A scenario allowlist
+
+| Scenario | Controlled fault | Required observation |
+|---|---|---|
+| CAL-CLEAN-001 | Explicit cancellation | Earliest trigger to independently verified absence |
+| CAL-CLEAN-002 | Sandbox watchdog | Original execution deadline and cleanup clock remain distinct |
+| CAL-CLEAN-003 | Output-limit trigger | Termination precedes pipe drain and evidence work |
+| CAL-CLEAN-004 | Inherited pipes and descendant processes | Whole workload/cgroup removal; bounded EOF handling |
+| CAL-CLEAN-005 | Supervisor pause/crash/restart | Watchdog remains active; original monotonic anchor is re-armed |
+| CAL-CLEAN-006 | Containerd interruption/recovery | Reconcile actual resources; never blindly repeat create/start |
+| CAL-CLEAN-007 | Journal write failure/delay | Cleanup proceeds despite journal failure; no clock extension |
+| CAL-CLEAN-008 | Evidence-store failure/delay | Cleanup remains independent; evidence disposition is incomplete |
+| CAL-CLEAN-009 | Repeated/late trigger and ambiguous state | One cleanup operation; uncertainty quarantines host/attempt |
+
+#### Phase B remains blocked
+
+The full 35-fixture proof cannot start until a new reviewed resource-profile revision contains the measured numeric cleanup deadline, bounded evidence/terminal reserve, admission rule, clock/reboot semantics, and approved independent watchdog. The 10-minute end-to-end budget must reserve the maximum 60-second execution window plus cleanup plus evidence/terminal finalization before sandbox creation. If the remaining budget is insufficient, reject before creating a sandbox.
+
+Phase A does not authorize a general execution endpoint, queue consumer, student code, or production operation.
+
 ## 4. Sandbox lifecycle state machine
 
 The lifecycle is controlled by the host supervisor and recorded in a durable host-side journal. Process termination/cleanup and evidence collection are independent finalization branches; neither branch may wait for the other to begin or make progress.
