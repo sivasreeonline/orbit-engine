@@ -72,6 +72,7 @@ A test passes only with captured host-side evidence and an assertion that checks
 
 - Cancel while the workload is running; verify the complete process tree is terminated.
 - Race cancellation against natural exit, the 10-minute intake-based deadline, the 60-second sandbox watchdog, and output overflow. Verify one durable arbitration winner, immutable primary cause, retained secondary trigger records, and one terminal result.
+- Have a workload exceed an output ceiling and exit before the pipe reader drains buffered bytes. Verify natural exit remains provisional until both streams reach EOF and final counters are reconciled; a late-discovered output breach must block success.
 - Repeat cancellation and watchdog signals; verify idempotent termination/cleanup with no duplicate task or terminal transition. A late cancellation after finalization must not rewrite the result.
 - Restart the watchdog/supervisor during active execution and termination; verify the original persisted deadline is re-armed without granting a fresh budget.
 - Confirm cleanup before acknowledging cancellation.
