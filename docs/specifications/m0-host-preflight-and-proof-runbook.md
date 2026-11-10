@@ -85,6 +85,23 @@ A test passes only with captured host-side evidence and an assertion that checks
 - Repeat each failure-path test enough times to expose races.
 - Preserve correlation IDs and timestamps without logging student source, hidden inputs, expected outputs, or secrets.
 
+## Journal backend proof gate
+
+The candidate journal configuration and acceptance matrix are defined in `docs/specifications/m0-journal-backend-evaluation.md`. It is a proposal only; no storage engine or host implementation is approved.
+
+Before any supervisor implementation or host proof:
+
+- Review the candidate SQLite DELETE-journal / EXTRA profile against the exact library build, local filesystem, mount options, VM storage device and kernel.
+- Verify the effective `journal_mode` and `synchronous` settings at runtime; do not infer them from configuration files or library defaults.
+- Prove the host-wide kernel process lock prevents a paused old supervisor and a replacement from concurrently issuing privileged containerd operations. The database generation is not a substitute for this lock.
+- Run process-crash and abrupt-VM-power-loss injection around transaction commit, rollback-journal deletion, directory synchronization, disk-full and sync-error paths. Process termination alone does not prove power-loss durability.
+- Exercise SQLITE_BUSY, SQLITE_FULL, SQLITE_IOERR, corrupt database/journal, interrupted migration, uncertain commit, backup and restore. Any uncertain or corrupt state quarantines the host and blocks new work.
+- Verify that cleanup remains independently operable when journal writes fail; do not let database failure block termination and resource cleanup.
+- A backup must be a consistent SQLite Online Backup API snapshot or an equivalently reviewed quiesced copy. Never copy only the live main database file and assume it contains committed WAL/journal state.
+- Do not accept work after restart until the new supervisor holds the kernel lock, advances the durable generation, validates the database/schema, and reconciles all non-terminal attempts against actual host resources.
+
+If SQLite is rejected by empirical results, stop and reopen the backend decision. Do not silently switch journal mode, synchronous setting, filesystem, remote database, or custom log implementation.
+
 ## Evidence bundle
 
 Use `docs/specifications/m0-proof-resource-profile-v1.md` as the proposed versioned resource profile and `docs/schemas/m0-proof-evidence.schema.json` as the versioned manifest contract for the proof report. The evidence manifest must record the exact resource-profile ID, revision, and applied limits. The manifest records structured outcomes and references to sanitized evidence files; it must not embed raw logs, student code, hidden test data, credentials, or private artifact URLs. A schema-valid manifest is a completeness aid, not proof that the underlying tests actually ran or passed.
