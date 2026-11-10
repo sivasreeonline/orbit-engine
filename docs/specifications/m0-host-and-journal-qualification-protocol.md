@@ -93,7 +93,7 @@ Every test in the common catalogue below is required for either candidate. Candi
 | WDG-002 | Supervisor liveness/recovery watchdog fencing | Pause/deadlock/crash; exact service stop, kernel lock release before replacement, generation reconciliation | fault-injection / host-configuration |
 | WDG-003 | Outer VM safety boundary and hard stop | Out-of-VM CPU/memory/PID/disk/wall cutoff using an independently operated control-plane/hypervisor time source; demonstrate the hard cutoff and stop/rebuild path still work when guest wall and monotonic clocks are stepped, frozen, unavailable, or rolled back | watchdog-control-plane / operator-record / fault-injection |
 | CLK-001 | In-VM CLOCK_BOOTTIME suspend-aware elapsed clock | Exact audited guest clock API includes suspend; in-VM trigger anchor and supervisor-restart re-arm verified; no outer-watchdog authority is derived from this guest clock | host-runtime / fault-injection |
-| CLK-002 | Reboot, NTP uncertainty and snapshot/restore | Boot identity/time uncertainty/rollback/reboot/restore fail closed and quarantine on ambiguity | fault-injection / host-runtime |
+| CLK-002 | Guest reboot, NTP uncertainty and snapshot/restore | Boot identity/time uncertainty/rollback/reboot/restore fail closed and quarantine on ambiguity; guest clock evidence is not accepted as the outer VM cutoff clock | fault-injection / host-runtime |
 | EVID-001 | Evidence object read-back and independent integrity | Immutable version/root/size/hash/redaction and independent verifier read-back | host-runtime / fault-injection |
 
 ### Rootless-only candidate qualification tests
