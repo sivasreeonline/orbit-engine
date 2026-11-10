@@ -499,6 +499,8 @@ def main():
         raise AssertionError("resource profile and independent security checklist must link qualification protocol")
     if "all seven `WD-001` through `WD-007`" not in checklist:
         raise AssertionError("independent security checklist must require all seven watchdog subtests")
+    if "all eight source pins" not in protocol or "seven source pins" in protocol:
+        raise AssertionError("qualification protocol must remain aligned with the eight-source immutable manifest")
     print("PASS  blank qualification record remains not-started and not-qualified")
     print(f"PASS  schema, template and {len(TESTS)} common qualification tests are synchronized")
     print(f"PASS  rootless candidate schema and {len(ROOTLESS_TESTS)} rootless-only tests are synchronized")
