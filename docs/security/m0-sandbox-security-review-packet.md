@@ -114,7 +114,7 @@ Reject the proof design or stop testing if any of the following occurs:
 
 ## 7. Independent review checklist and decision record
 
-Use `docs/security/m0-independent-security-review-checklist.md` as the controlled reviewer workbook and the schema/template in this directory for the evidence-bound decision record.
+Use `docs/security/m0-independent-security-review-checklist.md` as the controlled reviewer workbook, `docs/security/m0-independent-security-review-record.schema.json` as the machine-readable schema, and `docs/security/m0-independent-security-review-record.template.json` as the blank evidence-bound decision record.
 
 The record starts as `not-reviewed`. Every finding has a stable control ID, evidence class, verification method, severity, remediation owner and immutable evidence references. Host/runtime controls cannot pass based on documentation, CI or schema tests alone.
 
