@@ -244,7 +244,7 @@ def errors_for(record, schema_validator):
         baseline_sha = record.get("scope", {}).get("reviewed_commit_sha")
         if not isinstance(baseline_sha, str) or len(baseline_sha) != 40:
             errors.append("candidate-qualified requires an exact 40-character reviewed commit SHA")
-        required_host = ["provider", "region", "vm_shape", "host_instance_id", "host_incarnation_epoch", "prior_incarnation_fence_evidence_ref", "host_incarnation_authority_id", "host_incarnation_authority_key_version", "host_incarnation_epoch_evidence_ref", "host_incarnation_issuance_nonce_digest", "predecessor_incarnation_set_digest", "provider_fence_method", "provider_fence_verified_at", "provider_fence_evidence_digest", "boot_id", "image_digest",
+        required_host = ["provider", "region", "vm_shape", "host_instance_id", "host_incarnation_epoch", "prior_incarnation_fence_evidence_ref", "host_incarnation_authority_id", "host_incarnation_authority_key_version", "host_incarnation_epoch_evidence_ref", "host_incarnation_epoch_evidence_digest", "host_incarnation_issuance_nonce_digest", "predecessor_incarnation_set_digest", "provider_fence_method", "provider_fence_verified_at", "provider_fence_evidence_digest", "boot_id", "image_digest",
             "os_release", "kernel_release", "architecture", "filesystem_type", "storage_device_identity",
             "storage_class", "containerd_version", "containerd_config_digest", "runsc_version", "shim_version",
             "host_profile_digest", "runtime_profile_digest", "resource_profile_digest", "supervisor_digest",
@@ -554,7 +554,7 @@ def main():
         raise AssertionError("candidate-qualified record accepted without prior-incarnation fence evidence")
     epoch_evidence_fields = [
         "host_incarnation_authority_id", "host_incarnation_authority_key_version",
-        "host_incarnation_epoch_evidence_ref", "host_incarnation_issuance_nonce_digest",
+        "host_incarnation_epoch_evidence_ref", "host_incarnation_epoch_evidence_digest", "host_incarnation_issuance_nonce_digest",
         "predecessor_incarnation_set_digest", "provider_fence_method",
         "provider_fence_verified_at", "provider_fence_evidence_digest"
     ]
