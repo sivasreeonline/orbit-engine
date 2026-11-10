@@ -54,6 +54,7 @@ REQUIRED = {
         "branch_generation",
         "candidate-specific supervisor journal only",
         "Candidate B requires ownership by its dedicated non-root supervisor identity",
+        "Candidate A requires root ownership; Candidate B requires ownership by its dedicated non-root supervisor identity",
     ],
     "runner README": [
         "m0-supervisor-journal-implementation-contract.md",
@@ -120,6 +121,9 @@ def main() -> int:
             failures.append("termination/journal ordering exception must remain explicit")
         if "No numeric cleanup timeout" not in contract:
             failures.append("contract must not introduce an unapproved cleanup timeout")
+        authority_sentence = "The controller may request only the five typed supervisor operations in the runtime harness design;"
+        if contract.count(authority_sentence) != 1:
+            failures.append("contract must contain exactly one typed supervisor-operation authority statement")
 
     if failures:
         for item in failures:
