@@ -152,6 +152,8 @@ def custom_errors(record):
             errors.append("completed review requires distinct reviewer and host owner")
         if not actors.get("reviewer_independence_attested") or not actors.get("independence_basis", "").strip():
             errors.append("completed review requires independence basis")
+        if not record.get("review_id"):
+            errors.append("completed review requires an assigned review UUID")
         if not record.get("reviewed_at") or not record.get("signature_reference"):
             errors.append("completed review requires date and signature reference")
         if decisions.get("review_decision") == "not-reviewed":
@@ -234,6 +236,7 @@ def main():
     ]:
         case = deepcopy(template); case[key] = True; cases.append((label + " authorization", case))
     case = deepcopy(template); case["review_status"] = "completed"; case["reviewed_at"] = "2026-11-10T00:00:00Z"; case["expires_at"] = "2026-11-09T00:00:00Z"; cases.append(("expired review", case))
+    case = deepcopy(template); case["review_status"] = "completed"; cases.append(("completed review without assigned UUID", case))
 
     for label, record in cases:
         if not validate(validator, record):
@@ -242,6 +245,7 @@ def main():
 
     complete = deepcopy(template)
     complete["review_status"] = "completed"
+    complete["review_id"] = "11111111-1111-4111-8111-111111111111"
     complete["participants"] = {
         "reviewer_id":"independent-reviewer", "host_owner_id":"host-owner",
         "reviewer_independence_attested":True, "independence_basis":"synthetic separation test",

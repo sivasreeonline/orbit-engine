@@ -294,7 +294,10 @@
       "const": "1.0.0"
     },
     "review_id": {
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "uuid"
     },
     "review_status": {
