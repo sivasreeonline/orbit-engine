@@ -25,6 +25,7 @@ CHECKLIST_PATH = ROOT / "docs/security/m0-independent-security-review-checklist.
 CONTROL_CLASSES = {"ARCH-001":"design","ARCH-002":"design","AUTH-001":"host","AUTH-002":"host","AUTH-003":"mixed","API-001":"design","PRIV-001":"host","PRIV-002":"host","RUNTIME-001":"host","RUNTIME-002":"host","OCI-001":"host","NET-001":"host","NET-002":"host","CGROUP-001":"host","FS-001":"host","OUTPUT-001":"host","LIFE-001":"mixed","LIFE-002":"host","LIFE-003":"host","CLOCK-001":"host","CLOCK-002":"host","JOURNAL-001":"host","JOURNAL-002":"host","JOURNAL-003":"host","WATCH-001":"host","WATCH-002":"host","WATCH-003":"host","EVID-001":"mixed","EVID-002":"host","SUPPLY-001":"mixed","OPS-001":"mixed","OPS-002":"design"}
 CONTROL_IDS = ["ARCH-001","ARCH-002","AUTH-001","AUTH-002","AUTH-003","API-001","PRIV-001","PRIV-002","RUNTIME-001","RUNTIME-002","OCI-001","NET-001","NET-002","CGROUP-001","FS-001","OUTPUT-001","LIFE-001","LIFE-002","LIFE-003","CLOCK-001","CLOCK-002","JOURNAL-001","JOURNAL-002","JOURNAL-003","WATCH-001","WATCH-002","WATCH-003","EVID-001","EVID-002","SUPPLY-001","OPS-001","OPS-002"]
 TEST_IDS = ["HST-001","HST-002","HST-003","HST-004","HST-005","AUTH-001","RUN-001","CG-001","NET-001","NET-002","FS-001","OUT-001","WDG-001","WDG-002","WDG-003","CLK-001","CLK-002","EVID-001","JRN-001","JRN-002","JRN-003","JRN-004","JRN-005","JRN-006","JRN-007","JRN-008","JRN-009","JRN-010","JRN-011","JRN-012","JRN-013","JRN-014","JRN-015"]
+ROOTLESS_TEST_IDS = ["RLS-001", "RLS-002", "RLS-003", "RLS-004"]
 AUTH_FLAGS = ["privileged_implementation_authorized", "phase_a_authorized", "phase_b_authorized",
                "student_execution_authorized", "production_execution_authorized"]
 HOST_EVIDENCE_TYPES = {"host-configuration", "host-runtime", "filesystem-storage", "supply-chain",
@@ -263,8 +264,12 @@ def main():
             raise AssertionError("candidate security control inventory diverges")
     if not all(test_id in dossier for test_id in TEST_IDS):
         raise AssertionError("dossier missing a common host qualification test ID")
-    if not all(test_id in dossier for test_id in ["RLS-001", "RLS-002", "RLS-003", "RLS-004"]):
+    if not all(test_id in dossier for test_id in ROOTLESS_TEST_IDS):
         raise AssertionError("dossier missing a rootless-specific qualification test ID")
+    if not all(test_id in qualification for test_id in ROOTLESS_TEST_IDS):
+        raise AssertionError("host qualification protocol missing rootless-specific test IDs")
+    if not all(test_id in checklist for test_id in ROOTLESS_TEST_IDS):
+        raise AssertionError("independent reviewer checklist missing rootless-specific test IDs")
     for content in [adr, security, qualification, checklist]:
         if "ADR-0019-decision-dossier.md" not in content:
             raise AssertionError("ADR/security/qualification/checklist cross-reference missing")
@@ -387,6 +392,74 @@ def main():
     if not validate_record(mismatch,validator):
         raise AssertionError("candidate qualification with mismatched runtime digest was accepted")
     print("PASS  rejects selected candidate with mismatched runtime profile digest")
+
+    # Synthetic positive rootless path: Candidate B must have its own full
+    # qualification report and all four RLS tests; Candidate A is design-assessed
+    # as the alternative but is not selected.
+    rootless_complete = deepcopy(complete)
+    rootless_complete["outcome"] = "select-rootless-for-m0-proof"
+    rootless_complete["selected_candidate"] = "rootless-containerd-userns"
+    rootful_alt = next(c for c in rootless_complete["candidate_assessments"] if c["candidate_id"] == "rootful-supervisor")
+    rootful_alt["assessment_status"] = "design-assessed"
+    rootful_alt["assessment_rationale"] = "Synthetic rootful design assessment only."
+    rootful_alt["qualification_report"] = None
+    rootless = next(c for c in rootless_complete["candidate_assessments"] if c["candidate_id"] == "rootless-containerd-userns")
+    rootless["assessment_status"] = "host-qualified"
+    rootless["assessment_rationale"] = "Synthetic fully-qualified rootless candidate."
+    rootless["configuration"].update({
+        "profile_id":"synthetic-rootless", "profile_digest":"a"*64,
+        "runtime_profile_digest":"4"*64, "resource_profile_digest":"5"*64,
+        "journal_profile_digest":"6"*64, "supervisor_digest":"7"*64,
+        "watchdog_digest":"8"*64, "test_harness_digest":"9"*64,
+        "runner_identity":"synthetic-runner", "host_controller_identity":"synthetic-rootless-daemon",
+        "containerd_access_principal":"synthetic-rootless-daemon", "privilege_inventory_digest":"c"*64,
+        "syscall_inventory_digest":"d"*64, "writable_path_inventory_digest":"e"*64,
+        "service_hardening_digest":"f"*64, "socket_policy_digest":"1"*64,
+        "network_backend":"synthetic-rootless-network", "cgroup_delegation_reference":"synthetic-delegation",
+        "user_namespace_mapping_reference":"synthetic-subuid-map", "rootlesskit_version":"synthetic-rootlesskit"
+    })
+    for finding in rootless["design_findings"]:
+        finding.update(result="pass", verification_method="Synthetic candidate review",
+                       finding="Synthetic only", severity="none")
+        if finding["evidence_class"] == "design":
+            evidence_types = ["design-document"]
+        elif finding["evidence_class"] == "host":
+            evidence_types = ["host-configuration"]
+        else:
+            evidence_types = ["design-document", "host-configuration"]
+        finding["evidence_refs"] = [{
+            "reference_id":"synthetic-rootless-"+finding["control_id"]+"-"+evidence_type,
+            "object_version":"v1", "sha256":"a"*64, "byte_count":1,
+            "evidence_root_id":"synthetic-root", "evidence_type":evidence_type,
+            "acquired_at":"2026-11-10T00:00:00Z", "acquisition_tool":"validator",
+            "tool_version":"1.0", "verification_status":"verified",
+            "independent_verifier_id":"synthetic-verifier", "verification_note":"Synthetic only",
+            "redaction_status":"non-sensitive"
+        } for evidence_type in evidence_types]
+    rootless["qualification_report"] = {
+        "record_id":"22222222-2222-4222-8222-222222222222", "record_sha256":"3"*64,
+        "record_commit_sha":"a"*40, "target_architecture":"rootless-containerd-userns",
+        "qualification_status":"candidate-qualified", "host_instance_id":"synthetic-rootless-host",
+        "boot_id":"synthetic-rootless-boot", "host_profile_digest":"a"*64,
+        "runtime_profile_digest":"4"*64, "resource_profile_digest":"5"*64,
+        "journal_profile_digest":"6"*64, "supervisor_digest":"7"*64,
+        "watchdog_digest":"8"*64, "test_harness_digest":"9"*64,
+        "test_ids":TEST_IDS, "candidate_specific_test_ids":ROOTLESS_TEST_IDS,
+        "rootless_userns_compatibility_gate":"passed",
+        "reviewer_id":"synthetic-independent-reviewer", "host_owner_id":"synthetic-host-owner",
+        "independence_attested":True, "reviewed_at":"2026-11-10T00:00:00Z",
+        "expires_at":"2026-12-10T00:00:00Z", "signature_reference":"synthetic-rootless-qualification"
+    }
+    rootless_errors = validate_record(rootless_complete, validator)
+    if rootless_errors:
+        raise AssertionError("synthetic rootless candidate selection rejected: " + "; ".join(rootless_errors))
+    rootless_missing = deepcopy(rootless_complete)
+    selected_rootless = next(c for c in rootless_missing["candidate_assessments"] if c["candidate_id"] == "rootless-containerd-userns")
+    selected_rootless["qualification_report"]["candidate_specific_test_ids"].pop()
+    if not validate_record(rootless_missing, validator):
+        raise AssertionError("rootless selection with a missing RLS test was accepted")
+    print("PASS  accepts rootless selection only with all four candidate-specific qualification tests")
+    print("PASS  rejects rootless selection with a missing candidate-specific test")
     print("PASS  accepts synthetic selection only with candidate-specific complete qualification")
     print("PASS  ADR acceptance leaves implementation and all execution authorizations false")
     print("NOTE  synthetic contract fixtures only; no actual review, host qualification or signature")
