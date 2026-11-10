@@ -136,6 +136,27 @@ def errors_for(record, schema_validator):
         errors.append("evidence gate requires EVID-001")
     rootless_gate = gates.get("rootless_userns_compatibility")
     rootless_passed_ids = {f.get("test_id") for f in rootless_results if f.get("result") == "passed"}
+    host_profile = record.get("host_identity", {})
+    rootless_profile = host_profile.get("rootless_profile")
+    rootless_profile_digest = host_profile.get("rootless_profile_digest")
+    if target_architecture == "rootless-containerd-userns":
+        if not isinstance(rootless_profile, dict):
+            errors.append("rootless candidate requires a complete rootless host profile object")
+        else:
+            if rootless_profile.get("daemon_uid", 0) == 0 or rootless_profile.get("daemon_gid", 0) == 0:
+                errors.append("rootless daemon must use non-root UID and GID")
+            if rootless_profile.get("user_namespace_mode") != "caller-configured-userns":
+                errors.append("rootless host profile must use caller-configured user namespaces")
+            controllers = set(rootless_profile.get("delegated_controllers", []))
+            if not {"cpu", "memory", "pids"}.issubset(controllers):
+                errors.append("rootless profile must explicitly delegate cpu, memory and pids controllers")
+            if rootless_profile.get("profile_sha256") != rootless_profile_digest:
+                errors.append("rootless profile digest does not match host identity record")
+    elif target_architecture == "rootful-supervisor":
+        if rootless_profile is not None or rootless_profile_digest is not None:
+            errors.append("rootful candidate must not carry a rootless host profile")
+    elif rootless_profile is not None or rootless_profile_digest is not None:
+        errors.append("unselected architecture must not carry a rootless host profile")
     if target_architecture == "rootless-containerd-userns":
         if rootless_gate == "passed" and rootless_passed_ids != ROOTLESS_TEST_IDS:
             errors.append("rootless userns compatibility gate requires RLS-001 through RLS-004 to pass")
@@ -307,6 +328,12 @@ def main():
     case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["candidate_specific_test_results"] = [{"test_id":"RLS-001","domain":"rootless-compatibility","result":"passed","verification_method":"synthetic","finding_summary":"synthetic","severity":"none","remediation_owner":"","evidence_refs":[]}]; cases.append(("partial rootless-specific test inventory",case))
     case = deepcopy(template); case["scope"]["target_architecture"] = "rootful-supervisor"; case["gates"]["rootless_userns_compatibility"] = "passed"; cases.append(("rootful record claiming rootless compatibility",case))
     case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["candidate_specific_test_results"] = [{"test_id":"RLS-001","domain":"rootless-compatibility","result":"passed","verification_method":"synthetic","finding_summary":"synthetic","severity":"none","remediation_owner":"","evidence_refs":[{"reference_id":"synthetic","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic","verification_note":"synthetic"}]}]; cases.append(("rootless test with wrong evidence type",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; cases.append(("rootless host profile missing",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootful-supervisor"; case["host_identity"]["rootless_profile"] = {"daemon_uid":1000}; cases.append(("rootful record carrying rootless profile",case))
+    profile={"daemon_uid":1000,"daemon_gid":1000,"daemon_identity_digest":"a"*64,"user_namespace_mode":"caller-configured-userns","subuid_map_digest":"b"*64,"subgid_map_digest":"c"*64,"subuid_range_count":1,"subgid_range_count":1,"rootlesskit_version":"synthetic-rootlesskit","rootlesskit_sha256":"d"*64,"newuidmap_sha256":"e"*64,"newgidmap_sha256":"f"*64,"helper_inventory_sha256":"1"*64,"state_directory_policy_sha256":"2"*64,"daemon_socket_policy_sha256":"3"*64,"apparmor_profile_sha256":"4"*64,"network_backend":"synthetic-slirp","network_namespace_profile_sha256":"5"*64,"systemd_delegation_profile_sha256":"6"*64,"delegated_controllers":["cpu","memory","pids"],"profile_sha256":"7"*64}
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["host_identity"]["rootless_profile"] = deepcopy(profile); case["host_identity"]["rootless_profile_digest"]="7"*64; case["host_identity"]["rootless_profile"]["daemon_uid"]=0; cases.append(("rootless daemon using UID zero",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["host_identity"]["rootless_profile"] = deepcopy(profile); case["host_identity"]["rootless_profile_digest"]="7"*64; case["host_identity"]["rootless_profile"]["delegated_controllers"]=["memory","pids"]; cases.append(("rootless profile missing CPU delegation",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["host_identity"]["rootless_profile"] = deepcopy(profile); case["host_identity"]["rootless_profile_digest"]="8"*64; cases.append(("rootless profile digest mismatch",case))
     case = deepcopy(template); case["phase_a_authorized"] = True; cases.append(("Phase A authorization",case))
     case = deepcopy(template); case["phase_b_authorized"] = True; cases.append(("Phase B authorization",case))
     case = deepcopy(template); case["student_execution_authorized"] = True; cases.append(("student execution authorization",case))
@@ -374,6 +401,19 @@ def main():
     rootless_complete = deepcopy(complete)
     rootless_complete["scope"]["target_architecture"] = "rootless-containerd-userns"
     rootless_complete["gates"]["rootless_userns_compatibility"] = "passed"
+    rootless_profile = {
+        "daemon_uid":1000,"daemon_gid":1000,"daemon_identity_digest":"a"*64,
+        "user_namespace_mode":"caller-configured-userns","subuid_map_digest":"b"*64,"subgid_map_digest":"c"*64,
+        "subuid_range_count":1,"subgid_range_count":1,"rootlesskit_version":"synthetic-rootlesskit",
+        "rootlesskit_sha256":"d"*64,"newuidmap_sha256":"e"*64,"newgidmap_sha256":"f"*64,
+        "helper_inventory_sha256":"1"*64,"state_directory_policy_sha256":"2"*64,
+        "daemon_socket_policy_sha256":"3"*64,"apparmor_profile_sha256":"4"*64,
+        "network_backend":"synthetic-slirp","network_namespace_profile_sha256":"5"*64,
+        "systemd_delegation_profile_sha256":"6"*64,"delegated_controllers":["cpu","memory","pids"],
+        "profile_sha256":"7"*64
+    }
+    rootless_complete["host_identity"]["rootless_profile"] = rootless_profile
+    rootless_complete["host_identity"]["rootless_profile_digest"] = "7"*64
     rootless_types = {test["id"]: test["evidenceTypes"][0] for test in ROOTLESS_TESTS}
     rootless_complete["candidate_specific_test_results"] = [{
         "test_id": test["id"], "domain":"rootless-compatibility", "result":"passed",
