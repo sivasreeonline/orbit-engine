@@ -9,15 +9,21 @@
     {
       "if": {
         "properties": {
-          "review_status": { "const": "not-reviewed" }
+          "review_status": {
+            "const": "not-reviewed"
+          }
         },
-        "required": ["review_status"]
+        "required": [
+          "review_status"
+        ]
       },
       "then": {
         "properties": {
           "scope": {
             "properties": {
-              "reviewed_commit_sha": { "type": "null" }
+              "reviewed_commit_sha": {
+                "type": "null"
+              }
             }
           }
         }
@@ -26,7 +32,10 @@
         "properties": {
           "scope": {
             "properties": {
-              "reviewed_commit_sha": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+              "reviewed_commit_sha": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40}$"
+              }
             }
           }
         }
@@ -62,6 +71,7 @@
         "sha256",
         "byte_count",
         "evidence_root_id",
+        "acquired_by_id",
         "acquired_at",
         "acquisition_tool",
         "evidence_type",
@@ -133,6 +143,11 @@
         },
         "verifier_note": {
           "type": "string"
+        },
+        "acquired_by_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Accountable human or service principal that acquired or uploaded this evidence object; must differ from its independent verifier, host owner and security reviewer."
         }
       },
       "allOf": [
@@ -354,7 +369,10 @@
           "const": "sivasreeonline/orbit-engine"
         },
         "reviewed_commit_sha": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^([a-f0-9]{40})?$"
         },
         "review_scope": {
