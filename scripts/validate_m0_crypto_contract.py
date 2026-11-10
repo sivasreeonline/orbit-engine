@@ -320,6 +320,38 @@ def main() -> None:
           "revoked key reactivation accepted")
     check(not valid_key_transition("ACTIVE", "GENERATED", "KEY_GENERATED"),
           "key lifecycle rollback accepted")
+    lifecycle_chain = [
+        ("NONE","GENERATED","KEY_GENERATED"),
+        ("GENERATED","PENDING","KEY_SUBMITTED_FOR_ACTIVATION"),
+        ("PENDING","ACTIVE","KEY_ACTIVATED"),
+        ("ACTIVE","DEPRECATED_VERIFY_ONLY","KEY_DEPRECATED"),
+        ("DEPRECATED_VERIFY_ONLY","REVOKED","KEY_REVOKED"),
+        ("REVOKED","DESTROYED","KEY_DESTROYED"),
+    ]
+    state="NONE"
+    for prior,candidate,event_type in lifecycle_chain:
+        check(prior==state and valid_key_transition(prior,candidate,event_type),
+              "valid append-only key lifecycle chain rejected")
+        state=candidate
+    check(state=="DESTROYED", "key lifecycle chain did not reach terminal destruction")
+    check(not valid_key_transition("REVOKED","ACTIVE","KEY_ACTIVATED"),
+          "terminal revocation was reversible")
+    def rotation_pair_valid(old_key: dict, new_key: dict) -> bool:
+        return (old_key["key_id"]==new_key["key_id"]
+                and old_key["key_version"]!=new_key["key_version"]
+                and old_key["purpose"]==new_key["purpose"]
+                and old_key["environment"]==new_key["environment"]
+                and old_key["state"]=="DEPRECATED_VERIFY_ONLY"
+                and new_key["state"]=="ACTIVE"
+                and old_key["public_key_fingerprint_sha256"]!=new_key["public_key_fingerprint_sha256"])
+    old_key=dict(key,key_version="1",state="DEPRECATED_VERIFY_ONLY")
+    new_key=dict(key,key_version="2",state="ACTIVE",public_key_fingerprint_sha256="9"*64)
+    check(rotation_pair_valid(old_key,new_key), "valid overlapping key rotation rejected")
+    check(not rotation_pair_valid(old_key,dict(new_key,purpose="provider-fence")),
+          "cross-purpose key rotation accepted")
+    check(not rotation_pair_valid(old_key,dict(new_key,environment="production")),
+          "cross-environment key rotation accepted")
+
 
     def trust_bundle_successor_valid(previous: dict, candidate: dict) -> bool:
         return (candidate["generation"] == previous["generation"] + 1
@@ -367,6 +399,22 @@ def main() -> None:
     check(not bundle_identity_sets_valid(dict(revoked_bundle,
           revocations=revoked_bundle["revocations"]+[dict(revoked_bundle["revocations"][0])])),
           "duplicate revocation identity accepted in trust bundle")
+    def bundle_revocation_consistency_valid(bundle_value: dict) -> bool:
+        if not bundle_identity_sets_valid(bundle_value):
+            return False
+        key_states={(item["key_id"],item["key_version"]):item["status"] for item in bundle_value["keys"]}
+        revoked_keys={identity for identity,state in key_states.items() if state=="REVOKED"}
+        revocation_ids={(item["key_id"],item["key_version"]) for item in bundle_value["revocations"]}
+        return revoked_keys == revocation_ids and all(
+            key_states.get(identity)=="REVOKED" for identity in revocation_ids)
+    check(bundle_revocation_consistency_valid(revoked_bundle),
+          "matching key and revocation inventory rejected")
+    check(not bundle_revocation_consistency_valid(dict(revoked_bundle,revocations=[])),
+          "revoked key omitted from trust-bundle revocation inventory")
+    check(not bundle_revocation_consistency_valid(dict(revoked_bundle,
+          keys=[dict(revoked_bundle["keys"][0],status="ACTIVE")])),
+          "active key paired with revocation inventory")
+
 
 
     def authorization_ledger_binding_valid(payload: dict, receipt: dict, acceptance: dict,
