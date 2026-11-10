@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const databaseUrl = process.env.DATABASE_URL;
 const suffix = randomUUID().replaceAll("-", "");
 const schemaName = `authorization_it_${suffix}`;
 const roleName = `authorization_it_role_${suffix}`;
-const authId = "phase-a-test-authorization";
+let authId = "phase-a-test-authorization";
 const clients: Client[] = [];
 let admin: Client;
 
@@ -140,7 +140,7 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     await admin.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "${schemaName}" TO "${roleName}"`);
   });
 
-  afterAll(async () => {
+  beforeEach(() => {\n    authId = randomUUID();\n  });\n\n  afterAll(async () => {
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`).catch(() => undefined);
       await admin.query(`DROP ROLE IF EXISTS "${roleName}"`).catch(() => undefined);
