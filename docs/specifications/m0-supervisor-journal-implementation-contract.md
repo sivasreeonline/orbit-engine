@@ -14,7 +14,7 @@ It does **not** approve the rootful supervisor ADR, SQLite, a Go SQLite driver, 
 ### 1.1 Existing design direction
 
 - The Go runner remains unprivileged and has no direct containerd socket access.
-- If ADR-0019 is independently accepted, one dedicated host supervisor is the only application principal permitted to issue rootful containerd operations.
+- If Candidate A is selected by an independently accepted ADR-0019 decision, one dedicated host supervisor is the only application principal permitted to issue rootful containerd operations. Candidate B must retain its separate dedicated non-root daemon/supervisor boundary.
 - A local host journal is the intended source of truth for logical attempts and recovery, but SQLite DELETE journal + EXTRA remains an unapproved candidate.
 - The 10-minute intake deadline, 60-second workload wall limit, cleanup deadline, and evidence/terminal-finalization reserve are distinct budgets. The cleanup deadline and finalization reserve remain unset pending Phase A evidence and review.
 - Phase A calibration and Phase B full M0 proof remain separately authorized; neither authorizes student or production execution.
@@ -49,7 +49,7 @@ The phrase **external watchdog** is too ambiguous for implementation. M0 must di
 - Reconcile and remove the workload process tree, containerd task/container, shim, namespaces, cgroup, scratch, temporary mounts, and attempt-scoped network-policy state.
 - Run independent host-side absence checks and persist a cleanup disposition when the journal is available.
 
-**Authority:** only the selected candidate's approved host supervisor may issue containerd lifecycle operations. Candidate A's supervisor is the sole rootful caller; Candidate B's supervisor must remain within its dedicated non-root daemon/user-namespace boundary. The controller may request only the five typed supervisor operations in the runtime harness design; it must not expose generic containerd, shell, file, OCI, or command APIs. The controller may request only the five typed supervisor operations in the runtime harness design; it must not expose generic containerd, shell, file, OCI, or command APIs.
+**Authority:** only the selected candidate's approved host supervisor may issue containerd lifecycle operations. Candidate A's supervisor is the sole rootful caller; Candidate B's supervisor must remain within its dedicated non-root daemon/user-namespace boundary. The controller may request only the five typed supervisor operations in the runtime harness design; it must not expose generic containerd, shell, file, OCI, or command APIs.
 
 **Failure behavior:** if the journal is unavailable, the controller still issues termination and continues best-effort cleanup. It stops new admissions, marks the host/attempt unsafe for success, and requests supervisor recovery. If the original trigger or disposition cannot be reconstructed after restart, treat the cleanup budget as expired and quarantine. Never restart the cleanup interval.
 
