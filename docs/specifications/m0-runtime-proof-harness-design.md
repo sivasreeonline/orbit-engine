@@ -44,6 +44,20 @@ The Go runner must never receive broad containerd socket access. A future superv
 
 Every operation is authenticated, authorized, bounded, correlated, and idempotent where applicable. Transport is a private Unix socket with peer-identity checks or another separately reviewed private authenticated transport. No public listener is permitted.
 
+### 3.0 Operation-level contract
+
+| Operation | Preconditions and authorization | Idempotency / response contract |
+|---|---|---|
+| `CreateProofSandbox` | Approved fixture, runtime profile, resource profile, unexpired deadline, authorized proof run and unused attempt | Same idempotency key returns the existing attempt; conflicting request digest for that key is rejected |
+| `StartProofSandbox` | Exact attempt is durably created and its image/profile digests are re-verified | Repeated start returns current state; it never starts a second task |
+| `GetProofSandboxStatus` | Caller is authorized for the exact proof run and attempt | Read-only; returns bounded state and evidence references, never raw guest output or hidden test data |
+| `CancelProofSandbox` | Exact attempt is owned by the caller's authorized proof run | Repeated cancel converges on the same cancellation/terminal state; client disconnect does not stop cleanup |
+| `DeleteProofSandbox` | Attempt is terminal or in an explicitly authorized cleanup/reconciliation path | Repeated delete verifies absence; it does not erase journal or evidence needed for audit |
+
+All responses are versioned, bounded, and typed. They contain the operation ID, attempt ID, correlation ID, current lifecycle state, a fixed infrastructure/result classification, and opaque evidence references where appropriate. They must not contain OCI specs, host paths, raw command lines, environment values, credentials, hidden tests, expected outputs, or unbounded stdout/stderr.
+
+The supervisor must compare a canonical digest of the immutable request fields with the persisted request digest. Reusing an idempotency key with different fixture/profile/deadline content is a conflict, not a retry. Do not permit caller-selected sandbox names or resource labels; derive those from the durable attempt identity using a collision-resistant deterministic encoding.
+
 ### 3.1 Allowed request fields
 
 A request may contain only:
