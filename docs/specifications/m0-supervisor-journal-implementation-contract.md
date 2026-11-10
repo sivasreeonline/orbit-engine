@@ -235,7 +235,7 @@ The following logical records are mandatory regardless of the backend. They are 
 - Backup/restore runs outside the cleanup critical path. Use the backend's reviewed consistent snapshot API; do not copy a live database file and assume it is consistent.
 - A restored journal does not authorize work. The host remains quarantined until host identity, schema, integrity, generation, and all non-terminal attempts are reconciled against actual resources.
 - A corrupt or unknown/newer schema fails closed. Do not automatically delete, recreate, or “repair” a journal and resume execution.
-- Exact size limits, free-space low-watermark, backup cadence, retention duration, secure deletion, and restore RTO remain open until a host/storage profile is approved.
+- Exact journal size ceiling, free-space low-watermark, separately protected cleanup/containment reserve, backup target capacity/cadence, retention duration, secure-deletion method, and restore RTO remain open until a host/storage profile is approved. The cleanup reserve must not be allocatable to journal, evidence staging, logs, or backup growth; size it from measured worst-case cleanup/reconciliation/quarantine needs. Low-watermark or reserve pressure stops new admission; hard-capacity exhaustion quarantines the host. Cleanup and outer containment must remain operable without journal writes. No emergency pruning, live VACUUM, or ad-hoc journal manipulation is permitted.
 
 ## 7. Transaction boundaries and side-effect ordering
 
