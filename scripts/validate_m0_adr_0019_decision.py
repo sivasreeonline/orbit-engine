@@ -53,15 +53,18 @@ def validate_record(record, validator):
                   f"{cid}: runtime integration mode does not match candidate definition")
         if candidate.get("assessment_status") != "not-assessed":
             if cid == "rootful-supervisor":
-                required = ["profile_id", "profile_digest", "runner_identity", "host_controller_identity",
+                required = ["profile_id", "profile_digest", "runtime_profile_digest", "resource_profile_digest", "journal_profile_digest",
+                            "supervisor_digest", "watchdog_digest", "test_harness_digest", "runner_identity", "host_controller_identity",
                             "containerd_access_principal", "privilege_inventory_digest", "syscall_inventory_digest",
-                            "writable_path_inventory_digest", "service_hardening_digest", "socket_policy_digest"]
+                            "writable_path_inventory_digest", "service_hardening_digest", "socket_policy_digest", "network_backend"]
                 add_error(errors, any(not config.get(name) for name in required),
                           "rootful candidate requires exact supervisor, socket and privilege inventory")
             elif cid == "rootless-containerd-userns":
-                required = ["profile_id", "profile_digest", "runner_identity", "host_controller_identity",
-                            "containerd_access_principal", "network_backend", "cgroup_delegation_reference",
-                            "user_namespace_mapping_reference", "rootlesskit_version"]
+                required = ["profile_id", "profile_digest", "runtime_profile_digest", "resource_profile_digest", "journal_profile_digest",
+                            "supervisor_digest", "watchdog_digest", "test_harness_digest", "runner_identity", "host_controller_identity",
+                            "containerd_access_principal", "privilege_inventory_digest", "syscall_inventory_digest",
+                            "writable_path_inventory_digest", "service_hardening_digest", "socket_policy_digest", "network_backend",
+                            "cgroup_delegation_reference", "user_namespace_mapping_reference", "rootlesskit_version"]
                 add_error(errors, any(not config.get(name) for name in required),
                           "rootless candidate requires exact daemon, userns, RootlessKit, network and cgroup profile")
 
@@ -100,7 +103,7 @@ def validate_record(record, validator):
 
         design_findings = [f for f in findings if CONTROL_CLASSES.get(f.get("control_id")) == "design"]
         status = candidate.get("assessment_status")
-        add_error(errors, status in {"design-assessed", "host-qualified", "rejected"} and
+        add_error(errors, status in {"design-assessed", "host-qualified", "rejected", "deferred"} and
                   any(f.get("result") == "not-reviewed" for f in design_findings),
                   f"{cid}: assessed candidate must have all design controls reviewed")
         add_error(errors, status == "rejected" and not candidate.get("rejection_rationale", "").strip(),
@@ -120,6 +123,10 @@ def validate_record(record, validator):
                           f"{cid}: qualification commit does not match decision baseline")
                 add_error(errors, qualification.get("host_profile_digest") != config.get("profile_digest"),
                           f"{cid}: host profile digest mismatch")
+                for report_field in ["runtime_profile_digest", "resource_profile_digest", "journal_profile_digest",
+                                     "supervisor_digest", "watchdog_digest", "test_harness_digest"]:
+                    add_error(errors, qualification.get(report_field) != config.get(report_field),
+                              f"{cid}: {report_field} does not match candidate configuration")
                 add_error(errors, qualification.get("reviewer_id") == qualification.get("host_owner_id"),
                           f"{cid}: qualification reviewer and host owner must be distinct")
                 add_error(errors, not qualification.get("independence_attested"),
@@ -308,7 +315,9 @@ def main():
     rootless["assessment_status"]="design-assessed"
     rootless["assessment_rationale"]="Synthetic design assessment only."
     rootless["configuration"].update({
-        "profile_id":"synthetic-rootless-profile", "profile_digest":"b"*64,
+        "profile_id":"synthetic-rootless-profile", "profile_digest":"b"*64,"runtime_profile_digest":"4"*64,
+        "resource_profile_digest":"5"*64,"journal_profile_digest":"6"*64,"supervisor_digest":"7"*64,
+        "watchdog_digest":"8"*64,"test_harness_digest":"9"*64,
         "runner_identity":"synthetic-runner", "host_controller_identity":"synthetic-rootless-daemon",
         "containerd_access_principal":"synthetic-rootless-daemon", "network_backend":"synthetic-rootless-network",
         "cgroup_delegation_reference":"synthetic-cgroup-delegation",
