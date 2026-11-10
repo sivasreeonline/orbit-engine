@@ -109,6 +109,28 @@ func TestExecutionRequestValidateRejectsInvalidFields(t *testing.T) {
 	}
 }
 
+func TestExecutionRequestValidateRejectsInvalidRuntimeVersionTokens(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"25\\x00", "25/unsafe", "25 beta", "版本25"} {
+		request := validRequest()
+		request.RuntimeVersion = value
+		if err := request.Validate(); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("runtimeVersion %q: error = %v, want ErrInvalidRequest", value, err)
+		}
+	}
+}
+
+func TestExecutionRequestValidateAcceptsRuntimeVersionBuildMetadata(t *testing.T) {
+	t.Parallel()
+
+	request := validRequest()
+	request.RuntimeVersion = "temurin-25.0.1+8"
+	if err := request.Validate(); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
 func TestExecutionRequestValidateRejectsWhitespaceAndMissingIDs(t *testing.T) {
 	t.Parallel()
 
