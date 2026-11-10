@@ -107,7 +107,12 @@ def main() -> None:
         "security_review_control_count": 33, "fence_001_result": "pass",
         "authorization_manifest_sha256": "6" * 64, "max_run_count": 1,
         "not_before": "2026-01-01T00:00:00Z", "expires_at": "2026-01-01T00:05:00Z",
-        "cleanup_calibration_authorized": True, "full_m0_proof_authorized": False,\n        "host_owner_principal_id": "principal-owner", "evidence_acquirer_principal_id": "principal-acquirer",\n        "fence_verifier_principal_id": "principal-fence-verifier",\n        "independent_security_reviewer_principal_id": "principal-reviewer",\n        "authorization_signer_principal_id": "principal-signer",\n        "reviewer_role": "independent-security-reviewer", "independence_attested": True,
+        "cleanup_calibration_authorized": True, "full_m0_proof_authorized": False,
+        "host_owner_principal_id": "principal-owner", "evidence_acquirer_principal_id": "principal-acquirer",
+        "fence_verifier_principal_id": "principal-fence-verifier",
+        "independent_security_reviewer_principal_id": "principal-reviewer",
+        "authorization_signer_principal_id": "principal-signer",
+        "reviewer_role": "independent-security-reviewer", "independence_attested": True,
         "student_execution_authorized": False, "production_execution_authorized": False,
     }
     revoke_payload = {
