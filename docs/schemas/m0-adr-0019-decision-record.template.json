@@ -734,5 +734,6 @@
   "phase_a_authorized": false,
   "phase_b_authorized": false,
   "student_execution_authorized": false,
-  "production_execution_authorized": false
+  "production_execution_authorized": false,
+  "upstream_source_manifest_sha256": null
 }
