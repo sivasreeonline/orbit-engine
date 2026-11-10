@@ -1,0 +1,186 @@
+# M0 Host and Journal Durability Qualification Protocol
+
+- Status: **protocol only; no host selected, provisioned, or qualified**.
+- Scope: disposable, single-tenant M0 synthetic proof environment only.
+- Related: ADR-0019, M0 runbook, journal evaluation, supervisor/journal contract, independent security review package.
+- No provider, region, VM size, storage class, journal implementation or spend is selected or authorized.
+
+## 1. Purpose and qualification outcomes
+
+This protocol makes the host proof prerequisites reproducible and evidence-bound. It separates a read-only host baseline inspection from live runtime, network, resource, watchdog and durability proof. Passing the current read-only preflight is not a host security qualification.
+
+| Outcome | Meaning | Does not establish |
+|---|---|---|
+| `baseline-inspected` | Host identity, OS/kernel/cgroup, storage and live daemon configuration inventory are captured and independently reviewed | systrap, network containment, cgroup enforcement, cleanup or journal durability |
+| `runtime-smoke-qualified` | A separately authorized fixed synthetic smoke test proves the selected runtime handler, systrap and lifecycle behavior | full adversarial proof or production readiness |
+| `journal-durability-qualified` | Exact backend/build/filesystem/storage pass the journal durability test catalogue | supervisor integration correctness unless integrated lifecycle tests also pass |
+| `outer-boundary-qualified` | Out-of-VM resource cutoff, network deny and stop/rebuild controls are independently evidenced | successful sandbox cleanup when outer cutoff fires |
+| `host-candidate-qualified` | Every required test, sub-gate and independent review in this protocol passes for one immutable host/profile identity | Phase A/Phase B authorization, student execution or production approval |
+
+The machine-readable record in `docs/schemas/m0-host-qualification-record.template.json` begins with every test `not-run`, host `selected=false`, overall state `not-qualified`, no reviewer, no evidence and all execution authorization flags false.
+
+## 2. Non-negotiable sequencing
+
+1. **Design review first.** Review ADR-0019 and compare rootful containerd + typed supervisor with rootless containerd + caller-configured user namespaces. Do not conflate either with the `runsc --rootless` CLI mode. No host or spend is selected by this protocol.
+2. **Host selection/provisioning is separately authorized.** A selected candidate must be dedicated, disposable, single-tenant and contain no student data, production credentials, API secrets or unrelated workloads. Record the independent provisioning authorization reference and outer resource/network controls before use.
+3. **Read-only baseline inspection.** Run the existing host preflight and collect the allowlisted inventory. This phase must not install packages, mutate firewall/cgroups, start containers, launch fixtures or change daemon settings.
+4. **Storage-only journal candidate test.** If separately authorized, run the journal storage harness against an isolated scratch database on the exact candidate filesystem/device. It must not use the active supervisor journal, connect to containerd, start a sandbox, or contain student/hidden-test data. It establishes backend/storage behavior only.
+5. **Runtime and containment smoke.** This is not part of read-only preflight. It may run only under a separate signed authorization for the exact disposable host, fixed harmless digest-pinned image, exact runtime identity and verified outer network deny. The probe must be synthetic and must not execute arbitrary commands or student code.
+6. **Privileged implementation and integrated fault tests.** Supervisor/journal/watchdog integration tests occur only after a separately scoped implementation authorization, independent privilege review and exact-host service profile approval. The tests use deterministic synthetic attempts and no student/public endpoint.
+7. **Phase A calibration.** Requires its own immutable signed authorization and all exact-host prerequisites. It exercises the actual cleanup controller and journal path; mock/alternate implementations do not qualify timing evidence.
+8. **Phase B full 35-fixture proof.** Requires a separately approved numeric cleanup deadline, evidence/finalization reserve, clock/reboot behavior and new resource-profile revision after Phase A review.
+
+No stage inherits authorization from a previous stage. Schema validity, CI success, a preflight pass or a host-candidate-qualified record is not a launch authorization.
+
+## 3. Host identity and immutable qualification envelope
+
+Record one host incarnation and never mix evidence from different hosts or re-imaged incarnations. At minimum, freeze:
+
+- Control-plane provider/region/instance reference as non-secret identifiers; `host_instance_id`, boot ID, VM image digest, architecture, virtualization and kernel build.
+- OS release, cgroup v2 mount/controllers, CPU topology, memory and PID envelope, outer disk/wall cutoffs and independent stop/rebuild owner.
+- Filesystem type, mount options, mount source, stable storage/device identity, volume/storage class, write-cache/barrier/sync characteristics where exposed, and free-space/size quotas.
+- Containerd package/build and running daemon identity; effective systemd unit/ExecStart; actual selected configuration file and complete import graph; config digest.
+- runsc, shim, runtime handler, kernel and image/fixture provenance; binary hashes and package source IDs.
+- Rootless user namespace mappings/subordinate IDs/RootlessKit and cgroup delegation details, or rootful supervisor UID/GID/capabilities/syscall/writable-path/service-hardening inventory.
+- Journal backend, exact library source ID/build, Go driver/module version, effective settings on every connection, schema revision, journal path owner/mode, lock mechanism, backup/restore mechanism, retention and quota policy.
+- Per-attempt cleanup controller, supervisor liveness watchdog, outer VM safety watchdog identities, owners, privileges, clocks, heartbeats and allowed actions.
+- Host profile, runtime profile, resource profile, supervisor/watchdog build, test harness and evidence schema digests.
+
+Provider identity must come from the control plane or authorized operator inventory. Never query cloud metadata from the host to identify the VM. Do not archive raw process command lines or environment values; capture only allowlisted fields and redact secrets, URL user-info, tokens and unrelated arguments.
+
+## 4. Existing preflight: what it does and does not prove
+
+The script `services/execution-runner/scripts/m0-host-preflight.sh` is read-only. It currently checks Ubuntu 24.04, x86_64, a Linux kernel minimum, unified cgroup v2 presence, containerd 2.3.x, a local `containerd config dump` containing the v3 config and runsc handler, runsc/shim binary presence, and containerd socket owner/mode.
+
+That script does **not** prove the live daemon loaded the same configuration/import graph, runtime shim behavior, systrap activation, effective UID/capability isolation, cgroup enforcement, network denial, filesystem boundary, output behavior, watchdog independence, journal durability, backup/restore, or cleanup. A preflight pass is therefore only a baseline inspection result.
+
+Do not modify preflight to silently install or configure host packages/firewall/cgroups/containerd. Any new inspection must remain read-only and emit redacted/allowlisted data. Any destructive/fault-injection test belongs to a separately authorized disposable-host test harness.
+
+## 5. Rootful and rootless equivalence requirements
+
+| Dimension | Rootful containerd + typed host supervisor | Rootless containerd + caller-configured user namespaces | Evidence that must be equivalent |
+|---|---|---|---|
+| Runner authority | Runner has no rootful containerd access; exact supervisor identity is sole rootful application caller | Dedicated user daemon and helpers; runner cannot control unrelated host/user resources | UID/GID/groups, socket access tests, process inventory, authorization negatives |
+| Privilege surface | Exact capability/syscall/writable paths/systemd hardening required | User namespace mappings, subordinate IDs, RootlessKit and helper authority required | Effective privilege inventory and hostile request tests |
+| gVisor lifecycle | Exact containerd shim create/start/stop/delete | Same lifecycle through caller-configured userns and exact shim | Per-operation trace and deterministic resource inventory |
+| Platform | systrap independently observed | systrap independently observed | Live runtime + host-side platform evidence |
+| cgroups | Rootful cgroup v2 controller must enforce CPU/memory/PID | Delegated cgroup v2 controllers/systemd must enforce same ceilings | Identical counter/limit trigger criteria |
+| Network | Host network boundary must deny all workload egress and metadata | Rootless network path must deny the same destinations before uplink | Identical IPv4/IPv6/DNS/direct-IP/loopback/metadata probes and host counters |
+| Filesystem | Fixed OCI profile, no host path/device/socket | Userns mappings and runtime mount path must expose no host path/device/socket | Identical mount/namespace/sentinel inventory |
+| Cleanup/recovery | One privileged host lock, durable journal and three watchdog roles | Equivalent lifecycle ownership and fencing despite user daemon/helper lifecycle | Same crash/pause/restart and resource-absence acceptance |
+
+Decision outcomes are rootful candidate, rootless candidate, reject both, or defer pending evidence. A lower apparent privilege level is not proof that required controls work. If either candidate cannot demonstrate every required control, mark it not qualified.
+
+## 6. Journal backend qualification
+
+### 6.1 Separate storage-only and integrated testing
+
+**Storage-only candidate test** uses an isolated scratch database and synthetic rows on the exact candidate filesystem/device. It tests the SQLite library, driver, PRAGMAs, durability/sync behavior, filesystem/storage semantics, error handling and backup API. It must never open the future live supervisor journal, invoke containerd, spawn sandbox processes, or use student/production data.
+
+**Integrated journal/lifecycle testing** is post-implementation and separately authorized. It verifies the exact supervisor schema/transactions, host process lock, generations/CAS, durable intent ordering, deterministic resource identities, crash recovery, cleanup/evidence branches and terminalization. It uses fixed synthetic attempt identities and reviewed harmless fixtures; no general execution endpoint or ordinary queue is present.
+
+These are not interchangeable. Storage-only success does not qualify supervisor logic; integrated success does not waive the storage power-loss tests.
+
+### 6.2 Candidate profile identity
+
+The current candidate remains SQLite rollback-journal mode with `journal_mode=DELETE` and `synchronous=EXTRA`. It is **not approved**. For every opened connection, read back the effective PRAGMAs and fail closed if they differ. Record exact SQLite version and source ID, Go driver/module/version, compile/build options, filesystem, mount options, stable storage identity, journal path ownership/mode, schema revision, lock mechanism, file-size ceiling, free-space low-watermark, backup method and restore procedure.
+
+Do not silently switch to WAL, `NORMAL`/`OFF`, network storage, a remote database or a custom journal. A changed backend or durability profile requires an updated ADR, schema/profile revision and new independent review.
+
+### 6.3 Deterministic journal test catalogue
+
+Each test runs on a newly identified disposable volume or resettable test image. Capture before/after host identity, exact injection boundary, durable rows/state versions, containerd/process side effects where relevant, recovery owner, integrity output and immutable evidence hashes. A process-kill test never substitutes for abrupt VM power-off.
+
+| Test ID | Test | Required injection/verification | Required outcome | Evidence type |
+|---|---|---|---|---|
+| JRN-001 | Exact SQLite build and effective settings | Record SQLite version/source ID, Go driver/module version, filesystem/device, schema revision and read back DELETE + EXTRA on every connection. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / host-configuration |
+| JRN-002 | Power loss after acknowledged commit | Abrupt VM power-off after acknowledged intent/result commit; reboot and verify acknowledged transaction durability and integrity. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-003 | Rollback journal and directory-sync interruption | Inject interruption during journal write, rollback, journal unlink and directory sync; recovered database must be valid old-or-new atomic state. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-004 | Disk full at each durable transition | Exhaust controlled test volume during intent, operation result, trigger/branch disposition and terminal CAS; no false acknowledgement; cleanup continues. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-005 | BUSY and lock-contention bounded behavior | Inject SQLITE_BUSY and lock contention; bounded policy, no unbounded retry, lock bypass or duplicate side effect. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-006 | IOERR and failed synchronization | Inject SQLITE_IOERR/failed fsync or sync; uncertain commit reconciled by immutable operation identity; no success acknowledgement. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-007 | Corruption and invalid database rejection | Inject malformed header, corruption and SQLITE_NOTADB; host quarantines; no automatic recreate/repair/resume. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-008 | Interrupted schema migration | Interrupt each migration boundary; restart observes complete old or new schema, never a mixed schema; unknown schema fails closed. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-009 | SIGSTOP and exclusive kernel-lock fencing | Pause a supervisor while holding lock; replacement cannot issue containerd or journal mutations until old process exits and lock is released. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | fault-injection / host-configuration |
+| JRN-010 | Crash after create/start before observed-result commit | Crash after external side effect and before durable observed result; inspect/reconcile deterministic resource; no blind create/start retry. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | fault-injection / host-runtime |
+| JRN-011 | Independent finalization branches and terminal CAS | Crash after cleanup/evidence branch dispositions and before/after terminal CAS; branch generations fenced and one immutable terminal result. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | fault-injection / journal-durability |
+| JRN-012 | Consistent backup during journal activity | Create a reviewed consistent backup during concurrent journal activity; source remains safe; backup byte integrity and manifest verified. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-013 | Isolated restore with non-terminal attempts | Restore onto isolated disposable host; reconcile attempts against actual resources before readiness; no duplicate launch or adoption of unknown resources. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-014 | Journal ownership, permissions and writer exclusivity | Verify root-owned paths, restrictive modes, one supervisor writer, lock FD non-inheritance and no alternate maintenance writer. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | host-configuration / fault-injection |
+| JRN-015 | Journal quota, low-watermark and retention behavior | Test max DB size, free-space low-watermark, retention boundaries and no pruning of active/unresolved attempts; fail closed on capacity exhaustion. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | filesystem-storage / fault-injection |
+
+### 6.4 Storage durability acceptance
+
+- Every acknowledged commit survives the approved hard-power-loss boundary or the candidate is rejected; record exactly where power was removed and when acknowledgement occurred.
+- Every interrupted rollback-journal transition recovers to a valid complete old or new transaction state. Mixed/ambiguous/corrupt state is never interpreted as success.
+- SQLITE_FULL, SQLITE_BUSY beyond bounded policy, SQLITE_IOERR, failed fsync/sync, SQLITE_CORRUPT and SQLITE_NOTADB stop admissions and fail closed. Existing termination must not wait for journal I/O.
+- Migration is all-or-nothing. Unknown/newer schema, torn migration or failed integrity checks cause quarantine; never auto-delete/recreate/repair to readiness.
+- Backup uses SQLite Online Backup API or an independently reviewed quiesced snapshot. A live file copy alone is not a valid backup. Restore runs on an isolated host and reconciles all non-terminal attempts against actual host resources before readiness.
+- Lock contention proves the stable kernel process lock, not a database lease, fences a SIGSTOP-paused supervisor. Replacement cannot issue privileged operations until old process exit and lock release.
+- A full journal/volume causes rejection of new work, no pruning of unresolved records and continued independent termination/cleanup.
+
+Do not approve a journal backend because a workstation unit test passed. Exact-host power-loss, filesystem and device behavior are part of the result.
+
+## 7. Watchdog and network qualification
+
+Three watchdogs are independent review subjects:
+
+1. **Per-attempt cleanup controller:** issues complete termination at the earliest host-observed trigger, does not wait for database fsync/client/evidence/EOF, verifies complete resource absence and persists cleanup disposition.
+2. **Supervisor liveness/recovery watchdog:** detects process death/pause/deadlock, fail-stops the exact named supervisor, waits for kernel lock release, starts one replacement generation and requires reconciliation before admission. It must not become a second containerd writer or generic root command broker.
+3. **Outer VM safety watchdog:** lives outside the tested VM failure domain and enforces CPU/memory/PID/disk/wall cutoff plus isolate/stop/rebuild. It is containment only. If it fires, the sample fails and the VM is quarantined/destroyed; it is never successful cleanup evidence.
+
+Network proof is independent of the guest's reported state. Outer deny/blackhole for metadata link-local must be installed and evidenced before uplink. Probe only from inside the disposable sandbox after authorization; never issue a metadata request from the host or accept/store a metadata response. Prove IPv4/IPv6/DNS/direct-IP/loopback/alternate interface denial with host counters or equivalent independent observation.
+
+## 8. Evidence and record rules
+
+The machine-readable qualification record contains one immutable host/profile identity and exactly one result for every test ID in the schema. A passed test requires a non-empty verification method and at least one independently verified evidence reference. Evidence includes immutable object/source reference, exact version, SHA-256, byte count, evidence root, acquisition timestamp/tool/version, redaction result, independent verifier identity and verification note.
+
+Do not store raw `/proc` cmdline/environment, credentials, private URLs, student code, hidden tests, source archives or metadata responses. Host tests require host/runtime/storage/network/watchdog evidence; design documents, CI and synthetic schema tests are never sufficient to pass them.
+
+Review decisions require distinct host owner and independent reviewer identities, independence/conflict disclosure, reviewed commit and exact host/profile digests, signed/auditable record, expiry and re-review triggers.
+
+## 9. Qualification gate computation
+
+| Gate | Required tests |
+|---|---|
+| Baseline inspection | HST-001 through HST-005 |
+| Runtime smoke | AUTH-001, RUN-001, CG-001, FS-001, OUT-001 |
+| Network boundary | NET-001 and NET-002 |
+| Watchdog boundary | WDG-001, WDG-002 and WDG-003 |
+| Clock/recovery | CLK-001 and CLK-002 |
+| Journal durability | JRN-001 through JRN-009 and JRN-012 through JRN-015 |
+| Integrated lifecycle | JRN-010 and JRN-011 |
+| Evidence integrity | EVID-001 |
+
+`host-candidate-qualified` requires all catalogue tests passed, all gates passed, an exact selected host/runtime/storage/journal identity, a completed independent review with no unresolved high/critical findings, and verifiable evidence for each test. The record itself always keeps Phase A, Phase B, student and production authorization false.
+
+## 10. Stop, fail and quarantine conditions
+
+- Host identity, boot identity or profile digest mismatch; unapproved host/image/runtime change.
+- Unknown daemon configuration import, raw sensitive evidence capture, provenance mismatch or unsupported runtime fallback.
+- Any successful forbidden network flow, metadata request/response, host path/device/socket/namespace exposure or secret leak.
+- Cgroup/resource control is configured but not independently enforced.
+- Journal acknowledged commit lost after power loss; ambiguous rollback recovery; corrupt/unknown schema; IOERR/sync failure; unbounded BUSY; disk full; partial migration; inconsistent backup/restore.
+- Any two privileged supervisors can act concurrently; old supervisor retains access after replacement begins; lock inheritance or generation ambiguity.
+- Workload resource survives terminal acknowledgement; cleanup cannot be independently verified; stale worker mutates a current generation; false success after outer cutoff.
+- Any high/critical security finding, missing evidence, invalid signature, reviewer conflict or unowned risk.
+
+On stop: reject new work, continue best-effort independent termination when applicable, isolate/quarantine the host and preserve sanitized evidence. Do not auto-repair or rejoin the host to a ready pool.
+
+## 11. Authorization boundaries and open inputs
+
+- No provider, region, VM shape, storage class, disk, cost, image, runtime version, SQLite driver, file system or cleanup deadline is selected by this protocol.
+- Storage-only journal qualification requires its own exact-host destructive-test authorization; Phase A requires its own separate manifest; Phase B requires a separate reviewed resource profile.
+- Privileged supervisor/journal implementation remains blocked by ADR-0019 and the independent review gates.
+- No sandbox launch, arbitrary command, student source, student endpoint or general queue consumer is authorized by passing this qualification protocol.
+
+## 12. References
+
+- `docs/specifications/m0-host-preflight-and-proof-runbook.md`
+- `docs/specifications/m0-journal-backend-evaluation.md`
+- `docs/specifications/m0-supervisor-journal-implementation-contract.md`
+- `docs/specifications/m0-proof-resource-profile-v1.md`
+- `docs/security/m0-independent-security-review-checklist.md`
+- `docs/security/m0-independent-security-review-record.schema.json`
+- SQLite PRAGMA documentation: https://www.sqlite.org/pragma.html
+- SQLite Online Backup API: https://www.sqlite.org/backup.html

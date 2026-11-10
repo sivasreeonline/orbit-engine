@@ -119,6 +119,11 @@ The reviewer records identity, independence basis, conflicts, reviewed commit/sc
 
 Re-review is mandatory after a change to host image/kernel/filesystem, containerd/runsc/shim, supervisor/watchdog, journal backend/configuration, fixture digest, network boundary, privilege/service configuration, resource profile, cleanup deadline or material recovery semantics.
 
-## 9. Current state
+
+## Host and journal qualification linkage
+
+Use `docs/specifications/m0-host-and-journal-qualification-protocol.md` and its machine-readable record under `docs/schemas/` before assessing host/runtime claims. Its baseline inspection, live runtime, network, watchdog, clock, journal, integrated lifecycle and evidence gates map the security controls to exact-host proof. A preflight pass or synthetic CI result is never a host-control pass.
+
+## 10. Current state
 
 **Not reviewed.** The blank machine-readable template is intentionally non-authorizing. No reviewer, host, runtime evidence, signature or approval is pre-populated. Passing CI validates the record contract only; it is not a security review.
