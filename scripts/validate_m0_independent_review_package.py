@@ -222,6 +222,8 @@ def main():
 
     template_findings = {item["control_id"]: item for item in template["control_findings"]}
     schema_ids = set(schema["$defs"]["controlFinding"]["properties"]["control_id"]["enum"])
+    if schema["properties"]["control_findings"].get("minItems") != len(EXPECTED_CONTROL_IDS) or schema["properties"]["control_findings"].get("maxItems") != len(EXPECTED_CONTROL_IDS):
+        raise AssertionError("review schema control_findings cardinality must equal the canonical control-ID count")
     if schema_ids != set(EXPECTED_CONTROL_IDS) or set(template_findings) != set(EXPECTED_CONTROL_IDS):
         raise AssertionError("schema/template control IDs diverge")
     for control_id, expected_class in EXPECTED_CLASSES.items():
