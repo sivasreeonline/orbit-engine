@@ -145,6 +145,9 @@ def validate_record(record, validator):
                 verifier_roles = decision_roles | qualification_roles
                 add_error(errors, any(ref.get("independent_verifier_id") in verifier_roles for ref in refs),
                           f"{cid}/{control_id}: evidence verifier must be independent of decision and qualification reviewers/host owners")
+                add_error(errors, any(ref.get("acquired_by_id") in verifier_roles or
+                                       ref.get("acquired_by_id") == ref.get("independent_verifier_id") for ref in refs),
+                          f"{cid}/{control_id}: evidence acquirer must be distinct from verifier, decision reviewer and host owners")
                 if expected_class == "host":
                     add_error(errors, not any(ref.get("evidence_type") in HOST_EVIDENCE_TYPES for ref in refs),
                               f"{cid}/{control_id}: host control cannot pass on design-only evidence")
@@ -198,6 +201,13 @@ def validate_record(record, validator):
                     record.get("participants", {}).get("host_owner_id")
                 },
                           f"{cid}: qualification evidence verifier must be independent of reviewer and host owner")
+                add_error(errors, qualification_evidence.get("acquired_by_id") in {
+                    qualification.get("reviewer_id"), qualification.get("host_owner_id"),
+                    record.get("participants", {}).get("reviewer_id"),
+                    record.get("participants", {}).get("host_owner_id"),
+                    qualification_evidence.get("independent_verifier_id")
+                },
+                          f"{cid}: qualification evidence acquirer must be distinct from verifier, reviewer and host owner")
                 add_error(errors, qualification.get("host_profile_digest") != config.get("profile_digest"),
                           f"{cid}: host profile digest mismatch")
                 if cid == "rootless-containerd-userns":
@@ -478,14 +488,14 @@ def main():
         finding["evidence_refs"]=[{
             "reference_id":"synthetic-"+finding["control_id"]+"-"+et,"object_version":"v1","sha256":"2"*64,
             "byte_count":1,"evidence_root_id":"synthetic-root","evidence_type":et,
-            "acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1",
+            "acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1",
             "verification_status":"verified","independent_verifier_id":"synthetic-verifier",
             "verification_note":"Synthetic only","redaction_status":"non-sensitive"} for et in types]
     rootful["qualification_report"]={
         "record_id":"11111111-1111-4111-8111-111111111111","record_sha256":"3"*64,"record_commit_sha":"a"*40,
         "qualification_record_evidence":{"reference_id":"11111111-1111-4111-8111-111111111111",
             "object_version":"v1","sha256":"3"*64,"byte_count":1,"evidence_root_id":"synthetic-root",
-            "evidence_type":"host-qualification-record","acquired_at":"2026-11-10T00:00:00Z",
+            "evidence_type":"host-qualification-record","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
             "acquisition_tool":"synthetic-validator","tool_version":"1","verification_status":"verified",
             "independent_verifier_id":"synthetic-evidence-verifier","verification_note":"Synthetic only",
             "redaction_status":"non-sensitive"},
@@ -519,6 +529,21 @@ def main():
         raise AssertionError("qualification reviewer was accepted as qualification evidence verifier")
     print("PASS  rejects qualification evidence verification by host owner or independent reviewer")
 
+    qualification_acquirer_owner = deepcopy(complete)
+    acquirer_owner_candidate = next(c for c in qualification_acquirer_owner["candidate_assessments"] if c["candidate_id"] == "rootful-supervisor")
+    acquirer_owner_candidate["qualification_report"]["qualification_record_evidence"]["acquired_by_id"] = acquirer_owner_candidate["qualification_report"]["host_owner_id"]
+    acquirer_owner_errors = validate_record(qualification_acquirer_owner, validator)
+    if not any("qualification evidence acquirer must be distinct" in error for error in acquirer_owner_errors):
+        raise AssertionError("qualification host owner was accepted as evidence acquirer")
+    qualification_acquirer_verifier = deepcopy(complete)
+    acquirer_verifier_candidate = next(c for c in qualification_acquirer_verifier["candidate_assessments"] if c["candidate_id"] == "rootful-supervisor")
+    evidence = acquirer_verifier_candidate["qualification_report"]["qualification_record_evidence"]
+    evidence["acquired_by_id"] = evidence["independent_verifier_id"]
+    acquirer_verifier_errors = validate_record(qualification_acquirer_verifier, validator)
+    if not any("qualification evidence acquirer must be distinct" in error for error in acquirer_verifier_errors):
+        raise AssertionError("qualification evidence verifier was accepted as evidence acquirer")
+    print("PASS  rejects qualification evidence acquisition by host owner or evidence verifier")
+
     rootless["assessment_status"]="design-assessed"
     rootless["assessment_rationale"]="Synthetic design assessment only."
     rootless["configuration"].update({
@@ -547,7 +572,7 @@ def main():
             finding.update(result="pass",verification_method="Synthetic design review",finding="Synthetic only",severity="none",
                 evidence_refs=[{"reference_id":"synthetic-rootless-"+finding["control_id"],"object_version":"v1","sha256":"a"*64,
                     "byte_count":1,"evidence_root_id":"synthetic-root","evidence_type":"design-document",
-                    "acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1",
+                    "acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1",
                     "verification_status":"verified","independent_verifier_id":"synthetic-verifier",
                     "verification_note":"Synthetic only","redaction_status":"non-sensitive"}])
     errors=validate_record(complete,validator)
@@ -605,7 +630,7 @@ def main():
             "reference_id":"synthetic-rootless-"+finding["control_id"]+"-"+evidence_type,
             "object_version":"v1", "sha256":"a"*64, "byte_count":1,
             "evidence_root_id":"synthetic-root", "evidence_type":evidence_type,
-            "acquired_at":"2026-11-10T00:00:00Z", "acquisition_tool":"validator",
+            "acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z", "acquisition_tool":"validator",
             "tool_version":"1.0", "verification_status":"verified",
             "independent_verifier_id":"synthetic-verifier", "verification_note":"Synthetic only",
             "redaction_status":"non-sensitive"
@@ -614,7 +639,7 @@ def main():
         "record_id":"22222222-2222-4222-8222-222222222222", "record_sha256":"3"*64,
         "qualification_record_evidence":{"reference_id":"22222222-2222-4222-8222-222222222222",
             "object_version":"v1","sha256":"3"*64,"byte_count":1,"evidence_root_id":"synthetic-root",
-            "evidence_type":"host-qualification-record","acquired_at":"2026-11-10T00:00:00Z",
+            "evidence_type":"host-qualification-record","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
             "acquisition_tool":"synthetic-validator","tool_version":"1","verification_status":"verified",
             "independent_verifier_id":"synthetic-evidence-verifier","verification_note":"Synthetic only",
             "redaction_status":"non-sensitive"},
