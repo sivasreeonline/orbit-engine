@@ -110,7 +110,7 @@ The host qualification record must retain sanitized socket path/inode/owner/mode
 | Host suspend/resume | Original elapsed budget must include suspend | Re-arm using approved suspend-aware clock and original trigger | Enforces outer wall limit | Expired/uncertain deadline means quarantine |
 | VM reboot/snapshot restore | Old-boot monotonic value is not reused | Requires trusted clock + host incarnation + journal reconciliation | Stops/rebuilds if identity/clock trust is uncertain | Expire budget and quarantine if not reconstructible |
 
-**Acceptance gate:** the concrete OS/service mechanism, identities, privileges, heartbeat format, stop/restart action, lock-release proof, and outer hard-stop interface must be named in the host-specific implementation plan and reviewed before privileged implementation.
+**Acceptance gate:** the concrete OS/service mechanism, exact unit allowlist, service-manager authorization, unit/executable/cgroup digests, identities, privileges, heartbeat format, stop/restart action, kill/timeout/restart policy, lock-release proof, and outer hard-stop interface must be named in the host-specific implementation plan and reviewed before privileged implementation. The watchdog must have no generic root command or containerd authority.
 
 ## 4. Identity, generation, and fencing model
 
