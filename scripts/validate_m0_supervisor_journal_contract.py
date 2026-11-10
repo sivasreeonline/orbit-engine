@@ -44,6 +44,8 @@ REQUIRED = {
         "journal read alone cannot rule out a trigger",
         "host-owned trigger arbiter accepts it while the attempt is still active",
         "current `supervisor_generation` and `attempt_generation`",
+        "`branch_state_version`",
+        "Every branch mutation must compare all four ownership/version values atomically",
         "Candidate A requires the root-owned socket boundary",
         "Candidate B must prove the protected non-root socket-publication boundary",
         "exactly two candidates",
