@@ -46,7 +46,7 @@ This is a proposed proof boundary, not permission to implement or provision it b
 17. Derive the immutable 10-minute end-to-end deadline from the control plane's persisted API intake timestamp, including queue wait/retries/restarts; derive the 60-second sandbox wall deadline from host-observed start. Re-arm original deadlines after restart; never reset or extend them. Caller/runner timestamps are not authoritative.
 18. On restart, reconcile by deterministic supervisor-owned sandbox identity against containerd tasks, shim processes, cgroups, namespaces, mounts, network state, and scratch. Never blindly repeat create or adopt unknown resources.
 19. Cleanup runs independently of client connections. Terminal success requires verified absence of every workload resource; uncertainty means infrastructure failure and host quarantine.
-20. Define a finite cleanup deadline in the approved proof profile before stress testing; measure it from the termination trigger and validate it under worst-case failure and restart conditions. An unset or unvalidated cleanup deadline blocks stress testing and cannot be replaced by an assumed default.
+20. Define and independently approve a finite cleanup deadline in the versioned proof profile before the Phase B full M0 adversarial stress campaign. Phase A calibration may run only under its separate written authorization, fixed synthetic scenario allowlist, verified outer-VM resource/network boundary, and independent VM hard-stop control. The outer safety cutoff is not a cleanup deadline and cannot be recorded as successful cleanup.
 21. Persist attempt, idempotency, operation, trigger, and independent finalization-branch records with unique keys, immutable request digests, state versions, and monotonically increasing generations. Claim the idempotency key, logical attempt, generation, and first operation intent in one durable transaction. Same key/digest returns the recorded operation; changed digest or reused logical attempt is a conflict.
 22. Treat containerd and the journal as separate failure domains: persist intent before side effects, inspect actual resources after uncertain outcomes, and reconcile before retry. Do not claim cross-system exactly-once execution. Never blindly repeat create/start after a crash.
 23. Hold one exclusive host-wide process lock for the full lifetime of privileged containerd access. A replacement supervisor may act only after the old process has exited and released the kernel lock; it must acquire a new durable generation before accepting work. A stale supervisor fail-stops before further side effects. Prove the lock and generation fencing under pause, crash, and restart fault injection.
@@ -88,6 +88,20 @@ If any criterion is unsupported or cannot be proven, record the rootless path as
 | gVisor lifecycle compatibility | Expected containerd integration path; exact versions still need proof | Must prove caller-configured userns + containerd shim path; do not infer from CLI rootless mode |
 | Operational complexity | Dedicated privileged service and API hardening | User namespaces, subordinate IDs, RootlessKit, cgroup delegation and networking |
 | M0 disposition | Recommended candidate, not yet approved | Alternative proof candidate; not yet tested |
+
+## Cleanup calibration authorization boundary
+
+Cleanup deadline qualification is a two-phase gate; it is not a reason to choose an arbitrary timeout and is not a reason to disable measurement.
+
+**Phase A — controlled calibration:** permit only a separately authorized, synthetic-only campaign on a dedicated disposable VM. Before launch, independently verify the outer VM CPU/memory/PID/disk/wall-time boundary, the VM hard-stop/rebuild control, default-deny network containment, metadata-address denial before host uplink, exact runtime identity, the journal backend proof gate, and the fixed digest-pinned calibration bundle. The host owner and independent security reviewer must approve an immutable authorization manifest that lists the exact host/runtime/supervisor/journal/watchdog digests, allowed CAL-CLEAN scenario IDs, run count, finite outer safety cutoff, evidence location, expiry, and stop authority.
+
+Phase A must exercise the same supervisor cleanup controller and journal path proposed for M0. It must not expose a public API, student execution route, general-purpose command interface, or ordinary job queue. It must not accept student source, arbitrary commands, caller-selected OCI settings, or caller-selected limits. No full 35-fixture adversarial suite runs in Phase A.
+
+The outer VM safety cutoff exists only to contain a failed experiment. If it fires, the host is quarantined or destroyed and the sample is failed/unverified; it is not a successful cleanup measurement. The cleanup timer remains anchored to the earliest host-observed trigger and is not reset by repeated triggers, supervisor restart, journal latency/failure, containerd recovery, or evidence-store failure. Cleanup and evidence work remain independent.
+
+**Phase B — full M0 proof:** remains blocked until Phase A raw measurements, the uncertainty-margin rationale, reboot/clock semantics, independent watchdog, and numeric cleanup deadline are approved. The numeric cleanup deadline and bounded evidence/terminal reserve must be recorded together in a new resource-profile revision, along with the 10-minute admission reserve calculation. The full 35-fixture matrix may run only after this approval.
+
+Neither Phase A nor Phase B authorizes student or production execution. The runner remains unprivileged and UnconfiguredExecutor remains fail-closed.
 
 ## Required gates before accepting this ADR
 

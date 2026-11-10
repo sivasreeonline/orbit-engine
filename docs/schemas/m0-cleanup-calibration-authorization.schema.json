@@ -1,0 +1,541 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-cleanup-calibration-authorization.schema.json",
+  "title": "M0 Cleanup Calibration Authorization",
+  "description": "Machine-readable authorization for Phase A synthetic cleanup-deadline calibration only. This schema is not a signature verifier, host verifier, security approval, or execution authorization.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "authorization_id",
+    "phase",
+    "status",
+    "issued_at",
+    "expires_at",
+    "host",
+    "outer_safety",
+    "network_containment",
+    "journal_qualification",
+    "calibration",
+    "stop_conditions",
+    "evidence",
+    "signoff",
+    "full_m0_proof_authorized",
+    "student_execution_authorized",
+    "production_execution_authorized"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "authorization_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "phase": {
+      "const": "cleanup-calibration-only"
+    },
+    "status": {
+      "const": "authorized"
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "region",
+        "vm_image_digest",
+        "os_release",
+        "kernel_release",
+        "architecture",
+        "filesystem_type",
+        "mount_options_digest",
+        "containerd_version",
+        "containerd_config_version",
+        "runsc_version",
+        "shim_version",
+        "runtime_handler",
+        "platform",
+        "supervisor_build_sha256",
+        "watchdog_build_sha256"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vm_image_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "os_release": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kernel_release": {
+          "type": "string",
+          "minLength": 1
+        },
+        "architecture": {
+          "const": "x86_64"
+        },
+        "filesystem_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mount_options_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "containerd_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "containerd_config_version": {
+          "const": 3
+        },
+        "runsc_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "shim_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "runtime_handler": {
+          "const": "io.containerd.runsc.v1"
+        },
+        "platform": {
+          "const": "systrap"
+        },
+        "supervisor_build_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "watchdog_build_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "outer_safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_millis",
+        "memory_bytes",
+        "pid_limit",
+        "disk_bytes",
+        "wall_cutoff_seconds",
+        "watchdog_control_plane",
+        "vm_hard_stop_control",
+        "independence_attested",
+        "verification_evidence_sha256"
+      ],
+      "properties": {
+        "cpu_millis": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pid_limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "disk_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "wall_cutoff_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "watchdog_control_plane": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vm_hard_stop_control": {
+          "type": "string",
+          "minLength": 1
+        },
+        "independence_attested": {
+          "const": true
+        },
+        "verification_evidence_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "network_containment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default_deny_ipv4",
+        "default_deny_ipv6",
+        "enforced_outside_sandbox",
+        "metadata_link_local_denied_before_host_uplink",
+        "packet_drop_evidence_sha256"
+      ],
+      "properties": {
+        "default_deny_ipv4": {
+          "const": true
+        },
+        "default_deny_ipv6": {
+          "const": true
+        },
+        "enforced_outside_sandbox": {
+          "const": true
+        },
+        "metadata_link_local_denied_before_host_uplink": {
+          "const": true
+        },
+        "packet_drop_evidence_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "journal_qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "library_version",
+        "configuration_digest_sha256",
+        "durability_report_sha256",
+        "power_loss_report_sha256",
+        "corruption_restore_report_sha256",
+        "lock_fencing_report_sha256",
+        "independent_gate_passed"
+      ],
+      "properties": {
+        "backend": {
+          "type": "string",
+          "minLength": 1
+        },
+        "library_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configuration_digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "durability_report_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "power_loss_report_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "corruption_restore_report_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "lock_fencing_report_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "independent_gate_passed": {
+          "const": true
+        }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "profile_revision",
+        "image_digest",
+        "scenario_bundle_digest",
+        "scenario_ids",
+        "max_total_runs",
+        "max_attempts_per_scenario",
+        "control_path",
+        "student_source_allowed",
+        "hidden_test_data_allowed",
+        "network_callbacks_allowed",
+        "arbitrary_commands_allowed",
+        "arbitrary_oci_allowed",
+        "general_execution_endpoint_enabled",
+        "queue_consumer_enabled",
+        "uses_target_cleanup_controller",
+        "uses_target_journal_path"
+      ],
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "profile_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "scenario_bundle_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "scenario_ids": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "CAL-CLEAN-001",
+              "CAL-CLEAN-002",
+              "CAL-CLEAN-003",
+              "CAL-CLEAN-004",
+              "CAL-CLEAN-005",
+              "CAL-CLEAN-006",
+              "CAL-CLEAN-007",
+              "CAL-CLEAN-008",
+              "CAL-CLEAN-009"
+            ]
+          },
+          "allOf": [
+            {
+              "contains": {
+                "const": "CAL-CLEAN-001"
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "const": "CAL-CLEAN-002"
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "const": "CAL-CLEAN-003"
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "const": "CAL-CLEAN-004"
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "const": "CAL-CLEAN-005"
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "const": "CAL-CLEAN-006"
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "const": "CAL-CLEAN-007"
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "const": "CAL-CLEAN-008"
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "const": "CAL-CLEAN-009"
+              },
+              "minContains": 1,
+              "maxContains": 1
+            }
+          ]
+        },
+        "max_total_runs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_attempts_per_scenario": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "control_path": {
+          "const": "host-local-only"
+        },
+        "student_source_allowed": {
+          "const": false
+        },
+        "hidden_test_data_allowed": {
+          "const": false
+        },
+        "network_callbacks_allowed": {
+          "const": false
+        },
+        "arbitrary_commands_allowed": {
+          "const": false
+        },
+        "arbitrary_oci_allowed": {
+          "const": false
+        },
+        "general_execution_endpoint_enabled": {
+          "const": false
+        },
+        "queue_consumer_enabled": {
+          "const": false
+        },
+        "uses_target_cleanup_controller": {
+          "const": true
+        },
+        "uses_target_journal_path": {
+          "const": true
+        }
+      }
+    },
+    "stop_conditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stop_on_outer_cutoff_fired",
+        "stop_on_network_boundary_uncertain",
+        "stop_on_unowned_resource_detected",
+        "stop_on_cleanup_unverified",
+        "stop_on_clock_ambiguous",
+        "stop_on_evidence_leak_detected",
+        "stop_on_unexplained_host_mutation",
+        "stop_on_independent_reviewer_stop"
+      ],
+      "properties": {
+        "stop_on_outer_cutoff_fired": {
+          "const": true
+        },
+        "stop_on_network_boundary_uncertain": {
+          "const": true
+        },
+        "stop_on_unowned_resource_detected": {
+          "const": true
+        },
+        "stop_on_cleanup_unverified": {
+          "const": true
+        },
+        "stop_on_clock_ambiguous": {
+          "const": true
+        },
+        "stop_on_evidence_leak_detected": {
+          "const": true
+        },
+        "stop_on_unexplained_host_mutation": {
+          "const": true
+        },
+        "stop_on_independent_reviewer_stop": {
+          "const": true
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "destination",
+        "redaction_policy_id",
+        "immutable_storage_required",
+        "sanitized_only"
+      ],
+      "properties": {
+        "destination": {
+          "type": "string",
+          "minLength": 1
+        },
+        "redaction_policy_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "immutable_storage_required": {
+          "const": true
+        },
+        "sanitized_only": {
+          "const": true
+        }
+      }
+    },
+    "signoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_owner_id",
+        "independent_reviewer_id",
+        "reviewer_role",
+        "independence_attested",
+        "reviewed_at",
+        "authorization_digest_sha256",
+        "signature_reference"
+      ],
+      "properties": {
+        "host_owner_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "independent_reviewer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewer_role": {
+          "const": "independent-security-reviewer"
+        },
+        "independence_attested": {
+          "const": true
+        },
+        "reviewed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "authorization_digest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "signature_reference": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "full_m0_proof_authorized": {
+      "const": false
+    },
+    "student_execution_authorized": {
+      "const": false
+    },
+    "production_execution_authorized": {
+      "const": false
+    }
+  }
+}
