@@ -158,7 +158,7 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     `);
     await admin.query(`
       CREATE FUNCTION "${schemaName}".guard_run_event() RETURNS trigger
-      LANGUAGE plpgsql AS $
+      LANGUAGE plpgsql AS $fn$
       DECLARE prior_sequence integer; prior_digest text;
       BEGIN
         IF TG_OP <> 'INSERT' THEN
@@ -182,14 +182,14 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
         END IF;
         RETURN NEW;
       END;
-      $;
+      $fn$;
       CREATE TRIGGER authorization_run_event_guard
         BEFORE INSERT OR UPDATE OR DELETE ON "${schemaName}".authorization_run_events
         FOR EACH ROW EXECUTE FUNCTION "${schemaName}".guard_run_event();
     `);
     await admin.query(`
       CREATE FUNCTION "${schemaName}".assert_authorization_counter() RETURNS trigger
-      LANGUAGE plpgsql AS $
+      LANGUAGE plpgsql AS $fn$
       DECLARE target_id text; recorded_count integer; actual_count integer;
       BEGIN
         target_id := COALESCE(NEW.authorization_id, OLD.authorization_id);
@@ -203,7 +203,7 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
         END IF;
         RETURN NULL;
       END;
-      $;
+      $fn$;
       CREATE CONSTRAINT TRIGGER authorization_claim_counter_guard
         AFTER INSERT OR UPDATE OR DELETE ON "${schemaName}".authorization_run_claims
         DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
