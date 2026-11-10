@@ -202,3 +202,15 @@ Independent review must assess docs/specifications/m0-cryptographic-trust-and-ke
 ## Cryptographic schema and fixture review
 
 Review docs/schemas/m0-crypto-signed-envelope.schema.json, m0-crypto-trust-bundle.schema.json, m0-crypto-key-metadata.schema.json, m0-crypto-verification-report.schema.json and m0-crypto-verification-fixture-catalog.json together with scripts/validate_m0_crypto_contract.py. Confirm the schemas do not imply algorithm approval, private-key storage, signature verification or provider-fence proof. Algorithm-specific known-answer vectors remain a later gate after independent profile/library selection.
+
+
+## Cryptographic payload schema references
+
+The typed signed-envelope payload families and their structural validator are defined in the cryptographic trust contract:
+- `docs/schemas/m0-host-epoch-response-payload.schema.json`
+- `docs/schemas/m0-provider-fence-attestation-payload.schema.json`
+- `docs/schemas/m0-phase-a-authorization-payload.schema.json`
+- `docs/schemas/m0-key-revocation-payload.schema.json`
+- `scripts/validate_m0_crypto_contract.py`
+
+These schemas bind exact identities, epochs, immutable evidence references/digests, the 33-control independent review including `FENCE-001`, and explicit denial of Phase B/student/production execution in the Phase A payload. They validate shape and declared cross-field rules only; they do not authenticate a signature, independently verify provider fencing, or prove external evidence.
