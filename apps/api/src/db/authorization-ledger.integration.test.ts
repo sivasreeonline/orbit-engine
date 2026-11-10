@@ -437,4 +437,88 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     expect(state.rows[0]).toEqual({ consumed_runs: 0, claims: 0, events: 0 });
   });
 
+
+  it("independently recomputes the persisted event chain and detects altered rows", async () => {
+    const setup = await connect();
+    await seedAuthorization(setup, 3);
+    const writer = await connect(true);
+    expect(await claim(writer, "verify-chain-a")).toBe("CLAIMED");
+    await appendRunEvent(writer, "verify-chain-a", "STARTED", "sha256:request-a");
+    await appendRunEvent(writer, "verify-chain-a", "COMPLETED", "sha256:request-a");
+
+    const persisted = await setup.query<{
+      event_sequence: number;
+      previous_event_digest: string;
+      request_id: string;
+      event_type: string;
+      request_digest: string;
+      event_digest: string;
+    }>(
+      "SELECT event_sequence, previous_event_digest, request_id, event_type, request_digest, event_digest FROM authorization_run_events WHERE authorization_id = $1 ORDER BY event_sequence",
+      [authId],
+    );
+
+    const independentlyVerify = (rows: typeof persisted.rows): boolean => {
+      let previous = "0".repeat(64);
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index]!;
+        if (row.event_sequence !== index + 1 || row.previous_event_digest !== previous) return false;
+        const canonicalTuple = [
+          authId,
+          String(row.event_sequence),
+          row.request_id,
+          row.event_type,
+          row.request_digest,
+          row.previous_event_digest,
+        ].join("|");
+        const expected = createHash("sha256").update(canonicalTuple, "utf8").digest("hex");
+        if (row.event_digest !== expected) return false;
+        previous = expected;
+      }
+      return true;
+    };
+
+    expect(persisted.rows).toHaveLength(3);
+    expect(independentlyVerify(persisted.rows)).toBe(true);
+    const altered = persisted.rows.map((row) => ({ ...row }));
+    altered[1]!.request_digest = "sha256:tampered";
+    expect(independentlyVerify(altered)).toBe(false);
+    const reordered = [...persisted.rows].reverse();
+    expect(independentlyVerify(reordered)).toBe(false);
+  });
+
+  it("detects a real PostgreSQL deadlock using opposite row-lock order", async () => {
+    const setup = await connect();
+    const firstId = randomUUID();
+    const secondId = randomUUID();
+    await setup.query(
+      "INSERT INTO authorization_state (authorization_id, run_budget, consumed_runs, state_version, revoked) VALUES ($1, 1, 0, 0, false), ($2, 1, 0, 0, false)",
+      [firstId, secondId],
+    );
+    const first = await connect(true);
+    const second = await connect(true);
+    await first.query("BEGIN");
+    await second.query("BEGIN");
+    await first.query("SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE", [firstId]);
+    await second.query("SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE", [secondId]);
+
+    const firstWaits = first.query(
+      "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
+      [secondId],
+    );
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    await expect(second.query(
+      "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
+      [firstId],
+    )).rejects.toMatchObject({ code: "40P01" });
+    await second.query("ROLLBACK").catch(() => undefined);
+    await firstWaits;
+    await first.query("ROLLBACK");
+    const rows = await setup.query(
+      "SELECT count(*)::int AS count FROM authorization_state WHERE authorization_id = ANY($1::text[])",
+      [[firstId, secondId]],
+    );
+    expect(rows.rows[0]?.count).toBe(2);
+  });
+
 });
