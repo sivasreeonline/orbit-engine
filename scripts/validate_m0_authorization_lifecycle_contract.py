@@ -61,6 +61,8 @@ def main() -> int:
         "atomic run-budget claims",
     ]:
         require(packet, term, "independent security review packet linkage")
+    if "## 10. Authorization lifecycle qualification" not in packet or "## 11. Current decision" not in packet:
+        raise AssertionError("security review packet section numbering must remain unique and ordered")
     for term in [
         "Epoch issuance/revocation and provider fencing must be serialized per enrolled host",
         "durably records the accepted epoch and evidence reference before allocating a supervisor generation",
