@@ -106,7 +106,32 @@
         "verifier_note": {
           "type": "string"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verification_status": {
+                "const": "verified"
+              }
+            },
+            "required": [
+              "verification_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "independent_verifier_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "verifier_note": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
     },
     "controlFinding": {
       "type": "object",
