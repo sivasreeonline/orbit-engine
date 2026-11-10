@@ -137,7 +137,7 @@ All values are distinct from the immutable external `attempt_id`, `operation_id`
 4. In one durable transaction, allocate a new `supervisor_generation`, then reclaim each non-terminal attempt by incrementing its `attempt_generation` and the affected branch generations using expected-version compare-and-set.
 5. Before every external side effect, the supervisor verifies the host lock, current supervisor generation, current attempt generation, operation sequence, expected state/version, and deterministic resource identity.
 6. An old process or worker that observes lock/generation mismatch must fail-stop before any further side effect or journal mutation.
-7. If a restored/replicated VM cannot prove a unique trusted `host_instance_id`, it is not eligible to accept work. A restored journal does not itself prove host incarnation or fencing.
+7. If a restored/replicated VM cannot prove a unique trusted `host_instance_id`, it is not eligible to accept work. A restored journal does not itself prove host incarnation or fencing. Guest snapshots/backups can roll back `supervisor_generation`; therefore restore/clone/rollback must obtain a fresh monotonic `host_incarnation_epoch` from an authority outside the guest journal, and the provider/control plane must prove every prior incarnation/clone is stopped or otherwise fenced before the restored instance may accept work. If the external epoch, old-instance fence, or uniqueness proof is unavailable, keep the host quarantined; do not infer fencing from a larger guest-journal generation.
 
 Do not claim that an arbitrary generation integer fences containerd. Containerd does not consume this application generation; exclusivity must be proven at the host process/lock boundary.
 
@@ -319,7 +319,8 @@ The numeric cleanup deadline and evidence reserve remain unset until Phase A mea
 1. Start in `RECOVERY_ONLY`; accept no new work and register no execution endpoint.
 2. Acquire the stable host-wide kernel lock. If acquisition fails or lock identity/ownership is uncertain, fail-stop.
 3. Verify trusted host-instance identity, boot ID, supervisor binary digest, journal identity/schema, file ownership/mode, backend durability configuration, and integrity.
-4. Allocate and durably commit a new supervisor generation.
+4. Obtain and verify the current externally anchored `host_incarnation_epoch`; require proof that prior restored/cloned/replaced incarnations are stopped or fenced. Compare the external epoch with the journal's last recorded epoch and fail closed on rollback, reuse, or ambiguity.
+5. Allocate and durably commit a new supervisor generation bound to that external host-incarnation epoch.
 5. Enumerate all non-terminal attempts, pending operations, triggers, branch dispositions, terminal results, and quarantine records.
 6. For each attempt, reconcile deterministic supervisor-owned identities against actual containerd tasks/containers, shim processes, process trees, cgroups, namespaces, mounts, scratch, network-policy state, evidence staging, immutable evidence objects, and manifests.
 7. Increment attempt/branch generations under compare-and-set before reclaiming any branch. Stale workers fail closed.
