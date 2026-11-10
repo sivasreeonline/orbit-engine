@@ -507,7 +507,7 @@ def main():
         raise AssertionError("qualification protocol must define report-wide evidence-ledger identity rules")
     if "repeating that same reference id" not in protocol.lower() or "different reference id for the same immutable object version" not in protocol.lower():
         raise AssertionError("qualification protocol must define evidence reference reuse and object-version uniqueness")
-    if "backup provenance manifest" not in runbook.lower() or "backup artifact digest" not in runbook.lower():
+    if "immutable provenance manifest" not in runbook.lower() or "backup artifact digest" not in runbook.lower():
         raise AssertionError("host runbook must define backup provenance and artifact digest requirements")
 
     cases = []
