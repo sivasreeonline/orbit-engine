@@ -53,6 +53,22 @@ def validate_record(record, validator):
         config = candidate.get("configuration", {})
         add_error(errors, config.get("runtime_integration_mode") != expected_mode,
                   f"{cid}: runtime integration mode does not match candidate definition")
+        profile = config.get("rootless_profile")
+        if cid == "rootful-supervisor":
+            add_error(errors, profile is not None,
+                      "rootful candidate must not carry a rootless host profile")
+        elif cid == "rootless-containerd-userns" and candidate.get("assessment_status") != "not-assessed":
+            add_error(errors, not isinstance(profile, dict),
+                      "assessed rootless candidate requires a complete structured rootless host profile")
+            if isinstance(profile, dict):
+                add_error(errors, profile.get("daemon_uid", 0) == 0 or profile.get("daemon_gid", 0) == 0,
+                          "rootless daemon identity must be non-root")
+                add_error(errors, profile.get("user_namespace_mode") != "caller-configured-userns",
+                          "rootless profile must use caller-configured user namespaces")
+                add_error(errors, profile.get("profile_sha256") != config.get("profile_digest"),
+                          "rootless profile digest must match candidate profile digest")
+                add_error(errors, not {"cpu", "memory", "pids"}.issubset(set(profile.get("delegated_controllers", []))),
+                          "rootless profile must delegate CPU, memory and PID controllers")
         if candidate.get("assessment_status") != "not-assessed":
             if cid == "rootful-supervisor":
                 required = ["profile_id", "profile_digest", "runtime_profile_digest", "resource_profile_digest", "journal_profile_digest",
@@ -142,10 +158,17 @@ def validate_record(record, validator):
                               f"{cid}: qualification must include RLS-001 through RLS-004")
                     add_error(errors, qualification.get("rootless_userns_compatibility_gate") != "passed",
                               f"{cid}: rootless compatibility gate must be passed")
+                    add_error(errors, qualification.get("rootless_profile") != config.get("rootless_profile"),
+                              f"{cid}: qualification rootless host profile does not match candidate configuration")
+                    add_error(errors, qualification.get("rootless_profile_digest") != config.get("profile_digest"),
+                              f"{cid}: qualification rootless profile digest does not match candidate configuration")
                 else:
                     add_error(errors, bool(rootless_ids) or
                               qualification.get("rootless_userns_compatibility_gate") != "not-applicable",
                               f"{cid}: rootful qualification cannot claim rootless-specific tests")
+                    add_error(errors, qualification.get("rootless_profile") is not None or
+                              qualification.get("rootless_profile_digest") is not None,
+                              f"{cid}: rootful qualification cannot carry rootless profile identity")
                 add_error(errors, any(f.get("result") != "pass" for f in findings),
                           f"{cid}: host-qualified requires all 32 security controls to pass")
                 try:
@@ -357,13 +380,20 @@ def main():
         "runtime_profile_digest":"4"*64,"resource_profile_digest":"5"*64,"journal_profile_digest":"6"*64,
         "supervisor_digest":"7"*64,"watchdog_digest":"8"*64,"test_harness_digest":"9"*64,"test_ids":TEST_IDS,
         "reviewer_id":"synthetic-independent-reviewer","host_owner_id":"synthetic-host-owner","independence_attested":True,
-        "candidate_specific_test_ids":[],"rootless_userns_compatibility_gate":"not-applicable",
+        "candidate_specific_test_ids":[],"rootless_userns_compatibility_gate":"not-applicable","rootless_profile":None,"rootless_profile_digest":None,
         "reviewed_at":"2026-11-10T00:00:00Z","expires_at":"2026-12-10T00:00:00Z","signature_reference":"synthetic-qualification"}
     rootless=next(c for c in complete["candidate_assessments"] if c["candidate_id"]=="rootless-containerd-userns")
     rootless["assessment_status"]="design-assessed"
     rootless["assessment_rationale"]="Synthetic design assessment only."
     rootless["configuration"].update({
-        "profile_id":"synthetic-rootless-profile", "profile_digest":"b"*64,"runtime_profile_digest":"4"*64,
+        "profile_id":"synthetic-rootless-profile", "profile_digest":"a"*64,"rootless_profile":{
+            "daemon_uid":1000,"daemon_gid":1000,"daemon_identity_digest":"a"*64,"user_namespace_mode":"caller-configured-userns",
+            "subuid_map_digest":"b"*64,"subgid_map_digest":"c"*64,"subuid_range_count":1,"subgid_range_count":1,
+            "rootlesskit_version":"synthetic-rootlesskit","rootlesskit_sha256":"d"*64,"newuidmap_sha256":"e"*64,"newgidmap_sha256":"f"*64,
+            "helper_inventory_sha256":"1"*64,"state_directory_policy_sha256":"2"*64,"daemon_socket_policy_sha256":"3"*64,
+            "apparmor_profile_sha256":"4"*64,"network_backend":"synthetic-slirp","network_namespace_profile_sha256":"5"*64,
+            "systemd_delegation_profile_sha256":"6"*64,"delegated_controllers":["cpu","memory","pids"],"profile_sha256":"a"*64
+        },"runtime_profile_digest":"4"*64,
         "resource_profile_digest":"5"*64,"journal_profile_digest":"6"*64,"supervisor_digest":"7"*64,
         "watchdog_digest":"8"*64,"test_harness_digest":"9"*64,
         "runner_identity":"synthetic-runner", "host_controller_identity":"synthetic-rootless-daemon",
@@ -446,6 +476,7 @@ def main():
         "watchdog_digest":"8"*64, "test_harness_digest":"9"*64,
         "test_ids":TEST_IDS, "candidate_specific_test_ids":ROOTLESS_TEST_IDS,
         "rootless_userns_compatibility_gate":"passed",
+        "rootless_profile":rootless["configuration"]["rootless_profile"],"rootless_profile_digest":"a"*64,
         "reviewer_id":"synthetic-independent-reviewer", "host_owner_id":"synthetic-host-owner",
         "independence_attested":True, "reviewed_at":"2026-11-10T00:00:00Z",
         "expires_at":"2026-12-10T00:00:00Z", "signature_reference":"synthetic-rootless-qualification"
