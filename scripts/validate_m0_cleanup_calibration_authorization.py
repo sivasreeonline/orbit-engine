@@ -205,6 +205,8 @@ def main() -> int:
     packet = PACKET_PATH.read_text(encoding="utf-8")
     if "version 1.1.0" not in packet or "complete predecessor set" not in packet or "host-qualification record digest" not in packet:
         raise AssertionError("Phase A packet must bind authorization to the externally fenced host incarnation and qualification record")
+    if "signed independent security-review record reference/digest" not in packet or "FENCE-001" not in packet or "recorded as `pass`" not in packet:
+        raise AssertionError("Phase A authorization must bind the signed independent review record with FENCE-001 passed")
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     valid = synthetic_manifest()
