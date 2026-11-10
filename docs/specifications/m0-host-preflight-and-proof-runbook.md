@@ -64,7 +64,7 @@ Run the reviewed fixture matrix in `docs/specifications/m0-adversarial-fixture-c
 | Time | Wall deadline stops infinite loops and reaps descendants |
 | Filesystem | Base is read-only; scratch byte and inode ceilings are hard limits |
 | Output | stdout and stderr are independently counted; a shared 1 MiB combined hard ceiling is enforced, with process-tree termination on overflow |
-| Cleanup | Sandbox and scratch are removed after success, compile failure, runtime failure, timeout, cancellation, OOM, output overflow, and forced termination |
+| Cleanup | After success, compile failure, runtime failure, timeout, cancellation, OOM, output overflow, and forced termination, independently verify absence of the process tree, containerd task/container, shim, namespaces, cgroup, scratch, temporary mounts, and network-policy state before terminal acknowledgement |
 
 A test passes only with captured host-side evidence and an assertion that checks the expected failure mode. A command returning non-zero by itself is not sufficient proof.
 
@@ -73,7 +73,7 @@ A test passes only with captured host-side evidence and an assertion that checks
 - Cancel while the workload is running; verify the complete process tree is terminated.
 - Confirm cleanup before acknowledging cancellation.
 - Deliver the same test job twice; verify one logical execution and one result.
-- Restart the runner during a test; verify no orphan process or scratch directory remains.
+- In separate controlled subcases, restart the runner, host supervisor, and containerd daemon during an active test; verify journal reconciliation, no duplicate execution, and absence of every process/task/container/shim/namespace/cgroup/mount/scratch/network-policy resource before terminal acknowledgement.
 - Repeat each failure-path test enough times to expose races.
 - Preserve correlation IDs and timestamps without logging student source, hidden inputs, expected outputs, or secrets.
 
