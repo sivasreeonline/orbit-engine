@@ -484,6 +484,13 @@ def main():
         "candidate_specific_test_ids":[],"rootless_userns_compatibility_gate":"not-applicable","rootless_profile":None,"rootless_profile_digest":None,
         "reviewed_at":"2026-11-10T00:00:00Z","expires_at":"2026-12-10T00:00:00Z","signature_reference":"synthetic-qualification"}
     rootless=next(c for c in complete["candidate_assessments"] if c["candidate_id"]=="rootless-containerd-userns")
+    mismatched_qualification = deepcopy(complete)
+    mismatched_qualification["candidate_assessments"][0]["qualification_report"]["qualification_record_evidence"]["sha256"] = "0"*64
+    mismatch_errors = validate_record(mismatched_qualification, validator)
+    if not any("qualification evidence SHA-256" in error for error in mismatch_errors):
+        raise AssertionError("qualification evidence with mismatched record digest was accepted")
+    print("PASS  rejects host qualification evidence whose digest does not match the signed record")
+
     rootless["assessment_status"]="design-assessed"
     rootless["assessment_rationale"]="Synthetic design assessment only."
     rootless["configuration"].update({
