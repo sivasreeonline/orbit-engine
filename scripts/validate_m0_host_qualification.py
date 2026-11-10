@@ -674,6 +674,21 @@ def main():
     if not any("evidence acquirer must be distinct" in error for error in errors_for(unverified_auxiliary, schema_validator)):
         raise AssertionError("host owner acquisition of supplementary evidence was accepted")
     print("PASS  enforces report-wide immutable evidence reference/object-version identity and principal separation")
+    auxiliary_role_conflict = deepcopy(complete)
+    auxiliary = deepcopy(auxiliary_role_conflict["test_results"][0]["evidence_refs"][0])
+    auxiliary.update(reference_id="synthetic-auxiliary-role-conflict", object_version="object-auxiliary-role-conflict")
+    auxiliary["acquired_by_id"] = auxiliary_role_conflict["review"]["reviewer_id"]
+    auxiliary_role_conflict["test_results"][0]["evidence_refs"].append(auxiliary)
+    if not any("evidence acquirer must be distinct" in error for error in errors_for(auxiliary_role_conflict, schema_validator)):
+        raise AssertionError("independent reviewer was accepted as acquirer of supplementary evidence")
+
+    auxiliary_verifier_conflict = deepcopy(complete)
+    auxiliary = deepcopy(auxiliary_verifier_conflict["test_results"][0]["evidence_refs"][0])
+    auxiliary.update(reference_id="synthetic-auxiliary-verifier-conflict", object_version="object-auxiliary-verifier-conflict")
+    auxiliary["independent_verifier_id"] = auxiliary_verifier_conflict["review"]["host_owner_id"]
+    auxiliary_verifier_conflict["test_results"][0]["evidence_refs"].append(auxiliary)
+    if not any("evidence verifier must be independent" in error for error in errors_for(auxiliary_verifier_conflict, schema_validator)):
+        raise AssertionError("host owner was accepted as verifier of supplementary evidence")
 
     missing_epoch = deepcopy(complete)
     missing_epoch["host_identity"]["host_incarnation_epoch"] = None
