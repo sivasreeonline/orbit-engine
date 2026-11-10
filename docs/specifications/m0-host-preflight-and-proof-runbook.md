@@ -15,6 +15,7 @@ It is deliberately read-only. It does not install packages, change host configur
 - gVisor runsc and containerd-shim-runsc-v1.
 - gVisor runtime handler io.containerd.runsc.v1.
 - VM-backed proof hosts explicitly use the gVisor systrap platform.
+- Proposed M0 proof resource profile: `docs/specifications/m0-proof-resource-profile-v1.md`; values remain pending empirical validation and independent approval.
 - Dedicated disposable host; no student data, production credentials, API services, or unrelated tenants.
 
 The cloud provider and region are intentionally not selected in this runbook.
@@ -62,7 +63,7 @@ Run the reviewed fixture matrix in `docs/specifications/m0-adversarial-fixture-c
 | Processes | PID ceiling stops fork/process floods |
 | Time | Wall deadline stops infinite loops and reaps descendants |
 | Filesystem | Base is read-only; scratch byte and inode ceilings are hard limits |
-| Output | stdout and stderr are independently bounded |
+| Output | stdout and stderr are independently counted; a shared 1 MiB combined hard ceiling is enforced, with process-tree termination on overflow |
 | Cleanup | Sandbox and scratch are removed after success, compile failure, runtime failure, timeout, cancellation, OOM, output overflow, and forced termination |
 
 A test passes only with captured host-side evidence and an assertion that checks the expected failure mode. A command returning non-zero by itself is not sufficient proof.
@@ -78,7 +79,7 @@ A test passes only with captured host-side evidence and an assertion that checks
 
 ## Evidence bundle
 
-Use `docs/schemas/m0-proof-evidence.schema.json` as the versioned manifest contract for the proof report. The manifest records structured outcomes and references to sanitized evidence files; it must not embed raw logs, student code, hidden test data, credentials, or private artifact URLs. A schema-valid manifest is a completeness aid, not proof that the underlying tests actually ran or passed.
+Use `docs/specifications/m0-proof-resource-profile-v1.md` as the proposed versioned resource profile and `docs/schemas/m0-proof-evidence.schema.json` as the versioned manifest contract for the proof report. The evidence manifest must record the exact resource-profile ID, revision, and applied limits. The manifest records structured outcomes and references to sanitized evidence files; it must not embed raw logs, student code, hidden test data, credentials, or private artifact URLs. A schema-valid manifest is a completeness aid, not proof that the underlying tests actually ran or passed.
 
 Store a proof report outside the host and include:
 
