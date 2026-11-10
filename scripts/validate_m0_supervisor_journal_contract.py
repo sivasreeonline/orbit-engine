@@ -62,6 +62,7 @@ REQUIRED = {
         "Candidate B requires ownership by its dedicated non-root supervisor identity",
         "current `supervisor_generation`",
         "current `attempt_generation`",
+        "current `supervisor_generation` and current `attempt_generation`",
         "branch_state_version",
         "Every finalization-branch mutation must compare supervisor_generation, attempt_generation, branch_generation, and branch_state_version together in one conditional update",
         "Candidate A requires root ownership; Candidate B requires ownership by its dedicated non-root supervisor identity",
