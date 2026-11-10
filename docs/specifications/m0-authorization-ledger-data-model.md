@@ -241,3 +241,10 @@ Cloudflare R2 remains a candidate object store; this receipt schema does not ass
 ## 10. Synthetic validation boundary
 
 `scripts/validate_m0_witness_evidence_contract.py` validates both Draft 2020-12 schemas and exercises synthetic exact-checkpoint alignment, stale-anchor rejection, exact evidence-version readback, digest equality, retention horizon and principal-separation checks. It does not connect to Neon, an external witness or R2, and it does not verify signatures or provider retention behavior.
+
+
+### Checkpoint succession and anti-equivocation continuity
+
+Each checkpoint after the initial enrollment anchor must bind the exact prior checkpoint artifact digest in `previous_checkpoint_digest`, increment witness generation by exactly one, and preserve witness, authority and environment identity. Ledger event sequence, trust-bundle generation, revocation generation and each enrolled host's epoch high-water mark may never decrease; previously enrolled host identities may not disappear from the successor's high-water-mark set. A gap, fork, identity change or regression is a witness-integrity failure and quarantines authorization state. The synthetic validator exercises valid succession and rejects generation gaps, predecessor-digest mismatch, environment changes, trust/revocation rollback, ledger-sequence rollback and host-epoch rollback.
+
+For evidence retention, only a compliance-mode or independently reviewed provider-immutable mode is eligible in the proposed acceptance predicate. Governance-mode retention is not accepted because privileged bypass behavior can undermine the intended immutable evidence guarantee. Provider semantics still require target-account tests; the validator only checks declared metadata.
