@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "docs/schemas/m0-proof-evidence.schema.json"
+REQUIRED_FIXTURE_IDS = ["M0-RUN-JAVA-001","M0-RUN-PY-001","M0-RUN-JAVA-002","M0-RUN-003","M0-RUN-004","M0-ID-001","M0-ID-002","M0-HOST-001","M0-HOST-002","M0-HOST-003","M0-HOST-004","M0-HOST-005","M0-NET-001","M0-NET-002","M0-NET-003","M0-NET-004","M0-NET-005","M0-NET-006","M0-RES-CPU-001","M0-RES-MEM-001","M0-RES-PID-001","M0-RES-TIME-001","M0-RES-FS-001","M0-RES-FS-002","M0-RES-FS-003","M0-RES-OUT-001","M0-RES-OUT-002","M0-LIFE-CLEAN-001","M0-LIFE-CLEAN-002","M0-LIFE-CANCEL-001","M0-LIFE-DUP-001","M0-LIFE-RESTART-001","M0-LIFE-REPEAT-001"]
 
 
 def valid_manifest():
@@ -44,21 +45,24 @@ def valid_manifest():
             "repository_revision": "b" * 40,
             "image_digest": "sha256:" + "c" * 64,
         },
-        "tests": [{
-            "test_id": "m0-synthetic-001",
-            "phase": "runtime",
-            "status": "passed",
-            "expected_outcome": "Synthetic fixture completes",
-            "observed_outcome": "Synthetic fixture completes",
-            "exit_code": 0,
-            "duration_ms": 1,
-            "evidence": [{
-                "relative_path": "synthetic/evidence.txt",
-                "sha256": "d" * 64,
-                "bytes": 0,
-                "redacted": True,
-            }],
-        }],
+        "tests": [
+            {
+                "test_id": fixture_id.lower(),
+                "phase": "runtime",
+                "status": "passed",
+                "expected_outcome": "Synthetic fixture completes",
+                "observed_outcome": "Synthetic fixture completes",
+                "exit_code": 0,
+                "duration_ms": 1,
+                "evidence": [{
+                    "relative_path": "synthetic/evidence.txt",
+                    "sha256": "d" * 64,
+                    "bytes": 0,
+                    "redacted": True,
+                }],
+            }
+            for fixture_id in REQUIRED_FIXTURE_IDS
+        ],
         "overall_result": "passed",
         "security_review": {
             "decision": "approved",
@@ -76,7 +80,7 @@ def expect_valid(validator, manifest, label):
         )
 
 
-def expect_invalid(validator, manifest, label):
+def expect_invalid(manifest_validator, manifest, label):
     errors = list(validator.iter_errors(manifest))
     if not errors:
         raise AssertionError(f"{label} should be rejected")
@@ -87,13 +91,33 @@ def main():
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
 
-    expect_valid(validator, valid_manifest(), "fully passed synthetic manifest")
+    def validate_manifest(manifest):
+        errors = list(validator.iter_errors(manifest))
+        if errors:
+            return errors
+        if manifest["overall_result"] == "passed":
+            recorded = {item["test_id"].upper() for item in manifest["tests"]}
+            missing = sorted(set(REQUIRED_FIXTURE_IDS) - recorded)
+            if missing:
+                return [ValueError("missing required fixtures: " + ", ".join(missing))]
+        return []
+
+    class ManifestValidator:
+        def iter_errors(self, manifest):
+            return validate_manifest(manifest)
+
+    manifest_validator = ManifestValidator()
+    expect_valid(manifest_validator, valid_manifest(), "complete passed synthetic manifest")
 
     cases = []
 
     failed_fixture = valid_manifest()
     failed_fixture["tests"][0]["status"] = "failed"
     cases.append(("passed result with failed fixture", failed_fixture))
+
+    missing_fixture = valid_manifest()
+    missing_fixture["tests"].pop()
+    cases.append(("passed result missing a required fixture", missing_fixture))
 
     wrong_platform = valid_manifest()
     wrong_platform["runtime"]["platform"] = "ptrace"
@@ -126,14 +150,15 @@ def main():
     incomplete["security_review"]["decision"] = "pending"
     incomplete["security_review"]["reviewed_at"] = None
     incomplete["security_review"]["reviewer_reference"] = None
-    expect_valid(validator, incomplete, "incomplete synthetic manifest")
+    expect_valid(manifest_validator, incomplete, "incomplete synthetic manifest")
 
     print("PASS  JSON Schema Draft 2020-12 meta-schema validation")
-    print("PASS  valid fully-passed manifest")
+    print(f"PASS  valid fully-passed manifest with all {len(REQUIRED_FIXTURE_IDS)} required fixtures")
     for label, _ in cases:
         print(f"PASS  rejects {label}")
     print("PASS  accepts incomplete manifest with blocked fixture and pending review")
-    print(f"RESULT: {len(cases) + 3} evidence-schema checks passed")
+    print(f"PASS  requires complete coverage of all {len(REQUIRED_FIXTURE_IDS)} contract fixtures")
+    print(f"RESULT: {len(cases) + 4} evidence-schema checks passed")
 
 
 if __name__ == "__main__":
