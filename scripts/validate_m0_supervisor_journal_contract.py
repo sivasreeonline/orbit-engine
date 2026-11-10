@@ -78,12 +78,14 @@ REQUIRED = {
         "Candidate A", "Candidate B",
         "Candidate A — rootful host supervisor requirements",
         "Candidate B — rootless containerd experiment",
+        "For Candidate A, this covers all rootful containerd access; for Candidate B, it covers the dedicated non-root supervisor",
         "persist the trigger and `TERMINATING` transition concurrently",
         "supervisor_generation",
         "attempt_generation",
         "branch_generation",
         "current `supervisor_generation`, `attempt_generation`, `branch_generation`, and expected branch state version",
         "database lease or generation integer alone cannot fence a paused process",
+        "full lifetime of the selected supervisor",
     ],
 }
 FORBIDDEN_ADR_SELECTION_PHRASES = [
