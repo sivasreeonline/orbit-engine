@@ -136,3 +136,12 @@ An architecture recommendation does not authorize privileged implementation. Imp
 - [containerd rootless setup and cgroup v2 requirements](https://github.com/containerd/containerd/blob/main/docs/rootless.md)
 - [gVisor containerd quick start](https://gvisor.dev/docs/user_guide/containerd/quick_start/)
 - [gVisor platform guide](https://gvisor.dev/docs/user_guide/platforms/)
+
+
+## Architecture decision closure dossier
+
+The candidate definitions, same-control comparison, evidence rules, permitted outcomes and no-go triggers are controlled in `docs/adr/ADR-0019-decision-dossier.md`. Use `docs/schemas/m0-adr-0019-decision-record.schema.json` and its blank template for the independent decision.
+
+ADR-0019 remains **Proposed** until a real independent reviewer completes the comparison and the selected candidate has its own exact-host qualification record. The rootless candidate means rootless containerd with caller-configured user namespaces; it does not mean the separate `runsc --rootless` CLI mode.
+
+An accepted M0 proof boundary does not authorize privileged implementation. The decision schema keeps implementation, Phase A, Phase B, student and production authorization flags false.

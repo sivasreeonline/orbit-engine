@@ -165,3 +165,10 @@ Phase B approval is a separate reviewer decision. It requires approval of the ca
 ## 9. Current decision
 
 **Independent review: pending.** The controlled checklist and machine-readable decision template are available, but no reviewer signoff is recorded. No cloud host has been selected or provisioned. No sandbox workload has been launched. No executor activation is authorized. Passing CI is not a security review or approval.
+
+
+## ADR-0019 candidate decision
+
+Use `docs/adr/ADR-0019-decision-dossier.md` and `docs/schemas/m0-adr-0019-decision-record.schema.json` for the rootful-versus-rootless candidate decision. The reviewer must assess both candidates against the same 32 controls and 33 host qualification tests. A candidate selection requires its own complete host qualification report and independent sign-off; evidence cannot be borrowed from the other candidate.
+
+The review remains pending. The dossier and its synthetic CI examples are not security approval or host proof.

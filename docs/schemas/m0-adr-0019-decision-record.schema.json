@@ -1,0 +1,813 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-adr-0019-decision-record.schema.json",
+  "title": "M0 ADR-0019 Architecture Decision Record",
+  "description": "Evidence-bound rootful/rootless architecture decision. ADR acceptance does not authorize privileged implementation or execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_id",
+        "object_version",
+        "sha256",
+        "byte_count",
+        "evidence_root_id",
+        "evidence_type",
+        "acquired_at",
+        "acquisition_tool",
+        "tool_version",
+        "verification_status",
+        "independent_verifier_id",
+        "verification_note",
+        "redaction_status"
+      ],
+      "properties": {
+        "reference_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "byte_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence_root_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_type": {
+          "enum": [
+            "architecture-review",
+            "design-document",
+            "host-configuration",
+            "host-runtime",
+            "filesystem-storage",
+            "supply-chain",
+            "network-observation",
+            "watchdog-control-plane",
+            "journal-durability",
+            "fault-injection",
+            "operator-record",
+            "host-qualification-record",
+            "security-review-record"
+          ]
+        },
+        "acquired_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "acquisition_tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verification_status": {
+          "enum": [
+            "unverified",
+            "verified",
+            "failed"
+          ]
+        },
+        "independent_verifier_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verification_note": {
+          "type": "string"
+        },
+        "redaction_status": {
+          "enum": [
+            "sanitized",
+            "redacted",
+            "non-sensitive"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verification_status": {
+                "const": "verified"
+              }
+            },
+            "required": [
+              "verification_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "independent_verifier_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "verification_note": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "controlFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control_id",
+        "evidence_class",
+        "result",
+        "verification_method",
+        "finding",
+        "severity",
+        "remediation_owner",
+        "evidence_refs"
+      ],
+      "properties": {
+        "control_id": {
+          "enum": [
+            "ARCH-001",
+            "ARCH-002",
+            "AUTH-001",
+            "AUTH-002",
+            "AUTH-003",
+            "API-001",
+            "PRIV-001",
+            "PRIV-002",
+            "RUNTIME-001",
+            "RUNTIME-002",
+            "OCI-001",
+            "NET-001",
+            "NET-002",
+            "CGROUP-001",
+            "FS-001",
+            "OUTPUT-001",
+            "LIFE-001",
+            "LIFE-002",
+            "LIFE-003",
+            "CLOCK-001",
+            "CLOCK-002",
+            "JOURNAL-001",
+            "JOURNAL-002",
+            "JOURNAL-003",
+            "WATCH-001",
+            "WATCH-002",
+            "WATCH-003",
+            "EVID-001",
+            "EVID-002",
+            "SUPPLY-001",
+            "OPS-001",
+            "OPS-002"
+          ]
+        },
+        "evidence_class": {
+          "enum": [
+            "design",
+            "host",
+            "mixed"
+          ]
+        },
+        "result": {
+          "enum": [
+            "not-reviewed",
+            "pass",
+            "fail",
+            "conditional"
+          ]
+        },
+        "verification_method": {
+          "type": "string"
+        },
+        "finding": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "unassigned",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "remediation_owner": {
+          "type": "string"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "pass"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "verification_method": {
+                "minLength": 1
+              },
+              "finding": {
+                "minLength": 1
+              },
+              "severity": {
+                "const": "none"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "enum": [
+                  "fail",
+                  "conditional"
+                ]
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "finding": {
+                "minLength": 1
+              },
+              "severity": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "qualificationReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id",
+        "record_sha256",
+        "record_commit_sha",
+        "target_architecture",
+        "qualification_status",
+        "host_instance_id",
+        "boot_id",
+        "host_profile_digest",
+        "runtime_profile_digest",
+        "resource_profile_digest",
+        "journal_profile_digest",
+        "supervisor_digest",
+        "watchdog_digest",
+        "test_harness_digest",
+        "test_ids",
+        "reviewer_id",
+        "host_owner_id",
+        "independence_attested",
+        "reviewed_at",
+        "expires_at",
+        "signature_reference"
+      ],
+      "properties": {
+        "record_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "record_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "record_commit_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "target_architecture": {
+          "enum": [
+            "rootful-supervisor",
+            "rootless-containerd-userns"
+          ]
+        },
+        "qualification_status": {
+          "const": "candidate-qualified"
+        },
+        "host_instance_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "boot_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_profile_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "runtime_profile_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "resource_profile_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "journal_profile_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "supervisor_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "watchdog_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "test_harness_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "test_ids": {
+          "type": "array",
+          "minItems": 33,
+          "maxItems": 33,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "HST-001",
+              "HST-002",
+              "HST-003",
+              "HST-004",
+              "HST-005",
+              "AUTH-001",
+              "RUN-001",
+              "CG-001",
+              "NET-001",
+              "NET-002",
+              "FS-001",
+              "OUT-001",
+              "WDG-001",
+              "WDG-002",
+              "WDG-003",
+              "CLK-001",
+              "CLK-002",
+              "EVID-001",
+              "JRN-001",
+              "JRN-002",
+              "JRN-003",
+              "JRN-004",
+              "JRN-005",
+              "JRN-006",
+              "JRN-007",
+              "JRN-008",
+              "JRN-009",
+              "JRN-010",
+              "JRN-011",
+              "JRN-012",
+              "JRN-013",
+              "JRN-014",
+              "JRN-015"
+            ]
+          }
+        },
+        "reviewer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_owner_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "independence_attested": {
+          "const": true
+        },
+        "reviewed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signature_reference": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "candidateEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id",
+        "assessment_status",
+        "configuration",
+        "design_findings",
+        "qualification_report",
+        "assessment_rationale",
+        "rejection_rationale",
+        "residual_risks"
+      ],
+      "properties": {
+        "candidate_id": {
+          "enum": [
+            "rootful-supervisor",
+            "rootless-containerd-userns"
+          ]
+        },
+        "assessment_status": {
+          "enum": [
+            "not-assessed",
+            "design-assessed",
+            "host-qualified",
+            "rejected",
+            "deferred"
+          ]
+        },
+        "configuration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profile_id",
+            "profile_digest",
+            "runtime_integration_mode",
+            "runner_identity",
+            "host_controller_identity",
+            "containerd_access_principal",
+            "privilege_inventory_digest",
+            "syscall_inventory_digest",
+            "writable_path_inventory_digest",
+            "service_hardening_digest",
+            "socket_policy_digest",
+            "network_backend",
+            "cgroup_delegation_reference",
+            "user_namespace_mapping_reference",
+            "rootlesskit_version"
+          ],
+          "properties": {
+            "profile_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "profile_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "runtime_integration_mode": {
+              "enum": [
+                "containerd-rootful-supervisor",
+                "containerd-caller-configured-userns"
+              ]
+            },
+            "runner_identity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "host_controller_identity": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "containerd_access_principal": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "privilege_inventory_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "syscall_inventory_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "writable_path_inventory_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "service_hardening_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "socket_policy_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "network_backend": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "cgroup_delegation_reference": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "user_namespace_mapping_reference": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rootlesskit_version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "design_findings": {
+          "type": "array",
+          "minItems": 32,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/controlFinding"
+          }
+        },
+        "qualification_report": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/qualificationReport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assessment_rationale": {
+          "type": "string"
+        },
+        "rejection_rationale": {
+          "type": "string"
+        },
+        "residual_risks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "risk_id",
+              "description",
+              "severity",
+              "owner_id",
+              "status"
+            ],
+            "properties": {
+              "risk_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
+              "severity": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              },
+              "owner_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "open",
+                  "mitigating",
+                  "accepted",
+                  "closed"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "decision_record_id",
+    "record_status",
+    "reviewed_commit_sha",
+    "review_scope",
+    "candidate_assessments",
+    "outcome",
+    "selected_candidate",
+    "decision_rationale",
+    "participants",
+    "reviewed_at",
+    "expires_at",
+    "signature_reference",
+    "adr_status",
+    "privileged_implementation_authorized",
+    "phase_a_authorized",
+    "phase_b_authorized",
+    "student_execution_authorized",
+    "production_execution_authorized"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "decision_record_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "record_status": {
+      "enum": [
+        "not-started",
+        "in-review",
+        "completed"
+      ]
+    },
+    "reviewed_commit_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^([a-f0-9]{40})?$"
+    },
+    "review_scope": {
+      "enum": [
+        "design-only",
+        "design-and-host-evidence"
+      ]
+    },
+    "candidate_assessments": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/candidateEvaluation"
+      }
+    },
+    "outcome": {
+      "enum": [
+        "pending",
+        "select-rootful-for-m0-proof",
+        "select-rootless-for-m0-proof",
+        "reject-both",
+        "defer"
+      ]
+    },
+    "selected_candidate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "rootful-supervisor",
+        "rootless-containerd-userns",
+        null
+      ]
+    },
+    "decision_rationale": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewer_id",
+        "host_owner_id",
+        "independence_attested",
+        "independence_basis",
+        "conflict_disclosure"
+      ],
+      "properties": {
+        "reviewer_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host_owner_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "independence_attested": {
+          "type": "boolean"
+        },
+        "independence_basis": {
+          "type": "string"
+        },
+        "conflict_disclosure": {
+          "type": "string"
+        }
+      }
+    },
+    "reviewed_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "signature_reference": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "adr_status": {
+      "enum": [
+        "proposed",
+        "accepted-for-m0-proof-boundary",
+        "rejected",
+        "deferred"
+      ]
+    },
+    "privileged_implementation_authorized": {
+      "const": false
+    },
+    "phase_a_authorized": {
+      "const": false
+    },
+    "phase_b_authorized": {
+      "const": false
+    },
+    "student_execution_authorized": {
+      "const": false
+    },
+    "production_execution_authorized": {
+      "const": false
+    }
+  }
+}

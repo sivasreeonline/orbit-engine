@@ -209,3 +209,9 @@ On stop: reject new work, continue best-effort independent termination when appl
 - `docs/security/m0-independent-security-review-record.schema.json`
 - SQLite PRAGMA documentation: https://www.sqlite.org/pragma.html
 - SQLite Online Backup API: https://www.sqlite.org/backup.html
+
+## ADR-0019 candidate decision linkage
+
+`docs/adr/ADR-0019-decision-dossier.md` defines the candidate-specific configuration and evidence rules. Candidate A and Candidate B must each use the same 32 security control IDs and 33 host qualification tests. A host qualification report is candidate-, host-, commit- and profile-specific; it cannot be transferred between rootful and rootless deployments.
+
+The machine-readable ADR decision record is `docs/schemas/m0-adr-0019-decision-record.template.json`. Its blank state is pending and grants no implementation, Phase A, Phase B, student or production authorization.

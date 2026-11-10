@@ -127,3 +127,7 @@ Use `docs/specifications/m0-host-and-journal-qualification-protocol.md` and its 
 ## 10. Current state
 
 **Not reviewed.** The blank machine-readable template is intentionally non-authorizing. No reviewer, host, runtime evidence, signature or approval is pre-populated. Passing CI validates the record contract only; it is not a security review.
+
+## ADR-0019 candidate decision
+
+Add the candidate comparison in `docs/adr/ADR-0019-decision-dossier.md` to the independent review scope. Review both deployment models against the same 32 control IDs and map their evidence to the 33 host qualification tests. Use `docs/schemas/m0-adr-0019-decision-record.schema.json`; a selected candidate must have its own independently reviewed host qualification report.
