@@ -3,7 +3,7 @@
 - Status: **review package prepared; independent review not yet performed**.
 - Review baseline commit: **must be pinned in the signed review record at review kickoff**. The blank template intentionally carries no commit SHA; never reuse a historical baseline for a new review.
 - Scope: M0 disposable synthetic proof only. This is not production approval.
-- Machine-readable schema: `m0-independent-security-review-record.schema.json`.
+- Machine-readable schema v1.1.0: `m0-independent-security-review-record.schema.json`.
 - Blank record: `m0-independent-security-review-record.template.json`.
 - Implementation remains blocked; `UnconfiguredExecutor` stays active.
 
