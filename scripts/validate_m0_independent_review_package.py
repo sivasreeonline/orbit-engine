@@ -25,7 +25,7 @@ EXPECTED_CLASSES = {
     "RUNTIME-002": "host", "OCI-001": "host", "NET-001": "host",
     "NET-002": "host", "CGROUP-001": "host", "FS-001": "host",
     "OUTPUT-001": "host", "LIFE-001": "mixed", "LIFE-002": "host",
-    "LIFE-003": "host", "CLOCK-001": "host", "CLOCK-002": "host",
+    "LIFE-003": "host", "CLOCK-001": "host", "CLOCK-002": "host", "FENCE-001": "host",
     "JOURNAL-001": "host", "JOURNAL-002": "host", "JOURNAL-003": "host",
     "WATCH-001": "host", "WATCH-002": "host", "WATCH-003": "host",
     "EVID-001": "mixed", "EVID-002": "host", "SUPPLY-001": "mixed",
@@ -51,6 +51,7 @@ HOST_EVIDENCE_BY_CONTROL = {
     "LIFE-003": {"host-runtime", "fault-injection"},
     "CLOCK-001": {"host-runtime", "fault-injection"},
     "CLOCK-002": {"host-runtime", "fault-injection"},
+    "FENCE-001": {"host-configuration", "fault-injection", "operator-record"},
     "JOURNAL-001": {"host-configuration", "fault-injection"},
     "JOURNAL-002": {"host-configuration", "fault-injection"},
     "JOURNAL-003": {"host-configuration", "fault-injection"},
@@ -143,7 +144,7 @@ def custom_errors(record):
             errors.append("implementation recommendation has unresolved high/critical finding")
 
     if decisions.get("phase_a_recommendation") == "eligible-for-separate-calibration-authorization":
-        required = {"NET-001", "NET-002", "JOURNAL-001", "CLOCK-001", "CLOCK-002", "WATCH-001", "WATCH-002", "WATCH-003"}
+        required = {"NET-001", "NET-002", "JOURNAL-001", "CLOCK-001", "CLOCK-002", "FENCE-001", "WATCH-001", "WATCH-002", "WATCH-003"}
         by_id = {f.get("control_id"): f for f in findings}
         if review_status != "completed" or any(by_id.get(cid, {}).get("result") != "pass" for cid in required):
             errors.append("Phase A eligibility requires completed review and passing required host controls")
@@ -229,8 +230,10 @@ def main():
         raise AssertionError("ADR-0019 does not link the independent review checklist")
     if "Independent review: pending." not in packet:
         raise AssertionError("security packet must retain pending review status")
+    if "Snapshot rollback / cloned host split-brain" not in packet or "FENCE-001" not in checklist:
+        raise AssertionError("security review package must explicitly cover external host-incarnation fencing")
     print("PASS  blank template validates and remains not-reviewed/non-authorizing")
-    print("PASS  schema, template, 32-control checklist and evidence classes are synchronized")
+    print("PASS  schema, template, 33-control checklist and evidence classes are synchronized")
     print("PASS  ADR and security packet link the independent review package")
 
     cases = []
@@ -316,6 +319,24 @@ def main():
         raise AssertionError("architecture recommendation improperly authorized execution")
     print("PASS  architecture-candidate recommendation cannot authorize implementation or execution")
     print("NOTE  synthetic contract tests only; no actual reviewer/evidence/signature")
+
+    fence_only_design_evidence = deepcopy(complete)
+    fence_finding = next(item for item in fence_only_design_evidence["control_findings"] if item["control_id"] == "FENCE-001")
+    fence_finding.update(result="pass", verification_method="synthetic", reviewer_finding="synthetic", severity="none", evidence_refs=[dict(evidence_ref, evidence_type="design-document")])
+    if not any("FENCE-001: pass requires one of the control-specific host evidence types" in error for error in validate(validator, fence_only_design_evidence)):
+        raise AssertionError("FENCE-001 accepted design-only evidence as a host control pass")
+    print("PASS  external incarnation fencing cannot pass on design-only evidence")
+
+    phase_a_without_fence = deepcopy(complete)
+    phase_a_without_fence["decisions"]["phase_a_recommendation"] = "eligible-for-separate-calibration-authorization"
+    required_phase_a = {"NET-001", "NET-002", "JOURNAL-001", "CLOCK-001", "CLOCK-002", "FENCE-001", "WATCH-001", "WATCH-002", "WATCH-003"}
+    for control_id in required_phase_a - {"FENCE-001"}:
+        finding = next(item for item in phase_a_without_fence["control_findings"] if item["control_id"] == control_id)
+        evidence_type = next(iter(HOST_EVIDENCE_BY_CONTROL[control_id]))
+        finding.update(result="pass", verification_method="synthetic", reviewer_finding="Synthetic only", severity="none", evidence_refs=[dict(evidence_ref, reference_id="synthetic-"+control_id, evidence_type=evidence_type)])
+    if not any("Phase A eligibility requires completed review and passing required host controls" in error for error in validate(validator, phase_a_without_fence)):
+        raise AssertionError("Phase A eligibility bypassed missing FENCE-001 review")
+    print("PASS  Phase A eligibility requires an independently evidenced FENCE-001 pass")
 
 if __name__ == "__main__":
     try:
