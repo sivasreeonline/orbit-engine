@@ -10,7 +10,41 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "docs/schemas/m0-proof-evidence.schema.json"
-REQUIRED_FIXTURE_IDS = ["M0-RUN-JAVA-001","M0-RUN-PY-001","M0-RUN-JAVA-002","M0-RUN-003","M0-RUN-004","M0-ID-001","M0-ID-002","M0-HOST-001","M0-HOST-002","M0-HOST-003","M0-HOST-004","M0-HOST-005","M0-NET-001","M0-NET-002","M0-NET-003","M0-NET-004","M0-NET-005","M0-NET-006","M0-RES-CPU-001","M0-RES-MEM-001","M0-RES-PID-001","M0-RES-TIME-001","M0-RES-FS-001","M0-RES-FS-002","M0-RES-FS-003","M0-RES-OUT-001","M0-RES-OUT-002","M0-LIFE-CLEAN-001","M0-LIFE-CLEAN-002","M0-LIFE-CANCEL-001","M0-LIFE-DUP-001","M0-LIFE-RESTART-001","M0-LIFE-REPEAT-001"]
+REQUIRED_FIXTURE_IDS = (
+    "M0-RUN-JAVA-001",
+    "M0-RUN-PY-001",
+    "M0-RUN-JAVA-002",
+    "M0-RUN-003",
+    "M0-RUN-004",
+    "M0-ID-001",
+    "M0-ID-002",
+    "M0-HOST-001",
+    "M0-HOST-002",
+    "M0-HOST-003",
+    "M0-HOST-004",
+    "M0-HOST-005",
+    "M0-NET-001",
+    "M0-NET-002",
+    "M0-NET-003",
+    "M0-NET-004",
+    "M0-NET-005",
+    "M0-NET-006",
+    "M0-RES-CPU-001",
+    "M0-RES-MEM-001",
+    "M0-RES-PID-001",
+    "M0-RES-TIME-001",
+    "M0-RES-FS-001",
+    "M0-RES-FS-002",
+    "M0-RES-FS-003",
+    "M0-RES-OUT-001",
+    "M0-RES-OUT-002",
+    "M0-LIFE-CLEAN-001",
+    "M0-LIFE-CLEAN-002",
+    "M0-LIFE-CANCEL-001",
+    "M0-LIFE-DUP-001",
+    "M0-LIFE-RESTART-001",
+    "M0-LIFE-REPEAT-001",
+)
 
 
 def valid_manifest():
@@ -96,10 +130,23 @@ def main():
         if errors:
             return errors
         if manifest["overall_result"] == "passed":
-            recorded = {item["test_id"].upper() for item in manifest["tests"]}
+            recorded_ids = [item["test_id"].upper() for item in manifest["tests"]]
+            recorded = set(recorded_ids)
+            duplicates = sorted({
+                fixture_id for fixture_id in recorded_ids
+                if recorded_ids.count(fixture_id) > 1
+            })
             missing = sorted(set(REQUIRED_FIXTURE_IDS) - recorded)
-            if missing:
-                return [ValueError("missing required fixtures: " + ", ".join(missing))]
+            unexpected = sorted(recorded - set(REQUIRED_FIXTURE_IDS))
+            if missing or duplicates or unexpected:
+                problems = []
+                if missing:
+                    problems.append("missing: " + ", ".join(missing))
+                if duplicates:
+                    problems.append("duplicate: " + ", ".join(duplicates))
+                if unexpected:
+                    problems.append("unexpected: " + ", ".join(unexpected))
+                return [ValueError("fixture coverage mismatch (" + "; ".join(problems) + ")")]
         return []
 
     class ManifestValidator:
@@ -118,6 +165,14 @@ def main():
     missing_fixture = valid_manifest()
     missing_fixture["tests"].pop()
     cases.append(("passed result missing a required fixture", missing_fixture))
+
+    duplicate_fixture = valid_manifest()
+    duplicate_fixture["tests"][-1]["test_id"] = duplicate_fixture["tests"][0]["test_id"]
+    cases.append(("passed result with duplicate fixture ID", duplicate_fixture))
+
+    unexpected_fixture = valid_manifest()
+    unexpected_fixture["tests"][-1]["test_id"] = "m0-unapproved-fixture"
+    cases.append(("passed result with unapproved fixture ID", unexpected_fixture))
 
     wrong_platform = valid_manifest()
     wrong_platform["runtime"]["platform"] = "ptrace"
@@ -157,7 +212,7 @@ def main():
     for label, _ in cases:
         print(f"PASS  rejects {label}")
     print("PASS  accepts incomplete manifest with blocked fixture and pending review")
-    print(f"PASS  requires complete coverage of all {len(REQUIRED_FIXTURE_IDS)} contract fixtures")
+    print(f"PASS  requires exact, unique coverage of all {len(REQUIRED_FIXTURE_IDS)} contract fixtures")
     print(f"RESULT: {len(cases) + 4} evidence-schema checks passed")
 
 
