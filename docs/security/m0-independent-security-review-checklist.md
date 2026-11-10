@@ -145,3 +145,7 @@ For Candidate B, assess RLS-001 exact containerd-shim/caller-userns/systrap inte
 ## Rootless host profile identity review
 
 Verify the exact structured `rootless_profile` in the host qualification record and confirm the same object/digest appears in the ADR candidate and signed qualification report. Review non-root daemon UID/GID, subordinate UID/GID map digests and range counts, RootlessKit/newuidmap/newgidmap binary hashes, helper ownership/modes/provenance, AppArmor profile, private state directory, daemon socket policy, network backend/namespace profile and systemd delegation. Confirm `cpu`, `memory` and `pids` are actually delegated and enforced. Candidate A must have null rootless profile fields.
+
+## Immutable upstream source baseline
+
+The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-source-manifest.json`; the exact manifest SHA-256 must be embedded in any completed ADR-0019 decision record. A reviewer must check the seven source pins and recorded signature-verification status. The branch-head URLs are discovery references only; the manifest points to immutable commit URLs and records Git blob SHA-1 plus content SHA-256.
