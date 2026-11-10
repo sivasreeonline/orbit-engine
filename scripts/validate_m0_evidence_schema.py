@@ -3,6 +3,7 @@
 
 import json
 from pathlib import Path
+import re
 import sys
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -10,6 +11,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "docs/schemas/m0-proof-evidence.schema.json"
+FIXTURE_CONTRACT_PATH = ROOT / "docs/specifications/m0-adversarial-fixture-contract.md"
 REQUIRED_FIXTURE_IDS = (
     "M0-RUN-JAVA-001",
     "M0-RUN-PY-001",
@@ -45,6 +47,38 @@ REQUIRED_FIXTURE_IDS = (
     "M0-LIFE-RESTART-001",
     "M0-LIFE-REPEAT-001",
 )
+
+
+def fixture_ids_from_contract():
+    pattern = re.compile(r"^\\|\\s*`(M0-[A-Z0-9-]+)`\\s*\\|")
+    return {
+        match.group(1)
+        for line in FIXTURE_CONTRACT_PATH.read_text(encoding="utf-8").splitlines()
+        if (match := pattern.match(line))
+    }
+
+
+def validate_fixture_contract_alignment(schema):
+    contract_ids = fixture_ids_from_contract()
+    if contract_ids != set(REQUIRED_FIXTURE_IDS):
+        missing = sorted(set(REQUIRED_FIXTURE_IDS) - contract_ids)
+        unexpected = sorted(contract_ids - set(REQUIRED_FIXTURE_IDS))
+        raise AssertionError(
+            "fixture contract/validator mismatch; missing="
+            + ",".join(missing) + "; unexpected=" + ",".join(unexpected)
+        )
+
+    passed_tests = schema["allOf"][0]["then"]["properties"]["tests"]
+    schema_ids = {
+        rule["contains"]["properties"]["test_id"]["const"].upper()
+        for rule in passed_tests["allOf"]
+    }
+    if schema_ids != contract_ids:
+        raise AssertionError("fixture contract and JSON Schema contains rules differ")
+    if passed_tests.get("minItems") != len(contract_ids):
+        raise AssertionError("passed-result schema minItems does not match fixture contract")
+    if passed_tests.get("maxItems") != len(contract_ids):
+        raise AssertionError("passed-result schema maxItems does not match fixture contract")
 
 
 def valid_manifest():
@@ -136,6 +170,7 @@ def expect_invalid(manifest_validator, manifest, label):
 def main():
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
+    validate_fixture_contract_alignment(schema)
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
 
     def validate_manifest(manifest):
@@ -246,13 +281,14 @@ def main():
     expect_valid(manifest_validator, incomplete, "incomplete synthetic manifest")
 
     print("PASS  JSON Schema Draft 2020-12 meta-schema validation")
+    print("PASS  fixture contract, JSON Schema and Python validator are synchronized")
     print(f"PASS  valid fully-passed manifest with all {len(REQUIRED_FIXTURE_IDS)} required fixtures")
     for label, _ in cases:
         print(f"PASS  rejects {label}")
     print("PASS  accepts incomplete manifest with blocked fixture and pending review")
     print(f"PASS  schema-only exact, unique coverage of all {len(REQUIRED_FIXTURE_IDS)} contract fixtures")
     print("PASS  Python invariant layer independently rejects missing, duplicate and unapproved fixture IDs")
-    print(f"RESULT: {len(cases) + 4} evidence-schema checks passed")
+    print(f"RESULT: {len(cases) + 5} evidence-schema checks passed")
 
 
 if __name__ == "__main__":
