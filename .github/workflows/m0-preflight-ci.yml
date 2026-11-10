@@ -28,6 +28,7 @@ on:
       - "docs/schemas/m0-crypto-key-metadata.schema.json"
       - "docs/schemas/m0-crypto-verification-report.schema.json"
       - "docs/schemas/m0-crypto-key-lifecycle-event.schema.json"
+      - "docs/schemas/m0-crypto-key-lifecycle-event.schema.json"
       - "docs/schemas/m0-host-epoch-response-payload.schema.json"
       - "docs/schemas/m0-provider-fence-attestation-payload.schema.json"
       - "docs/schemas/m0-phase-a-authorization-payload.schema.json"
