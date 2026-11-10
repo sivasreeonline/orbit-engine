@@ -115,6 +115,22 @@
       "immutable_file_url": "https://github.com/opencontainers/runc/blob/e4b70657ecf256ca4a41745c6bf3abcfbca2bd3d/docs/cgroup-v2.md",
       "additional_ref_checked": null,
       "review_use": "Pin rootless cgroup-v2/systemd delegation behavior, including default controller scope."
+    },
+    {
+      "source_id": "gvisor-install",
+      "repository": "google/gvisor",
+      "path": "g3doc/user_guide/install.md",
+      "source_ref": "master",
+      "commit_sha": "dcd946faca6f60a6761b62eb11b85d3ce0bbaa55",
+      "commit_date": "2026-11-10T08:57:00Z",
+      "commit_signature_status": "unknown",
+      "commit_signature_reason": "The connected GitHub commit metadata snapshot did not expose a signature verification result; no signature claim is made.",
+      "blob_sha1": "04050cdb51f9647ff22575758f6744b73f68ce4a",
+      "content_sha256": "28e30d7b83a7db222fb7143efd650fe853cddec4ef29b0264e07b1691c4fab58",
+      "content_byte_length": 8046,
+      "immutable_file_url": "https://github.com/google/gvisor/blob/dcd946faca6f60a6761b62eb11b85d3ce0bbaa55/g3doc/user_guide/install.md",
+      "additional_ref_checked": null,
+      "review_use": "Pin the current multi-file runsc/shim/gvisor-bin distribution and the end of legacy sidecar auto-download; preflight presence is not runtime compatibility proof."
     }
   ]
 }
