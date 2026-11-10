@@ -312,5 +312,130 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "overall_result": {
+            "const": "passed"
+          }
+        },
+        "required": [
+          "overall_result"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtime": {
+            "properties": {
+              "platform": {
+                "const": "systrap"
+              }
+            },
+            "required": [
+              "platform"
+            ]
+          },
+          "host": {
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "region": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            },
+            "required": [
+              "provider",
+              "region"
+            ]
+          },
+          "tests": {
+            "items": {
+              "properties": {
+                "status": {
+                  "const": "passed"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            }
+          },
+          "security_review": {
+            "properties": {
+              "decision": {
+                "const": "approved"
+              },
+              "reviewed_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reviewer_reference": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "required": [
+              "decision",
+              "reviewed_at",
+              "reviewer_reference"
+            ]
+          }
+        },
+        "required": [
+          "runtime",
+          "host",
+          "tests",
+          "security_review"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "security_review": {
+            "properties": {
+              "decision": {
+                "const": "approved"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          }
+        },
+        "required": [
+          "security_review"
+        ]
+      },
+      "then": {
+        "properties": {
+          "security_review": {
+            "properties": {
+              "reviewed_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reviewer_reference": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "required": [
+              "reviewed_at",
+              "reviewer_reference"
+            ]
+          }
+        }
+      }
+    }
+  ]
 }
