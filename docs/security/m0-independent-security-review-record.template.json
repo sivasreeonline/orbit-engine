@@ -19,7 +19,17 @@
       "docs/specifications/m0-runtime-proof-harness-design.md",
       "docs/specifications/m0-proof-resource-profile-v1.md",
       "docs/specifications/m0-host-preflight-and-proof-runbook.md",
-      "docs/schemas/m0-cleanup-calibration-authorization.schema.json"
+      "docs/schemas/m0-cleanup-calibration-authorization.schema.json",
+      "docs/schemas/m0-adr-0019-decision-record.schema.json",
+      "docs/schemas/m0-adr-0019-decision-record.template.json",
+      "scripts/validate_m0_adr_0019_decision.py",
+      "docs/schemas/ADR-0019-upstream-source-manifest.schema.json",
+      "scripts/validate_m0_upstream_source_manifest.py",
+      "docs/schemas/m0-host-qualification-record.schema.json",
+      "docs/schemas/m0-host-qualification-record.template.json",
+      "scripts/validate_m0_host_qualification.py",
+      "docs/security/m0-independent-security-review-record.schema.json",
+      "scripts/validate_m0_independent_review_package.py"
     ],
     "host_selected": false,
     "host_profile_id": null,
