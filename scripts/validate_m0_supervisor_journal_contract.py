@@ -28,6 +28,11 @@ REQUIRED = {
     ],
     "runtime harness": [
         "m0-supervisor-journal-implementation-contract.md",
+        "Neither candidate is selected",
+        "exclusive host-wide kernel process lock",
+        "journal compare-and-set rejects stale state mutations",
+        "requests workload termination immediately",
+        "journal read alone cannot rule out a trigger",
     ],
     "journal evaluation": [
         "m0-supervisor-journal-implementation-contract.md",
@@ -44,6 +49,11 @@ REQUIRED = {
 FORBIDDEN_AUTHORIZATION_PHRASES = [
     "Implementation authorized: true",
     "student execution enabled by this contract",
+]
+FORBIDDEN_RUNTIME_HARNESS_PHRASES = [
+    "preferred design candidate",
+    "supervisor lease/fencing generation",
+    "journal/lease authority",
 ]
 
 def main() -> int:
@@ -62,6 +72,9 @@ def main() -> int:
     for phrase in FORBIDDEN_AUTHORIZATION_PHRASES:
         if phrase.casefold() in contents.get("contract", "").casefold():
             failures.append("contract contains an explicitly prohibited authorization marker")
+    for phrase in FORBIDDEN_RUNTIME_HARNESS_PHRASES:
+        if phrase.casefold() in contents.get("runtime harness", "").casefold():
+            failures.append(f"runtime harness contains stale/unsafe fencing or candidate language: {phrase}")
 
     if "contract" in contents:
         contract = contents["contract"]
