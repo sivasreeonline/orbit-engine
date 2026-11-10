@@ -55,6 +55,8 @@ If an assumption cannot be demonstrated, record it as an open risk, not as a con
 |---|---|---|---|
 | Arbitrary OCI configuration / privileged launch | Typed allowlisted supervisor API; root-owned immutable profiles; reject unknown fields | API schema, authorization tests, negative tests for every forbidden field | Open: launch boundary not selected/implemented |
 | Containerd socket compromise | Root-owned private Unix socket; no runner or guest access | Socket permissions, peer access tests, process/mount inspection | Design requirement only |
+| Supervisor socket impersonation / request abuse | Root-owned non-writable socket parent; kernel peer credentials; per-attempt authorization; strict bounded parser; no FD passing | Socket inode/owner/mode checks, wrong-UID/GID tests, malformed/oversized/duplicate-key request tests, unauthorized-attempt tests | Design requirements added; not implemented |
+| Privileged supervisor compromise | Minimal capability/syscall/writable-path surface; tested systemd hardening; no generic containerd proxy; independent review | Effective unit and process evidence, capability inventory, negative API tests, threat analysis of rootful socket authority | Open high-risk design gate |
 | Host mount or device exposure | No arbitrary bind mounts/devices; fixed minimal mount profile | Effective OCI spec and host-side namespace/mount inventory | Not proven |
 | Runtime platform fallback | Explicit systrap profile and fail-closed platform assertion | Runtime-reported platform plus independent host-side evidence | Not proven |
 | Network egress / metadata access | Default-deny IPv4/IPv6, DNS, direct IP, loopback-to-host, metadata | Host firewall counters, packet capture, controlled sentinel tests | Not proven |
@@ -67,6 +69,8 @@ If an assumption cannot be demonstrated, record it as an open risk, not as a con
 | Cancellation race / orphan process | External watchdog, process-tree termination, cleanup-before-ack | Host process/task/cgroup inventory after each cancellation race | Not proven |
 | Duplicate delivery / duplicate result | Durable idempotency key and one terminal result per attempt | Concurrent duplicate delivery tests and persistent result assertions | Control-plane integration pending |
 | Supervisor/host restart | Durable journal and reconciliation of all non-terminal resources | Fault-injection logs and post-restart host inventory | Not implemented |
+| Crash between journal writes and containerd side effects | Persist intent before side effect; deterministic resource identity; reconcile before retry; compare-and-set terminal state | Fault injection at every lifecycle transition, durable journal inspection, containerd/process/cgroup inventory | Design contract added; not implemented |
+| Cleanup acknowledgement race | Cleanup independent of client connection; verify process/task/shim/cgroup/namespace/mount/network/scratch absence before terminal success | Post-ack host inventory and cancellation/exit/timeout race tests | Design contract added; not implemented |
 | Evidence tampering / incomplete evidence | SHA-256 manifest, access controls, independent reviewer, incomplete status on missing evidence | Manifest validation, hash verification, reviewer signoff | Schema exists; actual evidence absent |
 | Dependency/runtime supply-chain compromise | Lockfiles, CI audit, pinned actions/runtime artifacts, provenance verification | CI reports, SBOM/provenance, patch process | Partial; runtime provenance not yet demonstrated |
 
@@ -86,6 +90,9 @@ The reviewer must explicitly answer each item:
 10. Are image signatures, package provenance, dependency versions, and update/rollback procedures sufficient?
 11. What residual risks remain because gVisor shares the host kernel and because the supervisor privilege boundary is not yet implemented?
 12. What exact conditions must be met before integration testing, and which conditions still block production?
+13. Can a runner identity spoof or bypass Unix peer-credential checks, socket-path ownership checks, per-attempt authorization, or request framing limits?
+14. Can a supervisor crash at every journal/containerd boundary cause duplicate launch, lost ownership, false terminal success, or orphaned resources?
+15. Is the supervisor's effective privilege set genuinely minimal, and does its systemd hardening preserve only the required containerd operations?
 
 Every answer must cite evidence or remain marked unresolved.
 
