@@ -4,7 +4,7 @@
 This does not perform a security review, verify signatures, or authorize execution.
 """
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
@@ -172,6 +172,8 @@ def custom_errors(record):
             expires = datetime.fromisoformat(record["expires_at"].replace("Z", "+00:00"))
             if expires <= reviewed:
                 errors.append("review expiry must be later than review date")
+            if expires <= datetime.now(timezone.utc):
+                errors.append("review has expired at validation time")
     except (ValueError, TypeError):
         errors.append("review dates must be parseable")
 
@@ -241,6 +243,7 @@ def main():
     ]:
         case = deepcopy(template); case[key] = True; cases.append((label + " authorization", case))
     case = deepcopy(template); case["review_status"] = "completed"; case["reviewed_at"] = "2026-11-10T00:00:00Z"; case["expires_at"] = "2026-11-09T00:00:00Z"; cases.append(("expired review", case))
+    case = deepcopy(template); case["review_status"] = "completed"; case["reviewed_at"] = "2020-01-01T00:00:00Z"; case["expires_at"] = "2021-01-01T00:00:00Z"; cases.append(("stale but chronologically ordered review", case))
     case = deepcopy(template); case["review_status"] = "completed"; cases.append(("completed review without assigned UUID", case))
     case = deepcopy(template); case["review_status"] = "completed"; case["scope"]["reviewed_commit_sha"] = None; cases.append(("completed review without pinned commit", case))
 
