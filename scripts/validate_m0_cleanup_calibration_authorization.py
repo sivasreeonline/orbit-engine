@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "docs/schemas/m0-cleanup-calibration-authorization.schema.json"
+PACKET_PATH = ROOT / "docs/security/m0-sandbox-security-review-packet.md"
 REQUIRED_SCENARIOS = [
     "CAL-CLEAN-001", "CAL-CLEAN-002", "CAL-CLEAN-003",
     "CAL-CLEAN-004", "CAL-CLEAN-005", "CAL-CLEAN-006",
@@ -192,6 +193,9 @@ def validate(validator: Draft202012Validator, manifest: dict) -> list[str]:
 
 def main() -> int:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    packet = PACKET_PATH.read_text(encoding="utf-8")
+    if "version 1.1.0" not in packet or "complete predecessor set" not in packet or "host-qualification record digest" not in packet:
+        raise AssertionError("Phase A packet must bind authorization to the externally fenced host incarnation and qualification record")
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     valid = synthetic_manifest()
