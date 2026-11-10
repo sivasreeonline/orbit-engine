@@ -310,3 +310,7 @@ Review `docs/specifications/m0-authorization-ledger-data-model.md` with the life
 ## Immutable upstream source baseline
 
 The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-source-manifest.json`; the exact manifest SHA-256 must be embedded in any completed ADR-0019 decision record. A reviewer must check all eight source pins and their recorded signature-verification status. The branch-head URLs are discovery references only; the manifest points to immutable commit URLs and records Git blob SHA-1 plus content SHA-256.
+
+## Cryptographic trust and key lifecycle qualification
+
+The trust hierarchy, canonical signed payload, key custody/rotation/revocation, trust-bundle freshness, anti-rollback witness, independent verification and deterministic crypto test-vector requirements are defined in docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md. Host qualification must verify the exact authority key ID/version, algorithm/profile, trust-bundle generation/digest, revocation freshness, signed response context and independent verifier report. A signature reference or passing synthetic validator is not cryptographic proof. No production key, signer, verifier or host admission is authorized by this protocol.
