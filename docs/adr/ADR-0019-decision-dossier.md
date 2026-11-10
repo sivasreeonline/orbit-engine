@@ -31,7 +31,7 @@ Include the runner, host controller/daemon, containerd shim, runsc, RootlessKit/
 
 Both candidates use the same 32 independent security control IDs and the same 33 common host qualification test IDs. Candidate B (`rootless-containerd-userns`) must additionally pass RLS-001 through RLS-004; Candidate A must mark the rootless-only gate `not-applicable` and contain no rootless-only results. No control or test may be omitted because it is harder to satisfy under one privilege model. Any not-applicable claim requires a technical rationale and independent reviewer acceptance; required M0 controls cannot be waived.
 
-Design evidence, host configuration evidence, live runtime evidence, fault-injection evidence and signed qualification records must remain distinguishable. CI/schema success is not host evidence. A qualification report for one candidate cannot qualify the other; evidence cannot be mixed across hosts, commits, runtime builds or profile digests.
+Design evidence, host configuration evidence, live runtime evidence, fault-injection evidence and signed qualification records must remain distinguishable. Every evidence reference records its accountable acquisition principal (`acquired_by_id`), independently verified principal and evidence version/digest. The acquirer, verifier, host owner and independent security reviewer must be distinct roles; validators reject role reuse on passed evidence. CI/schema success is not host evidence. A qualification report for one candidate cannot qualify the other; evidence cannot be mixed across hosts, commits, runtime builds or profile digests.
 
 ### Security control IDs
 
