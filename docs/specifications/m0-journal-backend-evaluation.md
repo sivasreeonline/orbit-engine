@@ -70,11 +70,11 @@ The schema is a starting outline; it requires a separate reviewed migration and 
 | `idempotency_keys` | Unique key; canonical digest; operation_id; attempt identity; bounded response descriptor; committed state |
 | `operations` | Unique operation_id; attempt_id; operation type; supervisor_generation; attempt_generation; operation_sequence; expected state/version; desired state; durable intent timestamp; observed outcome; completion disposition |
 | `triggers` | Unique trigger_id; attempt_id; supervisor_generation; attempt_generation; trigger type/time; trigger_sequence; primary/secondary classification; immutable winner |
-| `finalization_branches` | Unique (attempt_id, branch, branch_generation); cleanup/evidence branch disposition; owner generation; bounded error class; durable completion time |
+| `finalization_branches` | Unique (attempt_id, branch, branch_generation); explicit supervisor_generation and attempt_generation; branch_state_version; cleanup/evidence branch disposition; bounded error class; durable completion time |
 | `terminal_results` | Unique attempt_id; immutable terminal classification; final state version; cleanup disposition; evidence disposition; terminal commit time |
 | `evidence_references` | Attempt-scoped opaque object key/version, SHA-256, byte count and verification disposition; no raw content or private URL |
 
-Required database constraints include foreign keys, CHECK constraints for enumerated states, unique keys for logical attempt and idempotency identity, and conditional updates that succeed only when the expected state version and generation match. The application must check affected-row counts and treat zero/multiple unexpected rows as a conflict or corruption condition. Use strict typed values and bounded lengths; never build SQL from caller-provided identifiers.
+Required database constraints include foreign keys, CHECK constraints for enumerated states, unique keys for logical attempt and idempotency identity, and conditional updates that succeed only when the expected state version and generation match. A branch update must compare supervisor_generation, attempt_generation, branch_generation, and branch_state_version together. The application must check affected-row counts and treat zero/multiple unexpected rows as a conflict or corruption condition. Use strict typed values and bounded lengths; never build SQL from caller-provided identifiers.
 
 ## 5. Backup, restore and retention
 
