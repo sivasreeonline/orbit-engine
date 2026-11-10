@@ -2,6 +2,7 @@
 
 - Status: Proposed for disposable-host proof; no workload fixtures are authorized for execution yet.
 - Baseline: ADR-0018 and `docs/specifications/m0-host-preflight-and-proof-runbook.md`.
+- Resource profile: `docs/specifications/m0-proof-resource-profile-v1.md` (proposed M0 proof-only values; pending empirical and independent review).
 - Evidence manifest: `docs/schemas/m0-proof-evidence.schema.json`.
 - Scope: M0 runtime, isolation, resource enforcement, lifecycle, and control-plane proof.
 
@@ -53,7 +54,7 @@ All probes target reserved test ranges or a host-local sentinel listener bound o
 
 ## 5. Resource-enforcement fixtures
 
-Resource values are injected from the approved proof profile, not chosen by the workload. The outer disposable-VM cgroup and watchdog must cap damage if an inner control is broken.
+Resource values are injected from the versioned proof profile, not chosen by the workload. The initial candidate is `m0-proof-small-v1`; its CPU, memory, PID, wall-time, scratch, and output values are defined in `docs/specifications/m0-proof-resource-profile-v1.md`. These are proposed M0 proof values only and require empirical validation and independent approval. The outer disposable-VM cgroup and watchdog must cap damage if an inner control is broken.
 
 | Fixture ID | Stimulus | Required outcome | Independent assertion |
 |---|---|---|---|
@@ -64,8 +65,8 @@ Resource values are injected from the approved proof profile, not chosen by the 
 | `M0-RES-FS-001` | Attempt to write to the base filesystem | Write denied | Base image remains unchanged and mounted read-only |
 | `M0-RES-FS-002` | Write synthetic data beyond scratch byte ceiling | Further writes denied or sandbox terminated at the hard ceiling | Host-side scratch usage never exceeds the configured hard bound |
 | `M0-RES-FS-003` | Create files beyond scratch inode ceiling | Further inode creation denied or sandbox terminated at the hard ceiling | Host-side inode usage never exceeds the configured hard bound |
-| `M0-RES-OUT-001` | Emit stdout beyond its byte ceiling | Capture is truncated/terminated according to policy; storage remains bounded | Host-side byte counter and stored artifact size stay within the configured ceiling |
-| `M0-RES-OUT-002` | Emit stderr beyond its byte ceiling | Capture is truncated/terminated according to policy; storage remains bounded | Host-side byte counter and stored artifact size stay within the configured ceiling |
+| `M0-RES-OUT-001` | Emit stdout beyond its 1 MiB per-stream ceiling | Host detects overflow, terminates the complete process tree, and stores no more than the shared 1 MiB combined output ceiling | Independent stdout counter records the breach; combined stored bytes never exceed 1 MiB |
+| `M0-RES-OUT-002` | Emit stderr beyond its 1 MiB per-stream ceiling | Host detects overflow, terminates the complete process tree, and stores no more than the shared 1 MiB combined output ceiling | Independent stderr counter records the breach; combined stored bytes never exceed 1 MiB |
 
 ## 6. Lifecycle and control-plane fixtures
 
