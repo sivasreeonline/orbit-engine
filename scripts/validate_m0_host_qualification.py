@@ -540,6 +540,26 @@ def main():
             raise AssertionError(f"unsafe qualification record accepted: {label}")
         print(f"PASS  rejects {label}")
 
+    # Report-wide evidence identity and principal rules apply before any candidate
+    # qualification decision; incomplete/deferred records cannot bypass the ledger.
+    partial_with_evidence = deepcopy(template)
+    partial_with_evidence["record_status"] = "in-progress"
+    partial_with_evidence["qualification_status"] = "deferred"
+    base_ref = {"reference_id":"synthetic-partial-evidence","object_version":"partial-v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic-partial-root","acquired_by_id":"synthetic-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":"host-configuration","redaction_status":"non-sensitive","verification_status":"unverified","independent_verifier_id":None,"verification_note":"Synthetic deferred record only."}
+    partial_with_evidence["test_results"][0]["evidence_refs"] = [deepcopy(base_ref)]
+    conflicting_ref = deepcopy(base_ref)
+    conflicting_ref["reference_id"] = "synthetic-partial-evidence-duplicate"
+    conflicting_ref["object_version"] = base_ref["object_version"]
+    partial_with_evidence["test_results"][1]["evidence_refs"] = [conflicting_ref]
+    if not any("represented by multiple reference IDs" in error for error in errors_for(partial_with_evidence,schema_validator)):
+        raise AssertionError("deferred qualification accepted competing reference IDs for one immutable object version")
+    conflicting_metadata = deepcopy(partial_with_evidence)
+    conflicting_metadata["test_results"][1]["evidence_refs"][0]["reference_id"] = base_ref["reference_id"]
+    conflicting_metadata["test_results"][1]["evidence_refs"][0]["sha256"] = "b"*64
+    if not any("conflicting immutable metadata" in error for error in errors_for(conflicting_metadata,schema_validator)):
+        raise AssertionError("deferred qualification accepted conflicting metadata for one reference ID")
+    print("PASS  enforces report-wide evidence identity rules for in-progress/deferred records")
+
     # Positive synthetic record: demonstrates structural acceptance only.
     synthetic_now = datetime.now(timezone.utc)
     synthetic_reviewed_at = (synthetic_now - timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
