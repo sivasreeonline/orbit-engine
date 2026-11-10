@@ -258,7 +258,7 @@ def main():
     required_upstream_facts = [
         "`runsc --rootless` CLI mode does not support `create`",
         "newuidmap", "newgidmap", "subordinate", "RootlessKit", "CPU",
-        "containerd-shim-runsc-v1", "not proven", "No architecture choice is made"
+        "containerd-shim-runsc-v1", "hard integration gate", "No architecture choice is made"
     ]
     missing_facts = [fact for fact in required_upstream_facts if fact.lower() not in upstream_evidence.lower()]
     if missing_facts:
