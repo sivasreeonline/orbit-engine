@@ -96,6 +96,9 @@ def errors_for(record, schema_validator):
                 errors.append(f"{test_id}: passed requires method and evidence")
             if any(ref.get("verification_status") != "verified" or not ref.get("independent_verifier_id") for ref in refs):
                 errors.append(f"{test_id}: passed requires independently verified evidence")
+            review_roles = {review.get("reviewer_id"), review.get("host_owner_id")} - {None, ""}
+            if any(ref.get("independent_verifier_id") in review_roles for ref in refs):
+                errors.append(f"{test_id}: evidence verifier must be independent of reviewer and host owner")
             allowed = set(expected["evidenceTypes"])
             if not any(ref.get("evidence_type") in allowed for ref in refs):
                 errors.append(f"{test_id}: passed requires a test-specific evidence type")
@@ -118,6 +121,9 @@ def errors_for(record, schema_validator):
                 errors.append(f"{test_id}: passed rootless test requires method and evidence")
             if any(ref.get("verification_status") != "verified" or not ref.get("independent_verifier_id") for ref in refs):
                 errors.append(f"{test_id}: passed rootless test requires independently verified evidence")
+            review_roles = {review.get("reviewer_id"), review.get("host_owner_id")} - {None, ""}
+            if any(ref.get("independent_verifier_id") in review_roles for ref in refs):
+                errors.append(f"{test_id}: rootless evidence verifier must be independent of reviewer and host owner")
             if not any(ref.get("evidence_type") in set(expected["evidenceTypes"]) for ref in refs):
                 errors.append(f"{test_id}: passed rootless test requires a test-specific evidence type")
         if finding.get("result") == "failed":
@@ -427,6 +433,17 @@ def main():
     complete["qualification_rationale"]="Synthetic positive test case only; no real host qualification is asserted."
     if errors_for(complete,schema_validator):
         raise AssertionError("synthetic fully-qualified record failed: " + "; ".join(errors_for(complete,schema_validator)))
+
+    verifier_is_host_owner = deepcopy(complete)
+    verifier_is_host_owner["test_results"][0]["evidence_refs"][0]["independent_verifier_id"] = verifier_is_host_owner["review"]["host_owner_id"]
+    if not any("evidence verifier must be independent" in error for error in errors_for(verifier_is_host_owner,schema_validator)):
+        raise AssertionError("host owner was accepted as independent evidence verifier")
+    verifier_is_reviewer = deepcopy(complete)
+    verifier_is_reviewer["test_results"][0]["evidence_refs"][0]["independent_verifier_id"] = verifier_is_reviewer["review"]["reviewer_id"]
+    if not any("evidence verifier must be independent" in error for error in errors_for(verifier_is_reviewer,schema_validator)):
+        raise AssertionError("security reviewer was accepted as independent evidence verifier")
+    print("PASS  rejects evidence verification by host owner or independent security reviewer")
+
     expired_complete = deepcopy(complete)
     expired_complete["review"]["expires_at"] = "2020-01-02T00:00:00Z"
     expired_complete["expires_at"] = "2020-01-02T00:00:00Z"
