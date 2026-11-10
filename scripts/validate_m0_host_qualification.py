@@ -244,7 +244,7 @@ def errors_for(record, schema_validator):
         baseline_sha = record.get("scope", {}).get("reviewed_commit_sha")
         if not isinstance(baseline_sha, str) or len(baseline_sha) != 40:
             errors.append("candidate-qualified requires an exact 40-character reviewed commit SHA")
-        required_host = ["provider", "region", "vm_shape", "host_instance_id", "host_incarnation_epoch", "prior_incarnation_fence_evidence_ref", "boot_id", "image_digest",
+        required_host = ["provider", "region", "vm_shape", "host_instance_id", "host_incarnation_epoch", "prior_incarnation_fence_evidence_ref", "host_incarnation_authority_id", "host_incarnation_authority_key_version", "host_incarnation_epoch_evidence_ref", "host_incarnation_issuance_nonce_digest", "predecessor_incarnation_set_digest", "provider_fence_method", "provider_fence_verified_at", "provider_fence_evidence_digest", "boot_id", "image_digest",
             "os_release", "kernel_release", "architecture", "filesystem_type", "storage_device_identity",
             "storage_class", "containerd_version", "containerd_config_digest", "runsc_version", "shim_version",
             "host_profile_digest", "runtime_profile_digest", "resource_profile_digest", "supervisor_digest",
@@ -436,7 +436,11 @@ def main():
     complete["host_identity"].update({
         "selected":True,"provider":"synthetic-provider","region":"synthetic-region","vm_shape":"synthetic-shape",
         "host_instance_id":"synthetic-host-instance","host_incarnation_epoch":"synthetic-host-epoch",
-        "prior_incarnation_fence_evidence_ref":"synthetic-prior-incarnation-fence-evidence","boot_id":"synthetic-boot-id","image_digest":"c"*64,
+        "prior_incarnation_fence_evidence_ref":"synthetic-prior-incarnation-fence-evidence",
+        "host_incarnation_authority_id":"synthetic-authority","host_incarnation_authority_key_version":"synthetic-key-v1",
+        "host_incarnation_epoch_evidence_ref":"synthetic-epoch-evidence","host_incarnation_issuance_nonce_digest":"a"*64,
+        "predecessor_incarnation_set_digest":"b"*64,"provider_fence_method":"synthetic-provider-hard-stop",
+        "provider_fence_verified_at":"2026-11-10T00:00:00Z","provider_fence_evidence_digest":"c"*64,"boot_id":"synthetic-boot-id","image_digest":"c"*64,
         "os_release":"synthetic-os","kernel_release":"synthetic-kernel","architecture":"x86_64",
         "filesystem_type":"synthetic-fs","mount_options":["synthetic-option"],"storage_device_identity":"synthetic-device",
         "storage_class":"synthetic-storage","cgroup_mode":"unified-v2","containerd_version":"synthetic-containerd",
@@ -501,7 +505,18 @@ def main():
     missing_fence["host_identity"]["prior_incarnation_fence_evidence_ref"] = None
     if not any("exact selected host/runtime/storage identity" in error for error in errors_for(missing_fence,schema_validator)):
         raise AssertionError("candidate-qualified record accepted without prior-incarnation fence evidence")
-    print("PASS  requires externally anchored host-incarnation epoch and prior-instance fence evidence")
+    epoch_evidence_fields = [
+        "host_incarnation_authority_id", "host_incarnation_authority_key_version",
+        "host_incarnation_epoch_evidence_ref", "host_incarnation_issuance_nonce_digest",
+        "predecessor_incarnation_set_digest", "provider_fence_method",
+        "provider_fence_verified_at", "provider_fence_evidence_digest"
+    ]
+    for field in epoch_evidence_fields:
+        missing_proof = deepcopy(complete)
+        missing_proof["host_identity"][field] = None
+        if not any("exact selected host/runtime/storage identity" in error for error in errors_for(missing_proof,schema_validator)):
+            raise AssertionError(f"candidate-qualified record accepted without {field}")
+    print("PASS  requires authenticated epoch authority, nonce, predecessor-set and provider-fence evidence")
 
     verifier_is_host_owner = deepcopy(complete)
     verifier_is_host_owner["test_results"][0]["evidence_refs"][0]["independent_verifier_id"] = verifier_is_host_owner["review"]["host_owner_id"]
