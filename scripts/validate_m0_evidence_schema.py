@@ -75,6 +75,19 @@ def valid_manifest():
             "platform": "systrap",
             "oci_image_digest": "sha256:" + "a" * 64,
         },
+        "resource_profile": {
+            "profile_id": "m0-proof-small-v1",
+            "revision": "1",
+            "cpu_quota_millis": 1000,
+            "memory_bytes": 1073741824,
+            "wall_time_millis": 60000,
+            "process_limit": 128,
+            "output_bytes_total": 1048576,
+            "stdout_bytes_max": 1048576,
+            "stderr_bytes_max": 1048576,
+            "scratch_bytes": 268435456,
+            "scratch_inodes": 4096,
+        },
         "fixture": {
             "repository_revision": "b" * 40,
             "image_digest": "sha256:" + "c" * 64,
@@ -173,6 +186,10 @@ def main():
     unexpected_fixture = valid_manifest()
     unexpected_fixture["tests"][-1]["test_id"] = "m0-unapproved-fixture"
     cases.append(("passed result with unapproved fixture ID", unexpected_fixture))
+
+    wrong_profile = valid_manifest()
+    wrong_profile["resource_profile"]["output_bytes_total"] = 2097152
+    cases.append(("passed result with unapproved resource profile", wrong_profile))
 
     wrong_platform = valid_manifest()
     wrong_platform["runtime"]["platform"] = "ptrace"
