@@ -296,6 +296,12 @@ def main() -> None:
     catalog = load_json(SCHEMAS / "m0-crypto-verification-fixture-catalog.json")
     check(catalog["status"] == "contract-fixtures-only", "fixture catalog must remain structural only")
     check(catalog["cryptographic_profile_selected"] is False, "profile must remain unselected")
+    check(catalog["required_positive_case_count"] == len(catalog["positive_cases"]) == 9,
+          "positive fixture inventory must contain exactly nine cases")
+    positive_ids = [item["id"] for item in catalog["positive_cases"]]
+    check(len(set(positive_ids)) == 9, "positive fixture IDs must be unique")
+    check(all(item["cryptography_executed"] is False for item in catalog["positive_cases"]),
+          "positive structural fixtures must not claim cryptography")
     check(catalog["required_negative_case_count"] == len(catalog["negative_cases"]) == 20,
           "negative case inventory must contain exactly 20 unique cases")
     check(len(set(catalog["negative_cases"])) == 20, "negative case IDs must be unique")
@@ -333,7 +339,7 @@ def main() -> None:
     print("M0 crypto schema meta-validation: PASS (8 schemas).")
     print("Typed payload, envelope, trust-bundle, key and verification-report fixtures: PASS.")
     print("Temporal, duplicate-key, purpose, revocation, anti-rollback and fail-closed checks: PASS.")
-    print("20 negative case IDs inventoried; profile-dependent cryptographic vectors remain blocked.")
+    print("9 positive and 20 negative fixture dispositions verified; profile-dependent canonical-byte vector remains blocked.")
     print("No signature verification, provider-fence verification or execution authorization performed.")
 
 
