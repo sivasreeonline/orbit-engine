@@ -26,6 +26,50 @@ The 10-minute end-to-end deadline is measured from the control plane's durably p
 
 A finite cleanup deadline is still deliberately unset. It must be added to a reviewed revision of this profile, measured from the first durable termination trigger, and validated under cancellation, deadline, output-overflow, inherited-pipe, supervisor restart, containerd outage, and evidence-store failure conditions. Pipe drain/EOF waiting is bounded by this cleanup deadline and may not extend it. No stress fixture or host proof may start until the cleanup deadline and its clock/restart semantics are explicitly approved; do not invent a default.
 
+## 2.1 Cleanup deadline qualification — required before profile approval
+
+The numeric cleanup deadline is intentionally **unset** in revision 1. It must not be guessed from a developer workstation, a clean cancellation, or an average runtime. This section defines how a future revision may qualify and approve it.
+
+### Scope and start point
+
+- The cleanup deadline bounds the **host cleanup branch**, not evidence publication. Evidence finalization runs independently; evidence-store failure must never delay termination or resource cleanup.
+- The deadline starts at the earliest host-observed termination trigger: cancellation accepted by the host, sandbox wall watchdog, end-to-end deadline admission/watchdog, output overflow, OOM/resource enforcement, natural-exit cleanup, or infrastructure/supervisor recovery that requires termination.
+- Capture the trigger's host monotonic timestamp and boot identity before or at the termination request. Issue termination immediately; do not wait for a database fsync, client response, pipe EOF, evidence write, or remote service. Persist the trigger record durably as soon as possible. The cleanup budget is measured from the captured trigger instant, **not** from the later journal commit or acknowledgement, so journal latency cannot extend it.
+- Repeated or secondary triggers never reset the original cleanup deadline. Arbitration may select one immutable primary cause, but the earliest trigger remains the cleanup clock anchor.
+- The deadline ends only when the host has independently verified absence of the complete process tree, containerd task/container, shim, namespaces, cgroup, scratch, temporary mounts, and attempt-scoped network-policy state, and has durably recorded the cleanup disposition. If any resource cannot be inspected, cleanup is unverified and the host/attempt is quarantined; timeout is not success.
+
+### Clock and restart semantics
+
+- Use a monotonic clock for elapsed-time measurement within one boot and persist its clock identity plus boot ID. Wall-clock timestamps are audit metadata, not the elapsed-time authority.
+- On supervisor restart within the same boot, re-arm from the original monotonic trigger timestamp; never start a fresh interval.
+- Across host reboot, the prior boot's monotonic clock cannot be compared with the new boot's clock. Persist the original trigger wall timestamp and boot ID, require a trusted synchronized host clock with recorded synchronization/uncertainty evidence, and conservatively calculate remaining budget. If clock trust, time ordering, or remaining budget cannot be established, treat the cleanup deadline as expired, quarantine, and continue best-effort independent cleanup. Never grant a new full cleanup interval after reboot.
+- Suspend/resume, clock steps, NTP loss, VM snapshot/restore, and clock rollback must be included in qualification. A host restored from snapshot must not reuse a stale supervisor generation or extend a deadline.
+- The external watchdog must enforce termination/cleanup even if the supervisor is paused, deadlocked, or unable to write the journal. The watchdog's clock and control path must be independent enough to avoid sharing the failure being tested.
+
+### Measurement protocol
+
+1. Freeze the candidate host envelope before measurement: exact VM image, kernel, filesystem/mount options, storage class, containerd/runsc versions, supervisor/watchdog build, cgroup hierarchy, and profile revision. No student data or student source is used.
+2. Instrument monotonic timestamps for trigger detection, termination request, process-tree/cgroup empty, task/container removal, shim exit, namespace/mount/scratch/network-policy cleanup, final independent absence verification, and durable cleanup disposition. Record phase durations and the overall trigger-to-verified-cleanup duration.
+3. Run every cleanup-trigger class separately: explicit cancellation; 60-second sandbox watchdog; end-to-end deadline admission/watchdog; stdout overflow; stderr overflow; combined output overflow; memory/OOM; PID exhaustion; natural exit with descendants holding inherited pipes; compile/runtime failure; supervisor crash/restart; containerd restart/outage; journal SQLITE_BUSY/FULL/IOERR; evidence-store outage (proving cleanup is independent); and partial/ambiguous runtime state.
+4. Include adversarial process trees: nested descendants, rapid fork/exit races, ignored termination signals, stuck/uninterruptible tasks where safely reproducible, inherited stdout/stderr descriptors, full pipes, and repeated/late cancellation. Do not create a workload that can escape the disposable VM or access real metadata services.
+5. Repeat each case across cold/warm runtime state, load levels within the approved outer-VM envelope, supervisor restart, and containerd restart. Include abrupt VM reboot only after the outer recovery/watchdog path is independently verified.
+6. Preserve raw monotonic measurements and sanitized host evidence; distinguish verified completion from cleanup timeout, host failure, and unknown state. Report sample count, min, median, p95, p99, maximum, phase breakdown, and all outliers. Percentiles describe observed performance; they do **not** establish a hard upper bound.
+7. Determine a candidate deadline from the largest verified cleanup duration plus a separately justified engineering margin for measured clock/scheduler/IO uncertainty and host variance. The margin and its rationale must be reviewed; do not pick an arbitrary multiplier or percentile. If the candidate exceeds the remaining end-to-end budget, redesign the budget/architecture or reject the profile rather than silently shortening cleanup.
+8. Repeat the full suite with the candidate deadline configured. Demonstrate that the watchdog fires at the intended boundary, all cleanup paths finish and verify within it, late/secondary triggers do not extend it, and cleanup failure results in quarantine rather than false terminal success.
+9. Have an independent reviewer inspect raw evidence, clock semantics, watchdog independence, failure cases, margin rationale, and the exact numeric value before it is added to a new profile revision.
+
+### End-to-end budget interaction
+
+The 10-minute API-intake budget is an absolute upper bound through terminal finalization, not a separate execution allowance followed by unbounded cleanup.
+
+- Before starting a sandbox, admission must prove that the remaining intake budget can accommodate the maximum 60-second sandbox wall time plus the approved cleanup budget and the separately measured/bounded evidence-and-terminal-finalization reserve. If not, do not launch; return a bounded infrastructure timeout/expiry result without creating a sandbox.
+- A workload that exits early may use less than the reserved sandbox wall time, but admission must not depend on that optimistic outcome.
+- Queue wait, retries, reconnects, supervisor recovery, cleanup, evidence verification/publication, and terminal commit all consume the same original intake-based budget. No stage resets it.
+- The cleanup watchdog uses the earlier of the cleanup deadline and the remaining absolute intake deadline as its effective stop boundary. At the absolute deadline, unresolved cleanup is marked unverified/quarantined and independent cleanup continues; the API must not claim success.
+- The evidence branch must also have a bounded finalization policy that fits the same absolute intake budget. Its timeout/incompleteness cannot block the cleanup branch; terminal outcome remains incomplete/infrastructure-failed if evidence is not durably verified by the terminal deadline.
+
+**Approval gate:** the numeric cleanup deadline, clock/reboot semantics, watchdog mechanism, evidence-finalization reserve, and admission rule must be added together to a new reviewed resource-profile revision. Until then, no stress fixture, host proof, or execution enablement is authorized.
+
 ## 2. Output-limit behavior
 
 1. Count stdout and stderr independently at the host-side collector, before writing to evidence storage.
