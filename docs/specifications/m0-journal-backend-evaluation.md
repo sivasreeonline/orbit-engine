@@ -96,7 +96,7 @@ All tests below are mandatory before approval. Test both process crash and abrup
 | Kill supervisor immediately after commit but before response | Same idempotency key/digest returns the committed operation; no duplicate side effect |
 | Hard power-off immediately after commit acknowledgement | After reboot, acknowledged intent/result is present; if not, candidate fails durability gate |
 | Power-off during journal write, rollback, journal unlink or directory sync | Database recovers to a valid old or new transaction state; no ambiguous partial state is treated as success |
-| Disk full during intent, completion, branch disposition and terminal CAS | No false acknowledgement; host quarantines; independent cleanup continues |
+| Disk full during intent, completion, branch disposition and terminal CAS; exhaust journal quota and backup target | No false acknowledgement; admission stops/quarantine activates; protected cleanup/containment reserve remains available; independent cleanup continues without journal writes; backup failure cannot block cleanup |
 | SQLITE_BUSY / lock contention | Bounded behavior; no unbounded retry loop, duplicate side effect, or bypass of host lock |
 | SQLITE_IOERR / failed sync | Fail closed; no success acknowledgement; reconcile uncertain commits before any retry |
 | Database or journal corruption / invalid header | Host quarantines; no automatic recreation or execution |
