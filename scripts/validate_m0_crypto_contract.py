@@ -349,8 +349,9 @@ def main() -> None:
                                         "effective_at":"2026-01-01T00:00:00Z","reason_code":"KEY_COMPROMISE",
                                         "revocation_statement_ref":"evidence://revocation/01",
                                         "revocation_statement_sha256":"b"*64}])
-    check(revocation_matches_bundle(revoked_bundle["revocations"][0], revoked_bundle),
+    revoked_bundle["keys"][0]["revocation_reason"] = "synthetic compromise fixture"\n    check(revocation_matches_bundle(revoked_bundle["revocations"][0], revoked_bundle),
           "matching bundle revocation statement rejected")
+    accepted(bundle_v, revoked_bundle, "revoked key and matching trust-bundle revocation")
     check(not revocation_matches_bundle(revoked_bundle["revocations"][0],
                                         dict(revoked_bundle, keys=[dict(revoked_bundle["keys"][0],
                                                                         status="ACTIVE")])),
@@ -424,6 +425,11 @@ def main() -> None:
     catalog = load_json(SCHEMAS / "m0-crypto-verification-fixture-catalog.json")
     check(catalog["status"] == "contract-fixtures-only", "fixture catalog must remain structural only")
     check(catalog["cryptographic_profile_selected"] is False, "profile must remain unselected")
+    lifecycle_cases = catalog.get("key_lifecycle_transition_cases", [])
+    check(catalog.get("required_key_lifecycle_transition_case_count") == 10
+          and len(lifecycle_cases) == 10, "key lifecycle transition matrix must contain ten cases")
+    check(len({case["id"] for case in lifecycle_cases}) == 10,
+          "key lifecycle transition case IDs must be unique")
     check(catalog["required_positive_case_count"] == len(catalog["positive_cases"]) == 9,
           "positive fixture inventory must contain exactly nine cases")
     positive_ids = [item["id"] for item in catalog["positive_cases"]]
@@ -464,9 +470,9 @@ def main() -> None:
     for name in schema_names + ["m0-crypto-verification-fixture-catalog.json"]:
         check(name in contract, f"crypto contract must link {name}")
 
-    print("M0 crypto schema meta-validation: PASS (8 schemas).")
+    print("M0 crypto schema meta-validation: PASS (9 schemas).")
     print("Typed payload, envelope, trust-bundle, key and verification-report fixtures: PASS.")
-    print("Temporal, duplicate-key, purpose, revocation, anti-rollback and fail-closed checks: PASS.")
+    print("Temporal, duplicate-key, purpose, revocation, anti-rollback, key lifecycle and ledger binding checks: PASS.")
     print("9 positive and 20 negative fixture dispositions verified; profile-dependent canonical-byte vector remains blocked.")
     print("No signature verification, provider-fence verification or execution authorization performed.")
 
