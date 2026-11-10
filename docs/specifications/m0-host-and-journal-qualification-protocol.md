@@ -167,6 +167,20 @@ Three watchdogs are independent review subjects:
 2. **Supervisor liveness/recovery watchdog:** detects process death/pause/deadlock, fail-stops the exact named supervisor, waits for kernel lock release, starts one replacement generation and requires reconciliation before admission. It must not become a second containerd writer or generic root command broker.
 3. **Outer VM safety watchdog:** lives outside the tested VM failure domain and enforces CPU/memory/PID/disk/wall cutoff plus isolate/stop/rebuild. It is containment only. If it fires, the sample fails and the VM is quarantined/destroyed; it is never successful cleanup evidence.
 
+The common `WDG-002` host qualification test is not passed by a generic supervisor restart demonstration. It is passed only when all seven independently evidenced subtests below pass on the exact host, boot, supervisor/watchdog build, service-manager configuration and candidate profile. These subtest IDs refine WDG-002; they do not add or replace top-level qualification test IDs.
+
+| Subtest | Fault injection | Required pass evidence / fail-closed behavior |
+|---|---|---|
+| WD-001 | Pause/deadlock the watchdog process and withhold its heartbeat while the supervisor is unhealthy | Independent outer-VM watchdog detects the loss and contains the VM; no in-VM fallback authority is invented |
+| WD-002 | Deny the exact service-manager StopUnit/StartUnit authorization | Recovery stops; no shell, systemctl, sudo, arbitrary helper or alternate root-broker path is attempted; admission remains stopped and outer containment is available |
+| WD-003 | Substitute the supervisor unit file/drop-ins, executable, configured UID/GID, boot identity or service-manager instance | Digest/identity mismatch blocks every stop/start action; admission stops and mismatch evidence is retained |
+| WD-004 | Alter the expected cgroup path or supervisor cgroup membership | No replacement is started until exact complete-cgroup identity and old-process termination can be independently proven |
+| WD-005 | Enable or inject an automatic systemd restart race against watchdog-directed recovery | Pinned restart policy prevents dual replacement ownership; exactly one recovery authority may start a replacement |
+| WD-006 | Cause the service manager to acknowledge stop before the supervisor exits or releases its kernel lock | Replacement remains blocked until independent process-exit and kernel-lock-release evidence exists |
+| WD-007 | Stop, crash or make the watchdog unit unavailable while supervisor recovery is required | No alternate privileged path; admission remains stopped and the outer-VM watchdog is the only containment fallback |
+
+Each subtest must capture the exact injected boundary, service-manager result, unit/executable/cgroup identity, supervisor process/cgroup observations, lock inode and release observation, generation transitions, admission state and immutable evidence references. A missing or ambiguous observation is a failed WDG-002 result, not a waived subtest.
+
 Network proof is independent of the guest's reported state. Outer deny/blackhole for metadata link-local must be installed and evidenced before uplink. Probe only from inside the disposable sandbox after authorization; never issue a metadata request from the host or accept/store a metadata response. Prove IPv4/IPv6/DNS/direct-IP/loopback/alternate interface denial with host counters or equivalent independent observation.
 
 ## 8. Evidence and record rules
