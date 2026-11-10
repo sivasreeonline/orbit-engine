@@ -387,12 +387,13 @@ Before declaring the lifecycle design complete, prove recovery for:
 - OOM, PID exhaustion, output overflow, and forced host-side termination.
 - Evidence collector failure and evidence-store unavailability.
 - Duplicate create, start, cancel, and delete requests.
-- Watchdog process pause/deadlock and loss of its independent heartbeat.
-- Watchdog service-manager authorization denial; prove no shell/systemctl/sudo or alternate root-broker fallback exists.
-- Supervisor unit-file, drop-in, executable-digest, UID/GID, boot-ID, service-manager-instance, and cgroup-identity substitution.
-- Service-manager stop acknowledgement before actual process exit or kernel-lock release; replacement must remain blocked.
-- systemd automatic-restart racing with watchdog-directed recovery; prove only one replacement owner can proceed.
-- Watchdog service outage or crash while the supervisor is unhealthy; prove outer-VM containment is the only fallback.
+- WD-001: Watchdog process pause/deadlock and loss of its independent heartbeat.
+- WD-002: Watchdog service-manager authorization denial; prove no shell/systemctl/sudo or alternate root-broker fallback exists.
+- WD-003: Supervisor unit-file, drop-in, executable-digest, UID/GID, boot-ID, service-manager-instance, and cgroup-identity substitution.
+- WD-004: Supervisor cgroup path or membership mismatch; no replacement start without complete-cgroup proof.
+- WD-006: Service-manager stop acknowledgement before actual process exit or kernel-lock release; replacement must remain blocked.
+- WD-005: systemd automatic-restart racing with watchdog-directed recovery; prove only one replacement owner can proceed.
+- WD-007: Watchdog service outage or crash while the supervisor is unhealthy; prove outer-VM containment is the only fallback.
 
 For each case, expected terminal state, cleanup deadline, journal reconciliation, and evidence completeness must be explicit. If cleanup cannot be verified, the attempt remains infrastructure-failed and the host is not returned to the ready pool.
 
