@@ -1,0 +1,1056 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-proof-evidence.schema.json",
+  "title": "Sky High M0 Sandbox Proof Evidence",
+  "description": "Sanitized, structured evidence manifest for a disposable-host M0 gVisor proof. This schema records outcomes and references only; it is not proof that a test was performed or passed. A passed report also records the exact approved M0 proof resource profile.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "proof_run_id",
+    "generated_at",
+    "baseline",
+    "host",
+    "runtime",
+    "resource_profile",
+    "fixture",
+    "tests",
+    "overall_result",
+    "security_review",
+    "infrastructure_state"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "proof_run_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "architecture",
+        "containerd_major_minor",
+        "containerd_config_version",
+        "runtime_handler",
+        "required_platform"
+      ],
+      "properties": {
+        "os": {
+          "const": "Ubuntu Server 24.04 LTS"
+        },
+        "architecture": {
+          "const": "x86_64"
+        },
+        "containerd_major_minor": {
+          "const": "2.3"
+        },
+        "containerd_config_version": {
+          "const": 3
+        },
+        "runtime_handler": {
+          "const": "io.containerd.runsc.v1"
+        },
+        "required_platform": {
+          "const": "systrap"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image_identifier",
+        "kernel_release",
+        "cgroup_mode",
+        "provider",
+        "region"
+      ],
+      "properties": {
+        "image_identifier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "kernel_release": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "cgroup_mode": {
+          "const": "v2"
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "containerd_version",
+        "runsc_version",
+        "shim_version",
+        "runtime_handler",
+        "platform",
+        "oci_image_digest"
+      ],
+      "properties": {
+        "containerd_version": {
+          "type": "string",
+          "pattern": "^2\\.3\\.[0-9]+([+-].*)?$",
+          "maxLength": 96
+        },
+        "runsc_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "shim_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "runtime_handler": {
+          "const": "io.containerd.runsc.v1"
+        },
+        "platform": {
+          "enum": [
+            "systrap",
+            "kvm",
+            "ptrace",
+            "unknown"
+          ]
+        },
+        "oci_image_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_revision",
+        "image_digest"
+      ],
+      "properties": {
+        "repository_revision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "image_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "test_id",
+          "phase",
+          "status",
+          "expected_outcome",
+          "observed_outcome",
+          "evidence"
+        ],
+        "properties": {
+          "test_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "phase": {
+            "enum": [
+              "host_preflight",
+              "runtime_compatibility",
+              "identity",
+              "host_boundary",
+              "network",
+              "cpu",
+              "memory",
+              "processes",
+              "time",
+              "filesystem",
+              "output",
+              "cleanup",
+              "cancellation",
+              "repeatability",
+              "runtime",
+              "recovery",
+              "idempotency"
+            ]
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "failed",
+              "not_run",
+              "blocked"
+            ]
+          },
+          "expected_outcome": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.:=/-]{0,255}$",
+            "description": "Concise non-sensitive expected assertion; never include raw output or hidden test content."
+          },
+          "observed_outcome": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.:=/-]{0,255}$",
+            "description": "Concise non-sensitive observed assertion; never include raw output or hidden test content."
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 255
+          },
+          "duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "relative_path",
+                "sha256",
+                "bytes",
+                "redacted"
+              ],
+              "properties": {
+                "relative_path": {
+                  "type": "string",
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*://)[A-Za-z0-9._/-]{1,240}$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "redacted": {
+                  "const": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "overall_result": {
+      "enum": [
+        "passed",
+        "failed",
+        "incomplete"
+      ]
+    },
+    "security_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "reviewed_at",
+        "reviewer_reference"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "pending",
+            "approved",
+            "rejected"
+          ]
+        },
+        "reviewed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "reviewer_reference": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 96
+        }
+      }
+    },
+    "resource_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "revision",
+        "cpu_quota_millis",
+        "memory_bytes",
+        "wall_time_millis",
+        "process_limit",
+        "output_bytes_total",
+        "stdout_bytes_max",
+        "stderr_bytes_max",
+        "scratch_bytes",
+        "scratch_inodes"
+      ],
+      "properties": {
+        "profile_id": {
+          "const": "m0-proof-small-v1"
+        },
+        "revision": {
+          "const": "1"
+        },
+        "cpu_quota_millis": {
+          "const": 1000
+        },
+        "memory_bytes": {
+          "const": 1073741824
+        },
+        "wall_time_millis": {
+          "const": 60000
+        },
+        "process_limit": {
+          "const": 128
+        },
+        "output_bytes_total": {
+          "const": 1048576
+        },
+        "stdout_bytes_max": {
+          "const": 1048576
+        },
+        "stderr_bytes_max": {
+          "const": 1048576
+        },
+        "scratch_bytes": {
+          "const": 268435456
+        },
+        "scratch_inodes": {
+          "const": 4096
+        }
+      }
+    },
+    "infrastructure_state": {
+      "enum": [
+        "healthy",
+        "unavailable",
+        "startup_failed",
+        "cleanup_failed",
+        "host_failed",
+        "evidence_incomplete"
+      ],
+      "description": "Host-observed infrastructure disposition. A passed proof requires healthy; cleanup uncertainty or incomplete evidence must never be represented as passed."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "overall_result": {
+            "const": "passed"
+          }
+        },
+        "required": [
+          "overall_result"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtime": {
+            "properties": {
+              "platform": {
+                "const": "systrap"
+              }
+            },
+            "required": [
+              "platform"
+            ]
+          },
+          "host": {
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "region": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
+            },
+            "required": [
+              "provider",
+              "region"
+            ]
+          },
+          "tests": {
+            "items": {
+              "properties": {
+                "status": {
+                  "const": "passed"
+                },
+                "evidence": {
+                  "type": "array",
+                  "minItems": 1
+                },
+                "exit_code": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "status",
+                "evidence",
+                "exit_code",
+                "duration_ms"
+              ]
+            },
+            "minItems": 35,
+            "maxItems": 35,
+            "allOf": [
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-run-java-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-run-py-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-run-java-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-run-003"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-run-004"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-id-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-id-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-host-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-host-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-host-003"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-host-004"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-host-005"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-003"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-004"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-005"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-006"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-cpu-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-mem-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-pid-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-time-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-fs-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-fs-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-fs-003"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-out-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-out-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-clean-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-clean-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-cancel-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-dup-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-restart-runner-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-restart-supervisor-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-restart-containerd-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-repeat-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            ]
+          },
+          "security_review": {
+            "properties": {
+              "decision": {
+                "const": "approved"
+              },
+              "reviewed_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reviewer_reference": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "required": [
+              "decision",
+              "reviewed_at",
+              "reviewer_reference"
+            ]
+          },
+          "infrastructure_state": {
+            "const": "healthy"
+          }
+        },
+        "required": [
+          "runtime",
+          "host",
+          "tests",
+          "security_review",
+          "infrastructure_state"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "security_review": {
+            "properties": {
+              "decision": {
+                "const": "approved"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          }
+        },
+        "required": [
+          "security_review"
+        ]
+      },
+      "then": {
+        "properties": {
+          "security_review": {
+            "properties": {
+              "reviewed_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reviewer_reference": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "required": [
+              "reviewed_at",
+              "reviewer_reference"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$comment": "A passed manifest must be validated against this schema and scripts/validate_m0_evidence_schema.py. The schema itself enforces exact one-of-each fixture coverage; the Python validator independently checks the same contract."
+}

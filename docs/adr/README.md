@@ -20,5 +20,7 @@ ADRs capture decisions that constrain implementation. A decision marked Proposed
 | ADR-0014 | Versioned asynchronous REST API | Accepted |
 | ADR-0015 | Console-mode problem contract for M1 | Accepted for initial slice |
 | ADR-0017 | Layered automated security scanning | Accepted |
+| ADR-0018 | M0 Linux host and OCI runtime baseline | Accepted for proof only; production blocked |
+| ADR-0019 | M0 host launch boundary | Proposed; independent review required |
 
 Review a decision before introducing a dependency or implementation that contradicts it.

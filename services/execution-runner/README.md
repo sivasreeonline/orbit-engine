@@ -43,10 +43,20 @@ The default listener is `127.0.0.1:8080`.
 
 Health does not imply readiness.
 
-## M0 next gates
-1. Select a supported Linux host and architecture.
-2. Select OCI engine and validate gVisor compatibility.
-3. Implement ephemeral sandbox lifecycle behind the Executor interface.
-4. Enforce network denial, non-root identity, CPU, memory, PID, wall-clock, filesystem and output limits.
-5. Add cancellation, process-tree cleanup, idempotent result persistence and adversarial tests.
-6. Complete security review before enabling execution.
+## M0 implementation boundary and next gates
+
+The host supervisor, durable lifecycle journal, watchdog, evidence publisher/verifier, and containerd integration are still design-only. They are not implemented by this runner skeleton. Do not implement direct containerd access or sandbox lifecycle inside the unprivileged runner.
+
+The approved direction is a separate, narrowly scoped host supervisor as the only rootful containerd caller. The runner must communicate through a strict authenticated private transport after the supervisor boundary, journal design, watchdog recovery, and security review are approved. The runner remains unprivileged; `UnconfiguredExecutor` remains fail-closed until a separately reviewed integration is authorized.
+
+Before any M0 workload is launched:
+1. Select and document the disposable Linux host, architecture, OCI runtime versions, and immutable image provenance.
+2. Complete the supervisor privilege-boundary ADR and independently review the runner-to-supervisor authorization contract.
+3. Select the journal storage engine, filesystem, durability mode, backup/recovery procedure, and corruption behavior; prove crash/power-loss semantics on the actual disposable host.
+4. Implement and test durable attempt/idempotency/operation records, exclusive supervisor ownership, restart reconciliation, immutable deadlines, and one terminal compare-and-set.
+5. Define and empirically validate a finite cleanup deadline in a reviewed resource-profile revision. This remains unset; no stress fixture may run until it is approved.
+6. Implement the supervisor-owned sandbox lifecycle, output collection, cancellation, process-tree cleanup, and independently verified evidence publication.
+7. Prove network denial, non-root identity, CPU, memory, PID, wall-clock, filesystem, output, cleanup, and restart controls with host-side evidence.
+8. Complete independent security review before any execution integration is enabled.
+
+Passing documentation checks or the existing Go protocol tests does not constitute host proof or authorize student execution.
