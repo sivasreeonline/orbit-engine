@@ -475,7 +475,13 @@
             "network_backend",
             "cgroup_delegation_reference",
             "user_namespace_mapping_reference",
-            "rootlesskit_version"
+            "rootlesskit_version",
+            "runtime_profile_digest",
+            "resource_profile_digest",
+            "journal_profile_digest",
+            "supervisor_digest",
+            "watchdog_digest",
+            "test_harness_digest"
           ],
           "properties": {
             "profile_id": {
@@ -573,6 +579,48 @@
                 "string",
                 "null"
               ]
+            },
+            "runtime_profile_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "resource_profile_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "journal_profile_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "supervisor_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "watchdog_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
+            },
+            "test_harness_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
             }
           }
         },
