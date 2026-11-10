@@ -271,6 +271,20 @@ def errors_for(record, schema_validator):
                 errors.append(f"candidate-qualified requires exactly one evidence record for {reference_field}")
                 continue
             evidence = matches[0]
+            try:
+                acquired_raw = evidence.get("acquired_at")
+                reviewed_raw = review_context.get("reviewed_at")
+                if not acquired_raw or not reviewed_raw:
+                    errors.append(f"{reference_field} requires evidence acquisition and independent review timestamps")
+                else:
+                    acquired_at = datetime.fromisoformat(acquired_raw.replace("Z", "+00:00"))
+                    reviewed_at = datetime.fromisoformat(reviewed_raw.replace("Z", "+00:00"))
+                    if acquired_at.tzinfo is None or reviewed_at.tzinfo is None:
+                        errors.append(f"{reference_field} acquisition and review timestamps must include explicit timezone offsets")
+                    elif acquired_at > reviewed_at:
+                        errors.append(f"{reference_field} evidence must be acquired before independent host qualification review")
+            except (ValueError, TypeError):
+                errors.append(f"{reference_field} acquisition and review timestamps must be valid timezone-aware datetimes")
             if evidence.get("evidence_type") != "watchdog-control-plane" or evidence.get("verification_status") != "verified":
                 errors.append(f"{reference_field} must resolve to independently verified watchdog-control-plane evidence")
             if evidence.get("sha256") != host.get(digest_field):
@@ -591,7 +605,7 @@ def main():
         missing_proof["host_identity"][field] = None
         if not any("exact selected host/runtime/storage identity" in error for error in errors_for(missing_proof,schema_validator)):
             raise AssertionError(f"candidate-qualified record accepted without {field}")
-    print("PASS  requires authenticated epoch authority, nonce, predecessor-set and provider-fence evidence")
+    print("PASS  requires structured epoch authority, nonce, predecessor-set and provider-fence evidence bindings")
     mismatched_fence_digest = deepcopy(complete)
     mismatched_fence_digest["host_identity"]["provider_fence_evidence_digest"] = "f"*64
     if not any("digest must match its immutable evidence record" in error for error in errors_for(mismatched_fence_digest,schema_validator)):
@@ -619,6 +633,17 @@ def main():
     if not any("cannot predate the claimed fence verification" in error for error in errors_for(predated_fence_evidence, schema_validator)):
         raise AssertionError("provider fence evidence acquired before claimed verification was accepted")
     print("PASS  rejects provider-fence chronology inconsistencies")
+    late_fence_evidence = deepcopy(complete)
+    late_fence = next(evidence for finding in late_fence_evidence["test_results"] for evidence in finding.get("evidence_refs", []) if evidence.get("reference_id") == late_fence_evidence["host_identity"]["prior_incarnation_fence_evidence_ref"])
+    late_fence["acquired_at"] = (synthetic_now + timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    if not any("evidence must be acquired before independent host qualification review" in error for error in errors_for(late_fence_evidence, schema_validator)):
+        raise AssertionError("provider fence evidence acquired after review was accepted")
+    late_epoch_evidence = deepcopy(complete)
+    late_epoch = next(evidence for finding in late_epoch_evidence["test_results"] for evidence in finding.get("evidence_refs", []) if evidence.get("reference_id") == late_epoch_evidence["host_identity"]["host_incarnation_epoch_evidence_ref"])
+    late_epoch["acquired_at"] = (synthetic_now + timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    if not any("evidence must be acquired before independent host qualification review" in error for error in errors_for(late_epoch_evidence, schema_validator)):
+        raise AssertionError("epoch evidence acquired after review was accepted")
+    print("PASS  rejects epoch/fence evidence acquired after independent review")
 
     verifier_is_host_owner = deepcopy(complete)
     verifier_is_host_owner["test_results"][0]["evidence_refs"][0]["independent_verifier_id"] = verifier_is_host_owner["review"]["host_owner_id"]
