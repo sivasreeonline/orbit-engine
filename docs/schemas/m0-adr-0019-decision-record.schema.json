@@ -523,7 +523,8 @@
             "supervisor_digest",
             "watchdog_digest",
             "test_harness_digest",
-            "rootless_profile"
+            "rootless_profile",
+            "rootless_profile_digest"
           ],
           "properties": {
             "profile_id": {
@@ -673,6 +674,13 @@
                   "type": "null"
                 }
               ]
+            },
+            "rootless_profile_digest": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^([a-f0-9]{64})?$"
             }
           }
         },
