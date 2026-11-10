@@ -206,6 +206,8 @@ def main():
     adr = ADR_PATH.read_text(encoding="utf-8")
 
     Draft202012Validator.check_schema(schema)
+    if schema["properties"]["schema_version"].get("const") != "1.1.0" or template.get("schema_version") != "1.1.0":
+        raise AssertionError("33-control independent review package must use schema/template version 1.1.0")
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     errors = validate(validator, template)
     if errors:
@@ -248,6 +250,7 @@ def main():
     print("PASS  ADR and security packet link the independent review package")
 
     cases = []
+    old_schema_version = deepcopy(template); old_schema_version["schema_version"] = "1.0.0"; cases.append(("stale 32-control review schema version", old_schema_version))
     case = deepcopy(template); case["control_findings"].pop(); cases.append(("missing control", case))
     case = deepcopy(template); case["control_findings"][-1]["control_id"] = case["control_findings"][0]["control_id"]; cases.append(("duplicate control ID", case))
     case = deepcopy(template); case["control_findings"][0]["result"] = "approved"; cases.append(("unsupported status", case))
