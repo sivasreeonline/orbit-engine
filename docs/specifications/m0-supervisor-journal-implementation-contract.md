@@ -118,8 +118,9 @@ Do not overload one `generation` field. The following values have different owne
 
 | Value | Scope | Allocated by | Changes when | Enforced by |
 |---|---|---|---|---|
-| `host_instance_id` | One disposable VM incarnation | Trusted host/control-plane enrollment; never caller-supplied | New VM incarnation or restore that cannot prove continuity | Host identity verification and evidence manifest |
-| `supervisor_generation` | One supervisor process ownership epoch on a host instance | Supervisor after acquiring the exclusive host lock | Every accepted supervisor replacement/restart | Host lock + journal CAS + supervisor self-check |
+| `host_instance_id` | One disposable VM incarnation | Trusted provider/control-plane enrollment; never caller-supplied | New VM incarnation or restore that cannot prove continuity | Host identity verification and evidence manifest |
+| `host_incarnation_epoch` | Monotonic anti-rollback/fencing epoch for one enrolled VM incarnation, anchored outside the guest journal | Trusted external control-plane/host-enrollment authority after it has fenced or powered off every prior incarnation/clone | Every restore, clone, rollback, or replacement that could duplicate or roll back guest state | External epoch proof plus provider-level old-incarnation stop/fence; guest journal value alone is insufficient |
+| `supervisor_generation` | One supervisor process ownership epoch on a host instance | Supervisor after acquiring the exclusive host lock and validating the current external host-incarnation epoch | Every accepted supervisor replacement/restart | Host lock + journal CAS + external epoch self-check |
 | `attempt_generation` | Ownership/recovery epoch for one logical attempt | Current supervisor under journal transaction | Attempt ownership is transferred during restart/reconciliation | Attempt row CAS; checked on every operation |
 | `operation_sequence` | Ordered operations within one attempt | Journal transaction | Every newly claimed lifecycle operation | Unique `(attempt_id, operation_sequence)` and operation ID |
 | `state_version` | Attempt state row | Journal transaction | Every accepted state transition | Compare-and-set expected version |
