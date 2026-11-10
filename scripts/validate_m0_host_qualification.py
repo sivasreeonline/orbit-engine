@@ -615,7 +615,7 @@ def main():
     if not any("before independent host qualification review" in error for error in errors_for(future_fence, schema_validator)):
         raise AssertionError("provider fence timestamp after independent review was accepted")
     predated_fence_evidence = deepcopy(complete)
-    predated_fence_evidence["host_identity"]["provider_fence_verified_at"] = (synthetic_now - timedelta(days=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    predated_fence_evidence["host_identity"]["provider_fence_verified_at"] = "2026-11-09T23:59:00Z"
     if not any("cannot predate the claimed fence verification" in error for error in errors_for(predated_fence_evidence, schema_validator)):
         raise AssertionError("provider fence evidence acquired before claimed verification was accepted")
     print("PASS  rejects provider-fence chronology inconsistencies")
