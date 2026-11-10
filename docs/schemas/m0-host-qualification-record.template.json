@@ -48,7 +48,8 @@
     "predecessor_incarnation_set_digest": null,
     "provider_fence_method": null,
     "provider_fence_verified_at": null,
-    "provider_fence_evidence_digest": null
+    "provider_fence_evidence_digest": null,
+    "host_incarnation_epoch_evidence_digest": null
   },
   "journal_profile": {
     "backend_candidate": "not-selected",
