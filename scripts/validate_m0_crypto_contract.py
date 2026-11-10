@@ -96,7 +96,7 @@ def main() -> None:
         "evidence_ref": "evidence://provider-fence/01", "evidence_sha256": "f" * 64,
     }
     phase_payload = {
-        "authorization_id": "authorization-01", "authorization_scope": "M0_HOST_QUALIFICATION_ONLY",
+        "authorization_id": "authorization-01", "authorization_scope": "M0_CLEANUP_CALIBRATION_ONLY",
         "environment": "test", "host_enrollment_id": "enrollment-01", "provider_id": "provider-x",
         "provider_instance_id": "instance-current", "incarnation_epoch": 7,
         "host_epoch_receipt_ref": "evidence://epoch/01", "host_epoch_receipt_sha256": "1" * 64,
@@ -107,7 +107,7 @@ def main() -> None:
         "security_review_control_count": 33, "fence_001_result": "pass",
         "authorization_manifest_sha256": "6" * 64, "max_run_count": 1,
         "not_before": "2026-01-01T00:00:00Z", "expires_at": "2026-01-01T00:05:00Z",
-        "phase_a_authorized": True, "phase_b_authorized": False,
+        "cleanup_calibration_authorized": True, "full_m0_proof_authorized": False,
         "student_execution_authorized": False, "production_execution_authorized": False,
     }
     revoke_payload = {
