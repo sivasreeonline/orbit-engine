@@ -100,6 +100,8 @@ REQUIRED = {
         "full lifetime of the selected supervisor",
         "seals a trigger watermark after final output-drain/quiescence",
         "Database constraints/guards must reject a second terminal insert",
+        "preconfigured supervisor unit through narrowly scoped service-manager authorization",
+        "Prohibit shell/systemctl command execution",
     ],
 }
 FORBIDDEN_ADR_SELECTION_PHRASES = [
