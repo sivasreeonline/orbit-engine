@@ -16,7 +16,8 @@
     "fixture",
     "tests",
     "overall_result",
-    "security_review"
+    "security_review",
+    "infrastructure_state"
   ],
   "properties": {
     "schema_version": {
@@ -364,6 +365,17 @@
           "const": 4096
         }
       }
+    },
+    "infrastructure_state": {
+      "enum": [
+        "healthy",
+        "unavailable",
+        "startup_failed",
+        "cleanup_failed",
+        "host_failed",
+        "evidence_incomplete"
+      ],
+      "description": "Host-observed infrastructure disposition. A passed proof requires healthy; cleanup uncertainty or incomplete evidence must never be represented as passed."
     }
   },
   "allOf": [
@@ -985,13 +997,17 @@
               "reviewed_at",
               "reviewer_reference"
             ]
+          },
+          "infrastructure_state": {
+            "const": "healthy"
           }
         },
         "required": [
           "runtime",
           "host",
           "tests",
-          "security_review"
+          "security_review",
+          "infrastructure_state"
         ]
       }
     },
