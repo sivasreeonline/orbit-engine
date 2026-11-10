@@ -865,6 +865,7 @@
         "host_incarnation_authority_id",
         "host_incarnation_authority_key_version",
         "host_incarnation_epoch_evidence_ref",
+        "host_incarnation_epoch_evidence_digest",
         "host_incarnation_issuance_nonce_digest",
         "predecessor_incarnation_set_digest",
         "provider_fence_method",
@@ -1132,6 +1133,13 @@
           "format": "date-time"
         },
         "provider_fence_evidence_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "host_incarnation_epoch_evidence_digest": {
           "type": [
             "string",
             "null"
