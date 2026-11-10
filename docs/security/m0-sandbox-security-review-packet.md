@@ -73,6 +73,7 @@ If an assumption cannot be demonstrated, record it as an open risk, not as a con
 | Containerd daemon restart or outage | Stop new launches and reconcile all non-terminal attempts after daemon recovery | Daemon identity/version checks and post-recovery inventory prove no duplicate or orphan resource | Not implemented |
 | Crash between journal writes and containerd side effects | Persist intent before side effect; deterministic resource identity; reconcile before retry; compare-and-set terminal state | Fault injection at every lifecycle transition, durable journal inspection, containerd/process/cgroup inventory | Design contract added; not implemented |
 | Cleanup acknowledgement race | Cleanup independent of client connection; verify process/task/shim/cgroup/namespace/mount/network/scratch absence before terminal success | Post-ack host inventory and cancellation/exit/timeout race tests | Design contract added; not implemented |
+| Snapshot rollback / cloned host split-brain | External authority atomically advances a monotonic host-incarnation epoch only after provider-enforced fencing of every predecessor; restore remains quarantined until authenticated epoch/fence evidence is durably accepted | Complete predecessor/clone enumeration, authority key pin and nonce binding, provider-enforced compute/storage/control-path isolation, fence-before-issue chronology, concurrent restore/rollback fault injection | Design contract added; authority/provider not selected or implemented |
 | Evidence tampering / incomplete evidence | SHA-256 manifest, access controls, independent reviewer, incomplete status on missing evidence | Manifest validation, hash verification, reviewer signoff | Schema exists; actual evidence absent |
 | Dependency/runtime supply-chain compromise | Lockfiles, CI audit, pinned actions/runtime artifacts, provenance verification | CI reports, SBOM/provenance, patch process | Partial; runtime provenance not yet demonstrated |
 
@@ -169,14 +170,14 @@ Phase B approval is a separate reviewer decision. It requires approval of the ca
 
 ## ADR-0019 candidate decision
 
-Use `docs/adr/ADR-0019-decision-dossier.md` and `docs/schemas/m0-adr-0019-decision-record.schema.json` for the rootful-versus-rootless candidate decision. The reviewer must assess both candidates against the same 32 controls and 33 host qualification tests. A candidate selection requires its own complete host qualification report and independent sign-off; evidence cannot be borrowed from the other candidate.
+Use `docs/adr/ADR-0019-decision-dossier.md` and `docs/schemas/m0-adr-0019-decision-record.schema.json` for the rootful-versus-rootless candidate decision. The reviewer must assess both candidates against the same 33 controls and 33 host qualification tests. A candidate selection requires its own complete host qualification report and independent sign-off; evidence cannot be borrowed from the other candidate.
 
 The review remains pending. The dossier and its synthetic CI examples are not security approval or host proof.
 
 
 ## Upstream candidate compatibility evidence
 
-Review `docs/adr/ADR-0019-upstream-compatibility-evidence.md` alongside the independent 32-control checklist. The rootless review must explicitly address `newuidmap`/`newgidmap`, subordinate-ID mappings, RootlessKit state/network namespaces, systemd CPU-controller delegation and exact gVisor shim compatibility. Documentary sources do not constitute host proof.
+Review `docs/adr/ADR-0019-upstream-compatibility-evidence.md` alongside the independent 33-control checklist. The rootless review must explicitly address `newuidmap`/`newgidmap`, subordinate-ID mappings, RootlessKit state/network namespaces, systemd CPU-controller delegation and exact gVisor shim compatibility. Documentary sources do not constitute host proof.
 
 
 ## Immutable upstream source baseline
