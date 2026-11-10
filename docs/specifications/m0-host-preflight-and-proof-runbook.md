@@ -51,13 +51,13 @@ No student source, hidden tests, application secrets, or production data may be 
 
 ## Phase 2 — Isolation and resource proof
 
-Run the reviewed fixture matrix in `docs/specifications/m0-adversarial-fixture-contract.md` inside a disposable gVisor sandbox. The suite must be digest-pinned, source-reviewed, and contain no network callbacks or destructive host operations. Do not implement or execute fixture payloads until the disposable VM outer cgroup, watchdog, and recovery controls have been independently verified.
+Run the reviewed fixture matrix in `docs/specifications/m0-adversarial-fixture-contract.md` inside a disposable gVisor sandbox. The suite must be digest-pinned, source-reviewed, and contain no network callbacks or destructive host operations. Do not implement or execute fixture payloads until the disposable VM outer cgroup, watchdog, network containment, and recovery controls have been independently verified. In particular, before `M0-NET-006`, install and independently verify an outer-VM deny/blackhole rule for the metadata link-local destination (for example, IPv4 `169.254.169.254`); prove with host-side counters/packet observation that packets are dropped before any host uplink or metadata service can receive them. The probe originates only inside the sandbox. Never issue metadata requests from the host, never accept or store metadata responses, and mark the fixture blocked rather than running it if the outer deny cannot be proven.
 
 | Area | Required evidence |
 |---|---|
 | Identity | Effective UID/GID is non-root; capabilities are dropped |
 | Host boundary | No host paths, devices, namespaces, privileged socket, or credentials visible |
-| Network | IPv4, IPv6, DNS, direct-IP, loopback-to-host, and metadata-service attempts fail |
+| Network | IPv4, IPv6, DNS, direct-IP, and loopback-to-host attempts fail. The metadata-address probe runs only from inside the sandbox after an independently verified outer-VM deny/blackhole rule drops the link-local destination before host uplink; host-side counters prove the drop and no metadata service is contacted |
 | CPU | CPU quota is enforced under sustained load |
 | Memory | cgroup memory ceiling is enforced; OOM is classified as infrastructure/resource outcome, not Accepted |
 | Processes | PID ceiling stops fork/process floods |
