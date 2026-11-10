@@ -542,7 +542,9 @@
         "host_fencing_verifier_id",
         "host_fencing_verification_report_ref",
         "host_fencing_verification_report_digest",
-        "host_fencing_acquired_by_id"
+        "host_fencing_acquired_by_id",
+        "host_fencing_evidence_acquired_at",
+        "host_fencing_verification_completed_at"
       ],
       "properties": {
         "destination": {
@@ -574,6 +576,14 @@
         "host_fencing_acquired_by_id": {
           "type": "string",
           "minLength": 1
+        },
+        "host_fencing_evidence_acquired_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "host_fencing_verification_completed_at": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },
