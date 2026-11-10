@@ -304,7 +304,8 @@
         "candidate_specific_test_ids",
         "rootless_userns_compatibility_gate",
         "rootless_profile",
-        "rootless_profile_digest"
+        "rootless_profile_digest",
+        "qualification_record_evidence"
       ],
       "properties": {
         "record_id": {
@@ -466,6 +467,9 @@
             "null"
           ],
           "pattern": "^([a-f0-9]{64})?$"
+        },
+        "qualification_record_evidence": {
+          "$ref": "#/$defs/evidenceReference"
         }
       }
     },
