@@ -150,3 +150,8 @@ An accepted M0 proof boundary does not authorize privileged implementation. The 
 ## Upstream compatibility evidence
 
 The current upstream compatibility review is recorded in `docs/adr/ADR-0019-upstream-compatibility-evidence.md`. It is documentary evidence only; ADR-0019 remains Proposed and neither candidate is qualified or selected. Any completed review must pin the exact upstream source revisions/content digests before relying on branch-head documentation.
+
+
+## Immutable upstream source baseline
+
+The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-source-manifest.json`; the exact manifest SHA-256 must be embedded in any completed ADR-0019 decision record. A reviewer must check the seven source pins and recorded signature-verification status. The branch-head URLs are discovery references only; the manifest points to immutable commit URLs and records Git blob SHA-1 plus content SHA-256.
