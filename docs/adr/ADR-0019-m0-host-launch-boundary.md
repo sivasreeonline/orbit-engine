@@ -45,6 +45,7 @@ This is a proposed proof boundary, not permission to implement or provision it b
 16. Persist operation intent before side effects and observed state after them. Enforce durable unique idempotency/attempt keys and compare-and-set terminal transitions.
 17. On restart, reconcile by deterministic supervisor-owned sandbox identity against containerd tasks, shim processes, cgroups, namespaces, mounts, network state, and scratch. Never blindly repeat create or adopt unknown resources.
 18. Cleanup runs independently of client connections. Terminal success requires verified absence of every workload resource; uncertainty means infrastructure failure and host quarantine.
+19. Define a finite cleanup deadline in the approved proof profile before stress testing; measure it from the termination trigger and validate it under worst-case failure and restart conditions. An unset or unvalidated cleanup deadline blocks stress testing and cannot be replaced by an assumed default.
 
 ### Explicitly prohibited
 
