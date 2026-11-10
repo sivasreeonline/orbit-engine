@@ -456,8 +456,8 @@
     },
     "control_findings": {
       "type": "array",
-      "minItems": 32,
-      "maxItems": 32,
+      "minItems": 33,
+      "maxItems": 33,
       "items": {
         "$ref": "#/$defs/controlFinding"
       }
