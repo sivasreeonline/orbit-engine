@@ -4,11 +4,16 @@
   "review_status": "not-reviewed",
   "scope": {
     "repository": "sivasreeonline/orbit-engine",
-    "reviewed_commit_sha": "48fc52fc049bac8b8004fda7ac84b1a152872023",
+    "reviewed_commit_sha": null,
     "review_scope": "design-only",
     "documents": [
       "docs/adr/ADR-0019-m0-host-launch-boundary.md",
+      "docs/adr/ADR-0019-decision-dossier.md",
+      "docs/adr/ADR-0019-upstream-compatibility-evidence.md",
+      "docs/adr/ADR-0019-upstream-source-manifest.json",
       "docs/security/m0-sandbox-security-review-packet.md",
+      "docs/security/m0-independent-security-review-checklist.md",
+      "docs/specifications/m0-host-and-journal-qualification-protocol.md",
       "docs/specifications/m0-supervisor-journal-implementation-contract.md",
       "docs/specifications/m0-journal-backend-evaluation.md",
       "docs/specifications/m0-runtime-proof-harness-design.md",
