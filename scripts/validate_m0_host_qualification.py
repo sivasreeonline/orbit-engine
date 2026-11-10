@@ -5,7 +5,7 @@ This does not inspect/provision a host, run destructive tests, verify real evide
 or authorize Phase A, Phase B, student or production execution.
 """
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -255,6 +255,14 @@ def errors_for(record, schema_validator):
                 expires_at = datetime.fromisoformat(expiry_date.replace("Z", "+00:00"))
                 if expires_at <= reviewed_at:
                     errors.append("independent review is expired at issuance")
+                if expires_at <= datetime.now(timezone.utc):
+                    errors.append("independent review has expired at validation time")
+            qualification_reviewed_at = datetime.fromisoformat(record["reviewed_at"].replace("Z", "+00:00"))
+            qualification_expires_at = datetime.fromisoformat(record["expires_at"].replace("Z", "+00:00"))
+            if qualification_expires_at <= qualification_reviewed_at:
+                errors.append("qualification expiry must be later than qualification review date")
+            if qualification_expires_at <= datetime.now(timezone.utc):
+                errors.append("qualification record has expired at validation time")
         except (ValueError, TypeError):
             errors.append("candidate-qualified requires valid review dates")
         if not record.get("qualification_rationale", "").strip():
@@ -418,6 +426,14 @@ def main():
     complete["qualification_rationale"]="Synthetic positive test case only; no real host qualification is asserted."
     if errors_for(complete,schema_validator):
         raise AssertionError("synthetic fully-qualified record failed: " + "; ".join(errors_for(complete,schema_validator)))
+    expired_complete = deepcopy(complete)
+    expired_complete["review"]["expires_at"] = "2020-01-02T00:00:00Z"
+    expired_complete["expires_at"] = "2020-01-02T00:00:00Z"
+    expired_errors = errors_for(expired_complete, schema_validator)
+    if not any("expired at validation time" in error for error in expired_errors):
+        raise AssertionError("expired independent qualification/review was accepted")
+    print("PASS  rejects expired host qualification and independent review")
+
     if any(complete[flag] is not False for flag in AUTH_FLAGS):
         raise AssertionError("synthetic qualification improperly authorizes execution")
     rootless_complete = deepcopy(complete)
