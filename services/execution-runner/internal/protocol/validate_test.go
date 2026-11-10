@@ -112,7 +112,7 @@ func TestExecutionRequestValidateRejectsInvalidFields(t *testing.T) {
 func TestExecutionRequestValidateRejectsInvalidRuntimeVersionTokens(t *testing.T) {
 	t.Parallel()
 
-	for _, value := range []string{"25\\x00", "25/unsafe", "25 beta", "版本25"} {
+	for _, value := range []string{"25\x00", "25/unsafe", "25 beta", "版本25"} {
 		request := validRequest()
 		request.RuntimeVersion = value
 		if err := request.Validate(); !errors.Is(err, ErrInvalidRequest) {
