@@ -34,6 +34,8 @@ REQUIRED = {
     ],
     "runner README": [
         "m0-supervisor-journal-implementation-contract.md",
+        "ADR-0019 has not selected an implementation",
+        "UnconfiguredExecutor",
     ],
     "host launch ADR": [
         "m0-supervisor-journal-implementation-contract.md",
