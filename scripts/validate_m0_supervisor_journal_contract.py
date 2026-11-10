@@ -54,6 +54,10 @@ REQUIRED = {
         "branch_generation",
         "candidate-specific supervisor journal only",
         "Candidate B requires ownership by its dedicated non-root supervisor identity",
+        "current `supervisor_generation`",
+        "current `attempt_generation`",
+        "branch state version",
+        "branch mutation must compare the current `supervisor_generation`, `attempt_generation`, `branch_generation`, and expected branch state version",
         "Candidate A requires root ownership; Candidate B requires ownership by its dedicated non-root supervisor identity",
     ],
     "runner README": [
@@ -70,6 +74,7 @@ REQUIRED = {
         "supervisor_generation",
         "attempt_generation",
         "branch_generation",
+        "current `supervisor_generation`, `attempt_generation`, `branch_generation`, and expected branch state version",
         "database lease or generation integer alone cannot fence a paused process",
     ],
 }
