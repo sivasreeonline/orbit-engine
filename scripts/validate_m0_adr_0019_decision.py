@@ -175,6 +175,16 @@ def validate_record(record, validator):
                           f"{cid}: qualification belongs to a different architecture")
                 add_error(errors, qualification.get("record_commit_sha") != record.get("reviewed_commit_sha"),
                           f"{cid}: qualification commit does not match decision baseline")
+                qualification_evidence = qualification.get("qualification_record_evidence", {})
+                add_error(errors, qualification_evidence.get("reference_id") != qualification.get("record_id"),
+                          f"{cid}: qualification evidence reference must identify the exact qualification record UUID")
+                add_error(errors, qualification_evidence.get("sha256") != qualification.get("record_sha256"),
+                          f"{cid}: qualification evidence SHA-256 must match the signed qualification record digest")
+                add_error(errors, qualification_evidence.get("evidence_type") != "host-qualification-record",
+                          f"{cid}: qualification evidence must be typed as host-qualification-record")
+                add_error(errors, qualification_evidence.get("verification_status") != "verified" or
+                          not qualification_evidence.get("independent_verifier_id"),
+                          f"{cid}: qualification record must have independently verified evidence")
                 add_error(errors, qualification.get("host_profile_digest") != config.get("profile_digest"),
                           f"{cid}: host profile digest mismatch")
                 if cid == "rootless-containerd-userns":
@@ -460,6 +470,12 @@ def main():
             "verification_note":"Synthetic only","redaction_status":"non-sensitive"} for et in types]
     rootful["qualification_report"]={
         "record_id":"11111111-1111-4111-8111-111111111111","record_sha256":"3"*64,"record_commit_sha":"a"*40,
+        "qualification_record_evidence":{"reference_id":"11111111-1111-4111-8111-111111111111",
+            "object_version":"v1","sha256":"3"*64,"byte_count":1,"evidence_root_id":"synthetic-root",
+            "evidence_type":"host-qualification-record","acquired_at":"2026-11-10T00:00:00Z",
+            "acquisition_tool":"synthetic-validator","tool_version":"1","verification_status":"verified",
+            "independent_verifier_id":"synthetic-evidence-verifier","verification_note":"Synthetic only",
+            "redaction_status":"non-sensitive"},
         "target_architecture":"rootful-supervisor","qualification_status":"candidate-qualified",
         "host_instance_id":"synthetic-host","boot_id":"synthetic-boot","host_profile_digest":"b"*64,
         "runtime_profile_digest":"4"*64,"resource_profile_digest":"5"*64,"journal_profile_digest":"6"*64,
