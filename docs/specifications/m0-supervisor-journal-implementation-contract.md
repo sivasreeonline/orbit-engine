@@ -29,7 +29,7 @@ It does **not** approve the rootful supervisor ADR, SQLite, a Go SQLite driver, 
 6. Containerd and the journal are separate failure domains. There is no cross-system exactly-once transaction.
 7. A stale supervisor or stale lifecycle worker cannot issue a privileged side effect or overwrite a newer branch disposition.
 8. Cleanup and evidence finalization are independently supervised. Evidence failure never delays process termination or resource removal.
-9. Terminal success requires durable, current cleanup and evidence dispositions, independent verification of all resource absence, and one durable terminal compare-and-set.
+9. Terminal success requires durable, current cleanup and evidence dispositions, independent verification of all resource absence, and one durable terminal compare-and-set fenced by the current supervisor/attempt generations and both current branch generations.
 10. Uncertain ownership, clock state, journal state, or cleanup means quarantine. Quarantine is not success and does not return the host to a ready pool.
 11. The outer VM safety cutoff is containment only. Firing it invalidates the calibration sample and quarantines or destroys the VM; it is not proof of successful sandbox cleanup.
 12. No numeric cleanup timeout or finalization reserve may be inferred from a developer workstation, average, percentile, or synthetic CI run.
@@ -201,11 +201,11 @@ The following logical records are mandatory regardless of the backend. They are 
 | `attempts` | Unique `(proof_run_id, fixture_id, attempt_id)`; canonical immutable request digest; authenticated owner; profile IDs/revisions and image digest; original API intake UTC timestamp and absolute end-to-end deadline; intake boot/clock metadata; deterministic sandbox identity; lifecycle state and state version; attempt generation; active operation ID; terminal classification if committed. |
 | `idempotency_keys` | Unique scoped idempotency-key digest; canonical request digest; attempt and operation IDs; bounded versioned response descriptor; current durable disposition. Same scope/key + same digest returns the same logical operation; changed digest is a conflict. |
 | `operations` | Unique operation ID; unique `(attempt_id, operation_sequence)`; host/attempt generations; operation type; expected prior state/version; target state; deterministic external resource identity; immutable request digest; durable intent time; observed external result; bounded error class; completion disposition. |
-| `triggers` | Unique trigger ID; attempt and generations; trigger sequence; trigger type; authenticated source; boot ID; BOOTTIME observation; UTC audit timestamp; primary/secondary/late disposition; termination-request timestamp; durable persistence disposition. |
-| `finalization_branches` | Unique `(attempt_id, branch, branch_generation)`; branch kind `cleanup` or `evidence`; owner generation; state; disposition; bounded error class; start/completion timestamps; independent verification reference. |
+| `triggers` | Unique trigger ID; attempt ID; explicit `supervisor_generation` and `attempt_generation`; trigger sequence; trigger type; authenticated source; boot ID; BOOTTIME observation; UTC audit timestamp; primary/secondary/late disposition; termination-request timestamp; durable persistence disposition. |
+| `finalization_branches` | Unique `(attempt_id, branch, branch_generation)`; branch kind `cleanup` or `evidence`; current `supervisor_generation`; current `attempt_generation`; `branch_generation`; branch state version; state; disposition; bounded error class; start/completion timestamps; independent verification reference. |
 | `terminal_results` | Unique attempt ID; immutable result classification; final state version; winning trigger ID/cause; cleanup disposition; evidence disposition; terminal commit timestamp; response descriptor digest. |
 | `evidence_references` | Opaque attempt-scoped object key/version; SHA-256; byte count; evidence-root ID; `acquired_by_id` principal; independent verifier ID; verification status/time/note; redaction disposition. The acquirer, verifier, host owner and security reviewer are distinct principals. No raw content or private URL. |
-| `quarantine_records` | Host/attempt identity; quarantine reason code; observed resources/uncertainty class; originating generation; timestamp; operator/recovery disposition; evidence reference. Never delete unresolved quarantine records during ordinary retention. |
+| `quarantine_records` | Host/attempt identity; quarantine reason code; observed resources/uncertainty class; originating `supervisor_generation` and `attempt_generation`; timestamp; operator/recovery disposition; evidence reference. Never delete unresolved quarantine records during ordinary retention. |
 
 ### 6.1 Required database constraints
 
@@ -218,7 +218,7 @@ The following logical records are mandatory regardless of the backend. They are 
 - CHECK constraints for every state, operation, trigger, branch, disposition, and error-class enumeration.
 - Bounded lengths and canonical encoding for all IDs, digests, object references, and response descriptors.
 - Foreign-key enforcement and transaction isolation verified on every connection; effective database durability settings read back at startup.
-- All state changes use expected state version and generation predicates. The implementation checks affected-row counts; zero or unexpected multiple rows are conflicts/corruption, not success.
+- All state changes use expected state version and generation predicates. A finalization-branch mutation must compare the current `supervisor_generation`, `attempt_generation`, `branch_generation`, and expected branch state version in one conditional update. The implementation checks affected-row counts; zero or unexpected multiple rows are conflicts/corruption, not success.
 - Indexes support lookup by logical attempt, idempotency scope/key digest, operation ID, deterministic sandbox identity, non-terminal attempts, pending branch dispositions, and quarantine state.
 - SQL identifiers are constants from the implementation. Caller-controlled values are parameters only; caller input never constructs SQL, table names, or query fragments.
 
