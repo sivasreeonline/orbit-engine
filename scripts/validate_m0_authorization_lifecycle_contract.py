@@ -71,10 +71,10 @@ def main() -> int:
         "Do not create or apply a production migration until",
     ]:
         require(ledger, term, "authorization ledger data model invariant")
-    require(life, "m0-authorization-ledger-data-model.md", "lifecycle-to-ledger linkage")
+    require(contract, "m0-authorization-ledger-data-model.md", "lifecycle-to-ledger linkage")
     require(protocol, "m0-authorization-ledger-data-model.md", "protocol-to-ledger linkage")
     require(packet, "m0-authorization-ledger-data-model.md", "review packet-to-ledger linkage")
-    if "## 10. Authorization lifecycle qualification" not in packet or "## 11. Current decision" not in packet:
+    if "## 10. Authorization lifecycle qualification" not in packet or "## 12. Current decision" not in packet:
         raise AssertionError("security review packet section numbering must remain unique and ordered")
     for term in [
         "Epoch issuance/revocation and provider fencing must be serialized per enrolled host",
@@ -92,6 +92,7 @@ def main() -> int:
         require(calibration, term, "Phase A validator safety boundary")
     for term in [
         "docs/specifications/m0-authorization-lifecycle-and-recovery-contract.md",
+        "docs/specifications/m0-authorization-ledger-data-model.md",
         "scripts/validate_m0_authorization_lifecycle_contract.py",
         "Validate authorization lifecycle contract linkage",
     ]:
