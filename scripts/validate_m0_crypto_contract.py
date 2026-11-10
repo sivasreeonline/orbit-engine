@@ -465,6 +465,11 @@ def main() -> None:
     catalog = load_json(SCHEMAS / "m0-crypto-verification-fixture-catalog.json")
     check(catalog["status"] == "contract-fixtures-only", "fixture catalog must remain structural only")
     check(catalog["cryptographic_profile_selected"] is False, "profile must remain unselected")
+    lifecycle_cases = catalog.get("key_lifecycle_transition_cases", [])
+    check(catalog.get("required_key_lifecycle_transition_case_count") == 10
+          and len(lifecycle_cases) == 10, "key lifecycle transition matrix must contain ten cases")
+    check(len({case["id"] for case in lifecycle_cases}) == 10,
+          "key lifecycle transition case IDs must be unique")
     expected_lifecycle = {
         ("NONE", "GENERATED", "KEY_GENERATED"): "ACCEPT",
         ("GENERATED", "PENDING", "KEY_SUBMITTED_FOR_ACTIVATION"): "ACCEPT",
@@ -491,11 +496,6 @@ def main() -> None:
         and item[1] == case["transition"].split(" -> ")[1])) for case in lifecycle_cases),
         "key lifecycle catalog expectation differs from transition evaluator")
 
-    lifecycle_cases = catalog.get("key_lifecycle_transition_cases", [])
-    check(catalog.get("required_key_lifecycle_transition_case_count") == 10
-          and len(lifecycle_cases) == 10, "key lifecycle transition matrix must contain ten cases")
-    check(len({case["id"] for case in lifecycle_cases}) == 10,
-          "key lifecycle transition case IDs must be unique")
     check(catalog["required_positive_case_count"] == len(catalog["positive_cases"]) == 9,
           "positive fixture inventory must contain exactly nine cases")
     positive_ids = [item["id"] for item in catalog["positive_cases"]]
