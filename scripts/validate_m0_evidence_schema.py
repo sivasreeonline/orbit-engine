@@ -123,7 +123,7 @@ def expect_valid(validator, manifest, label):
     errors = list(validator.iter_errors(manifest))
     if errors:
         raise AssertionError(
-            f"{label} should be valid: " + "; ".join(error.message for error in errors)
+            f"{label} should be valid: " + "; ".join(str(error) for error in errors)
         )
 
 
@@ -174,6 +174,18 @@ def main():
     failed_fixture = valid_manifest()
     failed_fixture["tests"][0]["status"] = "failed"
     cases.append(("passed result with failed fixture", failed_fixture))
+
+    missing_evidence = valid_manifest()
+    missing_evidence["tests"][0]["evidence"] = []
+    cases.append(("passed result without evidence", missing_evidence))
+
+    missing_exit_code = valid_manifest()
+    missing_exit_code["tests"][0]["exit_code"] = None
+    cases.append(("passed result without an exit code", missing_exit_code))
+
+    missing_duration = valid_manifest()
+    missing_duration["tests"][0]["duration_ms"] = None
+    cases.append(("passed result without measured duration", missing_duration))
 
     missing_fixture = valid_manifest()
     missing_fixture["tests"].pop()
