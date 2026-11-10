@@ -71,6 +71,7 @@ Do not select a winner from this table alone. Complete the same control findings
 | LIFE-003 | Cleanup and terminal acknowledgement | Does terminal success require independent absence of all workload resources? | Post-cleanup process/task/shim/namespace/cgroup/mount/scratch/network inventory. | host |
 | CLOCK-001 | Within-boot clock | Is the selected elapsed clock suspend-aware and anchored to the earliest trigger? | Clock API, boot ID, raw samples and suspend/resume tests. | host |
 | CLOCK-002 | Reboot and clock trust | Are reboot/snapshot/NTP-loss/clock-step cases conservative and fail closed? | Host/boot identity, time-sync uncertainty, snapshot policy and fault evidence. | host |
+| FENCE-001 | External host-incarnation epoch and predecessor fencing | Before a restored/cloned/rolled-back/replacement VM is admitted, does a trusted external authority authenticate a fresh monotonic epoch only after complete predecessor enumeration and provider-enforced fencing? | Authority/key-version trust, nonce/request binding, predecessor-set completeness, provider hard-stop or equivalent compute/storage/control-path isolation evidence, fence-before-epoch chronology, concurrent restore/clone and replay/rollback fault-injection traces. | host |
 | JOURNAL-001 | Journal durability | Does exact backend/filesystem/storage preserve acknowledged commits and fail closed? | Library/source ID, effective settings, filesystem/device and power-loss/disk-full/corruption reports. | host |
 | JOURNAL-002 | Exclusive supervisor fencing | Can only one privileged supervisor access containerd, including with old process SIGSTOP-paused? | Kernel lock implementation, ownership/inode evidence, process and generation traces. | host |
 | JOURNAL-003 | Schema/migration/backup/restore | Are constraints, migrations and consistent backup/restore fail-closed? | Migration/constraint tests, backup/restore and non-terminal reconciliation reports. | host |
@@ -136,7 +137,7 @@ Use `docs/specifications/m0-host-and-journal-qualification-protocol.md` and its 
 
 ## ADR-0019 candidate decision
 
-Add the candidate comparison in `docs/adr/ADR-0019-decision-dossier.md` to the independent review scope. Review both deployment models against the same 32 control IDs and map their evidence to the 33 host qualification tests. Use `docs/schemas/m0-adr-0019-decision-record.schema.json`; a selected candidate must have its own independently reviewed host qualification report.
+Add the candidate comparison in `docs/adr/ADR-0019-decision-dossier.md` to the independent review scope. Review both deployment models against the same 33 control IDs and map their evidence to the 33 host qualification tests. Use `docs/schemas/m0-adr-0019-decision-record.schema.json`; a selected candidate must have its own independently reviewed host qualification report.
 
 
 ## Upstream rootless and runtime integration evidence
