@@ -30,6 +30,27 @@ async function seedAuthorization(client: Client, budget = 1): Promise<void> {
   );
 }
 
+async function appendRunEvent(
+  client: Client,
+  requestId: string,
+  eventType: "CLAIMED" | "STARTED" | "COMPLETED" | "FAILED" | "QUARANTINED",
+  requestDigest: string,
+): Promise<void> {
+  const prior = await client.query<{ event_sequence: number; event_digest: string }>(
+    "SELECT event_sequence, event_digest FROM authorization_run_events WHERE authorization_id = $1 ORDER BY event_sequence DESC LIMIT 1",
+    [authId],
+  );
+  const eventSequence = (prior.rows[0]?.event_sequence ?? 0) + 1;
+  const previousDigest = prior.rows[0]?.event_digest ?? "0".repeat(64);
+  await client.query(
+    `INSERT INTO authorization_run_events
+      (authorization_id, event_sequence, previous_event_digest, request_id, event_type, request_digest, event_digest)
+     VALUES ($1, $2, $3, $4, $5, $6,
+       encode(digest(convert_to(concat_ws('|', $1, $2::text, $4, $5, $6, $3), 'UTF8'), 'sha256'), 'hex'))`,
+    [authId, eventSequence, previousDigest, requestId, eventType, requestDigest],
+  );
+}
+
 type ClaimResult = "CLAIMED" | "REPLAYED" | "CONFLICT" | "BUDGET_EXHAUSTED" | "REVOKED";
 
 async function claim(
@@ -69,10 +90,7 @@ async function claim(
       "INSERT INTO authorization_run_claims (authorization_id, claim_id, request_id, request_digest, claim_sequence) VALUES ($1, $2, $3, $4, $5)",
       [authId, claimId, requestId, digest, sequence],
     );
-    await client.query(
-      "INSERT INTO authorization_run_events (authorization_id, request_id, event_type, event_digest) VALUES ($1, $2, 'CLAIMED', $3)",
-      [authId, requestId, digest],
-    );
+    await appendRunEvent(client, requestId, "CLAIMED", digest);
     await client.query(
       "UPDATE authorization_state SET consumed_runs = consumed_runs + 1, state_version = state_version + 1 WHERE authorization_id = $1",
       [authId],
@@ -101,6 +119,7 @@ async function revoke(client: Client): Promise<void> {
 describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disposable schema)", () => {
   beforeAll(async () => {
     admin = await connect();
+    await admin.query("CREATE EXTENSION IF NOT EXISTS pgcrypto");
     await admin.query(`CREATE SCHEMA "${schemaName}"`);
     await admin.query(`CREATE ROLE "${roleName}" NOLOGIN`);
     await admin.query(`
@@ -127,11 +146,72 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
       CREATE TABLE "${schemaName}".authorization_run_events (
         event_id bigserial PRIMARY KEY,
         authorization_id text NOT NULL REFERENCES "${schemaName}".authorization_state(authorization_id),
+        event_sequence integer NOT NULL,
+        previous_event_digest text NOT NULL CHECK (length(previous_event_digest) = 64),
         request_id text NOT NULL,
         event_type text NOT NULL CHECK (event_type IN ('CLAIMED', 'STARTED', 'COMPLETED', 'FAILED', 'QUARANTINED')),
-        event_digest text NOT NULL,
+        request_digest text NOT NULL,
+        event_digest text NOT NULL CHECK (length(event_digest) = 64),
+        UNIQUE (authorization_id, event_sequence),
         UNIQUE (authorization_id, request_id, event_type)
       )
+    `);
+    await admin.query(`
+      CREATE FUNCTION "${schemaName}".guard_run_event() RETURNS trigger
+      LANGUAGE plpgsql AS $
+      DECLARE prior_sequence integer; prior_digest text;
+      BEGIN
+        IF TG_OP <> 'INSERT' THEN
+          RAISE EXCEPTION 'run event history is append-only' USING ERRCODE = '55000';
+        END IF;
+        SELECT event_sequence, event_digest INTO prior_sequence, prior_digest
+          FROM "${schemaName}".authorization_run_events
+          WHERE authorization_id = NEW.authorization_id
+          ORDER BY event_sequence DESC LIMIT 1;
+        IF NOT FOUND THEN
+          prior_sequence := 0;
+          prior_digest := repeat('0', 64);
+        END IF;
+        IF NEW.event_sequence <> prior_sequence + 1 OR NEW.previous_event_digest <> prior_digest THEN
+          RAISE EXCEPTION 'run event chain sequence or predecessor mismatch' USING ERRCODE = '23514';
+        END IF;
+        IF NEW.event_digest <> encode(digest(convert_to(concat_ws('|',
+          NEW.authorization_id, NEW.event_sequence::text, NEW.request_id,
+          NEW.event_type, NEW.request_digest, NEW.previous_event_digest), 'UTF8'), 'sha256'), 'hex') THEN
+          RAISE EXCEPTION 'run event digest mismatch' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+      END;
+      $;
+      CREATE TRIGGER authorization_run_event_guard
+        BEFORE INSERT OR UPDATE OR DELETE ON "${schemaName}".authorization_run_events
+        FOR EACH ROW EXECUTE FUNCTION "${schemaName}".guard_run_event();
+    `);
+    await admin.query(`
+      CREATE FUNCTION "${schemaName}".assert_authorization_counter() RETURNS trigger
+      LANGUAGE plpgsql AS $
+      DECLARE target_id text; recorded_count integer; actual_count integer;
+      BEGIN
+        target_id := COALESCE(NEW.authorization_id, OLD.authorization_id);
+        SELECT consumed_runs INTO recorded_count FROM "${schemaName}".authorization_state
+          WHERE authorization_id = target_id;
+        SELECT count(*)::integer INTO actual_count FROM "${schemaName}".authorization_run_claims
+          WHERE authorization_id = target_id;
+        IF recorded_count IS DISTINCT FROM actual_count THEN
+          RAISE EXCEPTION 'authorization consumed counter does not match immutable claims'
+            USING ERRCODE = '23514';
+        END IF;
+        RETURN NULL;
+      END;
+      $;
+      CREATE CONSTRAINT TRIGGER authorization_claim_counter_guard
+        AFTER INSERT OR UPDATE OR DELETE ON "${schemaName}".authorization_run_claims
+        DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+        EXECUTE FUNCTION "${schemaName}".assert_authorization_counter();
+      CREATE CONSTRAINT TRIGGER authorization_state_counter_guard
+        AFTER UPDATE ON "${schemaName}".authorization_state
+        DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+        EXECUTE FUNCTION "${schemaName}".assert_authorization_counter();
     `);
     await admin.query(`GRANT USAGE ON SCHEMA "${schemaName}" TO "${roleName}"`);
     await admin.query(`GRANT SELECT, INSERT, UPDATE ON "${schemaName}".authorization_state TO "${roleName}"`);
@@ -200,10 +280,7 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
       "INSERT INTO authorization_run_claims (authorization_id, claim_id, request_id, request_digest, claim_sequence) VALUES ($1, $2, 'rollback-request', 'sha256:rollback', 1)",
       [authId, randomUUID()],
     );
-    await writer.query(
-      "INSERT INTO authorization_run_events (authorization_id, request_id, event_type, event_digest) VALUES ($1, 'rollback-request', 'CLAIMED', 'sha256:rollback')",
-      [authId],
-    );
+    await appendRunEvent(writer, "rollback-request", "CLAIMED", "sha256:rollback");
     await writer.query(
       "UPDATE authorization_state SET consumed_runs = 1 WHERE authorization_id = $1",
       [authId],
@@ -255,10 +332,7 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
       "INSERT INTO authorization_run_claims (authorization_id, claim_id, request_id, request_digest, claim_sequence) VALUES ($1, $2, 'claim-before-revoke', 'sha256:claim-before-revoke', 1)",
       [authId, randomUUID()],
     );
-    await claimant.query(
-      "INSERT INTO authorization_run_events (authorization_id, request_id, event_type, event_digest) VALUES ($1, 'claim-before-revoke', 'CLAIMED', 'sha256:claim-before-revoke')",
-      [authId],
-    );
+    await appendRunEvent(claimant, "claim-before-revoke", "CLAIMED", "sha256:claim-before-revoke");
     await claimant.query(
       "UPDATE authorization_state SET consumed_runs = 1, state_version = state_version + 1 WHERE authorization_id = $1",
       [authId],
@@ -293,26 +367,74 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     )).rejects.toMatchObject({ code: "42501" });
   });
 
-  it("detects counter drift without refunding or deleting the claim", async () => {
+  it("rejects a counter drift transaction at commit and preserves the durable claim", async () => {
     const setup = await connect();
     await seedAuthorization(setup, 2);
     const writer = await connect(true);
     expect(await claim(writer, "drift-claim")).toBe("CLAIMED");
+    await setup.query("BEGIN");
     await setup.query(
       "UPDATE authorization_state SET consumed_runs = 0 WHERE authorization_id = $1",
       [authId],
     );
+    await expect(setup.query("COMMIT")).rejects.toMatchObject({ code: "23514" });
+    await setup.query("ROLLBACK").catch(() => undefined);
     const reconciled = await setup.query(
       "SELECT s.consumed_runs, count(c.claim_id)::int AS durable_claims FROM authorization_state s LEFT JOIN authorization_run_claims c USING (authorization_id) WHERE s.authorization_id = $1 GROUP BY s.authorization_id",
       [authId],
     );
-    expect(reconciled.rows[0]).toEqual({ consumed_runs: 0, durable_claims: 1 });
-    // Drift is surfaced as a fail-closed condition; no claim/event row is removed.
-    expect(reconciled.rows[0]!.consumed_runs).not.toBe(reconciled.rows[0]!.durable_claims);
-    const retained = await setup.query(
-      "SELECT count(*)::int AS count FROM authorization_run_claims WHERE authorization_id = $1",
+    expect(reconciled.rows[0]).toEqual({ consumed_runs: 1, durable_claims: 1 });
+  });
+
+  it("rejects a run event with a skipped sequence or forged predecessor", async () => {
+    const setup = await connect();
+    await seedAuthorization(setup, 2);
+    const writer = await connect(true);
+    expect(await claim(writer, "chain-root")).toBe("CLAIMED");
+    await expect(writer.query(
+      `INSERT INTO authorization_run_events
+        (authorization_id, event_sequence, previous_event_digest, request_id, event_type, request_digest, event_digest)
+       VALUES ($1, 3, repeat('0', 64), 'chain-gap', 'STARTED', 'sha256:gap', repeat('a', 64))`,
+      [authId],
+    )).rejects.toMatchObject({ code: "23514" });
+    const events = await setup.query(
+      "SELECT count(*)::int AS count FROM authorization_run_events WHERE authorization_id = $1",
       [authId],
     );
-    expect(retained.rows[0]?.count).toBe(1);
+    expect(events.rows[0]?.count).toBe(1);
   });
+
+  it("terminates a backend during an open claim transaction and rolls back every write", async () => {
+    const setup = await connect();
+    await seedAuthorization(setup, 1);
+    const writer = await connect(true);
+    await writer.query("BEGIN");
+    await writer.query(
+      "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
+      [authId],
+    );
+    await writer.query(
+      "INSERT INTO authorization_run_claims (authorization_id, claim_id, request_id, request_digest, claim_sequence) VALUES ($1, $2, 'terminated-request', 'sha256:terminated', 1)",
+      [authId, randomUUID()],
+    );
+    await appendRunEvent(writer, "terminated-request", "CLAIMED", "sha256:terminated");
+    await writer.query(
+      "UPDATE authorization_state SET consumed_runs = 1, state_version = state_version + 1 WHERE authorization_id = $1",
+      [authId],
+    );
+    const backend = await writer.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+    const terminated = await admin.query<{ stopped: boolean }>(
+      "SELECT pg_terminate_backend($1) AS stopped",
+      [backend.rows[0]!.pid],
+    );
+    expect(terminated.rows[0]?.stopped).toBe(true);
+    await expect(writer.query("COMMIT")).rejects.toBeDefined();
+    await writer.end().catch(() => undefined);
+    const state = await setup.query(
+      "SELECT consumed_runs, (SELECT count(*)::int FROM authorization_run_claims WHERE authorization_id = $1) AS claims, (SELECT count(*)::int FROM authorization_run_events WHERE authorization_id = $1) AS events FROM authorization_state WHERE authorization_id = $1",
+      [authId],
+    );
+    expect(state.rows[0]).toEqual({ consumed_runs: 0, claims: 0, events: 0 });
+  });
+
 });
