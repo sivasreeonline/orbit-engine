@@ -77,7 +77,11 @@ A test passes only with captured host-side evidence and an assertion that checks
 - Restart the watchdog/supervisor during active execution and termination; verify the original persisted deadline is re-armed without granting a fresh budget.
 - Confirm cleanup before acknowledging cancellation.
 - Deliver the same test job twice; verify one logical execution and one result.
-- In separate controlled subcases, restart the runner, host supervisor, and containerd daemon during an active test; verify journal reconciliation, no duplicate execution, and absence of every process/task/container/shim/namespace/cgroup/mount/scratch/network-policy resource before terminal acknowledgement.
+- In separate controlled subcases, restart the runner, host supervisor, privileged supervisor process, and containerd daemon during active operations; inject crashes after durable intent, after create/start side effects but before observed-result commit, after journal commit but before client response, after branch disposition but before terminal CAS, and after terminal commit but before acknowledgement.
+- Retry lost responses with the same idempotency key and canonical digest; prove the same operation/response is returned without repeating side effects. Change the digest under the same key and reuse a logical attempt under a different key; both must be rejected without resource creation.
+- Pause an old supervisor while attempting replacement startup; prove the exclusive kernel lock prevents concurrent privileged containerd access and stale generations fail closed.
+- Verify journal corruption, disk-full, uncertain commit, and partial resource state all stop new work and quarantine the host rather than guessing.
+- Verify journal reconciliation, no duplicate execution, and absence of every process/task/container/shim/namespace/cgroup/mount/scratch/network-policy resource before terminal acknowledgement.
 - Repeat each failure-path test enough times to expose races.
 - Preserve correlation IDs and timestamps without logging student source, hidden inputs, expected outputs, or secrets.
 
