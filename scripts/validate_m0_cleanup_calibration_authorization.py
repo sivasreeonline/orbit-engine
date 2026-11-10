@@ -130,6 +130,8 @@ def synthetic_manifest() -> dict:
             "immutable_storage_required": True,
             "sanitized_only": True,
             "host_fencing_verifier_id": "independent-fence-verifier",
+            "host_fencing_evidence_acquired_at": "2026-11-10T00:00:00Z",
+            "host_fencing_verification_completed_at": "2026-11-10T00:00:00Z",
             "host_fencing_verification_report_ref": "immutable://synthetic/fence-verification/report",
             "host_fencing_verification_report_digest": digest("e"),
             "host_fencing_acquired_by_id": "evidence-acquirer",
@@ -168,12 +170,15 @@ def custom_errors(manifest: dict) -> list[str]:
         errors.append("host-fencing evidence acquirer must be distinct from host owner and independent reviewer")
     try:
         fence_verified = datetime.fromisoformat(manifest["host"]["provider_fence_verified_at"].replace("Z", "+00:00"))
+        evidence_acquired = datetime.fromisoformat(evidence["host_fencing_evidence_acquired_at"].replace("Z", "+00:00"))
+        evidence_verified = datetime.fromisoformat(evidence["host_fencing_verification_completed_at"].replace("Z", "+00:00"))
         reviewed_at = datetime.fromisoformat(signoff["reviewed_at"].replace("Z", "+00:00"))
         issued_at = datetime.fromisoformat(manifest["issued_at"].replace("Z", "+00:00"))
-        if fence_verified.tzinfo is None or reviewed_at.tzinfo is None or issued_at.tzinfo is None:
-            errors.append("fence verification, review and issuance timestamps must be timezone-aware")
-        elif fence_verified > reviewed_at or reviewed_at > issued_at:
-            errors.append("provider predecessor fence must be verified before independent review and authorization issuance")
+        times = [fence_verified, evidence_acquired, evidence_verified, reviewed_at, issued_at]
+        if any(value.tzinfo is None for value in times):
+            errors.append("fence verification, evidence acquisition/verification, review and issuance timestamps must be timezone-aware")
+        elif times != sorted(times):
+            errors.append("provider fence, evidence acquisition, independent verification, review and authorization must follow strict chronology")
     except (KeyError, ValueError, TypeError):
         errors.append("provider fence, review and issuance timestamps must be parseable")
     if signoff.get("host_owner_id") == signoff.get("independent_reviewer_id"):
@@ -236,6 +241,12 @@ def main() -> int:
     same_fence_acquirer = deepcopy(valid)
     same_fence_acquirer["evidence"]["host_fencing_acquired_by_id"] = same_fence_acquirer["signoff"]["host_owner_id"]
     cases.append(("fence evidence acquired by host owner", same_fence_acquirer))
+    early_evidence = deepcopy(valid)
+    early_evidence["evidence"]["host_fencing_evidence_acquired_at"] = "2026-11-09T23:59:00Z"
+    cases.append(("fence evidence acquired before provider fence verification", early_evidence))
+    late_verification = deepcopy(valid)
+    late_verification["evidence"]["host_fencing_verification_completed_at"] = "2026-11-10T00:01:00Z"
+    cases.append(("fence evidence independently verified after review", late_verification))
     late_fence = deepcopy(valid)
     late_fence["host"]["provider_fence_verified_at"] = "2026-11-10T00:02:00Z"
     cases.append(("provider fence verified after independent review", late_fence))
