@@ -86,7 +86,7 @@ func TestDecodeExecutionRequestRejectsDuplicateObjectKeys(t *testing.T) {
 	escapedDuplicate := bytes.Replace(
 		body,
 		[]byte(`"protocolVersion":"v1"`),
-		[]byte(`"protocolVersion":"v1","protocol\\u0056ersion":"v1"`),
+		[]byte(`"protocolVersion":"v1","protocol\u0056ersion":"v1"`),
 		1,
 	)
 	_, err = DecodeExecutionRequest(bytes.NewReader(escapedDuplicate))
