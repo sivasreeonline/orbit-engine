@@ -5,7 +5,7 @@ This exercises only synthetic manifests. It does not create an authorization,
 verify a real signature, inspect a host, or enable sandbox execution.
 """
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
@@ -24,13 +24,16 @@ def digest(char: str = "a") -> str:
     return char * 64
 
 def synthetic_manifest() -> dict:
+    now = datetime.now(timezone.utc)
+    issued_at = now.isoformat(timespec="seconds").replace("+00:00", "Z")
+    expires_at = (now + timedelta(hours=24)).isoformat(timespec="seconds").replace("+00:00", "Z")
     return {
         "schema_version": "1.0.0",
         "authorization_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
         "phase": "cleanup-calibration-only",
         "status": "authorized",
-        "issued_at": "2026-11-10T00:00:00Z",
-        "expires_at": "2026-11-11T00:00:00Z",
+        "issued_at": issued_at,
+        "expires_at": expires_at,
         "host": {
             "provider": "synthetic-provider",
             "region": "synthetic-region",
