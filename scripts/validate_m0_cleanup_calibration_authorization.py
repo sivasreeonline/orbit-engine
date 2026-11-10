@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Validate the M0 Phase A calibration authorization schema contract.
 
-This exercises only synthetic manifests. It does not create an authorization,
-verify a real signature, inspect a host, or enable sandbox execution.
+This exercises only synthetic manifests. It does not create an authorization
+and does not verify a real signature, inspect a host, or enable sandbox execution.
 """
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
