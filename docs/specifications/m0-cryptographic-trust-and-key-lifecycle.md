@@ -215,3 +215,12 @@ Typed payload schema artifacts:
 - `docs/schemas/m0-phase-a-authorization-payload.schema.json`
 - `docs/schemas/m0-key-revocation-payload.schema.json`
 - `scripts/validate_m0_crypto_contract.py`
+
+
+### Key lifecycle and trust-bundle transition contract
+
+The append-only key lifecycle event schema is `docs/schemas/m0-crypto-key-lifecycle-event.schema.json`. It defines explicit generation, pending, activation, deprecation, revocation and destruction transitions. Revocation is terminal for signing and admission; a revoked key may never return to ACTIVE. Historical public-key verification is a separate, policy-bounded audit capability and does not restore signing authority.
+
+Trust-bundle successors must increment generation by exactly one, bind the exact previous bundle digest, and preserve authority, root identity and environment. Revocation statements must identify an exact key ID/version and agree with that key's REVOKED status and revocation metadata. Duplicate key-version identities and duplicate revocation identities are rejected by semantic validation.
+
+The ledger remains an application-side projection. An externally anchored anti-rollback checkpoint is required to detect Neon restore to an earlier event/revocation generation. A schema-valid event or bundle does not authenticate its signature or establish custody.
