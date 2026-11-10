@@ -166,11 +166,11 @@ Phase A results must include raw sanitized trigger-to-verified-cleanup measureme
 
 Phase B approval is a separate reviewer decision. It requires approval of the candidate numeric cleanup deadline, evidence/terminal-finalization reserve, original 10-minute admission rule, clock/reboot semantics, watchdog independence, exact resource-profile revision, and Phase A raw evidence. Only then may the full 35-fixture adversarial campaign begin. Neither decision authorizes student or production execution.
 
-## 9. Authorization lifecycle qualification
+## 10. Authorization lifecycle qualification
 
 The external authority and Phase A authorization ledger requirements are specified in `docs/specifications/m0-authorization-lifecycle-and-recovery-contract.md`. A signed manifest is immutable input, not authoritative mutable status. The review must cover nonce/request replay, monotonic epochs, provider-fence-before-issue chronology, durable accept-before-admission, terminal revocation, replay tombstones, atomic run-budget claims, crash recovery and deterministic concurrent restore/revocation interleavings. A synthetic contract check is not proof that these services are implemented or safe.
 
-## 9. Current decision
+## 11. Current decision
 
 **Independent review: pending.** The controlled checklist and machine-readable decision template are available, but no reviewer signoff is recorded. No cloud host has been selected or provisioned. No sandbox workload has been launched. No executor activation is authorized. Passing CI is not a security review or approval.
 
