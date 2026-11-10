@@ -176,3 +176,11 @@ Any such condition makes the candidate rejected or deferred; it cannot be waived
 ## Upstream compatibility evidence ledger
 
 The dated public-source review is maintained in `docs/adr/ADR-0019-upstream-compatibility-evidence.md`. It distinguishes documented component capabilities from the unproven exact M0 integration, records the RootlessKit/helper/cgroup/network proof obligations, and requires immutable upstream source pins before a signed decision. This ledger does not select or qualify a candidate.
+
+## Exact rootless host profile binding
+
+Candidate B must carry a structured `rootless_profile` in both the candidate configuration and its own host qualification report. The exact object includes non-root daemon UID/GID, daemon identity digest, caller-configured userns mode, subordinate UID/GID mapping digests/range counts, RootlessKit/newuidmap/newgidmap binary hashes, helper inventory, AppArmor, private state directory and daemon socket policies, network backend/namespace profile, systemd delegation profile, delegated controllers and profile SHA-256.
+
+The candidate profile digest must equal `rootless_profile.profile_sha256`; the qualification report must include the identical profile object and matching rootless profile digest. CPU, memory and PID controllers must all be delegated. Rootful records must carry a null rootless profile and null rootless profile digest.
+
+A change in any of these fields invalidates the previous candidate qualification evidence.
