@@ -267,6 +267,11 @@ def main() -> int:
                 "Cleanup and evidence finalization remain independent branches",
                 "The terminal compare-and-set may run only after both branch dispositions are durably recorded",
                 "Cleanup requests are idempotent and fenced by the exclusive host lock",
+                "read back the exact immutable manifest version and independently verify its full byte count, SHA-256, and every referenced object/version",
+                "the manifest must not self-reference",
+                "No terminal result without a durable, verified final manifest",
+                "Terminal journal state with missing/unverified manifest or evidence",
+                "Evidence collection and evidence-store access must not be on the critical path for process termination",
             ],
             "host launch ADR": [
                 "seals a trigger watermark after final output-drain/quiescence",
@@ -278,6 +283,40 @@ def main() -> int:
             for phrase in phrases:
                 if phrase.casefold() not in document.casefold():
                     failures.append(f"{label}: missing terminalization/cleanup invariant: {phrase}")
+        for phrase in (
+            "The fence must be effective before the new epoch is issued or accepted",
+            "Responses are authenticated and replay-detectable",
+            "nonce reuse with changed request content is a conflict",
+            "provider mechanism must prove hard stop or equivalent enforced isolation of compute, storage writes, and privileged control paths",
+            "durably records the accepted epoch and evidence reference before allocating a supervisor generation or enabling any listener/admission path",
+            "Epoch issuance/revocation and provider fencing must be serialized per enrolled host",
+            "startup/restore fails closed",
+        ):
+            if phrase.casefold() not in contract.casefold():
+                failures.append(f"contract: external host-incarnation trust boundary missing: {phrase}")
+        runtime_document = contents.get("runtime harness", "")
+        evidence_publication_order = [
+            "Apply redaction before publication",
+            "compute SHA-256 and byte count from the exact final bytes",
+            "Publish to an immutable, content-addressed object identity",
+            "Re-open/read back the published object",
+            "Persist the verified evidence reference",
+            "Generate and validate the final manifest",
+            "read back the exact immutable manifest version",
+            "Persist the terminal result with compare-and-set only after all artifact references",
+        ]
+        positions = [runtime_document.casefold().find(phrase.casefold()) for phrase in evidence_publication_order]
+        if any(position < 0 for position in positions) or positions != sorted(positions):
+            failures.append("runtime harness: evidence publication steps must remain complete and strictly ordered before terminal commit")
+        for phrase in (
+            "Crash after evidence staging is durable but before immutable publication",
+            "Crash after immutable evidence publication but before readback verification",
+            "Crash after verified object readback but before journal reference commit",
+            "Crash after evidence-reference commit but before final manifest publication",
+            "Crash after manifest publication but before manifest readback/verification",
+        ):
+            if phrase.casefold() not in runtime_document.casefold():
+                failures.append(f"runtime harness: evidence publication crash case missing: {phrase}")
         for phrase in (
             "REQUESTED", "VALIDATING", "QUEUED", "CREATING", "STARTING",
             "RUNNING", "TERMINATING", "FINALIZING", "QUARANTINED",
