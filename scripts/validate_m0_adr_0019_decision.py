@@ -237,7 +237,7 @@ def main():
     if not all(test_id in dossier for test_id in TEST_IDS):
         raise AssertionError("dossier missing a host qualification test ID")
     for content in [adr, security, qualification, checklist]:
-        if "m0-adr-0019-decision-dossier.md" not in content:
+        if "ADR-0019-decision-dossier.md" not in content:
             raise AssertionError("ADR/security/qualification/checklist cross-reference missing")
     if "Proposed" not in adr or "pending independent review" not in adr.lower():
         raise AssertionError("ADR-0019 must remain proposed pending actual review")
