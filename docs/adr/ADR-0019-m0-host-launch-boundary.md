@@ -28,7 +28,7 @@ This is a proposed proof boundary, not permission to implement or provision it b
 
 1. Run as a dedicated host service on the disposable proof VM. It is the only application principal permitted to access the root-owned containerd socket.
 2. Expose only a private Unix-domain socket. Authenticate the caller using socket filesystem permissions and peer credentials; allow only the designated runner identity.
-3. Accept a strict typed request containing approved proof-run ID, fixture ID, attempt ID, correlation ID, runtime profile ID, resource profile ID, deadline, and idempotency key.
+3. Accept a strict typed request containing approved proof-run ID, fixture ID, attempt ID, correlation ID, runtime profile ID, resource profile ID, and idempotency key. Resolve the authoritative intake timestamp and derived deadlines from the durable control-plane attempt record; never trust a caller/runner-supplied timestamp or deadline.
 4. Resolve all OCI settings from root-owned immutable profiles. Do not accept arbitrary OCI JSON, image names/tags, entrypoints, commands, arguments, environment, mounts, devices, namespaces, capabilities, host networking, or runtime binary paths.
 5. Verify image and fixture digests and provenance against a local allowlist before launch.
 6. Enforce per-sandbox cgroup v2 limits and network-deny policy through the trusted host runtime configuration.
@@ -44,9 +44,9 @@ This is a proposed proof boundary, not permission to implement or provision it b
 15. Treat rootful containerd access as host-level authority. Record the exact supervisor capability set, systemd hardening, writable paths, syscall surface, and residual privilege risk; if privilege cannot be sufficiently constrained, revisit the rootless alternative.
 16. Persist operation intent before side effects and observed state after them. Enforce durable unique idempotency/attempt keys and compare-and-set terminal transitions. The active-to-terminating or natural-exit-to-finalizing arbitration is one durable transaction; the first accepted trigger fixes the primary cause, later triggers are retained as secondary causes, and late cancellation cannot rewrite finalization/terminal state. Repeated cancel/watchdog signals converge on one idempotent termination/cleanup operation.
 17. Derive the immutable 10-minute end-to-end deadline from the control plane's persisted API intake timestamp, including queue wait/retries/restarts; derive the 60-second sandbox wall deadline from host-observed start. Re-arm original deadlines after restart; never reset or extend them. Caller/runner timestamps are not authoritative.
-17. On restart, reconcile by deterministic supervisor-owned sandbox identity against containerd tasks, shim processes, cgroups, namespaces, mounts, network state, and scratch. Never blindly repeat create or adopt unknown resources.
-18. Cleanup runs independently of client connections. Terminal success requires verified absence of every workload resource; uncertainty means infrastructure failure and host quarantine.
-19. Define a finite cleanup deadline in the approved proof profile before stress testing; measure it from the termination trigger and validate it under worst-case failure and restart conditions. An unset or unvalidated cleanup deadline blocks stress testing and cannot be replaced by an assumed default.
+18. On restart, reconcile by deterministic supervisor-owned sandbox identity against containerd tasks, shim processes, cgroups, namespaces, mounts, network state, and scratch. Never blindly repeat create or adopt unknown resources.
+19. Cleanup runs independently of client connections. Terminal success requires verified absence of every workload resource; uncertainty means infrastructure failure and host quarantine.
+20. Define a finite cleanup deadline in the approved proof profile before stress testing; measure it from the termination trigger and validate it under worst-case failure and restart conditions. An unset or unvalidated cleanup deadline blocks stress testing and cannot be replaced by an assumed default.
 
 ### Explicitly prohibited
 
