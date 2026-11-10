@@ -34,6 +34,7 @@ REQUIRED = {
         "requests workload termination immediately",
         "journal read alone cannot rule out a trigger",
         "host-owned trigger arbiter accepts it while the attempt is still active",
+        "current `supervisor_generation` and `attempt_generation`",
     ],
     "journal evaluation": [
         "m0-supervisor-journal-implementation-contract.md",
