@@ -24,6 +24,7 @@ REQUIRED = {
         "operation_sequence", "state_version", "branch_generation",
         "Immediate termination exception", "CLOCK_BOOTTIME",
         "No exactly-once claim", "UnconfiguredExecutor",
+        "`acquired_by_id` principal", "independent verifier ID",
     ],
     "runtime harness": [
         "m0-supervisor-journal-implementation-contract.md",
