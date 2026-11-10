@@ -170,7 +170,11 @@ Phase B approval is a separate reviewer decision. It requires approval of the ca
 
 The external authority and Phase A authorization ledger requirements are specified in `docs/specifications/m0-authorization-lifecycle-and-recovery-contract.md`. A signed manifest is immutable input, not authoritative mutable status. The review must cover nonce/request replay, monotonic epochs, provider-fence-before-issue chronology, durable accept-before-admission, terminal revocation, replay tombstones, atomic run-budget claims, crash recovery and deterministic concurrent restore/revocation interleavings. A synthetic contract check is not proof that these services are implemented or safe.
 
-## 11. Current decision
+## 11. Authorization ledger review
+
+The proposed data model and transaction design are in `docs/specifications/m0-authorization-ledger-data-model.md`. Independent review must inspect the immutable receipt mirror, exact host/epoch acceptance binding, append-only authorization events, terminal tombstones, atomic run-budget claims, role separation, R2 version/retention verification and external anti-rollback witness. Do not approve a production migration until all prerequisites in that design are independently evidenced. Neon must not be represented as the provider fencing or epoch-issuance authority.
+
+## 12. Current decision
 
 **Independent review: pending.** The controlled checklist and machine-readable decision template are available, but no reviewer signoff is recorded. No cloud host has been selected or provisioned. No sandbox workload has been launched. No executor activation is authorized. Passing CI is not a security review or approval.
 
