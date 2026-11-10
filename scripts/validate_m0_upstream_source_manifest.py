@@ -26,6 +26,7 @@ EXPECTED = {
     "gvisor-containerd": ("google/gvisor", "g3doc/user_guide/containerd/quick_start.md"),
     "gvisor-platforms": ("google/gvisor", "g3doc/user_guide/platforms.md"),
     "gvisor-networking": ("google/gvisor", "g3doc/user_guide/networking.md"),
+    "gvisor-install": ("google/gvisor", "g3doc/user_guide/install.md"),
     "containerd-rootless": ("containerd/containerd", "docs/rootless.md"),
     "rootlesskit-v3.3.0": ("rootless-containers/rootlesskit", "README.md"),
     "runc-cgroup": ("opencontainers/runc", "docs/cgroup-v2.md"),
@@ -52,7 +53,7 @@ def main():
     entries = manifest["entries"]
     ids = [entry["source_id"] for entry in entries]
     if len(ids) != len(set(ids)) or set(ids) != set(EXPECTED):
-        raise AssertionError("source manifest must include each of the seven expected source IDs exactly once")
+        raise AssertionError("source manifest must include each of the eight expected source IDs exactly once")
     by_id = {entry["source_id"]: entry for entry in entries}
     for source_id, (repository, path) in EXPECTED.items():
         entry = by_id[source_id]
@@ -96,7 +97,7 @@ def main():
     if any(pattern in ledger for pattern in mutable_patterns):
         raise AssertionError("compatibility ledger contains a mutable upstream documentation URL")
     print("PASS  Draft 2020-12 upstream source manifest schema")
-    print("PASS  exactly seven immutable source pins with commit/blob/content hashes")
+    print("PASS  exactly eight immutable source pins with commit/blob/content hashes")
     print("PASS  immutable file URLs resolve to the recorded commit and path")
     print("PASS  RootlessKit v3.3.0 verified release and unsigned source commits explicitly distinguished")
     print("PASS  compatibility ledger links every immutable source URL and the manifest")
