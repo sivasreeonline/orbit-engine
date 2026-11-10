@@ -95,20 +95,20 @@ def main() -> None:
         "schema_version": "0.1.0", "report_id": "33333333-3333-4333-8333-333333333333",
         "artifact_type": "host-epoch-response", "artifact_ref": "synthetic://artifact",
         "artifact_version": "v1", "artifact_sha256": "1" * 64,
-        "decision": "ACCEPT_FOR_FURTHER_GATES", "reason_codes": ["STRUCTURE_ONLY_FIXTURE"],
+        "decision": "AUDIT_ONLY", "reason_codes": ["STRUCTURE_ONLY_FIXTURE"],
         "verifier_principal_id": "synthetic-verifier", "verifier_build_digest": "2" * 64,
         "policy_version": "synthetic-policy-v1", "trust_bundle_generation": 1,
         "trust_bundle_sha256": "3" * 64, "key_id": "synthetic-key", "key_version": "1",
         "algorithm": "Ed25519-candidate", "profile_version": "candidate-profile-0",
-        "canonicalization": "jcs-rfc8785-candidate", "signature_check": "PASS",
-        "canonical_bytes_check": "PASS", "revocation_check": "PASS", "anti_rollback_check": "PASS",
-        "context_binding_check": "PASS", "evidence_binding_check": "PASS",
+        "canonicalization": "jcs-rfc8785-candidate", "signature_check": "NOT_RUN",
+        "canonical_bytes_check": "NOT_RUN", "revocation_check": "UNKNOWN", "anti_rollback_check": "UNKNOWN",
+        "context_binding_check": "NOT_RUN", "evidence_binding_check": "NOT_RUN",
         "trusted_time": {"source_id": "synthetic-clock", "observed_at": "2026-01-01T00:00:00Z",
                          "uncertainty_ms": 0, "evidence_ref": "synthetic://clock"},
         "verified_at": "2026-01-01T00:00:01Z", "report_sha256": "4" * 64
     }
     accepted(report_v, report, "synthetic verification report structure")
-    bad_report = dict(report, signature_check="FAIL")
+    bad_report = dict(report, decision="ACCEPT_FOR_FURTHER_GATES", signature_check="FAIL")
     rejected(report_v, bad_report, "accept decision with failed signature")
 
     catalog = load_json(SCHEMAS / "m0-crypto-verification-fixture-catalog.json")
