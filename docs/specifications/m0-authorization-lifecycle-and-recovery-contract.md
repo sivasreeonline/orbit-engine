@@ -118,3 +118,7 @@ Passing synthetic validators does not satisfy any of these runtime or independen
 ## 9. Cryptographic trust and key lifecycle
 
 The cryptographic trust, canonical encoding, signed-envelope, key-custody, rotation/revocation, trust-bundle, anti-rollback, fail-closed verification and test-vector requirements are specified in docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md. The external authority response and Phase A authorization require distinct purpose-bound signing identities and domain-separated payloads. The document is a proposal: no algorithm, library, KMS/HSM, root, key or verifier is selected or deployed. Signature validity alone does not prove provider fencing or host safety.
+
+## 10. Cryptographic schema enforcement
+
+Machine-readable signed-envelope, trust-bundle, key-metadata and verification-report proposals plus their structural fixture catalog are maintained under docs/schemas/m0-crypto-*. The validator is scripts/validate_m0_crypto_contract.py. These schemas constrain representation; they do not authenticate signatures, establish provider fencing or authorize execution.
