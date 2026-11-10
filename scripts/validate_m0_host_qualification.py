@@ -6,6 +6,7 @@ or authorize Phase A, Phase B, student or production execution.
 """
 from copy import deepcopy
 from datetime import datetime
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -32,6 +33,24 @@ ROOTLESS_TESTS = [
 ]
 ROOTLESS_TEST_IDS = {test["id"] for test in ROOTLESS_TESTS}
 ROOTLESS_TEST_BY_ID = {test["id"]: test for test in ROOTLESS_TESTS}
+
+def canonical_rootless_profile_sha256(profile):
+    """Hash the profile without its self-referential profile_sha256 field.
+
+    Canonical bytes are compact sorted-key JSON, UTF-8, ASCII-escaped, and
+    reject non-finite numbers. The profile schema intentionally uses only
+    strings, bounded integers and arrays, so this serialization is stable.
+    """
+    unsigned_profile = {key: value for key, value in profile.items() if key != "profile_sha256"}
+    canonical = json.dumps(
+        unsigned_profile,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
 AUTH_FLAGS = ["phase_a_authorized", "phase_b_authorized", "student_execution_authorized", "production_execution_authorized"]
 BASELINE_IDS = {"HST-001", "HST-002", "HST-003", "HST-004", "HST-005"}
 RUNTIME_IDS = {"AUTH-001", "RUN-001", "CG-001", "FS-001", "OUT-001"}
@@ -150,8 +169,11 @@ def errors_for(record, schema_validator):
             controllers = set(rootless_profile.get("delegated_controllers", []))
             if not {"cpu", "memory", "pids"}.issubset(controllers):
                 errors.append("rootless profile must explicitly delegate cpu, memory and pids controllers")
-            if rootless_profile.get("profile_sha256") != rootless_profile_digest:
-                errors.append("rootless profile digest does not match host identity record")
+            computed_profile_digest = canonical_rootless_profile_sha256(rootless_profile)
+            if rootless_profile.get("profile_sha256") != computed_profile_digest:
+                errors.append("rootless profile content does not match its canonical SHA-256")
+            if rootless_profile_digest != computed_profile_digest:
+                errors.append("rootless profile digest does not match canonical profile content")
     elif target_architecture == "rootful-supervisor":
         if rootless_profile is not None or rootless_profile_digest is not None:
             errors.append("rootful candidate must not carry a rootless host profile")
@@ -409,11 +431,11 @@ def main():
         "helper_inventory_sha256":"1"*64,"state_directory_policy_sha256":"2"*64,
         "daemon_socket_policy_sha256":"3"*64,"apparmor_profile_sha256":"4"*64,
         "network_backend":"synthetic-slirp","network_namespace_profile_sha256":"5"*64,
-        "systemd_delegation_profile_sha256":"6"*64,"delegated_controllers":["cpu","memory","pids"],
-        "profile_sha256":"7"*64
+        "systemd_delegation_profile_sha256":"6"*64,"delegated_controllers":["cpu","memory","pids"]
     }
+    rootless_profile["profile_sha256"] = canonical_rootless_profile_sha256(rootless_profile)
     rootless_complete["host_identity"]["rootless_profile"] = rootless_profile
-    rootless_complete["host_identity"]["rootless_profile_digest"] = "7"*64
+    rootless_complete["host_identity"]["rootless_profile_digest"] = rootless_profile["profile_sha256"]
     rootless_types = {test["id"]: test["evidenceTypes"][0] for test in ROOTLESS_TESTS}
     rootless_complete["candidate_specific_test_results"] = [{
         "test_id": test["id"], "domain":"rootless-compatibility", "result":"passed",
@@ -431,6 +453,12 @@ def main():
     rootless_errors = errors_for(rootless_complete, schema_validator)
     if rootless_errors:
         raise AssertionError("synthetic rootless candidate-qualified record rejected: " + "; ".join(rootless_errors))
+    stale_profile = deepcopy(rootless_complete)
+    stale_profile["host_identity"]["rootless_profile"]["rootlesskit_version"] = "tampered-rootlesskit"
+    stale_errors = errors_for(stale_profile, schema_validator)
+    if not any("canonical SHA-256" in error for error in stale_errors):
+        raise AssertionError("rootless profile content changed without a digest update was accepted")
+    print("PASS  rejects rootless profile content changed without canonical digest update")
     print("PASS  accepts rootless qualification only with all four candidate-specific tests")
     print("PASS  accepts synthetic complete qualification while all execution authorizations remain false")
     print("NOTE  synthetic contract tests only; no host selected/tested and no real evidence/signature")
