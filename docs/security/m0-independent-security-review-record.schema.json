@@ -1,0 +1,562 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/security/m0-independent-security-review-record.schema.json",
+  "title": "M0 Independent Security and Architecture Review Record",
+  "description": "Evidence-bound review record; it can record recommendations but cannot itself authorize implementation, Phase A, Phase B, student or production execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "review_id",
+    "review_status",
+    "scope",
+    "participants",
+    "control_findings",
+    "decisions",
+    "residual_risks",
+    "review_rationale",
+    "reviewed_at",
+    "expires_at",
+    "signature_reference",
+    "privileged_implementation_authorized",
+    "phase_a_authorized",
+    "phase_b_authorized",
+    "student_execution_authorized",
+    "production_execution_authorized"
+  ],
+  "$defs": {
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_id",
+        "object_version",
+        "sha256",
+        "byte_count",
+        "evidence_root_id",
+        "acquired_at",
+        "acquisition_tool",
+        "evidence_type",
+        "redaction_status",
+        "verification_status",
+        "independent_verifier_id",
+        "verifier_note"
+      ],
+      "properties": {
+        "reference_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "byte_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence_root_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "acquired_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "acquisition_tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_type": {
+          "enum": [
+            "design-document",
+            "ci-run",
+            "schema-test",
+            "host-runtime",
+            "host-configuration",
+            "fault-injection",
+            "supply-chain",
+            "operator-record"
+          ]
+        },
+        "redaction_status": {
+          "enum": [
+            "sanitized",
+            "redacted",
+            "non-sensitive"
+          ]
+        },
+        "verification_status": {
+          "enum": [
+            "unverified",
+            "verified",
+            "failed"
+          ]
+        },
+        "independent_verifier_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verifier_note": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verification_status": {
+                "const": "verified"
+              }
+            },
+            "required": [
+              "verification_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "independent_verifier_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "verifier_note": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "controlFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control_id",
+        "evidence_class",
+        "result",
+        "verification_method",
+        "reviewer_finding",
+        "severity",
+        "remediation_owner",
+        "evidence_refs"
+      ],
+      "properties": {
+        "control_id": {
+          "enum": [
+            "ARCH-001",
+            "ARCH-002",
+            "AUTH-001",
+            "AUTH-002",
+            "AUTH-003",
+            "API-001",
+            "PRIV-001",
+            "PRIV-002",
+            "RUNTIME-001",
+            "RUNTIME-002",
+            "OCI-001",
+            "NET-001",
+            "NET-002",
+            "CGROUP-001",
+            "FS-001",
+            "OUTPUT-001",
+            "LIFE-001",
+            "LIFE-002",
+            "LIFE-003",
+            "CLOCK-001",
+            "CLOCK-002",
+            "JOURNAL-001",
+            "JOURNAL-002",
+            "JOURNAL-003",
+            "WATCH-001",
+            "WATCH-002",
+            "WATCH-003",
+            "EVID-001",
+            "EVID-002",
+            "SUPPLY-001",
+            "OPS-001",
+            "OPS-002"
+          ]
+        },
+        "evidence_class": {
+          "enum": [
+            "design",
+            "host",
+            "mixed"
+          ]
+        },
+        "result": {
+          "enum": [
+            "not-reviewed",
+            "pass",
+            "fail",
+            "conditional"
+          ]
+        },
+        "verification_method": {
+          "type": "string"
+        },
+        "reviewer_finding": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "unassigned",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "remediation_owner": {
+          "type": "string"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "pass"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "verification_method": {
+                "minLength": 1
+              },
+              "reviewer_finding": {
+                "minLength": 1
+              },
+              "severity": {
+                "const": "none"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "enum": [
+                  "fail",
+                  "conditional"
+                ]
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reviewer_finding": {
+                "minLength": 1
+              },
+              "severity": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              },
+              "remediation_owner": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "review_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "review_status": {
+      "enum": [
+        "not-reviewed",
+        "in-progress",
+        "completed"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "reviewed_commit_sha",
+        "review_scope",
+        "documents",
+        "host_selected",
+        "host_profile_id",
+        "runtime_profile_revision",
+        "resource_profile_revision",
+        "journal_profile_id"
+      ],
+      "properties": {
+        "repository": {
+          "const": "sivasreeonline/orbit-engine"
+        },
+        "reviewed_commit_sha": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "review_scope": {
+          "enum": [
+            "design-only",
+            "design-and-host-evidence"
+          ]
+        },
+        "documents": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "host_selected": {
+          "type": "boolean"
+        },
+        "host_profile_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runtime_profile_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resource_profile_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "journal_profile_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "participants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewer_id",
+        "host_owner_id",
+        "reviewer_independence_attested",
+        "independence_basis",
+        "conflict_disclosure"
+      ],
+      "properties": {
+        "reviewer_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host_owner_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewer_independence_attested": {
+          "type": "boolean"
+        },
+        "independence_basis": {
+          "type": "string"
+        },
+        "conflict_disclosure": {
+          "type": "string"
+        }
+      }
+    },
+    "control_findings": {
+      "type": "array",
+      "minItems": 32,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/controlFinding"
+      }
+    },
+    "decisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_decision",
+        "architecture_recommendation",
+        "implementation_recommendation",
+        "phase_a_recommendation",
+        "phase_b_recommendation"
+      ],
+      "properties": {
+        "review_decision": {
+          "enum": [
+            "not-reviewed",
+            "conditional",
+            "reject",
+            "approve-architecture-candidate",
+            "defer-pending-evidence"
+          ]
+        },
+        "architecture_recommendation": {
+          "enum": [
+            "not-reviewed",
+            "rootful-supervisor-candidate",
+            "rootless-containerd-candidate",
+            "reject-both",
+            "defer-evidence"
+          ]
+        },
+        "implementation_recommendation": {
+          "enum": [
+            "not-reviewed",
+            "recommend-after-separate-authorization",
+            "do-not-implement",
+            "defer"
+          ]
+        },
+        "phase_a_recommendation": {
+          "enum": [
+            "not-reviewed",
+            "not-eligible",
+            "eligible-for-separate-calibration-authorization",
+            "defer"
+          ]
+        },
+        "phase_b_recommendation": {
+          "enum": [
+            "not-reviewed",
+            "blocked",
+            "eligible-after-profile-approval",
+            "reject"
+          ]
+        }
+      }
+    },
+    "residual_risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "risk_id",
+          "description",
+          "severity",
+          "status",
+          "owner_id",
+          "acceptance_rationale"
+        ],
+        "properties": {
+          "risk_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "status": {
+            "enum": [
+              "open",
+              "mitigating",
+              "accepted",
+              "closed"
+            ]
+          },
+          "owner_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "acceptance_rationale": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "review_rationale": {
+      "type": "string"
+    },
+    "reviewed_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "signature_reference": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "privileged_implementation_authorized": {
+      "const": false
+    },
+    "phase_a_authorized": {
+      "const": false
+    },
+    "phase_b_authorized": {
+      "const": false
+    },
+    "student_execution_authorized": {
+      "const": false
+    },
+    "production_execution_authorized": {
+      "const": false
+    }
+  }
+}

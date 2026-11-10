@@ -1,0 +1,371 @@
+{
+  "schema_version": "1.0.0",
+  "review_id": null,
+  "review_status": "not-reviewed",
+  "scope": {
+    "repository": "sivasreeonline/orbit-engine",
+    "reviewed_commit_sha": "48fc52fc049bac8b8004fda7ac84b1a152872023",
+    "review_scope": "design-only",
+    "documents": [
+      "docs/adr/ADR-0019-m0-host-launch-boundary.md",
+      "docs/security/m0-sandbox-security-review-packet.md",
+      "docs/specifications/m0-supervisor-journal-implementation-contract.md",
+      "docs/specifications/m0-journal-backend-evaluation.md",
+      "docs/specifications/m0-runtime-proof-harness-design.md",
+      "docs/specifications/m0-proof-resource-profile-v1.md",
+      "docs/specifications/m0-host-preflight-and-proof-runbook.md",
+      "docs/schemas/m0-cleanup-calibration-authorization.schema.json"
+    ],
+    "host_selected": false,
+    "host_profile_id": null,
+    "runtime_profile_revision": null,
+    "resource_profile_revision": null,
+    "journal_profile_id": null
+  },
+  "participants": {
+    "reviewer_id": null,
+    "host_owner_id": null,
+    "reviewer_independence_attested": false,
+    "independence_basis": "",
+    "conflict_disclosure": ""
+  },
+  "control_findings": [
+    {
+      "control_id": "ARCH-001",
+      "evidence_class": "design",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "ARCH-002",
+      "evidence_class": "design",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "AUTH-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "AUTH-002",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "AUTH-003",
+      "evidence_class": "mixed",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "API-001",
+      "evidence_class": "design",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "PRIV-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "PRIV-002",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "RUNTIME-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "RUNTIME-002",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "OCI-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "NET-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "NET-002",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "CGROUP-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "FS-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "OUTPUT-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "LIFE-001",
+      "evidence_class": "mixed",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "LIFE-002",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "LIFE-003",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "CLOCK-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "CLOCK-002",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "JOURNAL-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "JOURNAL-002",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "JOURNAL-003",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "WATCH-001",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "WATCH-002",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "WATCH-003",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "EVID-001",
+      "evidence_class": "mixed",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "EVID-002",
+      "evidence_class": "host",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "SUPPLY-001",
+      "evidence_class": "mixed",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "OPS-001",
+      "evidence_class": "mixed",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    },
+    {
+      "control_id": "OPS-002",
+      "evidence_class": "design",
+      "result": "not-reviewed",
+      "verification_method": "",
+      "reviewer_finding": "",
+      "severity": "unassigned",
+      "remediation_owner": "",
+      "evidence_refs": []
+    }
+  ],
+  "decisions": {
+    "review_decision": "not-reviewed",
+    "architecture_recommendation": "not-reviewed",
+    "implementation_recommendation": "not-reviewed",
+    "phase_a_recommendation": "not-reviewed",
+    "phase_b_recommendation": "not-reviewed"
+  },
+  "residual_risks": [],
+  "review_rationale": "",
+  "reviewed_at": null,
+  "expires_at": null,
+  "signature_reference": null,
+  "privileged_implementation_authorized": false,
+  "phase_a_authorized": false,
+  "phase_b_authorized": false,
+  "student_execution_authorized": false,
+  "production_execution_authorized": false
+}
