@@ -73,7 +73,7 @@ Decision outcomes are rootful candidate, rootless candidate, reject both, or def
 
 ## 6. Host, runtime and boundary test catalogue
 
-Every test below is required for `host-candidate-qualified`. Runtime-starting and destructive tests remain blocked until their separate disposable-host authorizations exist.
+Every test in the common catalogue below is required for either candidate. Candidate B (`rootless-containerd-userns`) must additionally pass all four rootless-only tests in the next table; Candidate A must mark that additional gate `not-applicable` and contain no rootless-only results. Runtime-starting and destructive tests remain blocked until their separate disposable-host authorizations exist.
 
 | Test ID | Test | Required verification | Evidence type |
 |---|---|---|---|
@@ -95,6 +95,19 @@ Every test below is required for `host-candidate-qualified`. Runtime-starting an
 | CLK-001 | CLOCK_BOOTTIME suspend-aware elapsed clock | Exact audited clock API includes suspend; trigger anchor and restart re-arm verified | host-runtime / fault-injection |
 | CLK-002 | Reboot, NTP uncertainty and snapshot/restore | Boot identity/time uncertainty/rollback/reboot/restore fail closed and quarantine on ambiguity | fault-injection / host-runtime |
 | EVID-001 | Evidence object read-back and independent integrity | Immutable version/root/size/hash/redaction and independent verifier read-back | host-runtime / fault-injection |
+
+### Rootless-only candidate qualification tests
+
+These four additional tests are mandatory only when `scope.target_architecture` is `rootless-containerd-userns`. They are not replaced by the common RUN-001, CG-001, NET-001 or AUTH-001 tests because they exercise the exact RootlessKit/user-namespace integration points. For a rootful candidate, `rootless_userns_compatibility` must be `not-applicable` and `candidate_specific_test_results` must be empty.
+
+| Test ID | Test | Required verification | Evidence type |
+|---|---|---|---|
+| RLS-001 | Rootless containerd + runsc shim + caller-userns integration | Pin exact containerd 2.3.x, `containerd-shim-runsc-v1`, runsc and systrap builds; use caller-configured user namespaces via the selected rootless containerd path; prove create/start/status/cancel/delete and restart reconciliation; independently observe systrap and reject fallback | host-runtime / fault-injection |
+| RLS-002 | Rootless UID/GID mapping and helper provenance | Verify non-overlapping `/etc/subuid` and `/etc/subgid` ranges, multi-UID mappings, exact `newuidmap`/`newgidmap` binaries/hashes/owners/modes, RootlessKit identity/version/state/socket and AppArmor policy; prove the helper chain cannot control unrelated host users/resources | host-configuration / supply-chain / fault-injection |
+| RLS-003 | Rootless cgroup v2 delegation including CPU | Verify the actual user service's delegated `cpu`, `memory` and `pids` controllers, systemd delegation chain and effective cgroup files; under load prove CPU, memory and PID ceilings are enforced by the exact containerd/runsc stack, not merely configured | host-runtime / fault-injection |
+| RLS-004 | Rootless network namespace and host abstract-socket isolation | Prove the actual RootlessKit/userns network namespace and selected Netstack/TAP/user-mode path; demonstrate host abstract Unix sockets are not exposed; verify IPv4/IPv6/DNS/direct-IP/loopback/metadata denial and pre-uplink outer boundary | network-observation / host-configuration / fault-injection |
+
+The machine-readable record adds `gates.rootless_userns_compatibility` and `candidate_specific_test_results`. A rootless host can be `candidate-qualified` only when `RLS-001` through `RLS-004` are each passed with independently verified, test-specific evidence and that additional gate is `passed`. A design note, successful common test, or upstream documentation citation cannot mark any of these tests passed.
 
 ## 6. Journal backend qualification
 
@@ -176,8 +189,9 @@ Review decisions require distinct host owner and independent reviewer identities
 | Journal durability | JRN-001 through JRN-009 and JRN-012 through JRN-015 |
 | Integrated lifecycle | JRN-010 and JRN-011 |
 | Evidence integrity | EVID-001 |
+| Rootless compatibility (Candidate B only) | RLS-001 through RLS-004; Candidate A must mark not-applicable |
 
-`host-candidate-qualified` requires all catalogue tests passed, all gates passed, an exact selected host/runtime/storage/journal identity, a completed independent review with no unresolved high/critical findings, and verifiable evidence for each test. The record itself always keeps Phase A, Phase B, student and production authorization false.
+`host-candidate-qualified` requires all common catalogue tests passed, all applicable gates passed, an exact selected host/runtime/storage/journal identity, a completed independent review with no unresolved high/critical findings, and verifiable evidence for each test. Candidate B additionally requires all four RLS tests and its rootless compatibility gate; Candidate A must have no RLS results and mark the gate not-applicable. The record itself always keeps Phase A, Phase B, student and production authorization false.
 
 ## 10. Stop, fail and quarantine conditions
 
@@ -212,7 +226,7 @@ On stop: reject new work, continue best-effort independent termination when appl
 
 ## ADR-0019 candidate decision linkage
 
-`docs/adr/ADR-0019-decision-dossier.md` defines the candidate-specific configuration and evidence rules. Candidate A and Candidate B must each use the same 32 security control IDs and 33 host qualification tests. A host qualification report is candidate-, host-, commit- and profile-specific; it cannot be transferred between rootful and rootless deployments.
+`docs/adr/ADR-0019-decision-dossier.md` defines the candidate-specific configuration and evidence rules. Candidate A and Candidate B must each use the same 32 security control IDs and 33 common host qualification tests. Candidate B must additionally pass RLS-001 through RLS-004; these tests are mandatory only for rootless containerd/userns and are not-applicable to Candidate A. A host qualification report is candidate-, host-, commit- and profile-specific; it cannot be transferred between rootful and rootless deployments.
 
 The machine-readable ADR decision record is `docs/schemas/m0-adr-0019-decision-record.template.json`. Its blank state is pending and grants no implementation, Phase A, Phase B, student or production authorization.
 
