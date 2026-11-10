@@ -131,3 +131,8 @@ The append-only key lifecycle event schema is `docs/schemas/m0-crypto-key-lifecy
 Trust-bundle successors must increment generation by exactly one, bind the exact previous bundle digest, and preserve authority, root identity and environment. Revocation statements must identify an exact key ID/version and agree with that key's REVOKED status and revocation metadata. Duplicate key-version identities and duplicate revocation identities are rejected by semantic validation.
 
 The ledger remains an application-side projection. An externally anchored anti-rollback checkpoint is required to detect Neon restore to an earlier event/revocation generation. A schema-valid event or bundle does not authenticate its signature or establish custody.
+
+
+### External witness and evidence receipt schemas
+
+The external anti-rollback checkpoint and immutable evidence-object receipt are machine-readable proposals at `docs/schemas/m0-ledger-anti-rollback-checkpoint.schema.json` and `docs/schemas/m0-immutable-evidence-object-receipt.schema.json`. Their synthetic structural and semantic checks run through `scripts/validate_m0_witness_evidence_contract.py`. Exact witness-anchor equality is required after restore; exact object-version and content-digest readback plus retention-horizon and principal-separation checks are required before evidence acceptance. These checks do not integrate with or prove Neon, an external witness, R2, object lock or signatures.
