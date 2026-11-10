@@ -43,8 +43,8 @@ func (request ExecutionRequest) Validate() error {
 	}
 
 	digest, err := hex.DecodeString(request.SourceSHA256)
-	if err != nil || len(digest) != 32 {
-		return fieldError("sourceSha256", "must be a 64-character hexadecimal SHA-256 digest")
+	if err != nil || len(digest) != 32 || request.SourceSHA256 != strings.ToLower(request.SourceSHA256) {
+		return fieldError("sourceSha256", "must be a 64-character lowercase hexadecimal SHA-256 digest")
 	}
 
 	if request.Limits.CPUQuotaMillis <= 0 {
