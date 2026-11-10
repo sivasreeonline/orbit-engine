@@ -77,6 +77,23 @@ def main() -> None:
     report_v = schemas[schema_names[3]]
     host_v, fence_v, phase_v, revoke_v = (schemas[name] for name in schema_names[4:])
 
+    envelope_schema = load_json(SCHEMAS / schema_names[0])
+    payload_schema_map = {
+        "host-epoch-response": schema_names[4],
+        "provider-fence-attestation": schema_names[5],
+        "phase-a-authorization": schema_names[6],
+        "trust-bundle": schema_names[1],
+        "key-revocation": schema_names[7],
+    }
+    envelope_rules = {
+        rule["if"]["properties"]["message_type"]["const"]: rule["then"]["properties"]["payload"]
+        for rule in envelope_schema["allOf"]
+        if "message_type" in rule.get("if", {}).get("properties", {})
+    }
+    for message_type, schema_name in payload_schema_map.items():
+        check(envelope_rules.get(message_type) == load_json(SCHEMAS / schema_name),
+              f"envelope embedded payload schema drifted for {message_type}")
+
     host_payload = {
         "host_enrollment_id": "enrollment-01", "provider_id": "provider-x",
         "provider_account_id": "account-01", "provider_region": "region-1",
@@ -278,6 +295,18 @@ def main() -> None:
     }, "fixture safety invariants changed")
 
     contract = (ROOT / "docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md").read_text(encoding="utf-8")
+    ledger = (ROOT / "docs/specifications/m0-authorization-ledger-data-model.md").read_text(encoding="utf-8")
+    for ledger_term in ["host_epoch_receipts", "host_epoch_acceptances", "phase_a_authorizations",
+                        "max_total_runs", "signer_key_version"]:
+        check(ledger_term in ledger, f"authorization payload/ledger alignment missing {ledger_term}")
+    authorization_schema = load_json(SCHEMAS / "m0-cleanup-calibration-authorization.schema.json")
+    check("host_incarnation_epoch" in authorization_schema["properties"]["host"]["required"],
+          "cleanup-calibration authorization must bind the host incarnation epoch")
+    check("host_qualification_record_ref" in authorization_schema["properties"]["host"]["required"],
+          "cleanup-calibration authorization must bind host qualification evidence")
+    check("independent_security_review_record_ref" in authorization_schema["properties"]["signoff"]["required"],
+          "cleanup-calibration authorization must bind independent security review")
+
     for name in schema_names + ["m0-crypto-verification-fixture-catalog.json"]:
         check(name in contract, f"crypto contract must link {name}")
 
