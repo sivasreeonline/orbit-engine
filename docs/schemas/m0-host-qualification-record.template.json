@@ -17,6 +17,8 @@
     "region": null,
     "vm_shape": null,
     "host_instance_id": null,
+    "host_incarnation_epoch": null,
+    "prior_incarnation_fence_evidence_ref": null,
     "boot_id": null,
     "image_digest": null,
     "os_release": null,
