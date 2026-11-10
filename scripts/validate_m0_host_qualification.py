@@ -279,6 +279,33 @@ def errors_for(record, schema_validator):
                 errors.append(f"{reference_field} must be verified by a principal independent of host owner and security reviewer")
             if evidence.get("acquired_by_id") in {review_context.get("host_owner_id"), review_context.get("reviewer_id"), evidence.get("independent_verifier_id")}:
                 errors.append(f"{reference_field} evidence acquirer must be distinct from host owner, reviewer and verifier")
+        # The provider fence must exist before independent review, and its
+        # evidence acquisition cannot predate the claimed fence verification.
+        # This is a chronology check only; it does not authenticate the provider.
+        fence_evidence_matches = evidence_by_id.get(host.get("prior_incarnation_fence_evidence_ref"), [])
+        try:
+            fence_verified_raw = host.get("provider_fence_verified_at")
+            review_verified_raw = review_context.get("reviewed_at")
+            if not fence_verified_raw or not review_verified_raw:
+                errors.append("provider fence verification and independent review timestamps are required")
+            else:
+                fence_verified_at = datetime.fromisoformat(fence_verified_raw.replace("Z", "+00:00"))
+                review_verified_at = datetime.fromisoformat(review_verified_raw.replace("Z", "+00:00"))
+                if fence_verified_at.tzinfo is None or review_verified_at.tzinfo is None:
+                    errors.append("provider fence and review timestamps must include explicit timezone offsets")
+                elif fence_verified_at > review_verified_at:
+                    errors.append("provider fence must be verified before independent host qualification review")
+            if len(fence_evidence_matches) == 1:
+                acquired_raw = fence_evidence_matches[0].get("acquired_at")
+                if acquired_raw and fence_verified_raw:
+                    evidence_acquired_at = datetime.fromisoformat(acquired_raw.replace("Z", "+00:00"))
+                    fence_verified_at = datetime.fromisoformat(fence_verified_raw.replace("Z", "+00:00"))
+                    if evidence_acquired_at.tzinfo is None or fence_verified_at.tzinfo is None:
+                        errors.append("provider fence evidence and verification timestamps must include explicit timezone offsets")
+                    elif evidence_acquired_at < fence_verified_at:
+                        errors.append("provider fence evidence acquisition cannot predate the claimed fence verification")
+        except (ValueError, TypeError):
+            errors.append("provider fence verification, evidence acquisition and review timestamps must be valid timezone-aware datetimes")
         scope = record.get("scope", {})
         if not scope.get("host_provisioning_authorization_ref") or scope.get("target_architecture") == "not-selected":
             errors.append("candidate-qualified requires a separately authorized host and selected architecture")
@@ -583,6 +610,15 @@ def main():
     if not any("exactly one evidence record" in error for error in errors_for(duplicate_fence_ref,schema_validator)):
         raise AssertionError("candidate-qualified record accepted duplicate provider fence evidence references")
     print("PASS  rejects mismatched, unverified and duplicate epoch/fence evidence")
+    future_fence = deepcopy(complete)
+    future_fence["host_identity"]["provider_fence_verified_at"] = (synthetic_now + timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    if not any("before independent host qualification review" in error for error in errors_for(future_fence, schema_validator)):
+        raise AssertionError("provider fence timestamp after independent review was accepted")
+    predated_fence_evidence = deepcopy(complete)
+    predated_fence_evidence["host_identity"]["provider_fence_verified_at"] = (synthetic_now - timedelta(days=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    if not any("cannot predate the claimed fence verification" in error for error in errors_for(predated_fence_evidence, schema_validator)):
+        raise AssertionError("provider fence evidence acquired before claimed verification was accepted")
+    print("PASS  rejects provider-fence chronology inconsistencies")
 
     verifier_is_host_owner = deepcopy(complete)
     verifier_is_host_owner["test_results"][0]["evidence_refs"][0]["independent_verifier_id"] = verifier_is_host_owner["review"]["host_owner_id"]
