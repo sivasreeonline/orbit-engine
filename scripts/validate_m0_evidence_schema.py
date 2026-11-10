@@ -147,6 +147,7 @@ def valid_manifest():
             for fixture_id in REQUIRED_FIXTURE_IDS
         ],
         "overall_result": "passed",
+        "infrastructure_state": "healthy",
         "security_review": {
             "decision": "approved",
             "reviewed_at": "2026-11-10T00:00:00Z",
@@ -274,8 +275,25 @@ def main():
     ):
         expect_invalid(validator, manifest, "schema-only " + label)
 
+    cleanup_failed = valid_manifest()
+    cleanup_failed["infrastructure_state"] = "cleanup_failed"
+    cases.append(("passed result with cleanup failure", cleanup_failed))
+
+    evidence_incomplete = valid_manifest()
+    evidence_incomplete["infrastructure_state"] = "evidence_incomplete"
+    cases.append(("passed result with incomplete evidence", evidence_incomplete))
+
+    host_failed = valid_manifest()
+    host_failed["infrastructure_state"] = "host_failed"
+    cases.append(("passed result with failed host", host_failed))
+
+    missing_infrastructure_state = valid_manifest()
+    del missing_infrastructure_state["infrastructure_state"]
+    cases.append(("passed result without infrastructure state", missing_infrastructure_state))
+
     incomplete = valid_manifest()
     incomplete["overall_result"] = "incomplete"
+    incomplete["infrastructure_state"] = "evidence_incomplete"
     incomplete["tests"][0]["status"] = "blocked"
     incomplete["security_review"]["decision"] = "pending"
     incomplete["security_review"]["reviewed_at"] = None
