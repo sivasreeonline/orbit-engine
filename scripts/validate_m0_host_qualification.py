@@ -56,6 +56,7 @@ BASELINE_IDS = {"HST-001", "HST-002", "HST-003", "HST-004", "HST-005"}
 RUNTIME_IDS = {"AUTH-001", "RUN-001", "CG-001", "FS-001", "OUT-001"}
 NETWORK_IDS = {"NET-001", "NET-002"}
 WATCHDOG_IDS = {"WDG-001", "WDG-002", "WDG-003"}
+WATCHDOG_SCENARIO_IDS = {f"WD-{i:03d}" for i in range(1, 8)}
 OUTER_IDS = {"WDG-003"}
 CLOCK_IDS = {"CLK-001", "CLK-002"}
 JOURNAL_IDS = {f"JRN-{i:03d}" for i in range(1, 10)} | {f"JRN-{i:03d}" for i in range(12, 16)}
@@ -346,6 +347,9 @@ def main():
     for test in TESTS:
         if f"| {test['id']} |" not in protocol:
             raise AssertionError(f"protocol missing common test ID {test['id']}")
+    for scenario_id in WATCHDOG_SCENARIO_IDS:
+        if f"| {scenario_id} |" not in protocol:
+            raise AssertionError(f"protocol missing watchdog qualification subtest {scenario_id}")
     for test in ROOTLESS_TESTS:
         if f"| {test['id']} |" not in protocol:
             raise AssertionError(f"protocol missing rootless-only test ID {test['id']}")
