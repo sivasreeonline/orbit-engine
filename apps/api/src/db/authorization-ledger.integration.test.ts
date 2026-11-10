@@ -140,7 +140,11 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     await admin.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "${schemaName}" TO "${roleName}"`);
   });
 
-  beforeEach(() => {\n    authId = randomUUID();\n  });\n\n  afterAll(async () => {
+  beforeEach(() => {
+    authId = randomUUID();
+  });
+
+  afterAll(async () => {
     if (admin) {
       await admin.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`).catch(() => undefined);
       await admin.query(`DROP ROLE IF EXISTS "${roleName}"`).catch(() => undefined);
