@@ -503,6 +503,12 @@ def main():
     print(f"PASS  schema, template and {len(TESTS)} common qualification tests are synchronized")
     print(f"PASS  rootless candidate schema and {len(ROOTLESS_TESTS)} rootless-only tests are synchronized")
     print("PASS  runbook, journal evaluation, resource profile and security checklist cross-reference protocol")
+    if "report-wide immutable evidence ledger" not in protocol:
+        raise AssertionError("qualification protocol must define report-wide evidence-ledger identity rules")
+    if "exact same reference ID" not in protocol or "multiple reference IDs" not in protocol:
+        raise AssertionError("qualification protocol must define evidence reference reuse and object-version uniqueness")
+    if "backup provenance manifest" not in runbook or "backup artifact SHA-256" not in runbook:
+        raise AssertionError("host runbook must define backup provenance and artifact digest requirements")
 
     cases = []
     case = deepcopy(template); case["test_results"].pop(); cases.append(("missing test",case))
@@ -629,6 +635,45 @@ def main():
     complete["qualification_rationale"]="Synthetic positive test case only; no real host qualification is asserted."
     if errors_for(complete,schema_validator):
         raise AssertionError("synthetic fully-qualified record failed: " + "; ".join(errors_for(complete,schema_validator)))
+
+    duplicate_object_version = deepcopy(complete)
+    first_evidence = duplicate_object_version["test_results"][0]["evidence_refs"][0]
+    second_evidence = duplicate_object_version["test_results"][1]["evidence_refs"][0]
+    second_evidence["evidence_root_id"] = first_evidence["evidence_root_id"]
+    second_evidence["object_version"] = first_evidence["object_version"]
+    second_evidence["reference_id"] = "synthetic-distinct-reference-same-object"
+    duplicate_errors = errors_for(duplicate_object_version, schema_validator)
+    if not any("represented by multiple reference IDs" in error for error in duplicate_errors):
+        raise AssertionError("duplicate evidence object version under a second reference ID was accepted")
+
+    conflicting_reference = deepcopy(complete)
+    first_evidence = conflicting_reference["test_results"][0]["evidence_refs"][0]
+    conflicting_reference["test_results"][1]["evidence_refs"].append(deepcopy(first_evidence))
+    conflicting_reference["test_results"][1]["evidence_refs"][-1]["sha256"] = "f" * 64
+    conflicting_errors = errors_for(conflicting_reference, schema_validator)
+    if not any("conflicting immutable metadata" in error for error in conflicting_errors):
+        raise AssertionError("one evidence reference with conflicting metadata was accepted")
+
+    reused_reference = deepcopy(complete)
+    reused_reference["test_results"][1]["evidence_refs"] = deepcopy(reused_reference["test_results"][0]["evidence_refs"])
+    if errors_for(reused_reference, schema_validator):
+        raise AssertionError("the same immutable evidence reference could not be safely reused by another finding")
+
+    unverified_auxiliary = deepcopy(complete)
+    unverified_auxiliary["test_results"][0]["evidence_refs"].append({
+        **deepcopy(unverified_auxiliary["test_results"][0]["evidence_refs"][0]),
+        "reference_id": "synthetic-unverified-auxiliary",
+        "object_version": "unverified-version",
+        "verification_status": "unverified",
+        "independent_verifier_id": None,
+        "verification_note": ""
+    })
+    if errors_for(unverified_auxiliary, schema_validator):
+        raise AssertionError("unverified supplementary evidence should not invalidate an otherwise passed finding")
+    unverified_auxiliary["test_results"][0]["evidence_refs"][-1]["acquired_by_id"] = unverified_auxiliary["review"]["host_owner_id"]
+    if not any("evidence acquirer must be distinct" in error for error in errors_for(unverified_auxiliary, schema_validator)):
+        raise AssertionError("host owner acquisition of supplementary evidence was accepted")
+    print("PASS  enforces report-wide immutable evidence reference/object-version identity and principal separation")
 
     missing_epoch = deepcopy(complete)
     missing_epoch["host_identity"]["host_incarnation_epoch"] = None
