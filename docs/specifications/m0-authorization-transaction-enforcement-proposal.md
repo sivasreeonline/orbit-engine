@@ -73,7 +73,7 @@ This is a normative sequence, not deployable SQL:
 
 ## 6. Deterministic reference-model validator
 
-`scripts/validate_m0_authorization_transaction_contract.py` is a pure-Python in-memory reference model. It tests pre-commit rollback, post-commit lost acknowledgement, idempotency, changed-digest conflicts, final-slot enforcement, both claim/revocation serial orderings, post-revocation resume denial, immutable claim identity, run-event terminality, digest-chain tamper detection and stale revocation freshness.
+`scripts/validate_m0_authorization_transaction_contract.py` is a pure-Python in-memory reference model. It tests pre-commit rollback, post-commit lost acknowledgement, idempotency, changed-digest conflicts, final-slot enforcement, both claim/revocation serial orderings, post-revocation resume denial, immutable claim identity, run-event terminality, digest-chain tamper detection and stale revocation freshness. Its companion fixture catalog `docs/schemas/m0-authorization-transaction-fixture-catalog.json` requires exactly 15 unique cases (TX-001 through TX-015), all mapped to this executable reference validator.
 
 This is not PostgreSQL integration. Before migration approval, exact procedures and constraints must be tested against PostgreSQL with concurrent sessions, forced process termination, connection loss around COMMIT, serialization retries, role/privilege tests, backup/restore and independent witness reconciliation.
 
