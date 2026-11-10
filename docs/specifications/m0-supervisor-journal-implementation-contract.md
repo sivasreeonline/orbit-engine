@@ -176,7 +176,7 @@ The following logical records are mandatory regardless of the backend. They are 
 | `triggers` | Unique trigger ID; attempt and generations; trigger sequence; trigger type; authenticated source; boot ID; BOOTTIME observation; UTC audit timestamp; primary/secondary/late disposition; termination-request timestamp; durable persistence disposition. |
 | `finalization_branches` | Unique `(attempt_id, branch, branch_generation)`; branch kind `cleanup` or `evidence`; owner generation; state; disposition; bounded error class; start/completion timestamps; independent verification reference. |
 | `terminal_results` | Unique attempt ID; immutable result classification; final state version; winning trigger ID/cause; cleanup disposition; evidence disposition; terminal commit timestamp; response descriptor digest. |
-| `evidence_references` | Opaque attempt-scoped object key/version; SHA-256; byte count; evidence-root ID; redaction disposition; independent verification status. No raw content or private URL. |
+| `evidence_references` | Opaque attempt-scoped object key/version; SHA-256; byte count; evidence-root ID; `acquired_by_id` principal; independent verifier ID; verification status/time/note; redaction disposition. The acquirer, verifier, host owner and security reviewer are distinct principals. No raw content or private URL. |
 | `quarantine_records` | Host/attempt identity; quarantine reason code; observed resources/uncertainty class; originating generation; timestamp; operator/recovery disposition; evidence reference. Never delete unresolved quarantine records during ordinary retention. |
 
 ### 6.1 Required database constraints
