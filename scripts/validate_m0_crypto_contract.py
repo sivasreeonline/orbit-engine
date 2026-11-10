@@ -425,6 +425,32 @@ def main() -> None:
     catalog = load_json(SCHEMAS / "m0-crypto-verification-fixture-catalog.json")
     check(catalog["status"] == "contract-fixtures-only", "fixture catalog must remain structural only")
     check(catalog["cryptographic_profile_selected"] is False, "profile must remain unselected")
+    expected_lifecycle = {
+        ("NONE", "GENERATED", "KEY_GENERATED"): "ACCEPT",
+        ("GENERATED", "PENDING", "KEY_SUBMITTED_FOR_ACTIVATION"): "ACCEPT",
+        ("PENDING", "ACTIVE", "KEY_ACTIVATED"): "ACCEPT",
+        ("ACTIVE", "DEPRECATED_VERIFY_ONLY", "KEY_DEPRECATED"): "ACCEPT",
+        ("ACTIVE", "REVOKED", "KEY_REVOKED"): "ACCEPT",
+        ("DEPRECATED_VERIFY_ONLY", "REVOKED", "KEY_REVOKED"): "ACCEPT",
+        ("REVOKED", "DESTROYED", "KEY_DESTROYED"): "ACCEPT",
+        ("REVOKED", "ACTIVE", "KEY_ACTIVATED"): "REJECT",
+        ("ACTIVE", "GENERATED", "KEY_GENERATED"): "REJECT",
+        ("PENDING", "DESTROYED", "KEY_DESTROYED"): "REJECT",
+    }
+    actual_lifecycle = {}
+    for case in lifecycle_cases:
+        transition = case["transition"].split(" -> ")
+        matching = [key_tuple for key_tuple in expected_lifecycle if
+                    key_tuple[0] == transition[0] and key_tuple[1] == transition[1]]
+        check(len(matching) == 1, f"unknown key lifecycle fixture transition {case['transition']}")
+        actual_lifecycle[matching[0]] = case["expected"]
+    check(actual_lifecycle == expected_lifecycle,
+          "catalogued key lifecycle transition cases drifted from executable transition matrix")
+    check(all((case["expected"] == "ACCEPT") == valid_key_transition(*next(
+        item for item in expected_lifecycle if item[0] == case["transition"].split(" -> ")[0]
+        and item[1] == case["transition"].split(" -> ")[1])) for case in lifecycle_cases),
+        "key lifecycle catalog expectation differs from transition evaluator")
+
     lifecycle_cases = catalog.get("key_lifecycle_transition_cases", [])
     check(catalog.get("required_key_lifecycle_transition_case_count") == 10
           and len(lifecycle_cases) == 10, "key lifecycle transition matrix must contain ten cases")
