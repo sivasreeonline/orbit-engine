@@ -1,0 +1,73 @@
+{
+  "catalog_version": "0.1.0",
+  "status": "contract-fixtures-only",
+  "description": "Structural acceptance catalog. These fixtures deliberately contain no fabricated public keys, signatures, or cryptographic PASS results. Algorithm-specific known-answer vectors are gated until an approved profile and library exist.",
+  "cryptographic_profile_selected": false,
+  "positive_cases": [
+    {
+      "id": "CRYPTO-P-001",
+      "case": "envelope-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-002",
+      "case": "trust-bundle-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-003",
+      "case": "key-metadata-valid-active",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-004",
+      "case": "verification-report-valid-audit-only",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    }
+  ],
+  "negative_cases": [
+    "CRYPTO-N-001-unknown-message-type",
+    "CRYPTO-N-002-domain-message-type-mismatch",
+    "CRYPTO-N-003-unknown-algorithm",
+    "CRYPTO-N-004-malformed-signature-base64",
+    "CRYPTO-N-005-invalid-payload-digest",
+    "CRYPTO-N-006-expiry-before-issuance",
+    "CRYPTO-N-007-duplicate-envelope-field",
+    "CRYPTO-N-008-noncanonical-payload-bytes",
+    "CRYPTO-N-009-key-purpose-mismatch",
+    "CRYPTO-N-010-revoked-key-admission",
+    "CRYPTO-N-011-trust-bundle-generation-rollback",
+    "CRYPTO-N-012-missing-antirollback-witness",
+    "CRYPTO-N-013-evidence-version-digest-mismatch",
+    "CRYPTO-N-014-cross-environment-key",
+    "CRYPTO-N-015-cross-protocol-signature-reuse",
+    "CRYPTO-N-016-replayed-nonce-or-epoch",
+    "CRYPTO-N-017-unknown-revocation-freshness",
+    "CRYPTO-N-018-valid-signature-with-unverified-provider-fence",
+    "CRYPTO-N-019-private-key-field-in-public-metadata",
+    "CRYPTO-N-020-accept-decision-with-failed-check"
+  ],
+  "required_negative_case_count": 20,
+  "known_answer_vectors": {
+    "status": "blocked-pending-profile-selection",
+    "required_after_approval": [
+      "canonical-payload-bytes",
+      "public-key",
+      "signature",
+      "expected-digest",
+      "expected-verification-result",
+      "reason-code",
+      "implementation-and-library-version"
+    ]
+  },
+  "safety_invariants": {
+    "private_key_material_in_fixtures": false,
+    "production_keys_in_fixtures": false,
+    "signature_verification_claimed": false,
+    "execution_authorization": false
+  }
+}
