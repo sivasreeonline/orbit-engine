@@ -71,6 +71,31 @@ Do not modify preflight to silently install or configure host packages/firewall/
 
 Decision outcomes are rootful candidate, rootless candidate, reject both, or defer pending evidence. A lower apparent privilege level is not proof that required controls work. If either candidate cannot demonstrate every required control, mark it not qualified.
 
+## 6. Host, runtime and boundary test catalogue
+
+Every test below is required for `host-candidate-qualified`. Runtime-starting and destructive tests remain blocked until their separate disposable-host authorizations exist.
+
+| Test ID | Test | Required verification | Evidence type |
+|---|---|---|---|
+| HST-001 | Host incarnation and immutable identity | Control-plane host instance identity, boot ID, image digest and enrollment identity; no host metadata query | host-configuration |
+| HST-002 | OS, kernel, architecture and cgroup baseline | OS/kernel/architecture/virtualization and unified cgroup v2 controllers | host-configuration |
+| HST-003 | Filesystem, mount and storage identity | Filesystem/mount/device/storage/cache/sync characteristics; identify network/FUSE storage | filesystem-storage |
+| HST-004 | Live containerd daemon configuration | Effective unit/ExecStart, process identity, selected config and import graph; redacted allowlisted capture only | host-configuration |
+| HST-005 | Runtime package and binary provenance | Exact package versions/source IDs, signatures/provenance and binary hashes | supply-chain |
+| AUTH-001 | Runner, supervisor and socket identity separation | Effective identities, socket ACL/peer credentials and negative authorization tests | host-configuration / fault-injection |
+| RUN-001 | Live gVisor systrap and lifecycle smoke | Separately authorized harmless digest-pinned image create/start/stop/delete; independently observed systrap | host-runtime / fault-injection |
+| CG-001 | Hard cgroup v2 enforcement | Measured CPU, memory and PID ceilings at sandbox and outer host | host-runtime / fault-injection |
+| NET-001 | Default-deny egress coverage | Sandbox-originated IPv4/IPv6/DNS/direct-IP/loopback/alternate-interface probes plus host-side drop evidence | network-observation / host-configuration |
+| NET-002 | Metadata deny before host uplink | Independently prove outer metadata deny before uplink; probe only in sandbox, never query from host | network-observation / host-configuration |
+| FS-001 | Mount, namespace and scratch isolation | Read-only base, bounded scratch, no host path/device/namespace/socket exposure | host-runtime / fault-injection |
+| OUT-001 | Output, pipe and inherited-descriptor containment | Concurrent drains, atomic accounting, bounded staging, inherited-pipe and evidence-outage tests | host-runtime / fault-injection |
+| WDG-001 | Per-attempt cleanup controller independence | Immediate termination at first trigger, independent resource absence, journal/evidence outage behavior | fault-injection / host-runtime |
+| WDG-002 | Supervisor liveness/recovery watchdog fencing | Pause/deadlock/crash; exact service stop, kernel lock release before replacement, generation reconciliation | fault-injection / host-configuration |
+| WDG-003 | Outer VM safety boundary and hard stop | Out-of-VM CPU/memory/PID/disk/wall cutoff and independent stop/rebuild path | watchdog-control-plane / operator-record |
+| CLK-001 | CLOCK_BOOTTIME suspend-aware elapsed clock | Exact audited clock API includes suspend; trigger anchor and restart re-arm verified | host-runtime / fault-injection |
+| CLK-002 | Reboot, NTP uncertainty and snapshot/restore | Boot identity/time uncertainty/rollback/reboot/restore fail closed and quarantine on ambiguity | fault-injection / host-runtime |
+| EVID-001 | Evidence object read-back and independent integrity | Immutable version/root/size/hash/redaction and independent verifier read-back | host-runtime / fault-injection |
+
 ## 6. Journal backend qualification
 
 ### 6.1 Separate storage-only and integrated testing
