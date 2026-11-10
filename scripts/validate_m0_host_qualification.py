@@ -159,6 +159,50 @@ def errors_for(record, schema_validator):
         if finding.get("result") in {"blocked", "deferred"} and not finding.get("finding_summary", "").strip():
             errors.append(f"{test_id}: blocked/deferred rootless test requires a reason")
 
+    # Treat all evidence references in the report as one ledger. References are
+    # immutable ledger entries: a reference ID is defined once, and one exact
+    # object version may not be represented by competing reference IDs.
+    # The same reference ID may be attached to multiple findings, but every
+    # occurrence must carry byte-for-byte equivalent metadata.
+    review_roles = {review.get("reviewer_id"), review.get("host_owner_id")} - {None, ""}
+    all_evidence_occurrences = []
+    for finding in results + rootless_results:
+        for evidence in finding.get("evidence_refs", []):
+            all_evidence_occurrences.append((finding.get("test_id"), evidence))
+        for scenario_id, subtest in finding.get("watchdog_subtests", {}).items():
+            for evidence in subtest.get("evidence_refs", []):
+                all_evidence_occurrences.append((f'{finding.get("test_id")}/{scenario_id}', evidence))
+
+    evidence_by_reference = {}
+    evidence_by_object_version = {}
+    for owner, evidence in all_evidence_occurrences:
+        reference_id = evidence.get("reference_id")
+        object_key = (evidence.get("evidence_root_id"), evidence.get("object_version"))
+        if reference_id:
+            evidence_by_reference.setdefault(reference_id, []).append((owner, evidence))
+        if all(object_key):
+            evidence_by_object_version.setdefault(object_key, []).append((owner, evidence))
+        if evidence.get("verification_status") == "verified":
+            if not evidence.get("independent_verifier_id"):
+                errors.append(f"{owner}: verified evidence requires an independent verifier identity")
+            elif evidence.get("independent_verifier_id") in review_roles:
+                errors.append(f"{owner}: evidence verifier must be independent of reviewer and host owner")
+            if not evidence.get("acquired_by_id"):
+                errors.append(f"{owner}: evidence requires an accountable acquisition principal")
+            elif evidence.get("acquired_by_id") in review_roles or evidence.get("acquired_by_id") == evidence.get("independent_verifier_id"):
+                errors.append(f"{owner}: evidence acquirer must be distinct from verifier, reviewer and host owner")
+
+    for reference_id, occurrences in evidence_by_reference.items():
+        canonical = occurrences[0][1]
+        if any(evidence != canonical for _, evidence in occurrences[1:]):
+            errors.append(f"evidence reference {reference_id!r} has conflicting immutable metadata across findings")
+    for object_key, occurrences in evidence_by_object_version.items():
+        reference_ids = {evidence.get("reference_id") for _, evidence in occurrences}
+        if len(reference_ids) > 1:
+            errors.append(
+                f"immutable evidence object version {object_key!r} is represented by multiple reference IDs"
+            )
+
     gates = record.get("gates", {})
     if gates.get("baseline_inspection") == "passed":
         if not BASELINE_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
