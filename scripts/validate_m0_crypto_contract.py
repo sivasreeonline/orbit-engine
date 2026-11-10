@@ -52,7 +52,7 @@ def main() -> None:
         "issuer_id": "synthetic-authority", "key_id": "synthetic-key", "key_version": "1",
         "algorithm": "Ed25519-candidate", "audience": "orbit-m0-host-agent",
         "issued_at": "2026-01-01T00:00:00Z", "not_before": "2026-01-01T00:00:00Z",
-        "expires_at": "2026-01-01T00:05:00Z", "payload": {"synthetic": True},
+        "expires_at": "2026-01-01T00:05:00Z", "payload": {
         "payload_sha256": "a" * 64, "signature_encoding": "base64", "signature": "c3ludGhldGlj"
     }
     accepted(envelope_v, envelope, "synthetic envelope structure")
