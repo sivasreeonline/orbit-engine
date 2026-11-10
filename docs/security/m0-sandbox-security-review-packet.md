@@ -194,3 +194,7 @@ Review `docs/adr/ADR-0019-upstream-compatibility-evidence.md` alongside the inde
 ## Immutable upstream source baseline
 
 The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-source-manifest.json`; the exact manifest SHA-256 must be embedded in any completed ADR-0019 decision record. A reviewer must check the eight source pins and recorded signature-verification status. The branch-head URLs are discovery references only; the manifest points to immutable commit URLs and records Git blob SHA-1 plus content SHA-256.
+
+## Cryptographic trust and key lifecycle review
+
+Independent review must assess docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md, including trust-root isolation, signer/verifier principal separation, algorithm and canonicalization selection, domain separation, key custody and compromise response, trust-bundle anti-rollback, revocation freshness, trusted-time uncertainty, immutable evidence references and cross-language negative test vectors. The review must not treat a valid signature as proof that provider fencing occurred. No algorithm or key custody provider is approved until compatibility and independent review are complete.
