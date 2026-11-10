@@ -37,6 +37,15 @@ This is a proposed proof boundary, not permission to implement or provision it b
 9. Never expose the supervisor socket, containerd socket, journal, or host evidence directory to the guest.
 10. Fail closed on unknown fields, stale profiles, missing digests, authorization failure, uncertain cleanup, or unsupported runtime settings.
 
+11. Place the supervisor socket beneath a root-owned, non-runner-writable directory; validate socket inode, owner, group, mode, and parent path; reject symlink substitution.
+12. Authenticate every connection using kernel-provided Unix peer credentials and compare against one configured runner UID/GID. Authorize each operation against a durable proof-run/fixture/attempt record; never trust identity claims in request fields.
+13. Bound request size, framing, concurrency, and operation duration; reject malformed UTF-8/JSON, duplicate keys, unknown fields, trailing data, and unexpected file descriptors.
+14. Keep the runner outside the containerd socket access group. Only the dedicated supervisor identity may access containerd; no generic containerd proxy or command API is permitted.
+15. Treat rootful containerd access as host-level authority. Record the exact supervisor capability set, systemd hardening, writable paths, syscall surface, and residual privilege risk; if privilege cannot be sufficiently constrained, revisit the rootless alternative.
+16. Persist operation intent before side effects and observed state after them. Enforce durable unique idempotency/attempt keys and compare-and-set terminal transitions.
+17. On restart, reconcile by deterministic supervisor-owned sandbox identity against containerd tasks, shim processes, cgroups, namespaces, mounts, network state, and scratch. Never blindly repeat create or adopt unknown resources.
+18. Cleanup runs independently of client connections. Terminal success requires verified absence of every workload resource; uncertainty means infrastructure failure and host quarantine.
+
 ### Explicitly prohibited
 
 - Adding the runner to the `docker` group or any group that grants broad containerd control.
