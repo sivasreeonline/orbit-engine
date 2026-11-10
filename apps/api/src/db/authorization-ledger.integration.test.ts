@@ -210,7 +210,7 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     );
     await writer.query("ROLLBACK");
     const rows = await setup.query(
-      "SELECT consumed_runs, (SELECT count(*)::int FROM authorization_run_claims) AS claims, (SELECT count(*)::int FROM authorization_run_events) AS events FROM authorization_state WHERE authorization_id = $1",
+      "SELECT consumed_runs, (SELECT count(*)::int FROM authorization_run_claims WHERE authorization_id = $1) AS claims, (SELECT count(*)::int FROM authorization_run_events WHERE authorization_id = $1) AS events FROM authorization_state WHERE authorization_id = $1",
       [authId],
     );
     expect(rows.rows[0]).toEqual({ consumed_runs: 0, claims: 0, events: 0 });
