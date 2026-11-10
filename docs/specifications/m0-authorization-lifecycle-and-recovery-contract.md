@@ -122,3 +122,12 @@ The cryptographic trust, canonical encoding, signed-envelope, key-custody, rotat
 ## 10. Cryptographic schema enforcement
 
 Machine-readable signed-envelope, trust-bundle, key-metadata and verification-report proposals plus their structural fixture catalog are maintained under docs/schemas/m0-crypto-*. The validator is scripts/validate_m0_crypto_contract.py. These schemas constrain representation; they do not authenticate signatures, establish provider fencing or authorize execution.
+
+
+### Key lifecycle and trust-bundle transition contract
+
+The append-only key lifecycle event schema is `docs/schemas/m0-crypto-key-lifecycle-event.schema.json`. It defines explicit generation, pending, activation, deprecation, revocation and destruction transitions. Revocation is terminal for signing and admission; a revoked key may never return to ACTIVE. Historical public-key verification is a separate, policy-bounded audit capability and does not restore signing authority.
+
+Trust-bundle successors must increment generation by exactly one, bind the exact previous bundle digest, and preserve authority, root identity and environment. Revocation statements must identify an exact key ID/version and agree with that key's REVOKED status and revocation metadata. Duplicate key-version identities and duplicate revocation identities are rejected by semantic validation.
+
+The ledger remains an application-side projection. An externally anchored anti-rollback checkpoint is required to detect Neon restore to an earlier event/revocation generation. A schema-valid event or bundle does not authenticate its signature or establish custody.
