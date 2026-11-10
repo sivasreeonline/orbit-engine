@@ -74,6 +74,12 @@ func TestExecutionRequestValidateRejectsInvalidFields(t *testing.T) {
 			},
 		},
 		{
+			name: "non-canonical uppercase source digest",
+			mutate: func(request *ExecutionRequest) {
+				request.SourceSHA256 = strings.Repeat("A", 64)
+			},
+		},
+		{
 			name: "missing memory limit",
 			mutate: func(request *ExecutionRequest) {
 				request.Limits.MemoryBytes = 0
