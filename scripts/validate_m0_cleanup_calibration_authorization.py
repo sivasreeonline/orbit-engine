@@ -142,6 +142,10 @@ def synthetic_manifest() -> dict:
             "reviewer_role": "independent-security-reviewer",
             "independence_attested": True,
             "reviewed_at": "2026-11-10T00:00:00Z",
+            "independent_security_review_record_ref": "immutable://synthetic/security-review/record",
+            "independent_security_review_record_digest": digest("f"),
+            "fence_control_id": "FENCE-001",
+            "fence_control_result": "pass",
             "authorization_digest_sha256": digest("8"),
             "signature_reference": "synthetic-signature-reference",
         },
@@ -235,6 +239,12 @@ def main() -> int:
     no_network_deny = deepcopy(valid)
     no_network_deny["network_containment"]["metadata_link_local_denied_before_host_uplink"] = False
     cases.append(("metadata network deny not proven", no_network_deny))
+    fence_control_not_passed = deepcopy(valid)
+    fence_control_not_passed["signoff"]["fence_control_result"] = "not-reviewed"
+    cases.append(("FENCE-001 review not passed", fence_control_not_passed))
+    missing_review_record = deepcopy(valid)
+    del missing_review_record["signoff"]["independent_security_review_record_ref"]
+    cases.append(("missing signed independent security review record reference", missing_review_record))
     same_fence_verifier = deepcopy(valid)
     same_fence_verifier["evidence"]["host_fencing_verifier_id"] = same_fence_verifier["signoff"]["independent_reviewer_id"]
     cases.append(("fence evidence verifier is also independent reviewer", same_fence_verifier))
