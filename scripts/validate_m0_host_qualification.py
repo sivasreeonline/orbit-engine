@@ -379,6 +379,8 @@ def main():
             raise AssertionError(f"host runbook must document candidate-specific preflight setting {setting}")
     if "m0-host-and-journal-qualification-protocol.md" not in resource or "m0-host-and-journal-qualification-protocol.md" not in checklist:
         raise AssertionError("resource profile and independent security checklist must link qualification protocol")
+    if "all seven `WD-001` through `WD-007`" not in checklist:
+        raise AssertionError("independent security checklist must require all seven watchdog subtests")
     print("PASS  blank qualification record remains not-started and not-qualified")
     print(f"PASS  schema, template and {len(TESTS)} common qualification tests are synchronized")
     print(f"PASS  rootless candidate schema and {len(ROOTLESS_TESTS)} rootless-only tests are synchronized")
