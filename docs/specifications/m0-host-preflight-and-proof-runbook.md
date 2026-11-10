@@ -71,6 +71,9 @@ A test passes only with captured host-side evidence and an assertion that checks
 ## Phase 3 — Cancellation, recovery, and repeatability
 
 - Cancel while the workload is running; verify the complete process tree is terminated.
+- Race cancellation against natural exit, the 10-minute intake-based deadline, the 60-second sandbox watchdog, and output overflow. Verify one durable arbitration winner, immutable primary cause, retained secondary trigger records, and one terminal result.
+- Repeat cancellation and watchdog signals; verify idempotent termination/cleanup with no duplicate task or terminal transition. A late cancellation after finalization must not rewrite the result.
+- Restart the watchdog/supervisor during active execution and termination; verify the original persisted deadline is re-armed without granting a fresh budget.
 - Confirm cleanup before acknowledging cancellation.
 - Deliver the same test job twice; verify one logical execution and one result.
 - In separate controlled subcases, restart the runner, host supervisor, and containerd daemon during an active test; verify journal reconciliation, no duplicate execution, and absence of every process/task/container/shim/namespace/cgroup/mount/scratch/network-policy resource before terminal acknowledgement.
