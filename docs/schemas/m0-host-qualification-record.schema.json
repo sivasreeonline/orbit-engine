@@ -860,6 +860,8 @@
         "region",
         "vm_shape",
         "host_instance_id",
+        "host_incarnation_epoch",
+        "prior_incarnation_fence_evidence_ref",
         "boot_id",
         "image_digest",
         "os_release",
@@ -910,6 +912,20 @@
             "string",
             "null"
           ]
+        },
+        "host_incarnation_epoch": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "prior_incarnation_fence_evidence_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
         },
         "boot_id": {
           "type": [
