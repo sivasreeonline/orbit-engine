@@ -483,6 +483,56 @@ def main() -> None:
     check(not ledger_transition_valid("REVOKED","ACCEPTED"), "revoked authorization became accepted")
     check(not ledger_transition_valid("EXPIRED","ISSUED"), "expired authorization was reissued")
     check(not ledger_transition_valid("QUARANTINED","ACCEPTED"), "quarantined authorization was admitted")
+    def authorization_event_chain_valid(events: list[dict]) -> bool:
+        if not events:
+            return False
+        request_ids=set()
+        previous_digest=None
+        previous_state=None
+        expected_sequence=1
+        for event in events:
+            if event["sequence_no"]!=expected_sequence or event["previous_event_digest"]!=previous_digest:
+                return False
+            if event["request_id"] in request_ids:
+                return False
+            if previous_state is not None and event["prior_state"]!=previous_state:
+                return False
+            if event["new_state"] not in {"PREPARED","ISSUED","ACCEPTED","CONSUMED","REVOKED","EXPIRED","QUARANTINED"}:
+                return False
+            request_ids.add(event["request_id"])
+            previous_digest=event["event_digest"]
+            previous_state=event["new_state"]
+            expected_sequence+=1
+        return True
+    event_chain=[
+        {"sequence_no":1,"request_id":"req-1","prior_state":None,"new_state":"PREPARED",
+         "previous_event_digest":None,"event_digest":"a"*64},
+        {"sequence_no":2,"request_id":"req-2","prior_state":"PREPARED","new_state":"ISSUED",
+         "previous_event_digest":"a"*64,"event_digest":"b"*64},
+        {"sequence_no":3,"request_id":"req-3","prior_state":"ISSUED","new_state":"ACCEPTED",
+         "previous_event_digest":"b"*64,"event_digest":"c"*64},
+    ]
+    check(authorization_event_chain_valid(event_chain), "valid append-only authorization event chain rejected")
+    check(not authorization_event_chain_valid([event_chain[0],dict(event_chain[1],previous_event_digest="f"*64),
+                                               event_chain[2]]),
+          "tampered authorization event digest chain accepted")
+    check(not authorization_event_chain_valid([event_chain[0],dict(event_chain[1],request_id="req-1"),
+                                               event_chain[2]]),
+          "duplicate authorization event request ID accepted")
+    check(not authorization_event_chain_valid([event_chain[0],dict(event_chain[1],sequence_no=3),
+                                               event_chain[2]]),
+          "authorization event sequence gap accepted")
+
+    def run_claim_idempotency_valid(existing: dict, candidate: dict) -> bool:
+        return (existing["run_id"] != candidate["run_id"]
+                or existing["request_digest"] == candidate["request_digest"])
+    original_claim={"run_id":"run-01","request_digest":"d"*64}
+    check(run_claim_idempotency_valid(original_claim,dict(original_claim)),
+          "same run ID and request digest should be idempotent")
+    check(not run_claim_idempotency_valid(original_claim,
+                                           {"run_id":"run-01","request_digest":"e"*64}),
+          "same run ID with changed request digest did not conflict")
+
 
 
     def restored_ledger_fresh(external_generation: int, restored_generation: int,
