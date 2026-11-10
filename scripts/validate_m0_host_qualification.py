@@ -257,12 +257,13 @@ def errors_for(record, schema_validator):
                     errors.append("independent review is expired at issuance")
                 if expires_at <= datetime.now(timezone.utc):
                     errors.append("independent review has expired at validation time")
-            qualification_reviewed_at = datetime.fromisoformat(record["reviewed_at"].replace("Z", "+00:00"))
-            qualification_expires_at = datetime.fromisoformat(record["expires_at"].replace("Z", "+00:00"))
-            if qualification_expires_at <= qualification_reviewed_at:
-                errors.append("qualification expiry must be later than qualification review date")
-            if qualification_expires_at <= datetime.now(timezone.utc):
-                errors.append("qualification record has expired at validation time")
+            if record.get("reviewed_at") and record.get("expires_at"):
+                qualification_reviewed_at = datetime.fromisoformat(record["reviewed_at"].replace("Z", "+00:00"))
+                qualification_expires_at = datetime.fromisoformat(record["expires_at"].replace("Z", "+00:00"))
+                if qualification_expires_at <= qualification_reviewed_at:
+                    errors.append("qualification expiry must be later than qualification review date")
+                if qualification_expires_at <= datetime.now(timezone.utc):
+                    errors.append("qualification record has expired at validation time")
         except (ValueError, TypeError):
             errors.append("candidate-qualified requires valid review dates")
         if not record.get("qualification_rationale", "").strip():
