@@ -50,7 +50,7 @@ REQUIRED_FIXTURE_IDS = (
 
 
 def fixture_ids_from_contract():
-    pattern = re.compile(r"^\\|\\s*`(M0-[A-Z0-9-]+)`\\s*\\|")
+    pattern = re.compile(r"^\|\s*`(M0-[A-Z0-9-]+)`\s*\|")
     return {
         match.group(1)
         for line in FIXTURE_CONTRACT_PATH.read_text(encoding="utf-8").splitlines()
