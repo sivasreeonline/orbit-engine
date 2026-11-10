@@ -89,15 +89,26 @@ Constraints:
 
 One immutable row per unique attempt to consume authorization run budget.
 
-Required fields: id; authorization_id; run_id; request_digest; claim_sequence; claimed_state_version; claim_status CLAIMED/COMPLETED/FAILED/QUARANTINED; claimed_at; finished_at; run_evidence_ref/digest.
+Required fields: id; authorization_id; run_id; request_digest; claim_sequence; claimed_state_version; claimed_at. Claim identity is immutable; run outcome is stored separately in authorization_run_events.
 
 Constraints:
 - Unique (authorization_id, run_id) and (authorization_id, claim_sequence).
-- Same run ID + same request digest returns original claim; changed digest conflicts.
+- Same run ID + same request digest returns the original immutable claim; changed digest conflicts. Run outcome is recorded in a separate append-only event stream.
 - Claim rows are never deleted and consumed budget is never silently refunded.
 - FAILED and QUARANTINED claims remain consumed; no counter decrement is allowed.
 
-### 2.7 authorization_signing_keys
+### 2.7 authorization_run_events
+
+Append-only execution outcome events for immutable run claims.
+
+Required fields: id; claim_id; sequence_no; event_type CLAIMED/STARTED/COMPLETED/FAILED/QUARANTINED; request_id; request_digest; occurred_at; previous_event_digest; event_digest.
+
+Constraints:
+- Unique (claim_id, sequence_no) and (claim_id, request_id).
+- No UPDATE or DELETE; terminal COMPLETED/FAILED/QUARANTINED outcomes cannot be reopened.
+- Initial CLAIMED event commits atomically with the claim row, consumed counter and authorization CONSUMED event.
+
+### 2.8 authorization_signing_keys
 
 Trust metadata only; private key bytes never enter Neon.
 
@@ -110,7 +121,7 @@ Constraints:
 
 ## 3. Transaction protocols
 
-Every transaction uses bounded statement/transaction timeouts and a stable request ID. The API role receives EXECUTE permission on reviewed procedures only; it cannot update lifecycle projections or append events directly.
+Every transaction uses bounded statement/transaction timeouts and a stable request ID. A fixed lock order is mandatory: authorization projection row, then claim/request identity, then append-only event rows. The API role receives EXECUTE permission on reviewed procedures only; it cannot update lifecycle projections or append events directly.
 
 ### 3.1 Issue authorization
 
@@ -169,7 +180,7 @@ Neon point-in-time restore is not sufficient anti-rollback protection. Before re
 
 - Use PostgreSQL row locks and serializable transactions for transitions and run claims; retry serialization failures only with the same request ID/digest.
 - Unique constraints are the final concurrency guard, not application-only prechecks.
-- Revoke direct UPDATE/DELETE on event and claim tables from application roles.
+- Revoke direct UPDATE/DELETE on authorization events, run events and run-claim identity tables from application roles. Run outcome changes are new run events, never claim-row updates.
 - Separate migration owner, ledger procedure owner, API role, audit-reader role and break-glass role.
 - Audit break-glass access; prohibit routine application use of owner/superuser roles.
 - Never log signatures, credentials, private keys, full evidence payloads or student source code in ledger events.
