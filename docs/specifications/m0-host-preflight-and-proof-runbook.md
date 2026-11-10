@@ -20,6 +20,12 @@ It is deliberately read-only. It does not install packages, change host configur
 
 The cloud provider and region are intentionally not selected in this runbook.
 
+## Host and journal qualification record
+
+Before selecting/provisioning a host or planning destructive journal tests, use `docs/specifications/m0-host-and-journal-qualification-protocol.md`. The protocol distinguishes baseline inspection from runtime proof, defines rootful/rootless equivalence criteria, separates storage-only durability testing from integrated lifecycle testing, and identifies the evidence required for watchdog/network/clock qualification.
+
+The machine-readable qualification record is `docs/schemas/m0-host-qualification-record.template.json`; the blank template is intentionally not qualified and does not authorize Phase A, Phase B, student or production execution.
+
 ## Phase 0 — Host preflight
 
 Run as an ordinary account with permission to inspect the containerd socket:

@@ -24,6 +24,10 @@ on:
       - "docs/security/m0-independent-security-review-record.schema.json"
       - "docs/security/m0-independent-security-review-record.template.json"
       - "scripts/validate_m0_independent_review_package.py"
+      - "docs/specifications/m0-host-and-journal-qualification-protocol.md"
+      - "docs/schemas/m0-host-qualification-record.schema.json"
+      - "docs/schemas/m0-host-qualification-record.template.json"
+      - "scripts/validate_m0_host_qualification.py"
   workflow_dispatch:
 
 permissions:
@@ -66,6 +70,9 @@ jobs:
 
       - name: Validate independent security review package
         run: python scripts/validate_m0_independent_review_package.py
+
+      - name: Validate host and journal qualification protocol
+        run: python scripts/validate_m0_host_qualification.py
 
       - name: Verify script is not configured to launch workloads
         shell: bash

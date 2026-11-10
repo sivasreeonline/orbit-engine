@@ -118,6 +118,10 @@ The 10-minute API-intake budget is an absolute upper bound through terminal fina
 - A profile document, schema-valid manifest, or passing synthetic validator is not runtime proof.
 - Independent security review must approve the final profile and the host's outer safety envelope before M0 workloads are launched.
 
+## Host qualification dependency
+
+The provider-neutral host/storage qualification protocol is `docs/specifications/m0-host-and-journal-qualification-protocol.md`. No numeric cleanup deadline, evidence-finalization reserve, host shape, provider, filesystem, storage class or spend is selected by resource profile revision 1. A host-candidate-qualified record is only a prerequisite input to separately reviewed Phase A authorization; it is not permission to start calibration or Phase B.
+
 ## 4. Change control
 
 Any change to CPU, memory, PID, wall-time, output, scratch, or inode limits requires:

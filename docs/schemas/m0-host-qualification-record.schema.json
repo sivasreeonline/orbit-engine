@@ -1,0 +1,954 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-host-qualification-record.schema.json",
+  "title": "M0 Host and Journal Qualification Record",
+  "description": "Evidence-bound test record. Qualification does not authorize Phase A, Phase B, student or production execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_id",
+    "record_status",
+    "qualification_status",
+    "scope",
+    "host_identity",
+    "journal_profile",
+    "gates",
+    "test_results",
+    "review",
+    "residual_risks",
+    "qualification_rationale",
+    "reviewed_at",
+    "expires_at",
+    "signature_reference",
+    "phase_a_authorized",
+    "phase_b_authorized",
+    "student_execution_authorized",
+    "production_execution_authorized"
+  ],
+  "$defs": {
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference_id",
+        "object_version",
+        "sha256",
+        "byte_count",
+        "evidence_root_id",
+        "acquired_at",
+        "acquisition_tool",
+        "tool_version",
+        "evidence_type",
+        "redaction_status",
+        "verification_status",
+        "independent_verifier_id",
+        "verification_note"
+      ],
+      "properties": {
+        "reference_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "byte_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidence_root_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "acquired_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "acquisition_tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_type": {
+          "enum": [
+            "host-configuration",
+            "host-runtime",
+            "filesystem-storage",
+            "supply-chain",
+            "network-observation",
+            "watchdog-control-plane",
+            "journal-durability",
+            "fault-injection",
+            "operator-record"
+          ]
+        },
+        "redaction_status": {
+          "enum": [
+            "sanitized",
+            "redacted",
+            "non-sensitive"
+          ]
+        },
+        "verification_status": {
+          "enum": [
+            "unverified",
+            "verified",
+            "failed"
+          ]
+        },
+        "independent_verifier_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verification_note": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verification_status": {
+                "const": "verified"
+              }
+            },
+            "required": [
+              "verification_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "independent_verifier_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "verification_note": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "testFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "test_id",
+        "domain",
+        "result",
+        "verification_method",
+        "finding_summary",
+        "severity",
+        "remediation_owner",
+        "evidence_refs"
+      ],
+      "properties": {
+        "test_id": {
+          "enum": [
+            "HST-001",
+            "HST-002",
+            "HST-003",
+            "HST-004",
+            "HST-005",
+            "AUTH-001",
+            "RUN-001",
+            "CG-001",
+            "NET-001",
+            "NET-002",
+            "FS-001",
+            "OUT-001",
+            "WDG-001",
+            "WDG-002",
+            "WDG-003",
+            "CLK-001",
+            "CLK-002",
+            "JRN-001",
+            "JRN-002",
+            "JRN-003",
+            "JRN-004",
+            "JRN-005",
+            "JRN-006",
+            "JRN-007",
+            "JRN-008",
+            "JRN-009",
+            "JRN-010",
+            "JRN-011",
+            "JRN-012",
+            "JRN-013",
+            "JRN-014",
+            "JRN-015",
+            "EVID-001"
+          ]
+        },
+        "domain": {
+          "enum": [
+            "host-baseline",
+            "runtime",
+            "network",
+            "watchdog",
+            "clock",
+            "journal",
+            "integrated-lifecycle",
+            "evidence"
+          ]
+        },
+        "result": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "blocked",
+            "deferred"
+          ]
+        },
+        "verification_method": {
+          "type": "string"
+        },
+        "finding_summary": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "unassigned",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "remediation_owner": {
+          "type": "string"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "passed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "verification_method": {
+                "minLength": 1
+              },
+              "finding_summary": {
+                "minLength": 1
+              },
+              "severity": {
+                "const": "none"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "finding_summary": {
+                "minLength": 1
+              },
+              "severity": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              },
+              "remediation_owner": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "record_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "record_status": {
+      "enum": [
+        "not-started",
+        "in-progress",
+        "completed"
+      ]
+    },
+    "qualification_status": {
+      "enum": [
+        "not-qualified",
+        "candidate-qualified",
+        "failed",
+        "deferred"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "reviewed_commit_sha",
+        "qualification_protocol_digest",
+        "qualification_harness_digest",
+        "target_architecture",
+        "host_provisioning_authorization_ref"
+      ],
+      "properties": {
+        "repository": {
+          "const": "sivasreeonline/orbit-engine"
+        },
+        "reviewed_commit_sha": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{40})?$"
+        },
+        "qualification_protocol_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "qualification_harness_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "target_architecture": {
+          "enum": [
+            "not-selected",
+            "rootful-supervisor",
+            "rootless-containerd-userns"
+          ]
+        },
+        "host_provisioning_authorization_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "host_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected",
+        "provider",
+        "region",
+        "vm_shape",
+        "host_instance_id",
+        "boot_id",
+        "image_digest",
+        "os_release",
+        "kernel_release",
+        "architecture",
+        "filesystem_type",
+        "mount_options",
+        "storage_device_identity",
+        "storage_class",
+        "cgroup_mode",
+        "containerd_version",
+        "containerd_config_digest",
+        "runsc_version",
+        "shim_version",
+        "host_profile_digest",
+        "runtime_profile_digest",
+        "resource_profile_digest",
+        "supervisor_digest",
+        "watchdog_digest",
+        "test_harness_digest"
+      ],
+      "properties": {
+        "selected": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vm_shape": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host_instance_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "boot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "os_release": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kernel_release": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "architecture": {
+          "enum": [
+            "x86_64",
+            "aarch64",
+            null
+          ]
+        },
+        "filesystem_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mount_options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "storage_device_identity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "storage_class": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cgroup_mode": {
+          "enum": [
+            "unified-v2",
+            "other",
+            null
+          ]
+        },
+        "containerd_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "containerd_config_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "runsc_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shim_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host_profile_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "runtime_profile_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "resource_profile_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "supervisor_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "watchdog_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "test_harness_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        }
+      }
+    },
+    "journal_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend_candidate",
+        "sqlite_version",
+        "sqlite_source_id",
+        "go_driver_module",
+        "go_driver_version",
+        "journal_mode",
+        "synchronous",
+        "schema_revision",
+        "journal_owner",
+        "journal_mode_bits",
+        "lock_mechanism",
+        "max_database_bytes",
+        "free_space_low_watermark_bytes",
+        "backup_method",
+        "restore_procedure_digest"
+      ],
+      "properties": {
+        "backend_candidate": {
+          "enum": [
+            "not-selected",
+            "sqlite-delete-extra",
+            "other-requires-adr"
+          ]
+        },
+        "sqlite_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sqlite_source_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "go_driver_module": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "go_driver_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "journal_mode": {
+          "enum": [
+            "DELETE",
+            "WAL",
+            null
+          ]
+        },
+        "synchronous": {
+          "enum": [
+            "EXTRA",
+            "FULL",
+            "NORMAL",
+            "OFF",
+            null
+          ]
+        },
+        "schema_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "journal_owner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "journal_mode_bits": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lock_mechanism": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_database_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "free_space_low_watermark_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "backup_method": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "restore_procedure_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline_inspection",
+        "runtime_smoke",
+        "network_boundary",
+        "outer_safety_boundary",
+        "watchdog_boundary",
+        "clock_recovery",
+        "journal_durability",
+        "integrated_lifecycle",
+        "evidence_integrity"
+      ],
+      "properties": {
+        "baseline_inspection": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        },
+        "runtime_smoke": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        },
+        "network_boundary": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        },
+        "outer_safety_boundary": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        },
+        "watchdog_boundary": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        },
+        "clock_recovery": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        },
+        "journal_durability": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        },
+        "integrated_lifecycle": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        },
+        "evidence_integrity": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        }
+      }
+    },
+    "test_results": {
+      "type": "array",
+      "minItems": 33,
+      "maxItems": 33,
+      "items": {
+        "$ref": "#/$defs/testFinding"
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reviewer_id",
+        "host_owner_id",
+        "independence_attested",
+        "independence_basis",
+        "conflict_disclosure",
+        "decision",
+        "reviewed_commit_sha",
+        "reviewed_at",
+        "expires_at",
+        "signature_reference"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not-reviewed",
+            "in-review",
+            "completed"
+          ]
+        },
+        "reviewer_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host_owner_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "independence_attested": {
+          "type": "boolean"
+        },
+        "independence_basis": {
+          "type": "string"
+        },
+        "conflict_disclosure": {
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "not-reviewed",
+            "accept-host-candidate",
+            "conditional",
+            "reject",
+            "defer"
+          ]
+        },
+        "reviewed_commit_sha": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{40})?$"
+        },
+        "reviewed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "signature_reference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "residual_risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "risk_id",
+          "description",
+          "severity",
+          "owner_id",
+          "status"
+        ],
+        "properties": {
+          "risk_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "owner_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "open",
+              "mitigating",
+              "accepted",
+              "closed"
+            ]
+          }
+        }
+      }
+    },
+    "qualification_rationale": {
+      "type": "string"
+    },
+    "reviewed_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "signature_reference": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "phase_a_authorized": {
+      "const": false
+    },
+    "phase_b_authorized": {
+      "const": false
+    },
+    "student_execution_authorized": {
+      "const": false
+    },
+    "production_execution_authorized": {
+      "const": false
+    }
+  }
+}

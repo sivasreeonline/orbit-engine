@@ -109,6 +109,12 @@ All tests below are mandatory before approval. Test both process crash and abrup
 
 **Acceptance rule:** no host proof or execution enablement until every mandatory fault test passes on the exact disposable host/storage stack, the results are independently reviewed, and the cleanup deadline is approved in the versioned resource profile. A passing SQLite unit test on a developer workstation is not sufficient.
 
+## Host qualification execution record
+
+The exact-host, provider-neutral sequence and deterministic test catalogue are defined in `docs/specifications/m0-host-and-journal-qualification-protocol.md`. Use `docs/schemas/m0-host-qualification-record.schema.json` and its blank template to record one host incarnation, exact backend/build/filesystem/storage identity, per-case injection/results, evidence references and independent review.
+
+The protocol distinguishes storage-only SQLite candidate testing on an isolated scratch database from post-implementation integrated journal/lifecycle fault injection. Neither is authorized by this document or by CI; each requires its own disposable-host authorization and independent review.
+
 ## 7. Open decisions and blockers
 
 The following are deliberately unresolved:
