@@ -6,6 +6,7 @@ provision infrastructure, or authorize execution.
 """
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -17,6 +18,8 @@ SCHEMA_PATH = ROOT / "docs/schemas/m0-adr-0019-decision-record.schema.json"
 TEMPLATE_PATH = ROOT / "docs/schemas/m0-adr-0019-decision-record.template.json"
 DOSSIER_PATH = ROOT / "docs/adr/ADR-0019-decision-dossier.md"
 UPSTREAM_EVIDENCE_PATH = ROOT / "docs/adr/ADR-0019-upstream-compatibility-evidence.md"
+UPSTREAM_MANIFEST_PATH = ROOT / "docs/adr/ADR-0019-upstream-source-manifest.json"
+UPSTREAM_MANIFEST_SCHEMA_PATH = ROOT / "docs/schemas/ADR-0019-upstream-source-manifest.schema.json"
 ADR_PATH = ROOT / "docs/adr/ADR-0019-m0-host-launch-boundary.md"
 SECURITY_PATH = ROOT / "docs/security/m0-sandbox-security-review-packet.md"
 QUALIFICATION_PATH = ROOT / "docs/specifications/m0-host-and-journal-qualification-protocol.md"
@@ -37,8 +40,17 @@ def add_error(errors, condition, message):
     if condition:
         errors.append(message)
 
+def upstream_manifest_sha256():
+    return hashlib.sha256(UPSTREAM_MANIFEST_PATH.read_bytes()).hexdigest()
+
 def validate_record(record, validator):
     errors = [error.message for error in validator.iter_errors(record)]
+    if record.get("record_status") == "completed":
+        add_error(errors, record.get("upstream_source_manifest_sha256") != upstream_manifest_sha256(),
+                  "completed decision must pin the exact upstream source manifest SHA-256")
+    if record.get("record_status") == "not-started":
+        add_error(errors, record.get("upstream_source_manifest_sha256") is not None,
+                  "not-started decision must not pre-pin an upstream source manifest")
     candidates = record.get("candidate_assessments", [])
     candidate_ids = [candidate.get("candidate_id") for candidate in candidates]
     add_error(errors, len(candidate_ids) != len(set(candidate_ids)), "candidate IDs must be unique")
@@ -279,12 +291,32 @@ def main():
     template = json.loads(TEMPLATE_PATH.read_text(encoding="utf-8"))
     dossier = DOSSIER_PATH.read_text(encoding="utf-8")
     upstream_evidence = UPSTREAM_EVIDENCE_PATH.read_text(encoding="utf-8")
+    source_manifest = json.loads(UPSTREAM_MANIFEST_PATH.read_text(encoding="utf-8"))
+    source_manifest_schema = json.loads(UPSTREAM_MANIFEST_SCHEMA_PATH.read_text(encoding="utf-8"))
     adr = ADR_PATH.read_text(encoding="utf-8")
     security = SECURITY_PATH.read_text(encoding="utf-8")
     qualification = QUALIFICATION_PATH.read_text(encoding="utf-8")
     checklist = CHECKLIST_PATH.read_text(encoding="utf-8")
 
     Draft202012Validator.check_schema(schema)
+    Draft202012Validator.check_schema(source_manifest_schema)
+    source_manifest_validator = Draft202012Validator(source_manifest_schema, format_checker=FormatChecker())
+    source_manifest_errors = [error.message for error in source_manifest_validator.iter_errors(source_manifest)]
+    if source_manifest_errors:
+        raise AssertionError("upstream source manifest schema invalid: " + "; ".join(source_manifest_errors))
+    expected_source_ids = {"gvisor-rootless", "gvisor-containerd", "gvisor-platforms", "gvisor-networking", "containerd-rootless", "rootlesskit-v3.3.0", "runc-cgroup"}
+    source_ids = [entry["source_id"] for entry in source_manifest["entries"]]
+    if len(source_ids) != len(set(source_ids)) or set(source_ids) != expected_source_ids:
+        raise AssertionError("upstream source manifest must contain exactly seven unique pinned source IDs")
+    for entry in source_manifest["entries"]:
+        expected_url = f"https://github.com/{entry['repository']}/blob/{entry['commit_sha']}/{entry['path']}"
+        if entry["immutable_file_url"] != expected_url or entry["immutable_file_url"] not in upstream_evidence:
+            raise AssertionError(f"{entry['source_id']}: immutable source URL mismatch or missing from ledger")
+    if "https://gvisor.dev/docs/" in upstream_evidence:
+        raise AssertionError("upstream ledger must not rely on mutable gvisor.dev documentation URLs")
+    manifest_digest = upstream_manifest_sha256()
+    if template.get("upstream_source_manifest_sha256") is not None:
+        raise AssertionError("blank decision template must not pin an upstream source set")
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     errors = validate_record(template, validator)
     if errors:
@@ -293,6 +325,8 @@ def main():
         raise AssertionError("blank decision record must remain not-started/pending")
     if template["selected_candidate"] is not None or template["reviewed_commit_sha"] is not None:
         raise AssertionError("blank record cannot select a candidate or review baseline")
+    if template["upstream_source_manifest_sha256"] is not None:
+        raise AssertionError("blank record cannot pre-pin the upstream source manifest")
     if any(template[flag] is not False for flag in AUTH_FLAGS):
         raise AssertionError("blank ADR decision record cannot authorize execution")
     candidate_map = {c["candidate_id"]: c for c in template["candidate_assessments"]}
@@ -316,6 +350,11 @@ def main():
     for content in [adr, security, qualification, checklist]:
         if "ADR-0019-decision-dossier.md" not in content:
             raise AssertionError("ADR/security/qualification/checklist cross-reference missing")
+        if "ADR-0019-upstream-source-manifest.json" not in content:
+            raise AssertionError("ADR/security/qualification/checklist must link the immutable upstream source manifest")
+    if "ADR-0019-upstream-source-manifest.json" not in dossier:
+        raise AssertionError("decision dossier must link the immutable upstream source manifest")
+    print(f"PASS  upstream source manifest has seven immutable pins; SHA-256 {manifest_digest}")
     required_upstream_facts = [
         "`runsc --rootless` CLI mode does not support `create`",
         "newuidmap", "newgidmap", "subordinate", "RootlessKit", "CPU",
@@ -361,6 +400,7 @@ def main():
     # qualification record; the alternative is at least design-assessed.
     complete=deepcopy(template)
     complete["record_status"]="completed"
+    complete["upstream_source_manifest_sha256"] = manifest_digest
     complete["decision_record_id"]="22222222-2222-4222-8222-222222222222"
     complete["review_scope"]="design-and-host-evidence"
     complete["reviewed_commit_sha"]="a"*40
@@ -434,6 +474,11 @@ def main():
     errors=validate_record(complete,validator)
     if errors:
         raise AssertionError("synthetic valid selection rejected: "+"; ".join(errors))
+    source_mismatch = deepcopy(complete)
+    source_mismatch["upstream_source_manifest_sha256"] = "f" * 64
+    if not validate_record(source_mismatch, validator):
+        raise AssertionError("completed architecture decision with a mismatched upstream source manifest digest was accepted")
+    print("PASS  rejects completed decision with mismatched upstream source manifest digest")
     if any(complete[flag] is not False for flag in AUTH_FLAGS):
         raise AssertionError("architecture selection improperly authorized execution")
     mismatch=deepcopy(complete)
