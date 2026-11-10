@@ -51,18 +51,19 @@ def validate_record(record, validator):
         config = candidate.get("configuration", {})
         add_error(errors, config.get("runtime_integration_mode") != expected_mode,
                   f"{cid}: runtime integration mode does not match candidate definition")
-        if cid == "rootful-supervisor":
-            required = ["profile_id", "profile_digest", "runner_identity", "host_controller_identity",
-                        "containerd_access_principal", "privilege_inventory_digest", "syscall_inventory_digest",
-                        "writable_path_inventory_digest", "service_hardening_digest", "socket_policy_digest"]
-            add_error(errors, any(not config.get(name) for name in required),
-                      "rootful candidate requires exact supervisor, socket and privilege inventory")
-        elif cid == "rootless-containerd-userns":
-            required = ["profile_id", "profile_digest", "runner_identity", "host_controller_identity",
-                        "containerd_access_principal", "network_backend", "cgroup_delegation_reference",
-                        "user_namespace_mapping_reference", "rootlesskit_version"]
-            add_error(errors, any(not config.get(name) for name in required),
-                      "rootless candidate requires exact daemon, userns, RootlessKit, network and cgroup profile")
+        if candidate.get("assessment_status") != "not-assessed":
+            if cid == "rootful-supervisor":
+                required = ["profile_id", "profile_digest", "runner_identity", "host_controller_identity",
+                            "containerd_access_principal", "privilege_inventory_digest", "syscall_inventory_digest",
+                            "writable_path_inventory_digest", "service_hardening_digest", "socket_policy_digest"]
+                add_error(errors, any(not config.get(name) for name in required),
+                          "rootful candidate requires exact supervisor, socket and privilege inventory")
+            elif cid == "rootless-containerd-userns":
+                required = ["profile_id", "profile_digest", "runner_identity", "host_controller_identity",
+                            "containerd_access_principal", "network_backend", "cgroup_delegation_reference",
+                            "user_namespace_mapping_reference", "rootlesskit_version"]
+                add_error(errors, any(not config.get(name) for name in required),
+                          "rootless candidate requires exact daemon, userns, RootlessKit, network and cgroup profile")
 
         findings = candidate.get("design_findings", [])
         finding_ids = [finding.get("control_id") for finding in findings]
@@ -306,6 +307,13 @@ def main():
     rootless=next(c for c in complete["candidate_assessments"] if c["candidate_id"]=="rootless-containerd-userns")
     rootless["assessment_status"]="design-assessed"
     rootless["assessment_rationale"]="Synthetic design assessment only."
+    rootless["configuration"].update({
+        "profile_id":"synthetic-rootless-profile", "profile_digest":"b"*64,
+        "runner_identity":"synthetic-runner", "host_controller_identity":"synthetic-rootless-daemon",
+        "containerd_access_principal":"synthetic-rootless-daemon", "network_backend":"synthetic-rootless-network",
+        "cgroup_delegation_reference":"synthetic-cgroup-delegation",
+        "user_namespace_mapping_reference":"synthetic-subuid-map", "rootlesskit_version":"synthetic-rootlesskit"
+    })
     for finding in rootless["design_findings"]:
         if finding["evidence_class"]=="design":
             finding.update(result="pass",verification_method="Synthetic design review",finding="Synthetic only",severity="none",
