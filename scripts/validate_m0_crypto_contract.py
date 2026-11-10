@@ -163,6 +163,12 @@ def main() -> None:
         "anti_rollback_witness_ref": "evidence://witness/01", "anti_rollback_witness_sha256": "e" * 64,
     }
     accepted(bundle_v, bundle, "trust bundle")
+    trust_bundle_envelope = dict(envelope, message_type="trust-bundle",
+                                 domain="ORBIT-M0-TRUST-BUNDLE/v1", payload=bundle)
+    accepted(envelope_v, trust_bundle_envelope, "typed trust bundle envelope")
+    rejected(envelope_v, dict(trust_bundle_envelope,
+                              payload=dict(bundle, anti_rollback_witness_ref="")),
+             "trust bundle envelope without anti-rollback witness")
     rejected(bundle_v, dict(bundle, generation=2), "generation two without predecessor digest")
     rejected(bundle_v, dict(bundle, anti_rollback_witness_ref="", anti_rollback_witness_sha256=""),
              "missing anti-rollback witness")
