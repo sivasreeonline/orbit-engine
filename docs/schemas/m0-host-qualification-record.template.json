@@ -64,7 +64,8 @@
     "clock_recovery": "not-run",
     "journal_durability": "not-run",
     "integrated_lifecycle": "not-run",
-    "evidence_integrity": "not-run"
+    "evidence_integrity": "not-run",
+    "rootless_userns_compatibility": "not-run"
   },
   "test_results": [
     {
@@ -419,5 +420,6 @@
   "phase_a_authorized": false,
   "phase_b_authorized": false,
   "student_execution_authorized": false,
-  "production_execution_authorized": false
+  "production_execution_authorized": false,
+  "candidate_specific_test_results": []
 }
