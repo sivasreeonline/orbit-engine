@@ -136,3 +136,10 @@ The ledger remains an application-side projection. An externally anchored anti-r
 ### External witness and evidence receipt schemas
 
 The external anti-rollback checkpoint and immutable evidence-object receipt are machine-readable proposals at `docs/schemas/m0-ledger-anti-rollback-checkpoint.schema.json` and `docs/schemas/m0-immutable-evidence-object-receipt.schema.json`. Their synthetic structural and semantic checks run through `scripts/validate_m0_witness_evidence_contract.py`. Exact witness-anchor equality is required after restore; exact object-version and content-digest readback plus retention-horizon and principal-separation checks are required before evidence acceptance. These checks do not integrate with or prove Neon, an external witness, R2, object lock or signatures.
+
+
+## 11. Authorization transaction enforcement and deterministic race model
+
+The database enforcement proposal is maintained in `docs/specifications/m0-authorization-transaction-enforcement-proposal.md`. It corrects the run-claim model by separating immutable claim identity from append-only run outcome events, defines a global lock order, and specifies atomic budget reservation and revocation procedures.
+
+The pure-Python reference model `scripts/validate_m0_authorization_transaction_contract.py` exercises before-commit rollback, after-commit lost acknowledgement, idempotent retries, digest conflicts, final-slot contention, both claim/revocation serial orderings, post-revocation resume denial, run-event terminality, event-chain tampering and stale revocation freshness. It is synthetic only and does not replace real PostgreSQL multi-session fault injection.
