@@ -198,3 +198,7 @@ The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-sou
 ## Cryptographic trust and key lifecycle review
 
 Independent review must assess docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md, including trust-root isolation, signer/verifier principal separation, algorithm and canonicalization selection, domain separation, key custody and compromise response, trust-bundle anti-rollback, revocation freshness, trusted-time uncertainty, immutable evidence references and cross-language negative test vectors. The review must not treat a valid signature as proof that provider fencing occurred. No algorithm or key custody provider is approved until compatibility and independent review are complete.
+
+## Cryptographic schema and fixture review
+
+Review docs/schemas/m0-crypto-signed-envelope.schema.json, m0-crypto-trust-bundle.schema.json, m0-crypto-key-metadata.schema.json, m0-crypto-verification-report.schema.json and m0-crypto-verification-fixture-catalog.json together with scripts/validate_m0_crypto_contract.py. Confirm the schemas do not imply algorithm approval, private-key storage, signature verification or provider-fence proof. Algorithm-specific known-answer vectors remain a later gate after independent profile/library selection.
