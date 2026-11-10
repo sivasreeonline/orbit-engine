@@ -415,7 +415,7 @@ def main():
             raise AssertionError("ADR/security/qualification/checklist must link the immutable upstream source manifest")
     if "ADR-0019-upstream-source-manifest.json" not in dossier:
         raise AssertionError("decision dossier must link the immutable upstream source manifest")
-    print(f"PASS  upstream source manifest has seven immutable pins; SHA-256 {manifest_digest}")
+    print(f"PASS  upstream source manifest has eight immutable pins; SHA-256 {manifest_digest}")
     required_upstream_facts = [
         "`runsc --rootless` CLI mode does not support `create`",
         "newuidmap", "newgidmap", "subordinate", "RootlessKit", "CPU",
