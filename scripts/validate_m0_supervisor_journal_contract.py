@@ -31,6 +31,9 @@ REQUIRED = {
         "Stable kernel lock-file contract",
         "Never unlink, rename, or recreate the lock file",
         "close-on-exec", "exact service instance",
+        "Candidate A requires a root-owned directory",
+        "Candidate B must prove an equivalent protected publication mechanism",
+        "Candidate B requires a lock file owned by its dedicated non-root supervisor identity",
     ],
     "runtime harness": [
         "m0-supervisor-journal-implementation-contract.md",
@@ -49,6 +52,8 @@ REQUIRED = {
         "operation_sequence",
         "trigger_sequence",
         "branch_generation",
+        "candidate-specific supervisor journal only",
+        "Candidate B requires ownership by its dedicated non-root supervisor identity",
     ],
     "runner README": [
         "m0-supervisor-journal-implementation-contract.md",
