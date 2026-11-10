@@ -77,7 +77,7 @@ def validate_record(record, validator):
 
     for candidate in candidates:
         cid = candidate.get("candidate_id")
-        qualification = candidate.get("qualification_report", {})
+        qualification = candidate.get("qualification_report") or {}
         expected_mode = {"rootful-supervisor": "containerd-rootful-supervisor",
                          "rootless-containerd-userns": "containerd-caller-configured-userns"}.get(cid)
         config = candidate.get("configuration", {})
