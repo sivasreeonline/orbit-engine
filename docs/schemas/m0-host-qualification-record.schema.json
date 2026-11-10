@@ -244,6 +244,9 @@
           "items": {
             "$ref": "#/$defs/evidenceReference"
           }
+        },
+        "watchdog_subtests": {
+          "$ref": "#/$defs/watchdogSubtests"
         }
       },
       "allOf": [
@@ -302,6 +305,44 @@
               "remediation_owner": {
                 "minLength": 1
               }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "test_id": {
+                "const": "WDG-002"
+              }
+            },
+            "required": [
+              "test_id"
+            ]
+          },
+          "then": {
+            "required": [
+              "watchdog_subtests"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "test_id": {
+                "not": {
+                  "const": "WDG-002"
+                }
+              }
+            },
+            "required": [
+              "test_id"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "watchdog_subtests"
+              ]
             }
           }
         }
@@ -570,6 +611,165 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$",
           "description": "SHA-256 of compact JSON serialization of this profile with the profile_sha256 property omitted, recursively sorted object keys, separators comma/colon without whitespace, UTF-8 encoding, ensure_ascii=true, and allow_nan=false. Arrays preserve order. Do not hash the profile_sha256 field itself."
+        }
+      }
+    },
+    "watchdogSubtestFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result",
+        "verification_method",
+        "finding_summary",
+        "severity",
+        "evidence_refs"
+      ],
+      "properties": {
+        "result": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "blocked",
+            "deferred"
+          ]
+        },
+        "verification_method": {
+          "type": "string"
+        },
+        "finding_summary": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "unassigned",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "passed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "verification_method": {
+                "minLength": 1
+              },
+              "finding_summary": {
+                "minLength": 1
+              },
+              "severity": {
+                "const": "none"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "finding_summary": {
+                "minLength": 1
+              },
+              "severity": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "enum": [
+                  "blocked",
+                  "deferred"
+                ]
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "finding_summary": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "watchdogSubtests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "WD-001",
+        "WD-002",
+        "WD-003",
+        "WD-004",
+        "WD-005",
+        "WD-006",
+        "WD-007"
+      ],
+      "properties": {
+        "WD-001": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-002": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-003": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-004": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-005": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-006": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-007": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
         }
       }
     }
