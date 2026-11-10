@@ -114,3 +114,7 @@ Before privileged implementation or any Phase A authorization, require:
 10. Independent review of the exact implementation commit and host-specific evidence.
 
 Passing synthetic validators does not satisfy any of these runtime or independent-review requirements.
+
+## 9. Cryptographic trust and key lifecycle
+
+The cryptographic trust, canonical encoding, signed-envelope, key-custody, rotation/revocation, trust-bundle, anti-rollback, fail-closed verification and test-vector requirements are specified in docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md. The external authority response and Phase A authorization require distinct purpose-bound signing identities and domain-separated payloads. The document is a proposal: no algorithm, library, KMS/HSM, root, key or verifier is selected or deployed. Signature validity alone does not prove provider fencing or host safety.
