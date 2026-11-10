@@ -23,7 +23,13 @@
         "network_backend": null,
         "cgroup_delegation_reference": null,
         "user_namespace_mapping_reference": null,
-        "rootlesskit_version": null
+        "rootlesskit_version": null,
+        "runtime_profile_digest": null,
+        "resource_profile_digest": null,
+        "journal_profile_digest": null,
+        "supervisor_digest": null,
+        "watchdog_digest": null,
+        "test_harness_digest": null
       },
       "design_findings": [
         {
@@ -370,7 +376,13 @@
         "network_backend": null,
         "cgroup_delegation_reference": null,
         "user_namespace_mapping_reference": null,
-        "rootlesskit_version": null
+        "rootlesskit_version": null,
+        "runtime_profile_digest": null,
+        "resource_profile_digest": null,
+        "journal_profile_digest": null,
+        "supervisor_digest": null,
+        "watchdog_digest": null,
+        "test_harness_digest": null
       },
       "design_findings": [
         {
