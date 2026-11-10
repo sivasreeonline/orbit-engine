@@ -370,7 +370,8 @@ def main() -> None:
 
 
     def authorization_ledger_binding_valid(payload: dict, receipt: dict, acceptance: dict,
-                                            review: dict, qualification: dict, key_record: dict) -> bool:
+                                            review: dict, qualification: dict, key_record: dict,
+                                            ledger_record: dict, signed_envelope: dict) -> bool:
         return (payload["host_enrollment_id"] == receipt["host_enrollment_id"]
                 and payload["provider_instance_id"] == receipt["provider_instance_id"]
                 and payload["incarnation_epoch"] == receipt["epoch"] == acceptance["accepted_epoch"]
@@ -380,7 +381,12 @@ def main() -> None:
                 and review["control_count"] == 33 and review["fence_001"] == "pass"
                 and payload["host_qualification_record_sha256"] == qualification["digest"]
                 and key_record["key_id"] == "synthetic-key"
-                and key_record["key_version"] == "1"
+                and key_record["key_version"] == ledger_record["signer_key_version"]
+                and signed_envelope["issuer_id"] == ledger_record["signer_id"] == key_record["authority_id"]
+                and signed_envelope["key_id"] == key_record["key_id"]
+                and signed_envelope["key_version"] == ledger_record["signer_key_version"]
+                and signed_envelope["algorithm"] == ledger_record["signature_algorithm"]
+                and payload["authorization_manifest_sha256"] == ledger_record["manifest_sha256"]
                 and key_admissible(key_record, "phase-a-authorization", "test"))
     receipt={"host_enrollment_id":"enrollment-01","provider_instance_id":"instance-current",
              "epoch":7,"receipt_sha256":"1"*64}
@@ -388,14 +394,20 @@ def main() -> None:
     review={"digest":"5"*64,"control_count":33,"fence_001":"pass"}
     qualification={"digest":"4"*64}
     authorization_key=dict(key,purpose="phase-a-authorization")
-    check(authorization_ledger_binding_valid(phase_payload,receipt,acceptance,review,qualification,authorization_key),
+    ledger_record={"signer_id":"synthetic-authority","signer_key_version":"1",
+                   "signature_algorithm":"Ed25519-candidate","manifest_sha256":"6"*64}
+    phase_envelope=dict(envelope,message_type="phase-a-authorization",
+                        domain="ORBIT-M0-PHASE-A-AUTHORIZATION/v1",
+                        issuer_id="synthetic-authority",payload=phase_payload)
+    check(authorization_ledger_binding_valid(phase_payload,receipt,acceptance,review,qualification,
+                                              authorization_key,ledger_record,phase_envelope),
           "valid authorization-to-ledger bindings rejected")
-    check(not authorization_ledger_binding_valid(phase_payload,dict(receipt,epoch=6),acceptance,review,qualification,authorization_key),
+    check(not authorization_ledger_binding_valid(phase_payload,dict(receipt,epoch=6),acceptance,review,qualification,authorization_key,ledger_record,phase_envelope),
           "authorization with stale host epoch accepted")
-    check(not authorization_ledger_binding_valid(phase_payload,receipt,acceptance,dict(review,control_count=32),qualification,authorization_key),
+    check(not authorization_ledger_binding_valid(phase_payload,receipt,acceptance,dict(review,control_count=32),qualification,authorization_key,ledger_record,phase_envelope),
           "authorization with incomplete security review accepted")
     check(not authorization_ledger_binding_valid(phase_payload,receipt,acceptance,review,qualification,
-                                                  dict(authorization_key,state="REVOKED")),
+                                                  dict(authorization_key,state="REVOKED"),ledger_record,phase_envelope),
           "authorization signed by revoked key accepted")
 
     def run_claim_budget_valid(maximum: int, claim_statuses: list[str], consumed: int) -> bool:
