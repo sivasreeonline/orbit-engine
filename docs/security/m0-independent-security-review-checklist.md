@@ -77,6 +77,8 @@ Do not select a winner from this table alone. Complete the same control findings
 | WATCH-001 | Per-attempt cleanup controller | Does termination/cleanup proceed during client, journal and evidence outages? | Trigger/termination timing, host inventory, branch dispositions and fault injection. | host |
 | WATCH-002 | Supervisor recovery watchdog | Can a paused/deadlocked supervisor be stopped/replaced without dual privileged access or clock reset? | Watchdog identity/privileges, stop path, lock release, generations and restart evidence. | host |
 | WATCH-003 | Outer VM safety watchdog | Are VM resource/wall limits and hard-stop/rebuild independent of in-VM failure domains? | Control-plane configuration, external enforcement and stop/rebuild audit. | host |
+
+`WATCH-002` is not accepted from a generic restart test: independently review and require all seven `WD-001` through `WD-007` watchdog fault-injection subtests in the host qualification protocol. Any missing, ambiguous or bypassed subtest keeps WATCH-002 unpassed.
 | EVID-001 | Evidence integrity | Are immutable object version/digest/size/provenance independently verified? | Evidence root, object version, SHA-256, byte count and independent verifier output. | mixed |
 | EVID-002 | Evidence redaction and separation | Can evidence failure leak secrets or delay cleanup? | Redaction rules, canary scan, bounded staging and evidence-outage tests. | host |
 | SUPPLY-001 | Supply chain | Are actions, Go dependencies, runtime packages, images and fixtures pinned and monitored? | Lockfiles, action pins, SBOM/provenance, vulnerability and patch/rollback reports. | mixed |
