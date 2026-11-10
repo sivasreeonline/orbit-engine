@@ -76,7 +76,18 @@ if command_exists containerd; then
     fail 'Expected containerd 2.3.x LTS'
   fi
 
-  if config_dump="$(containerd config dump 2>/dev/null)"; then
+  if [[ -n "${M0_CONTAINERD_CONFIG:-}" ]]; then
+    if config_dump="$(containerd --config "$M0_CONTAINERD_CONFIG" config dump 2>/dev/null)"; then
+      config_dump_status=0
+    else
+      config_dump_status=1
+    fi
+  elif config_dump="$(containerd config dump 2>/dev/null)"; then
+    config_dump_status=0
+  else
+    config_dump_status=1
+  fi
+  if (( config_dump_status == 0 )); then
     if grep -Eq '^version[[:space:]]*=[[:space:]]*3([[:space:]]|$)' <<<"$config_dump"; then
       pass 'containerd configuration uses version 3'
     else
@@ -113,15 +124,16 @@ else
   fail 'containerd-shim-runsc-v1 is not installed or not on PATH'
 fi
 
-socket="/run/containerd/containerd.sock"
+socket="${M0_CONTAINERD_SOCKET:-/run/containerd/containerd.sock}"
+expected_socket_owner="${M0_CONTAINERD_SOCKET_OWNER:-root}"
 if [[ -S "$socket" ]]; then
   socket_owner="$(stat -c '%U' "$socket")"
   socket_mode="$(stat -c '%a' "$socket")"
-  info "containerd socket owner=$socket_owner mode=$socket_mode"
-  if [[ "$socket_owner" == "root" ]]; then
-    pass 'containerd socket is root-owned'
+  info "containerd socket=$socket owner=$socket_owner mode=$socket_mode"
+  if [[ "$socket_owner" == "$expected_socket_owner" ]]; then
+    pass "containerd socket owner matches expected principal $expected_socket_owner"
   else
-    fail 'containerd socket must be root-owned'
+    fail "containerd socket owner mismatch; expected $expected_socket_owner, detected $socket_owner"
   fi
   if (( (8#$socket_mode & 0022) == 0 )); then
     pass 'containerd socket is not group/world writable'
