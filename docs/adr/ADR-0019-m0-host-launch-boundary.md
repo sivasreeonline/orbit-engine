@@ -28,7 +28,7 @@ Therefore, rootless containerd with caller-configured user namespaces remains a 
 
 Neither candidate is selected. The same control set and evidence standard apply to both. The decision may select exactly one candidate, reject both, or defer; this proposal is not permission to implement or provision either candidate before all review and qualification gates are met.
 
-### Host supervisor requirements
+### Candidate A — rootful host supervisor requirements
 
 1. Run as a dedicated host service on the disposable proof VM. It is the only application principal permitted to access the root-owned containerd socket.
 2. Expose only a private Unix-domain socket. Authenticate the caller using socket filesystem permissions and peer credentials; allow only the designated runner identity.
