@@ -67,8 +67,11 @@ def errors_for(record, schema_validator):
             errors.append(f"{test_id}: blocked/deferred requires a reason")
 
     gates = record.get("gates", {})
-    if gates.get("baseline_inspection") == "passed" and not BASELINE_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
-        errors.append("baseline inspection gate requires HST-001 through HST-005")
+    if gates.get("baseline_inspection") == "passed":
+        if not BASELINE_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
+            errors.append("baseline inspection gate requires HST-001 through HST-005")
+        if not record.get("host_identity", {}).get("selected"):
+            errors.append("baseline inspection cannot pass without one selected host incarnation")
     if gates.get("runtime_smoke") == "passed" and not RUNTIME_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
         errors.append("runtime smoke gate requires AUTH-001, RUN-001, CG-001, FS-001 and OUT-001")
     if gates.get("network_boundary") == "passed" and not NETWORK_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
@@ -80,8 +83,12 @@ def errors_for(record, schema_validator):
         errors.append("outer safety gate requires WDG-003 and external stop/rebuild evidence")
     if gates.get("clock_recovery") == "passed" and not CLOCK_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
         errors.append("clock gate requires CLK-001 and CLK-002")
-    if gates.get("journal_durability") == "passed" and not JOURNAL_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
-        errors.append("journal gate requires JRN-001 through JRN-015")
+    if gates.get("journal_durability") == "passed":
+        if not JOURNAL_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
+            errors.append("journal gate requires JRN-001 through JRN-015")
+        journal = record.get("journal_profile", {})
+        if journal.get("backend_candidate") != "sqlite-delete-extra" or journal.get("journal_mode") != "DELETE" or journal.get("synchronous") != "EXTRA":
+            errors.append("journal gate requires the exact currently proposed SQLite DELETE+EXTRA candidate profile")
     if gates.get("integrated_lifecycle") == "passed" and not INTEGRATED_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
         errors.append("integrated lifecycle gate requires JRN-010 and JRN-011")
     if gates.get("evidence_integrity") == "passed" and not EVIDENCE_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
@@ -107,6 +114,9 @@ def errors_for(record, schema_validator):
             "watchdog_digest", "test_harness_digest"]
         if not host.get("selected") or any(not host.get(field) for field in required_host):
             errors.append("candidate-qualified requires exact selected host/runtime/storage identity")
+        scope = record.get("scope", {})
+        if not scope.get("host_provisioning_authorization_ref") or scope.get("target_architecture") == "not-selected":
+            errors.append("candidate-qualified requires a separately authorized host and selected architecture")
         if not host.get("mount_options") or host.get("cgroup_mode") != "unified-v2":
             errors.append("candidate-qualified requires recorded mount options and unified cgroup v2")
         journal = record.get("journal_profile", {})
