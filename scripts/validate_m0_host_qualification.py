@@ -97,6 +97,9 @@ def errors_for(record, schema_validator):
         ]):
             errors.append("candidate-qualified requires every qualification sub-gate to pass")
         host = record.get("host_identity", {})
+        baseline_sha = record.get("scope", {}).get("reviewed_commit_sha")
+        if not isinstance(baseline_sha, str) or len(baseline_sha) != 40:
+            errors.append("candidate-qualified requires an exact 40-character reviewed commit SHA")
         required_host = ["provider", "region", "vm_shape", "host_instance_id", "boot_id", "image_digest",
             "os_release", "kernel_release", "architecture", "filesystem_type", "storage_device_identity",
             "storage_class", "containerd_version", "containerd_config_digest", "runsc_version", "shim_version",
@@ -229,6 +232,7 @@ def main():
     complete["record_status"] = "completed"
     complete["qualification_status"] = "candidate-qualified"
     complete["scope"].update({
+        "reviewed_commit_sha":"5"*40,
         "qualification_protocol_digest":"a"*64, "qualification_harness_digest":"b"*64,
         "target_architecture":"rootful-supervisor", "host_provisioning_authorization_ref":"synthetic-provisioning-reference"
     })
