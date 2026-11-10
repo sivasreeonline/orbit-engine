@@ -178,7 +178,7 @@ def custom_errors(manifest: dict) -> list[str]:
         if any(value.tzinfo is None for value in times):
             errors.append("fence verification, evidence acquisition/verification, review and issuance timestamps must be timezone-aware")
         elif times != sorted(times):
-            errors.append("provider fence, evidence acquisition, independent verification, review and authorization must follow strict chronology")
+            errors.append("provider fence, evidence acquisition, independent verification, review and authorization must follow nondecreasing chronology")
     except (KeyError, ValueError, TypeError):
         errors.append("provider fence, review and issuance timestamps must be parseable")
     if signoff.get("host_owner_id") == signoff.get("independent_reviewer_id"):
