@@ -176,3 +176,14 @@ No production key, migration, external authority, signer, verifier, provider ada
 - docs/security/m0-sandbox-security-review-packet.md
 
 All four documents must remain aligned. Changes to key identity, algorithm, canonicalization, trust-bundle generation, revocation, evidence references or verifier policy require coordinated contract and validator updates.
+
+## 12. Machine-readable schema and fixture contract
+
+The proposed machine-readable artifacts are:
+- docs/schemas/m0-crypto-signed-envelope.schema.json
+- docs/schemas/m0-crypto-trust-bundle.schema.json
+- docs/schemas/m0-crypto-key-metadata.schema.json
+- docs/schemas/m0-crypto-verification-report.schema.json
+- docs/schemas/m0-crypto-verification-fixture-catalog.json
+
+Run scripts/validate_m0_crypto_contract.py for Draft 2020-12 schema meta-validation and structural positive/negative fixtures. These fixtures are contract-only: placeholder values do not represent real keys, signatures, cryptographic verification, trust-bundle authentication or provider fencing. Algorithm-specific known-answer vectors remain blocked until the algorithm/profile/library is independently approved.
