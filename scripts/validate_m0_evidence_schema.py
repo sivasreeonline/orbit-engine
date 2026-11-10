@@ -263,9 +263,6 @@ def main():
     not_run_fixture["tests"][0]["status"] = "not_run"
     cases.append(("passed result with not-run fixture", not_run_fixture))
 
-    for label, manifest in cases:
-        expect_invalid(manifest_validator, manifest, label)
-
     # The JSON Schema alone must enforce exact fixture coverage. The custom
     # Python guard above remains an independent second layer.
     for label, manifest in (
@@ -290,6 +287,12 @@ def main():
     missing_infrastructure_state = valid_manifest()
     del missing_infrastructure_state["infrastructure_state"]
     cases.append(("passed result without infrastructure state", missing_infrastructure_state))
+
+    # Run the complete negative-case list only after every case has been added.
+    # Keep this after the infrastructure-state cases so none are merely printed
+    # as passing without actually being checked.
+    for label, manifest in cases:
+        expect_invalid(manifest_validator, manifest, label)
 
     incomplete = valid_manifest()
     incomplete["overall_result"] = "incomplete"
