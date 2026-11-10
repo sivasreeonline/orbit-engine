@@ -220,3 +220,24 @@ The append-only key lifecycle event schema is `docs/schemas/m0-crypto-key-lifecy
 Trust-bundle successors must increment generation by exactly one, bind the exact previous bundle digest, and preserve authority, root identity and environment. Revocation statements must identify an exact key ID/version and agree with that key's REVOKED status and revocation metadata. Duplicate key-version identities and duplicate revocation identities are rejected by semantic validation.
 
 The ledger remains an application-side projection. An externally anchored anti-rollback checkpoint is required to detect Neon restore to an earlier event/revocation generation. A schema-valid event or bundle does not authenticate its signature or establish custody.
+
+
+## 8. External anti-rollback witness checkpoint contract
+
+The proposed machine-readable checkpoint is `docs/schemas/m0-ledger-anti-rollback-checkpoint.schema.json`. It binds an independently administered witness identity, environment and authority, monotonic checkpoint generation, exact authorization-ledger event sequence/digests, trust-bundle generation/digest, revocation generation/digest, and per-enrollment host epoch high-water marks. The checkpoint also carries a freshness nonce and signature/evidence references.
+
+Before reopening authorization operations after restore or failover, the restored ledger must match the latest independently obtained witness checkpoint exactly for every anchored generation, sequence, digest and host high-water mark. A stale generation, missing checkpoint, unavailable witness, signature/freshness uncertainty, or any digest mismatch leaves the affected ledger read-only and authorizations QUARANTINED. There is no local-database fallback and no operator override that silently lowers the witnessed high-water mark.
+
+The witness must be administered and stored outside the combined Neon, R2, guest and provider-account restore/failure domain. Its signing/custody authority, quorum, availability, anti-equivocation behavior, backup/restore and key-rotation procedure remain unselected and require independent review. The schema does not establish those properties.
+
+## 9. Immutable evidence object receipt contract
+
+The proposed receipt schema is `docs/schemas/m0-immutable-evidence-object-receipt.schema.json`. It records the exact object key and immutable version ID, content SHA-256 and size, provider/bucket reference, retention mode and deadline, legal-hold signal, object-lock configuration digest, writer identity, and a readback performed against that same version. The evidence acquirer and independent verifier are distinct from the writer and from each other.
+
+Acceptance requires exact version-ID and digest equality after readback, a retention deadline covering the required period, an approved immutable retention mode, and principal separation. A provider value such as `compliance` or `legal_hold=true` is only recorded metadata until target-account API behavior and deletion/overwrite resistance are independently tested. The value `unverified` is never acceptable for authorization evidence.
+
+Cloudflare R2 remains a candidate object store; this receipt schema does not assert that its versioning, object-lock, retention, legal-hold or immutable-version semantics satisfy the contract. No object-store credentials or signing keys are included.
+
+## 10. Synthetic validation boundary
+
+`scripts/validate_m0_witness_evidence_contract.py` validates both Draft 2020-12 schemas and exercises synthetic exact-checkpoint alignment, stale-anchor rejection, exact evidence-version readback, digest equality, retention horizon and principal-separation checks. It does not connect to Neon, an external witness or R2, and it does not verify signatures or provider retention behavior.
