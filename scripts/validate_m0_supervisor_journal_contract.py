@@ -294,6 +294,18 @@ def main() -> int:
         ):
             if phrase.casefold() not in contract.casefold():
                 failures.append(f"contract: external host-incarnation trust boundary missing: {phrase}")
+        contract_epoch_phrases = [
+            "The fence must be effective before the new epoch is issued or accepted",
+            "Responses are authenticated and replay-detectable",
+            "nonce reuse with changed request content is a conflict",
+            "provider mechanism must prove hard stop or equivalent enforced isolation of compute, storage writes, and privileged control paths",
+            "durably records the accepted epoch and evidence reference before allocating a supervisor generation or enabling any listener/admission path",
+            "Epoch issuance/revocation and provider fencing must be serialized per enrolled host",
+            "startup/restore fails closed",
+        ]
+        for phrase in contract_epoch_phrases:
+            if phrase.casefold() not in contract.casefold():
+                failures.append(f"contract: external host-incarnation trust boundary missing: {phrase}")
         runtime_document = contents.get("runtime harness", "")
         evidence_publication_order = [
             "Apply redaction before publication",
