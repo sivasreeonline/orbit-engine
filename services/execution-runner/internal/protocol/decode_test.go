@@ -149,6 +149,20 @@ func TestDecodeExecutionRequestRejectsCaseFoldedAliasPairs(t *testing.T) {
 	}
 }
 
+func TestDecodeExecutionRequestRejectsInvalidUTF8(t *testing.T) {
+	t.Parallel()
+
+	body := bytes.Replace(
+		validRequestJSON(t),
+		[]byte(`"java"`),
+		[]byte{'"', 'j', 'a', 0xff, 'v', 'a', '"'},
+		1,
+	)
+	if _, err := DecodeExecutionRequest(bytes.NewReader(body)); !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("error = %v, want ErrInvalidJSON for invalid UTF-8", err)
+	}
+}
+
 func TestDecodeExecutionRequestRejectsMalformedOrMultipleValues(t *testing.T) {
 	t.Parallel()
 
