@@ -36,6 +36,17 @@ bash services/execution-runner/scripts/m0-host-preflight.sh
 
 The script checks OS release, architecture, kernel minimum, cgroup v2, containerd LTS version, the locally resolved configuration dump, gVisor binaries, and containerd socket ownership/permissions. The configuration check is a preliminary local-file inspection; it does not prove that the running daemon loaded that exact configuration or that the configured handler is operational.
 
+The preflight defaults to the rootful socket `/run/containerd/containerd.sock` and expected owner `root`. For a rootless candidate, supply the exact host-specific values discovered during the read-only inventory rather than assuming a conventional path or username:
+
+```bash
+M0_CONTAINERD_CONFIG="<verified-rootless-containerd-config-path>" \
+M0_CONTAINERD_SOCKET="<verified-rootless-containerd-socket-path>" \
+M0_CONTAINERD_SOCKET_OWNER="<verified-rootless-daemon-account>" \
+bash services/execution-runner/scripts/m0-host-preflight.sh
+```
+
+`M0_CONTAINERD_CONFIG` selects the local file used by `containerd config dump`; `M0_CONTAINERD_SOCKET` and `M0_CONTAINERD_SOCKET_OWNER` select the socket inspected for type, owner and write permissions. These overrides do not connect to or authenticate the daemon, prove that the running process uses that file/socket, or establish caller-userns integration. Those remain separate live-host qualification requirements.
+
 A successful result means only that the host matches these baseline checks. It does not prove that runsc starts, that systrap is active, that network access is blocked, or that resource limits are enforced.
 
 Do not weaken a failed check to make the script pass. Investigate and record the host deviation; update the ADR before changing the baseline.
