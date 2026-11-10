@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Validate M0 evidence schema invariants using synthetic, non-sensitive data."""
 
-from copy import deepcopy
 import json
 from pathlib import Path
 import sys
@@ -49,8 +48,8 @@ def valid_manifest():
             "test_id": "m0-synthetic-001",
             "phase": "runtime",
             "status": "passed",
-            "expected_outcome": "synthetic fixture completes",
-            "observed_outcome": "synthetic fixture completes",
+            "expected_outcome": "Synthetic fixture completes",
+            "observed_outcome": "Synthetic fixture completes",
             "exit_code": 0,
             "duration_ms": 1,
             "evidence": [{
