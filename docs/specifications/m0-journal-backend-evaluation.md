@@ -1,7 +1,7 @@
 # M0 Host Journal Backend Evaluation
 
 - Status: **PROPOSED — NOT APPROVED; no implementation authorized.**
-- Scope: disposable M0 proof host's privileged supervisor journal only.
+- Scope: disposable M0 proof host's candidate-specific supervisor journal only.
 
 Before implementation, use `docs/specifications/m0-supervisor-journal-implementation-contract.md` for the generation/fencing model, logical journal records, transaction ordering, watchdog failure domains, and recovery matrix. This does not approve SQLite or any host-specific backend.
 
@@ -14,7 +14,7 @@ Before implementation, use `docs/specifications/m0-supervisor-journal-implementa
 
 This is a candidate, not a locked decision. It must not be implemented or used for a host proof until the exact SQLite build, local filesystem, storage device, durability behavior, lock behavior, recovery procedure, and fault-injection results have been reviewed.
 
-The choice is deliberately not SQLite WAL by default. The current M0 design requires one privileged supervisor to serialize all containerd access, not a multi-host journal or a high-concurrency read service. WAL's reader/writer concurrency therefore has no demonstrated M0 requirement, while it introduces a separate WAL file, shared-memory index, checkpoint lifecycle, and additional recovery/backup concerns. SQLite's `EXTRA` synchronous mode is specifically intended to add directory synchronization after rollback-journal deletion in DELETE mode; that is relevant to a durable host-side operation journal. Benchmark the candidate, but do not weaken durability settings to improve throughput.
+The choice is deliberately not SQLite WAL by default. The current M0 design requires one candidate-specific host supervisor to serialize all containerd access, not a multi-host journal or a high-concurrency read service. WAL's reader/writer concurrency therefore has no demonstrated M0 requirement, while it introduces a separate WAL file, shared-memory index, checkpoint lifecycle, and additional recovery/backup concerns. SQLite's `EXTRA` synchronous mode is specifically intended to add directory synchronization after rollback-journal deletion in DELETE mode; that is relevant to a durable host-side operation journal. Benchmark the candidate, but do not weaken durability settings to improve throughput.
 
 If measured performance or operational requirements invalidate this candidate, reopen the decision. Do not silently switch to WAL, NORMAL/OFF synchronous mode, a network filesystem, or a remote database.
 
@@ -38,7 +38,7 @@ If SQLite is approved, the initial implementation must meet all of these conditi
 
 1. **Local storage only.** Place the database on a dedicated, root-owned local filesystem on the disposable VM. Do not use NFS, SMB, FUSE/network mounts, object storage mounts, or a shared volume mounted by multiple hosts. Record filesystem type, mount options, device identity, block/cache characteristics where available, and directory ownership/mode.
 2. **Durability settings.** Require and verify `PRAGMA journal_mode=DELETE` and `PRAGMA synchronous=EXTRA` on every opened connection. Read back the effective values; fail startup if they differ. Do not rely on library defaults.
-3. **One writer / one process.** The privileged supervisor is the only process allowed to open the journal for writes. Serialize all journal mutations through one writer path. Do not add a second supervisor, independent maintenance writer, external CLI writer, or background checkpoint process. Database locking is not the supervisor fencing mechanism.
+3. **One writer / one process.** The selected host supervisor is the only process allowed to open the journal for writes. Serialize all journal mutations through one writer path. Do not add a second supervisor, independent maintenance writer, external CLI writer, or background checkpoint process. Database locking is not the supervisor fencing mechanism.
 4. **Kernel process lock is separate.** Before accepting work or making any privileged containerd call, acquire a root-owned host-wide lock using a kernel lock primitive on a stable lock file. Hold it for the entire privileged supervisor lifetime. Never unlink/recreate the lock file as a handoff technique. A replacement must not proceed until the old process has exited and released the kernel lock. Acquire a new durable generation and reconcile all non-terminal attempts before accepting work. If lock ownership is lost or cannot be proven, fail-stop. Prevent lock-FD inheritance by child processes.
 5. **Transactions.** Use short, bounded transactions. Claim the idempotency key and logical attempt tuple, allocate the initial attempt_generation and operation_sequence, record supervisor_generation, and insert the operation ID and first operation intent atomically. Enforce uniqueness in the database, not only in application code. Use state-version compare-and-set updates; terminal results are immutable. Never hold a database transaction open while calling containerd, draining pipes, waiting for a process, publishing evidence, or performing network I/O.
 6. **No exactly-once claim.** SQLite cannot atomically commit with containerd. Persist intent before each external side effect; after an uncertain result inspect actual host/containerd state and reconcile before retry. The protocol remains at-least-once with deterministic identities and idempotent recovery.
@@ -55,7 +55,7 @@ The SQLite WAL-reset corruption bug is not directly a reason to use WAL; it is a
 
 ### 3.2 Why DELETE + EXTRA is the starting candidate
 
-M0's journal is a low-volume, single-host state machine with a single privileged writer. The design already requires serialization around containerd and durable intent/result transitions; it does not currently require multiple readers to proceed during writes. WAL's concurrency advantage therefore does not justify adding its WAL-index, checkpoint and multi-file backup/recovery surface as the default.
+M0's journal is a low-volume, single-host state machine with a single host-supervisor writer. The design already requires serialization around containerd and durable intent/result transitions; it does not currently require multiple readers to proceed during writes. WAL's concurrency advantage therefore does not justify adding its WAL-index, checkpoint and multi-file backup/recovery surface as the default.
 
 In DELETE mode, SQLite uses a rollback journal. EXTRA adds a directory sync after the rollback journal is unlinked during commit, beyond FULL's sync behavior. This is the strongest SQLite synchronous setting for this rollback-journal mode. The candidate still requires empirical validation on the exact host filesystem and storage stack. If the driver/runtime does not reliably apply EXTRA, or the target filesystem/storage does not pass abrupt power-loss testing, reject this candidate.
 
@@ -125,7 +125,7 @@ The following are deliberately unresolved:
 - Database path, owner/mode, encryption-at-rest requirements and storage quota.
 - Maximum database size, low-watermark, backup cadence, retention and restore RTO.
 - Numeric cleanup deadline and its reboot/clock semantics.
-- Independent security review of the privileged supervisor and kernel-lock boundary.
+- Independent security review of the candidate-specific host supervisor and kernel-lock boundary.
 - Empirical power-loss, disk-full, corruption, lock-contention and recovery results.
 
 No provider, VM, disk, paid service, package, database engine, or spend is authorized by this proposal.
