@@ -251,6 +251,7 @@ def errors_for(record, schema_validator):
             "watchdog_digest", "test_harness_digest"]
         if not host.get("selected") or any(not host.get(field) for field in required_host):
             errors.append("candidate-qualified requires exact selected host/runtime/storage identity")
+        review_context = record.get("review", {})
         all_evidence_refs = []
         for finding in results + rootless_results:
             all_evidence_refs.extend(finding.get("evidence_refs", []))
@@ -274,7 +275,7 @@ def errors_for(record, schema_validator):
                 errors.append(f"{reference_field} must resolve to independently verified watchdog-control-plane evidence")
             if evidence.get("sha256") != host.get(digest_field):
                 errors.append(f"{reference_field} digest must match its immutable evidence record")
-            if evidence.get("independent_verifier_id") in {review.get("host_owner_id"), review.get("reviewer_id")}:
+            if evidence.get("independent_verifier_id") in {review_context.get("host_owner_id"), review_context.get("reviewer_id")}:
                 errors.append(f"{reference_field} must be verified by a principal independent of host owner and security reviewer")
             if evidence.get("acquired_by_id") in {review.get("host_owner_id"), review.get("reviewer_id"), evidence.get("independent_verifier_id")}:
                 errors.append(f"{reference_field} evidence acquirer must be distinct from host owner, reviewer and verifier")
