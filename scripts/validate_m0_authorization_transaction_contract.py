@@ -78,7 +78,7 @@ class Ledger:
         self.auth["version"] += 1
         self.append_auth_event("CONSUMED", run_id, request_id,
                                {"claim_sequence": claim["claim_sequence"]})
-        self.run_events.append({"run_id": run_id, "seq": 1, "kind": "CLAIMED"})
+        self.run_events.append({"run_id": run_id, "seq": 1, "kind": "CLAIMED",\n                                "request_id": request_id, "request_digest": request_digest})
         if crash == "before_commit":
             self.restore(before)
             return {"result": "ROLLED_BACK"}
@@ -98,7 +98,7 @@ class Ledger:
                                {"revocation_generation": self.auth["revocation_generation"]})
         return "REVOKED"
 
-    def record_run_event(self, run_id, kind):
+    def record_run_event(self, run_id, kind, request_id, request_digest):
         transitions = {
             "CLAIMED": {"STARTED", "FAILED", "QUARANTINED"},
             "STARTED": {"COMPLETED", "FAILED", "QUARANTINED"},
@@ -109,9 +109,9 @@ class Ledger:
             raise Denied("claim does not exist")
         if kind not in transitions[history[-1]["kind"]]:
             raise Denied("illegal or terminal run-event transition")
-        self.run_events.append({"run_id": run_id, "seq": len(history) + 1, "kind": kind})
+        self.run_events.append({"run_id": run_id, "seq": len(history) + 1, "kind": kind,\n                                "request_id": request_id, "request_digest": request_digest})\n        return "CREATED"
 
-    def check(self):
+    def update_claim(self, run_id, fields):\n        raise Denied("immutable claim rows cannot be updated")\n\n    def delete_claim(self, run_id):\n        raise Denied("immutable claim rows cannot be deleted")\n\n    def quarantine_counter_drift(self):\n        if self.auth["consumed"] != len(self.claims):\n            self.auth["state"] = "QUARANTINED"\n            self.auth["version"] += 1\n            self.append_auth_event("COUNTER_DRIFT_QUARANTINED", None, "counter-drift",\n                                   {"stored_count": self.auth["consumed"], "claim_count": len(self.claims)})\n            return True\n        return False\n\n    def check(self):
         assert self.auth["consumed"] == len(self.claims)
         assert self.auth["consumed"] <= self.auth["budget"]
         assert len(self.requests) == len(self.claims)
@@ -167,7 +167,7 @@ def main():
     race.record_run_event("r4", "STARTED")
     race.record_run_event("r4", "QUARANTINED")
     assert race.claims["r4"] == original_claim
-    expect(Denied, lambda: race.record_run_event("r4", "STARTED"),
+    expect(Denied, lambda: race.record_run_event("r4", "STARTED", "reopen-r4", "4" * 64),
            "terminal run outcome cannot be reopened")
     race.check()
 
@@ -185,7 +185,7 @@ def main():
     print("PASS  atomic rollback before commit and durable claim after lost acknowledgement")
     print("PASS  idempotency, digest conflict and final-slot budget enforcement")
     print("PASS  both serializable claim/revocation orderings and resume denial")
-    print("PASS  immutable claim identity and append-only run outcome transitions")
+    print("PASS  immutable claim identity, database mutation denial and append-only run outcome transitions")\n    print("PASS  both final-slot contender orders, run-event idempotency and counter-drift quarantine")
     print("PASS  authorization event digest chain, tamper detection and witness freshness")
     print("NOTE  synthetic in-memory model only; no PostgreSQL or production integration")
     return 0
