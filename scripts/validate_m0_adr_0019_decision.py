@@ -180,8 +180,8 @@ def validate_record(record, validator):
                               f"{cid}: rootless compatibility gate must be passed")
                     add_error(errors, qualification.get("rootless_profile") != config.get("rootless_profile"),
                               f"{cid}: qualification rootless host profile does not match candidate configuration")
-                    add_error(errors, qualification.get("rootless_profile_digest") != config.get("profile_digest"),
-                              f"{cid}: qualification rootless profile digest does not match candidate configuration")
+                    add_error(errors, qualification.get("rootless_profile_digest") != config.get("rootless_profile_digest"),
+                              f"{cid}: qualification rootless profile digest does not match candidate rootless_profile_digest")
                 else:
                     add_error(errors, bool(rootless_ids) or
                               qualification.get("rootless_userns_compatibility_gate") != "not-applicable",
