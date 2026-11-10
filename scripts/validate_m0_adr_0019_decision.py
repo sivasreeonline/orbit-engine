@@ -149,10 +149,14 @@ def validate_record(record, validator):
     outcome, selected = record.get("outcome"), record.get("selected_candidate")
     expected_selection = {"select-rootful-for-m0-proof": "rootful-supervisor",
                           "select-rootless-for-m0-proof": "rootless-containerd-userns"}.get(outcome)
+    add_error(errors, outcome != "pending" and record.get("record_status") != "completed",
+              "every non-pending architecture outcome requires completed independent sign-off")
     add_error(errors, selected != expected_selection, "selected_candidate must match the decision outcome")
     if outcome in {"select-rootful-for-m0-proof", "select-rootless-for-m0-proof"}:
         add_error(errors, record.get("record_status") != "completed",
                   "candidate selection requires completed independent decision")
+        add_error(errors, record.get("review_scope") != "design-and-host-evidence",
+                  "candidate selection requires design and host evidence review scope")
         add_error(errors, record.get("adr_status") != "accepted-for-m0-proof-boundary",
                   "candidate selection requires ADR accepted-for-M0-proof-boundary status")
         chosen, other = by_candidate.get(expected_selection, {}), by_candidate.get(
@@ -188,6 +192,8 @@ def validate_record(record, validator):
         add_error(errors, not participants.get("independence_attested") or
                   not participants.get("independence_basis", "").strip(),
                   "completed decision requires reviewer independence basis")
+        add_error(errors, not record.get("decision_record_id"),
+                  "completed decision requires an assigned decision-record UUID")
         add_error(errors, not record.get("reviewed_commit_sha") or not record.get("reviewed_at") or
                   not record.get("signature_reference"),
                   "completed decision requires exact commit, date and signature reference")
@@ -196,6 +202,7 @@ def validate_record(record, validator):
             reviewed = datetime.fromisoformat(record["reviewed_at"].replace("Z", "+00:00"))
             expires = datetime.fromisoformat(record["expires_at"].replace("Z", "+00:00"))
             add_error(errors, expires <= reviewed, "decision expiry precedes review")
+            add_error(errors, expires <= datetime.now(timezone.utc), "decision record is expired")
         except (KeyError, TypeError, ValueError):
             errors.append("completed decision dates are invalid")
     if record.get("record_status") == "not-started":
@@ -264,6 +271,8 @@ def main():
     case=deepcopy(template); case["candidate_assessments"][0]["design_findings"][0]["result"]="pass"; cases.append(("pass without evidence",case))
     case=deepcopy(template); case["candidate_assessments"][0]["assessment_status"]="host-qualified"; cases.append(("host-qualified without report",case))
     case=deepcopy(template); case["outcome"]="select-rootful-for-m0-proof"; case["selected_candidate"]="rootful-supervisor"; cases.append(("selection while pending",case))
+    case=deepcopy(template); case.update(record_status="completed",outcome="defer",adr_status="deferred",reviewed_commit_sha="a"*40,reviewed_at="2026-11-10T00:00:00Z",expires_at="2026-12-10T00:00:00Z",signature_reference="synthetic"); case["participants"]={"reviewer_id":"reviewer","host_owner_id":"owner","independence_attested":True,"independence_basis":"synthetic","conflict_disclosure":"none"}; cases.append(("completed decision without UUID",case))
+    case=deepcopy(template); case.update(record_status="completed",decision_record_id="22222222-2222-4222-8222-222222222222",outcome="defer",adr_status="deferred",reviewed_commit_sha="a"*40,reviewed_at="2026-11-01T00:00:00Z",expires_at="2026-11-02T00:00:00Z",signature_reference="synthetic"); case["participants"]={"reviewer_id":"reviewer","host_owner_id":"owner","independence_attested":True,"independence_basis":"synthetic","conflict_disclosure":"none"}; cases.append(("expired decision record",case))
     for key,label in [("privileged_implementation_authorized","implementation"),("phase_a_authorized","Phase A"),("phase_b_authorized","Phase B"),("student_execution_authorized","student execution"),("production_execution_authorized","production")]:
         case=deepcopy(template); case[key]=True; cases.append((label+" authorization",case))
     for label,record in cases:
@@ -275,6 +284,8 @@ def main():
     # qualification record; the alternative is at least design-assessed.
     complete=deepcopy(template)
     complete["record_status"]="completed"
+    complete["decision_record_id"]="22222222-2222-4222-8222-222222222222"
+    complete["review_scope"]="design-and-host-evidence"
     complete["reviewed_commit_sha"]="a"*40
     complete["outcome"]="select-rootful-for-m0-proof"
     complete["selected_candidate"]="rootful-supervisor"
@@ -340,6 +351,12 @@ def main():
         raise AssertionError("synthetic valid selection rejected: "+"; ".join(errors))
     if any(complete[flag] is not False for flag in AUTH_FLAGS):
         raise AssertionError("architecture selection improperly authorized execution")
+    mismatch=deepcopy(complete)
+    mismatch_rootful=next(c for c in mismatch["candidate_assessments"] if c["candidate_id"]=="rootful-supervisor")
+    mismatch_rootful["qualification_report"]["runtime_profile_digest"]="f"*64
+    if not validate_record(mismatch,validator):
+        raise AssertionError("candidate qualification with mismatched runtime digest was accepted")
+    print("PASS  rejects selected candidate with mismatched runtime profile digest")
     print("PASS  accepts synthetic selection only with candidate-specific complete qualification")
     print("PASS  ADR acceptance leaves implementation and all execution authorizations false")
     print("NOTE  synthetic contract fixtures only; no actual review, host qualification or signature")
