@@ -28,9 +28,12 @@ The protocol hard ceilings remain 512 MiB scratch and 8,192 scratch inodes. The 
 2. Enforce a shared combined ceiling of 1,048,576 bytes. The per-stream counters each have the same 1,048,576-byte ceiling for independent accounting and fixture coverage.
 3. On the first per-stream or combined ceiling breach, mark output overflow and request termination of the complete sandbox process tree.
 4. Retain no more than the first 1 MiB combined across both streams. Do not buffer unbounded output in memory, temporary files, logs, or telemetry.
-5. Continue draining/discarding pipe data with fixed-size buffers while termination and reaping complete; never block the supervisor because one pipe is full.
-6. Classify the result as Output Limit Exceeded only after the host collector confirms the breach. A collector failure or uncertain process cleanup is an infrastructure failure, never a student verdict.
-7. Record per-stream observed byte counts, combined stored byte count, overflow flag, termination reason, and hashes of retained sanitized evidence. Never store hidden tests or expected outputs in guest-visible output artifacts.
+5. Drain stdout and stderr concurrently using independent non-blocking/pollable readers or an equivalently proven multiplexed implementation. A full pipe must not prevent draining the other. Each reader uses a fixed-size buffer; no unbounded queue or blocking evidence-store write may sit on the read path.
+6. Count bytes immediately on read, before retention or transformation. Update independent per-stream counters and the shared combined counter atomically across readers. Retain raw byte prefixes in separate stream artifacts, without decoding or newline normalization, and never exceed the combined 1 MiB storage ceiling. Inter-stream ordering is not guaranteed and must not be represented as deterministic.
+7. On the first observed per-stream or combined breach, atomically record the breach and request complete sandbox/cgroup termination immediately; do not wait for pipe readers, storage, or client acknowledgement. Continue draining/discarding excess bytes with fixed-size buffers until EOF or the bounded cleanup deadline. A descendant inheriting a pipe must not keep the attempt alive: terminate the complete sandbox, and let the external watchdog complete cleanup if EOF does not arrive.
+8. Pipe readers may write retained bytes only to a bounded local staging sink. If staging is unavailable/full, keep draining and discarding, mark evidence incomplete, and continue cleanup; never synchronously retry storage from a reader.
+9. Classify the result as Output Limit Exceeded only after the host collector confirms the breach. A collector failure or uncertain process cleanup is an infrastructure failure, never a student verdict.
+10. Record per-stream observed and retained byte counts, combined stored byte count, truncation flags, overflow flag, termination reason, and hashes of retained sanitized evidence. Never store hidden tests or expected outputs in guest-visible output artifacts.
 
 ## 3. Safety and validation constraints
 
