@@ -98,6 +98,23 @@ def main() -> int:
     ]:
         require(workflow, term, "M0 workflow dependency and execution step")
 
+    crypto_path = ROOT / "docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md"
+    crypto = crypto_path.read_text(encoding="utf-8")
+    for term in [
+        "Offline trust root", "External host-incarnation authority", "Provider control plane",
+        "Ed25519", "ECDSA P-256", "RFC 8785", "canonical", "domain-separation",
+        "DEPRECATED_VERIFY_ONLY", "REVOKED", "trust bundle", "anti-rollback",
+        "KMS/HSM", "private key", "cross-language", "two independently implemented verifiers",
+        "no cached-positive fallback", "No algorithm is selected",
+    ]:
+        require(crypto, term, "cryptographic trust and key lifecycle invariant")
+    require(contract, "m0-cryptographic-trust-and-key-lifecycle.md", "lifecycle-to-crypto trust linkage")
+    require(protocol, "m0-cryptographic-trust-and-key-lifecycle.md", "protocol-to-crypto trust linkage")
+    require(packet, "m0-cryptographic-trust-and-key-lifecycle.md", "review packet-to-crypto trust linkage")
+    require(ledger, "signer_key_version", "ledger signer key-version binding")
+    require(ledger, "private key bytes are never stored", "ledger private-key exclusion")
+    require(crypto, "No production key, migration, external authority, signer, verifier", "crypto implementation safety boundary")
+
     if "Phase A remains unauthorized" not in protocol:
         raise AssertionError("protocol must retain explicit Phase A unauthorized boundary")
     print("PASS  authorization lifecycle security properties and state inventory")
