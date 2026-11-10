@@ -493,6 +493,16 @@ def main():
     if errors_for(complete,schema_validator):
         raise AssertionError("synthetic fully-qualified record failed: " + "; ".join(errors_for(complete,schema_validator)))
 
+    missing_epoch = deepcopy(complete)
+    missing_epoch["host_identity"]["host_incarnation_epoch"] = None
+    if not any("exact selected host/runtime/storage identity" in error for error in errors_for(missing_epoch,schema_validator)):
+        raise AssertionError("candidate-qualified record accepted without external host-incarnation epoch")
+    missing_fence = deepcopy(complete)
+    missing_fence["host_identity"]["prior_incarnation_fence_evidence_ref"] = None
+    if not any("exact selected host/runtime/storage identity" in error for error in errors_for(missing_fence,schema_validator)):
+        raise AssertionError("candidate-qualified record accepted without prior-incarnation fence evidence")
+    print("PASS  requires externally anchored host-incarnation epoch and prior-instance fence evidence")
+
     verifier_is_host_owner = deepcopy(complete)
     verifier_is_host_owner["test_results"][0]["evidence_refs"][0]["independent_verifier_id"] = verifier_is_host_owner["review"]["host_owner_id"]
     if not any("evidence verifier must be independent" in error for error in errors_for(verifier_is_host_owner,schema_validator)):
