@@ -68,7 +68,9 @@ If an assumption cannot be demonstrated, record it as an open risk, not as a con
 | Output/log flooding | Independent stdout/stderr ceilings; bounded storage; safe log encoding | Byte counters, artifact sizes, truncation/termination assertions | Not proven |
 | Cancellation race / orphan process | External watchdog, process-tree termination, cleanup-before-ack | Host process/task/cgroup inventory after each cancellation race | Not proven |
 | Duplicate delivery / duplicate result | Durable idempotency key and one terminal result per attempt | Concurrent duplicate delivery tests and persistent result assertions | Control-plane integration pending |
-| Supervisor/host restart | Durable journal and reconciliation of all non-terminal resources | Fault-injection logs and post-restart host inventory | Not implemented |
+| Runner restart during active attempt | Supervisor-owned lifecycle remains independent; reconnect/retry is idempotent and cannot create a duplicate | Runner restart fault-injection evidence, durable attempt identity, one task and one terminal result | Not implemented |
+| Supervisor restart during each lifecycle phase | Durable journal reconciles intent and observed host state; ambiguous ownership quarantines host | Fault-injection logs and post-restart process/task/container/shim/namespace/cgroup/mount/scratch/network inventory | Not implemented |
+| Containerd daemon restart or outage | Stop new launches and reconcile all non-terminal attempts after daemon recovery | Daemon identity/version checks and post-recovery inventory prove no duplicate or orphan resource | Not implemented |
 | Crash between journal writes and containerd side effects | Persist intent before side effect; deterministic resource identity; reconcile before retry; compare-and-set terminal state | Fault injection at every lifecycle transition, durable journal inspection, containerd/process/cgroup inventory | Design contract added; not implemented |
 | Cleanup acknowledgement race | Cleanup independent of client connection; verify process/task/shim/cgroup/namespace/mount/network/scratch absence before terminal success | Post-ack host inventory and cancellation/exit/timeout race tests | Design contract added; not implemented |
 | Evidence tampering / incomplete evidence | SHA-256 manifest, access controls, independent reviewer, incomplete status on missing evidence | Manifest validation, hash verification, reviewer signoff | Schema exists; actual evidence absent |
@@ -85,7 +87,7 @@ The reviewer must explicitly answer each item:
 5. Can IPv4, IPv6, DNS, direct-IP, loopback-to-host, or metadata traffic escape by any alternate interface or route?
 6. Are all resource ceilings hard limits at both sandbox and outer VM levels?
 7. Can any failure path leave an orphan task, process, shim, namespace, mount, scratch directory, or writable artifact?
-8. Are cancellation, timeout, restart, duplicate delivery, and cleanup races safe and idempotent?
+8. Are cancellation, timeout, runner restart, supervisor restart at each lifecycle phase, containerd daemon restart, duplicate delivery, and cleanup races safe and idempotent? Are the three restart scenarios independently evidenced?
 9. Can logs or evidence expose source, hidden test material, credentials, raw daemon command lines, or private URLs?
 10. Are image signatures, package provenance, dependency versions, and update/rollback procedures sufficient?
 11. What residual risks remain because gVisor shares the host kernel and because the supervisor privilege boundary is not yet implemented?
