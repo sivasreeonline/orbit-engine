@@ -112,7 +112,7 @@ def main() -> int:
     require(protocol, "m0-cryptographic-trust-and-key-lifecycle.md", "protocol-to-crypto trust linkage")
     require(packet, "m0-cryptographic-trust-and-key-lifecycle.md", "review packet-to-crypto trust linkage")
     require(ledger, "signer_key_version", "ledger signer key-version binding")
-    require(ledger, "private key bytes are never stored", "ledger private-key exclusion")
+    require(ledger, "private key bytes never enter Neon", "ledger private-key exclusion")
     require(crypto, "No production key, migration, external authority, signer, verifier", "crypto implementation safety boundary")
 
     if "Phase A remains unauthorized" not in protocol:
