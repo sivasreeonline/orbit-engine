@@ -317,7 +317,9 @@ def main() -> int:
             "read back the exact immutable manifest version",
             "Persist the terminal result with compare-and-set only after all artifact references",
         ]
-        positions = [runtime_document.casefold().find(phrase.casefold()) for phrase in evidence_publication_order]
+        evidence_section_start = runtime_document.casefold().find("### 7.1 evidence publication, integrity, and crash ordering")
+        evidence_section = runtime_document[evidence_section_start:] if evidence_section_start >= 0 else ""
+        positions = [evidence_section.casefold().find(phrase.casefold()) for phrase in evidence_publication_order]
         if any(position < 0 for position in positions) or positions != sorted(positions):
             failures.append("runtime harness: evidence publication steps must remain complete and strictly ordered before terminal commit")
         for phrase in (
