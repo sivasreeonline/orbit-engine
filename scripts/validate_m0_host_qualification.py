@@ -251,6 +251,33 @@ def errors_for(record, schema_validator):
             "watchdog_digest", "test_harness_digest"]
         if not host.get("selected") or any(not host.get(field) for field in required_host):
             errors.append("candidate-qualified requires exact selected host/runtime/storage identity")
+        all_evidence_refs = []
+        for finding in results + rootless_results:
+            all_evidence_refs.extend(finding.get("evidence_refs", []))
+            for subtest in finding.get("watchdog_subtests", {}).values():
+                all_evidence_refs.extend(subtest.get("evidence_refs", []))
+        evidence_by_id = {}
+        for evidence in all_evidence_refs:
+            evidence_by_id.setdefault(evidence.get("reference_id"), []).append(evidence)
+        required_epoch_evidence = [
+            ("host_incarnation_epoch_evidence_ref", "host_incarnation_epoch_evidence_digest"),
+            ("prior_incarnation_fence_evidence_ref", "provider_fence_evidence_digest")
+        ]
+        for reference_field, digest_field in required_epoch_evidence:
+            reference_id = host.get(reference_field)
+            matches = evidence_by_id.get(reference_id, []) if reference_id else []
+            if len(matches) != 1:
+                errors.append(f"candidate-qualified requires exactly one evidence record for {reference_field}")
+                continue
+            evidence = matches[0]
+            if evidence.get("evidence_type") != "watchdog-control-plane" or evidence.get("verification_status") != "verified":
+                errors.append(f"{reference_field} must resolve to independently verified watchdog-control-plane evidence")
+            if evidence.get("sha256") != host.get(digest_field):
+                errors.append(f"{reference_field} digest must match its immutable evidence record")
+            if evidence.get("independent_verifier_id") in {review.get("host_owner_id"), review.get("reviewer_id")}:
+                errors.append(f"{reference_field} must be verified by a principal independent of host owner and security reviewer")
+            if evidence.get("acquired_by_id") in {review.get("host_owner_id"), review.get("reviewer_id"), evidence.get("independent_verifier_id")}:
+                errors.append(f"{reference_field} evidence acquirer must be distinct from host owner, reviewer and verifier")
         scope = record.get("scope", {})
         if not scope.get("host_provisioning_authorization_ref") or scope.get("target_architecture") == "not-selected":
             errors.append("candidate-qualified requires a separately authorized host and selected architecture")
@@ -483,6 +510,26 @@ def main():
             "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-reviewer",
             "verification_note":"Synthetic only; not a real host measurement."
         }]
+    jrn013 = next(item for item in complete["test_results"] if item["test_id"] == "JRN-013")
+    epoch_proof = {
+        "reference_id":"synthetic-JRN-013-epoch-proof","object_version":"v1","sha256":"d"*64,"byte_count":1,
+        "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
+        "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":"watchdog-control-plane",
+        "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-control-plane-verifier",
+        "verification_note":"Synthetic only; not a real authority response."
+    }
+    fence_proof = {
+        "reference_id":"synthetic-JRN-013-fence-proof","object_version":"v1","sha256":"e"*64,"byte_count":1,
+        "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
+        "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":"watchdog-control-plane",
+        "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-control-plane-verifier",
+        "verification_note":"Synthetic only; not a real provider fence."
+    }
+    jrn013["evidence_refs"].extend([epoch_proof, fence_proof])
+    complete["host_identity"]["host_incarnation_epoch_evidence_ref"] = epoch_proof["reference_id"]
+    complete["host_identity"]["host_incarnation_epoch_evidence_digest"] = epoch_proof["sha256"]
+    complete["host_identity"]["prior_incarnation_fence_evidence_ref"] = fence_proof["reference_id"]
+    complete["host_identity"]["provider_fence_evidence_digest"] = fence_proof["sha256"]
     complete["review"].update({
         "status":"completed","reviewer_id":"synthetic-independent-reviewer","host_owner_id":"synthetic-host-owner",
         "independence_attested":True,"independence_basis":"synthetic identity separation",
