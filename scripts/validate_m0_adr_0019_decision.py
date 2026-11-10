@@ -289,10 +289,12 @@ def main():
     rootful["assessment_status"]="host-qualified"
     rootful["assessment_rationale"]="Synthetic qualified candidate only."
     rootful["configuration"].update({"profile_id":"synthetic-rootful","profile_digest":"b"*64,
+        "runtime_profile_digest":"4"*64,"resource_profile_digest":"5"*64,"journal_profile_digest":"6"*64,
+        "supervisor_digest":"7"*64,"watchdog_digest":"8"*64,"test_harness_digest":"9"*64,
         "runner_identity":"synthetic-runner","host_controller_identity":"synthetic-supervisor",
         "containerd_access_principal":"synthetic-supervisor","privilege_inventory_digest":"c"*64,
         "syscall_inventory_digest":"d"*64,"writable_path_inventory_digest":"e"*64,
-        "service_hardening_digest":"f"*64,"socket_policy_digest":"1"*64})
+        "service_hardening_digest":"f"*64,"socket_policy_digest":"1"*64,"network_backend":"synthetic-host-network"})
     for finding in rootful["design_findings"]:
         finding.update(result="pass",verification_method="Synthetic test",finding="Synthetic only",severity="none")
         types=["design-document"] if finding["evidence_class"]=="design" else (
@@ -319,7 +321,9 @@ def main():
         "resource_profile_digest":"5"*64,"journal_profile_digest":"6"*64,"supervisor_digest":"7"*64,
         "watchdog_digest":"8"*64,"test_harness_digest":"9"*64,
         "runner_identity":"synthetic-runner", "host_controller_identity":"synthetic-rootless-daemon",
-        "containerd_access_principal":"synthetic-rootless-daemon", "network_backend":"synthetic-rootless-network",
+        "containerd_access_principal":"synthetic-rootless-daemon", "privilege_inventory_digest":"c"*64,
+        "syscall_inventory_digest":"d"*64,"writable_path_inventory_digest":"e"*64,
+        "service_hardening_digest":"f"*64,"socket_policy_digest":"1"*64,"network_backend":"synthetic-rootless-network",
         "cgroup_delegation_reference":"synthetic-cgroup-delegation",
         "user_namespace_mapping_reference":"synthetic-subuid-map", "rootlesskit_version":"synthetic-rootlesskit"
     })
