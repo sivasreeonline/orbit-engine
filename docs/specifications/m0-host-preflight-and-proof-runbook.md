@@ -85,6 +85,25 @@ A test passes only with captured host-side evidence and an assertion that checks
 - Repeat each failure-path test enough times to expose races.
 - Preserve correlation IDs and timestamps without logging student source, hidden inputs, expected outputs, or secrets.
 
+## Cleanup deadline qualification gate
+
+The numeric cleanup deadline is intentionally unset in profile revision 1. Before any stress fixture or host proof, follow the measurement and approval protocol in Section 2.1 of `m0-proof-resource-profile-v1.md`.
+
+The qualification evidence must include:
+
+- The earliest host-observed termination trigger timestamp, boot identity, and the immediate termination-request timestamp. The cleanup clock is anchored to trigger detection, not the later durable journal commit or client acknowledgement.
+- Phase timings from trigger through process-tree/cgroup empty, containerd task/container removal, shim exit, namespace/mount/scratch/network-policy cleanup, independent absence verification, and durable cleanup disposition.
+- Separate measurements for cancellation, sandbox watchdog, end-to-end expiry, stdout/stderr/combined overflow, OOM/PID limits, natural exit with inherited pipes, supervisor/containerd restart, journal failure, evidence-store outage, and ambiguous partial state.
+- Repeated cold/warm and bounded-load measurements, with sample count, distribution, maximum, outliers, and clock/scheduler/storage uncertainty. Percentiles are descriptive and do not prove a hard upper bound.
+- Explicit proof that a paused/deadlocked supervisor cannot disable the external watchdog and that restart/reboot never grants a fresh cleanup interval.
+- An independently reviewed margin rationale and numeric deadline in a new resource-profile revision.
+
+**Do not use an average or p99 as the deadline.** Select a candidate only from the worst verified case plus a justified, reviewed margin. If the required cleanup budget plus the maximum sandbox wall time and evidence/terminal reserve cannot fit the remaining 10-minute intake deadline, admission must reject the launch before creating a sandbox.
+
+The cleanup branch and evidence branch remain independent. Evidence-store or journal failure must not delay termination. At the absolute intake deadline, any unresolved cleanup/evidence branch is incomplete and quarantined; it must never be acknowledged as successful. Continue independent best-effort cleanup after quarantine.
+
+No numeric deadline has been chosen, no measurements have been collected, and no stress fixture or host proof is authorized by this runbook update.
+
 ## Journal backend proof gate
 
 The candidate journal configuration and acceptance matrix are defined in `docs/specifications/m0-journal-backend-evaluation.md`. It is a proposal only; no storage engine or host implementation is approved.
