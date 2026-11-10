@@ -133,6 +133,11 @@ REQUIRED = {
         "Prohibit shell/systemctl command execution",
     ],
 }
+LOGICAL_RECORD_NAMES = {
+    "host_meta", "attempts", "idempotency_keys", "operations", "triggers",
+    "finalization_branches", "terminal_results", "evidence_references", "quarantine_records",
+}
+
 FORBIDDEN_ADR_SELECTION_PHRASES = [
     "recommended for disposable M0 proof only",
     "For the initial M0 proof, use a dedicated",
@@ -171,6 +176,15 @@ def main() -> int:
         for label in ("contract", "runtime harness"):
             if scenario_id not in contents.get(label, ""):
                 failures.append(f"{label}: missing watchdog fault-injection scenario {scenario_id}")
+
+    for label in ("contract", "journal evaluation"):
+        rows = [line for line in contents.get(label, "").splitlines() if line.startswith("| `")]
+        names = [line.split("`", 2)[1] for line in rows]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        missing = sorted(LOGICAL_RECORD_NAMES - set(names))
+        extra = sorted(set(names) - LOGICAL_RECORD_NAMES)
+        if duplicates or missing or extra:
+            failures.append(f"{label}: logical record inventory mismatch; duplicates={duplicates}, missing={missing}, extra={extra}")
 
     for label in ("contract", "journal evaluation"):
         terminal_rows = [line for line in contents.get(label, "").splitlines() if line.startswith("| `terminal_results` |")]
