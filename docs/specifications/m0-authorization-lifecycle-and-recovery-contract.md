@@ -94,7 +94,11 @@ A run claim is an atomic compare-and-swap that consumes a unique run ID and incr
 
 No authorization status may be inferred solely from a manifest status string or expiry timestamp. The verifier validates signature, exact immutable object version/digest, authoritative ledger state, revocation status, trusted time, host/epoch binding, and current host qualification/review validity.
 
-## 7. Required implementation and evidence before approval
+## 7. Authorization ledger data model
+
+The application-side relational model, event ledger, bounded run-claim transaction, role separation, evidence references and anti-rollback restore protocol are specified in `docs/specifications/m0-authorization-ledger-data-model.md`. Neon stores this ledger and verified receipt mirrors only; it is not the external provider fencing authority and cannot mint host epochs. The model is a proposal, not an approved or deployed migration.
+
+## 8. Required implementation and evidence before approval
 
 Before privileged implementation or any Phase A authorization, require:
 
