@@ -434,7 +434,506 @@
                 "exit_code",
                 "duration_ms"
               ]
-            }
+            },
+            "minItems": 33,
+            "maxItems": 33,
+            "allOf": [
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-run-java-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-run-py-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-run-java-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-run-003"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-run-004"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-id-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-id-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-host-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-host-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-host-003"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-host-004"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-host-005"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-003"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-004"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-005"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-net-006"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-cpu-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-mem-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-pid-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-time-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-fs-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-fs-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-fs-003"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-out-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-res-out-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-clean-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-clean-002"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-cancel-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-dup-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-restart-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "test_id": {
+                      "const": "m0-life-repeat-001"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            ]
           },
           "security_review": {
             "properties": {
@@ -506,5 +1005,6 @@
         }
       }
     }
-  ]
+  ],
+  "$comment": "A passed manifest must be validated against this schema and scripts/validate_m0_evidence_schema.py. The schema itself enforces exact one-of-each fixture coverage; the Python validator independently checks the same contract."
 }
