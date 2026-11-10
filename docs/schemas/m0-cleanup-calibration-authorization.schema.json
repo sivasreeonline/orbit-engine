@@ -597,7 +597,11 @@
         "independence_attested",
         "reviewed_at",
         "authorization_digest_sha256",
-        "signature_reference"
+        "signature_reference",
+        "independent_security_review_record_ref",
+        "independent_security_review_record_digest",
+        "fence_control_id",
+        "fence_control_result"
       ],
       "properties": {
         "host_owner_id": {
@@ -625,6 +629,20 @@
         "signature_reference": {
           "type": "string",
           "minLength": 1
+        },
+        "independent_security_review_record_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "independent_security_review_record_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "fence_control_id": {
+          "const": "FENCE-001"
+        },
+        "fence_control_result": {
+          "const": "pass"
         }
       }
     },
