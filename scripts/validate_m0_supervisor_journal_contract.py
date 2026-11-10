@@ -54,6 +54,9 @@ REQUIRED = {
         "trigger_stream_sealed",
         "insert exactly one `terminal_results` row",
         "append-only: no update, upsert, replacement, or delete is permitted",
+        "winning trigger ID/cause",
+        "cleanup/evidence branch generations and state versions plus durable dispositions",
+        "Insert exactly once; append-only; no update, upsert, replacement, or delete",
     ],
     "runtime harness": [
         "m0-supervisor-journal-implementation-contract.md",
@@ -97,6 +100,9 @@ REQUIRED = {
         "a unique terminal_results.attempt_id",
         "Install database-level guards",
         "sealed trigger watermark",
+        "winning trigger ID/cause",
+        "cleanup/evidence branch generations and state versions plus durable dispositions",
+        "Insert exactly once; append-only; no update, upsert, replacement, or delete",
         "Candidate A requires root ownership; Candidate B requires ownership by its dedicated non-root supervisor identity",
     ],
     "runner README": [
@@ -165,6 +171,18 @@ def main() -> int:
         for label in ("contract", "runtime harness"):
             if scenario_id not in contents.get(label, ""):
                 failures.append(f"{label}: missing watchdog fault-injection scenario {scenario_id}")
+
+    for label in ("contract", "journal evaluation"):
+        terminal_rows = [line for line in contents.get(label, "").splitlines() if line.startswith("| `terminal_results` |")]
+        if len(terminal_rows) != 1:
+            failures.append(f"{label}: exactly one canonical terminal_results logical record must be defined")
+        elif not all(phrase.casefold() in terminal_rows[0].casefold() for phrase in (
+            "winning trigger ID/cause",
+            "sealed trigger watermark",
+            "cleanup/evidence branch generations and state versions",
+            "append-only",
+        )):
+            failures.append(f"{label}: terminal_results row is missing required recovery/immutability fields")
 
     for phrase in FORBIDDEN_ADR_SELECTION_PHRASES:
         if phrase.casefold() in contents.get("host launch ADR", "").casefold():
