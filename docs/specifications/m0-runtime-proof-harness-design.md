@@ -248,6 +248,37 @@ For each attempt capture:
 
 Guest stdout/stderr is untrusted and bounded. Guest-reported UID, platform, network state, or cleanup is never accepted as sole proof. Raw daemon command lines and environment output must never be archived; follow the redaction rules in the host preflight runbook.
 
+
+### 7.1 Evidence publication, integrity, and crash ordering
+
+The manifest's `relative_path`, `sha256`, `bytes`, and `redacted` fields are declarations, not proof that an evidence object exists or matches its declaration. JSON Schema validation alone MUST NOT authorize a passed proof. A separate host-side evidence verifier is required before a passed result can be committed.
+
+The evidence publisher and verifier must enforce this sequence for every evidence object:
+
+1. Create an attempt-scoped staging location using exclusive creation beneath a trusted, root-owned directory. Reject symlink traversal and any path that escapes the attempt's staging root.
+2. Collect only allowlisted, sanitized evidence. Apply redaction before publication; do not publish raw evidence and then rely on manifest metadata to claim it was redacted.
+3. Close the staged file, flush file contents to durable storage using the selected platform's documented durability primitive, and compute SHA-256 and byte count from the exact final bytes.
+4. Publish to an immutable, content-addressed object identity derived from the digest (or an equivalently reviewed immutable object version). Publication must be no-overwrite; an existing object is accepted only after its bytes are independently re-read and verified against the digest and byte count.
+5. Make the containing directory or object-store commit durable using the selected backend's documented semantics. Re-open/read back the published object and independently verify exact byte count and SHA-256 before recording its reference.
+6. Persist the verified evidence reference, digest, byte count, redaction disposition, and evidence-collection status in the durable attempt journal. Do not persist a reference before the object is verified and durable.
+7. Generate and validate the final manifest from the durable journal and verified objects. Persist the manifest and its integrity metadata durably before making the attempt terminal.
+8. Persist the terminal result with compare-and-set only after both evidence disposition and independently verified cleanup disposition are known. Acknowledge terminal success only after that terminal journal transition is durable.
+
+The exact filesystem or object-store technology, durability primitives, immutable versioning/retention settings, access-control policy, and recovery procedure are implementation gates. Do not assume that rename, close, database commit, or an object-store success response alone implies durable publication; document and test the selected backend's actual guarantees.
+
+Crash recovery must reconcile staging files, published objects, journal references, and manifests by attempt identity and digest:
+- Staged object with no journal reference: quarantine or safely garbage-collect only after proving no in-flight publisher owns it; never include it in a passed manifest.
+- Published object with no journal reference: treat as an orphan; verify ownership and retention before cleanup, never infer a successful attempt.
+- Journal reference with missing object or mismatched digest/size: mark evidence incomplete, prevent passed status, preserve the incident record, and quarantine the proof host if integrity cannot be restored.
+- Manifest persisted but terminal journal transition absent: verify every referenced object and cleanup state, then resume the same idempotent terminal transition or mark incomplete; never issue a second terminal result.
+- Terminal journal state with missing/unverified manifest or evidence: treat as an invariant violation, revoke any success acknowledgement where possible, mark the proof run invalid, and quarantine for investigation.
+
+Evidence collection and evidence-store access must not be on the critical path for process termination. The host lifecycle controller must continue termination and cleanup even if the collector blocks, crashes, or loses storage access. Evidence failure may make the proof incomplete or infrastructure-failed, but it must never prevent cleanup or be converted into a passed result.
+
+The verifier must reject path traversal, symlink substitution, duplicate logical references with conflicting metadata, digest/byte-count mismatch, absent objects, unapproved evidence roots, and evidence objects whose redaction disposition is not independently established. It must also verify that every passed fixture has at least one verified evidence object and that all references in the final manifest resolve to the exact immutable object version that was checked.
+
+No evidence retention duration or cleanup policy is selected here. Define retention, access logging, deletion authorization, and post-proof export before implementation; evidence needed for audit must not be deleted while a journal or manifest still references it.
+
 ## 8. Result model
 
 Keep execution verdict separate from infrastructure state.
