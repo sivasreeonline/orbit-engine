@@ -920,7 +920,8 @@
     "phase_a_authorized",
     "phase_b_authorized",
     "student_execution_authorized",
-    "production_execution_authorized"
+    "production_execution_authorized",
+    "upstream_source_manifest_sha256"
   ],
   "properties": {
     "schema_version": {
@@ -1060,6 +1061,13 @@
     },
     "production_execution_authorized": {
       "const": false
+    },
+    "upstream_source_manifest_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^([a-f0-9]{64})?$"
     }
   }
 }
