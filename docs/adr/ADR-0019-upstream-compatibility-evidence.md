@@ -11,7 +11,7 @@ Current upstream documentation supports the existence of both the standard rootf
 
 The rootless route has concrete host-side prerequisites and two particularly important proof obligations: (1) gVisor's caller-configured-userns documentation describes higher-level engines such as Docker/Podman, while its containerd quick start documents the shim path separately; the combined caller-userns + containerd-shim path must be demonstrated at the exact pinned versions; and (2) rootless CPU cgroup enforcement is not implied by enabling cgroup v2 alone because user-session delegation may omit the CPU controller.
 
-**Current disposition:** keep both candidates open. Treat rootless as technically plausible but with an explicit compatibility and resource-delegation gate. Treat rootful as the better-documented standard containerd integration path, but with a larger supervisor-compromise blast radius requiring a stronger privilege review. Documentation alone selects neither.
+**Current disposition:** keep both candidates open. The four additional rootless-only gates RLS-001 through RLS-004 are now required by the host qualification schema and ADR decision schema. Treat rootless as technically plausible but with explicit compatibility, helper/mapping, CPU-delegation and network-namespace gates. Treat rootful as the better-documented standard containerd integration path, but with a larger supervisor-compromise blast radius requiring a stronger privilege review. Documentation alone selects neither.
 
 ## 2. Evidence ledger
 
@@ -77,3 +77,7 @@ Capture a source snapshot only in the review evidence bundle; do not vendor full
 **No architecture choice is made.** Existing ADR-0019 remains Proposed. The current evidence suggests Candidate A has the clearer documented containerd-shim path but carries more host-privilege concentration. Candidate B has a plausible documented building-block stack but an unproven exact gVisor-shim/userns combination and a specific CPU-delegation gate. Both require live-host proof and independent review before any M0 architecture acceptance.
 
 Reviewed: 2026-11-10.
+
+## 8. Machine-enforced rootless-only qualification
+
+The host qualification record now defines `RLS-001` through `RLS-004` in `candidate_specific_test_results` and a separate `rootless_userns_compatibility` gate. The ADR decision qualification report also carries those exact test IDs and requires its gate to be `passed` before Candidate B can be selected. Candidate A must record the rootless-only gate as `not-applicable` and have no RLS results. These are separate from the 33 common tests; passing RUN-001, CG-001, NET-001/002 or AUTH-001 alone does not satisfy a rootless-specific item.
