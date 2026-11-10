@@ -293,7 +293,7 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     )).rejects.toMatchObject({ code: "42501" });
   });
 
-  it("quarantines counter drift without refunding or deleting the claim", async () => {
+  it("detects counter drift without refunding or deleting the claim", async () => {
     const setup = await connect();
     await seedAuthorization(setup, 2);
     const writer = await connect(true);
