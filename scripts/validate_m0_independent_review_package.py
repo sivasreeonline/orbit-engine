@@ -4,7 +4,7 @@
 This does not perform a security review, verify signatures, or authorize execution.
 """
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
@@ -276,6 +276,9 @@ def main():
             raise AssertionError(f"unsafe record accepted: {label}")
         print(f"PASS  rejects {label}")
 
+    synthetic_now = datetime.now(timezone.utc)
+    synthetic_reviewed_at = (synthetic_now - timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    synthetic_expires_at = (synthetic_now + timedelta(days=30)).isoformat(timespec="seconds").replace("+00:00", "Z")
     complete = deepcopy(template)
     complete["review_status"] = "completed"
     complete["scope"]["reviewed_commit_sha"] = "a" * 40
@@ -285,8 +288,8 @@ def main():
         "reviewer_independence_attested":True, "independence_basis":"synthetic separation test",
         "conflict_disclosure":"none"
     }
-    complete["reviewed_at"] = "2026-11-10T00:00:00Z"
-    complete["expires_at"] = "2026-12-10T00:00:00Z"
+    complete["reviewed_at"] = synthetic_reviewed_at
+    complete["expires_at"] = synthetic_expires_at
     complete["signature_reference"] = "synthetic-signature-reference"
     complete["decisions"] = {
         "review_decision":"approve-architecture-candidate",
