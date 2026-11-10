@@ -23,6 +23,9 @@ on:
       - "docs/specifications/m0-authorization-ledger-data-model.md"
       - "docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md"
       - "scripts/validate_m0_authorization_lifecycle_contract.py"
+      - "docs/schemas/m0-ledger-anti-rollback-checkpoint.schema.json"
+      - "docs/schemas/m0-immutable-evidence-object-receipt.schema.json"
+      - "scripts/validate_m0_witness_evidence_contract.py"
       - "docs/schemas/m0-crypto-signed-envelope.schema.json"
       - "docs/schemas/m0-crypto-trust-bundle.schema.json"
       - "docs/schemas/m0-crypto-key-metadata.schema.json"
@@ -93,6 +96,9 @@ jobs:
 
       - name: Validate authorization lifecycle contract linkage
         run: python scripts/validate_m0_authorization_lifecycle_contract.py
+
+      - name: Validate external witness and immutable evidence contracts
+        run: python scripts/validate_m0_witness_evidence_contract.py
 
       - name: Validate M0 cryptographic schemas and structural fixtures
         run: python scripts/validate_m0_crypto_contract.py
