@@ -421,6 +421,150 @@
           }
         }
       ]
+    },
+    "rootlessProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "daemon_uid",
+        "daemon_gid",
+        "daemon_identity_digest",
+        "user_namespace_mode",
+        "subuid_map_digest",
+        "subgid_map_digest",
+        "subuid_range_count",
+        "subgid_range_count",
+        "rootlesskit_version",
+        "rootlesskit_sha256",
+        "newuidmap_sha256",
+        "newgidmap_sha256",
+        "helper_inventory_sha256",
+        "state_directory_policy_sha256",
+        "daemon_socket_policy_sha256",
+        "apparmor_profile_sha256",
+        "network_backend",
+        "network_namespace_profile_sha256",
+        "systemd_delegation_profile_sha256",
+        "delegated_controllers",
+        "profile_sha256"
+      ],
+      "properties": {
+        "daemon_uid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "daemon_gid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "daemon_identity_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "user_namespace_mode": {
+          "const": "caller-configured-userns"
+        },
+        "subuid_map_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "subgid_map_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "subuid_range_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "subgid_range_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rootlesskit_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rootlesskit_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "newuidmap_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "newgidmap_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "helper_inventory_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "state_directory_policy_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "daemon_socket_policy_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "apparmor_profile_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "network_backend": {
+          "type": "string",
+          "minLength": 1
+        },
+        "network_namespace_profile_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "systemd_delegation_profile_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "delegated_controllers": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 3,
+          "items": {
+            "enum": [
+              "cpu",
+              "memory",
+              "pids",
+              "cpuset",
+              "io"
+            ]
+          },
+          "allOf": [
+            {
+              "contains": {
+                "const": "cpu"
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "const": "memory"
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "const": "pids"
+              },
+              "minContains": 1
+            }
+          ]
+        },
+        "profile_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
     }
   },
   "properties": {
@@ -528,7 +672,9 @@
         "resource_profile_digest",
         "supervisor_digest",
         "watchdog_digest",
-        "test_harness_digest"
+        "test_harness_digest",
+        "rootless_profile",
+        "rootless_profile_digest"
       ],
       "properties": {
         "selected": {
@@ -682,6 +828,23 @@
           "pattern": "^([a-f0-9]{64})?$"
         },
         "test_harness_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "rootless_profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/rootlessProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rootless_profile_digest": {
           "type": [
             "string",
             "null"
