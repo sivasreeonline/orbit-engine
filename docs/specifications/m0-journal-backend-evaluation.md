@@ -103,7 +103,7 @@ All tests below are mandatory before approval. Test both process crash and abrup
 | Interrupted schema migration | Restart either observes the complete old schema or complete new schema; never mixed/partially migrated state |
 | Supervisor pause (SIGSTOP) then replacement attempt | Replacement cannot acquire the kernel lock or issue privileged calls while the old process still owns it |
 | Supervisor crash after containerd create/start but before observed-result commit | Deterministic inspect/reconcile; no blind create/start retry |
-| Crash after cleanup/evidence branch disposition but before terminal CAS | Reconcile each branch independently; one immutable terminal result only |
+| Trigger-seal/output-finalization/terminal-CAS race or crash | Reconcile a durable contiguous trigger stream through the immutable watermark, the final output-accounting snapshot, and each branch independently; post-seal events remain append-only incidents; one immutable terminal result only |
 | Backup during concurrent journal activity | Backup is a consistent snapshot; source continues safely; backup integrity is verified |
 | Restore from backup with non-terminal attempts | No duplicate sandbox; host remains quarantined until actual resource reconciliation is complete |
 | Long-lived reader / maintenance task | No unbounded transaction or filesystem exhaustion; if WAL is ever selected, test checkpoint starvation and WAL growth explicitly |
