@@ -141,3 +141,7 @@ Include `docs/adr/ADR-0019-upstream-compatibility-evidence.md` in the reviewer p
 ## Rootless-only qualification requirements
 
 For Candidate B, assess RLS-001 exact containerd-shim/caller-userns/systrap integration; RLS-002 subordinate UID/GID mappings and helper provenance; RLS-003 systemd CPU/memory/PID delegation; and RLS-004 RootlessKit network namespace and host abstract-socket isolation. Each requires independently verified host evidence. The shared 33-test catalogue does not replace these additional Candidate B tests. Candidate A must mark the rootless-only gate not-applicable and include no RLS test results.
+
+## Rootless host profile identity review
+
+Verify the exact structured `rootless_profile` in the host qualification record and confirm the same object/digest appears in the ADR candidate and signed qualification report. Review non-root daemon UID/GID, subordinate UID/GID map digests and range counts, RootlessKit/newuidmap/newgidmap binary hashes, helper ownership/modes/provenance, AppArmor profile, private state directory, daemon socket policy, network backend/namespace profile and systemd delegation. Confirm `cpu`, `memory` and `pids` are actually delegated and enforced. Candidate A must have null rootless profile fields.
