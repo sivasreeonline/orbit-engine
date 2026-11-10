@@ -38,8 +38,8 @@ func (request ExecutionRequest) Validate() error {
 	if request.Language != LanguageJava && request.Language != LanguagePython {
 		return fieldError("language", "must be java or python")
 	}
-	if !isBoundedToken(request.RuntimeVersion, 1, 32) {
-		return fieldError("runtimeVersion", "must contain 1 to 32 non-whitespace characters")
+	if !isRuntimeVersionToken(request.RuntimeVersion) {
+		return fieldError("runtimeVersion", "must contain 1 to 32 ASCII letters, digits, dots, hyphens, underscores or plus signs")
 	}
 
 	digest, err := hex.DecodeString(request.SourceSHA256)
@@ -64,6 +64,21 @@ func (request ExecutionRequest) Validate() error {
 	}
 
 	return nil
+}
+
+func isRuntimeVersionToken(value string) bool {
+	if len(value) < 1 || len(value) > 32 {
+		return false
+	}
+	for _, character := range value {
+		if !(character >= 'a' && character <= 'z') &&
+			!(character >= 'A' && character <= 'Z') &&
+			!(character >= '0' && character <= '9') &&
+			character != '.' && character != '-' && character != '_' && character != '+' {
+			return false
+		}
+	}
+	return true
 }
 
 func validateOpaqueID(field string, value string) error {
