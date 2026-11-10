@@ -40,6 +40,23 @@ def add_error(errors, condition, message):
     if condition:
         errors.append(message)
 
+def canonical_rootless_profile_sha256(profile):
+    """Hash profile fields excluding profile_sha256 itself.
+
+    Canonical bytes are compact sorted-key JSON, UTF-8, ASCII-escaped, and
+    reject non-finite numbers. The profile schema uses strings, bounded
+    integers and arrays only, making this serialization deterministic.
+    """
+    unsigned_profile = {key: value for key, value in profile.items() if key != "profile_sha256"}
+    canonical = json.dumps(
+        unsigned_profile,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
 def upstream_manifest_sha256():
     return hashlib.sha256(UPSTREAM_MANIFEST_PATH.read_bytes()).hexdigest()
 
@@ -67,8 +84,8 @@ def validate_record(record, validator):
                   f"{cid}: runtime integration mode does not match candidate definition")
         profile = config.get("rootless_profile")
         if cid == "rootful-supervisor":
-            add_error(errors, profile is not None,
-                      "rootful candidate must not carry a rootless host profile")
+            add_error(errors, profile is not None or config.get("rootless_profile_digest") is not None,
+                      "rootful candidate must not carry a rootless host profile or digest")
         elif cid == "rootless-containerd-userns" and candidate.get("assessment_status") != "not-assessed":
             add_error(errors, not isinstance(profile, dict),
                       "assessed rootless candidate requires a complete structured rootless host profile")
@@ -77,8 +94,11 @@ def validate_record(record, validator):
                           "rootless daemon identity must be non-root")
                 add_error(errors, profile.get("user_namespace_mode") != "caller-configured-userns",
                           "rootless profile must use caller-configured user namespaces")
-                add_error(errors, profile.get("profile_sha256") != config.get("rootless_profile_digest"),
-                          "rootless profile digest must match candidate rootless_profile_digest")
+                computed_profile_digest = canonical_rootless_profile_sha256(profile)
+                add_error(errors, profile.get("profile_sha256") != computed_profile_digest,
+                          "rootless profile content does not match its canonical SHA-256")
+                add_error(errors, config.get("rootless_profile_digest") != computed_profile_digest,
+                          "rootless profile digest must match canonical profile content")
                 add_error(errors, profile.get("network_backend") != config.get("network_backend"),
                           "rootless network backend must match structured rootless profile")
                 add_error(errors, profile.get("rootlesskit_version") != config.get("rootlesskit_version"),
@@ -165,6 +185,11 @@ def validate_record(record, validator):
                     add_error(errors, qualification.get("rootless_profile_digest") != config.get("rootless_profile_digest"),
                               f"{cid}: qualified rootless profile digest must match candidate rootless_profile_digest")
                     if isinstance(report_profile, dict):
+                        report_profile_digest = canonical_rootless_profile_sha256(report_profile)
+                        add_error(errors, report_profile.get("profile_sha256") != report_profile_digest,
+                                  f"{cid}: qualification rootless profile content does not match its canonical SHA-256")
+                        add_error(errors, qualification.get("rootless_profile_digest") != report_profile_digest,
+                                  f"{cid}: qualification rootless profile digest does not match canonical profile content")
                         add_error(errors, report_profile.get("daemon_uid", 0) == 0 or report_profile.get("daemon_gid", 0) == 0,
                                   f"{cid}: qualification rootless daemon identity must be non-root")
                         add_error(errors, not {"cpu", "memory", "pids"}.issubset(set(report_profile.get("delegated_controllers", []))),
@@ -452,7 +477,7 @@ def main():
             "rootlesskit_version":"synthetic-rootlesskit","rootlesskit_sha256":"d"*64,"newuidmap_sha256":"e"*64,"newgidmap_sha256":"f"*64,
             "helper_inventory_sha256":"1"*64,"state_directory_policy_sha256":"2"*64,"daemon_socket_policy_sha256":"3"*64,
             "apparmor_profile_sha256":"4"*64,"network_backend":"synthetic-slirp","network_namespace_profile_sha256":"5"*64,
-            "systemd_delegation_profile_sha256":"6"*64,"delegated_controllers":["cpu","memory","pids"],"profile_sha256":"a"*64
+            "systemd_delegation_profile_sha256":"6"*64,"delegated_controllers":["cpu","memory","pids"]
         },"runtime_profile_digest":"4"*64,
         "resource_profile_digest":"5"*64,"journal_profile_digest":"6"*64,"supervisor_digest":"7"*64,
         "watchdog_digest":"8"*64,"test_harness_digest":"9"*64,
@@ -463,6 +488,9 @@ def main():
         "cgroup_delegation_reference":"synthetic-cgroup-delegation",
         "user_namespace_mapping_reference":"synthetic-subuid-map", "rootlesskit_version":"synthetic-rootlesskit"
     })
+    synthetic_profile = rootless["configuration"]["rootless_profile"]
+    synthetic_profile["profile_sha256"] = canonical_rootless_profile_sha256(synthetic_profile)
+    rootless["configuration"]["rootless_profile_digest"] = synthetic_profile["profile_sha256"]
     for finding in rootless["design_findings"]:
         if finding["evidence_class"]=="design":
             finding.update(result="pass",verification_method="Synthetic design review",finding="Synthetic only",severity="none",
@@ -502,7 +530,7 @@ def main():
     rootless["assessment_status"] = "host-qualified"
     rootless["assessment_rationale"] = "Synthetic fully-qualified rootless candidate."
     rootless["configuration"].update({
-        "profile_id":"synthetic-rootless", "profile_digest":"b"*64,"rootless_profile_digest":"a"*64,
+        "profile_id":"synthetic-rootless", "profile_digest":"b"*64,
         "runtime_profile_digest":"4"*64, "resource_profile_digest":"5"*64,
         "journal_profile_digest":"6"*64, "supervisor_digest":"7"*64,
         "watchdog_digest":"8"*64, "test_harness_digest":"9"*64,
@@ -567,6 +595,12 @@ def main():
     selected_profile["qualification_report"]["rootless_profile"]["apparmor_profile_sha256"] = "f"*64
     if not validate_record(profile_mismatch, validator):
         raise AssertionError("rootless candidate with a mismatched AppArmor/profile digest was accepted")
+    stale_profile = deepcopy(rootless_complete)
+    stale_candidate = next(c for c in stale_profile["candidate_assessments"] if c["candidate_id"] == "rootless-containerd-userns")
+    stale_candidate["configuration"]["rootless_profile"]["rootlesskit_sha256"] = "e"*64
+    stale_candidate["qualification_report"]["rootless_profile"]["rootlesskit_sha256"] = "e"*64
+    if not validate_record(stale_profile, validator):
+        raise AssertionError("rootless candidate with matching but stale profile content digests was accepted")
     profile_cpu_missing = deepcopy(rootless_complete)
     selected_profile = next(c for c in profile_cpu_missing["candidate_assessments"] if c["candidate_id"] == "rootless-containerd-userns")
     selected_profile["configuration"]["rootless_profile"]["delegated_controllers"] = ["memory", "pids"]
