@@ -5,7 +5,7 @@ This does not inspect/provision a host, run destructive tests, verify real evide
 or authorize Phase A, Phase B, student or production execution.
 """
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -422,6 +422,9 @@ def main():
         print(f"PASS  rejects {label}")
 
     # Positive synthetic record: demonstrates structural acceptance only.
+    synthetic_now = datetime.now(timezone.utc)
+    synthetic_reviewed_at = (synthetic_now - timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    synthetic_expires_at = (synthetic_now + timedelta(days=30)).isoformat(timespec="seconds").replace("+00:00", "Z")
     complete = deepcopy(template)
     complete["record_status"] = "completed"
     complete["qualification_status"] = "candidate-qualified"
@@ -479,11 +482,11 @@ def main():
         "status":"completed","reviewer_id":"synthetic-independent-reviewer","host_owner_id":"synthetic-host-owner",
         "independence_attested":True,"independence_basis":"synthetic identity separation",
         "conflict_disclosure":"synthetic none","decision":"accept-host-candidate",
-        "reviewed_commit_sha":complete["scope"]["reviewed_commit_sha"],"reviewed_at":"2026-11-10T00:00:00Z",
-        "expires_at":"2026-12-10T00:00:00Z","signature_reference":"synthetic-signature"
+        "reviewed_commit_sha":complete["scope"]["reviewed_commit_sha"],"reviewed_at":synthetic_reviewed_at,
+        "expires_at":synthetic_expires_at,"signature_reference":"synthetic-signature"
     })
-    complete["reviewed_at"]="2026-11-10T00:00:00Z"
-    complete["expires_at"]="2026-12-10T00:00:00Z"
+    complete["reviewed_at"]=synthetic_reviewed_at
+    complete["expires_at"]=synthetic_expires_at
     complete["signature_reference"]="synthetic-signature"
     complete["qualification_rationale"]="Synthetic positive test case only; no real host qualification is asserted."
     if errors_for(complete,schema_validator):
