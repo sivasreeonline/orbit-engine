@@ -206,3 +206,8 @@ The typed signed-envelope payload families and their structural validator are de
 - `scripts/validate_m0_crypto_contract.py`
 
 These schemas bind exact identities, epochs, immutable evidence references/digests, the 33-control independent review including `FENCE-001`, and explicit denial of Phase B/student/production execution in the Phase A payload. They validate shape and declared cross-field rules only; they do not authenticate a signature, independently verify provider fencing, or prove external evidence.
+
+
+### Authorization scope and principal separation clarification
+
+The message payload named `phase-a-authorization` is restricted to `M0_CLEANUP_CALIBRATION_ONLY`; it is not a general host-qualification, full-M0-proof, Phase B, student, or production grant. Its payload explicitly binds five distinct principals: host owner, evidence acquirer, fence verifier, independent security reviewer, and authorization signer. The structural validator rejects role collisions. This supplements, and does not replace, the role/evidence checks in the independent security-review record and cleanup-calibration authorization contract.
