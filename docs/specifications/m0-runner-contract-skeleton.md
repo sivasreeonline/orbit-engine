@@ -10,7 +10,7 @@ The first Go runner commit is a contract and process-health skeleton only. It do
 - GET /readyz returns 503 with sandbox_executor_not_configured.
 - The only executor implementation fails closed with ErrSandboxNotConfigured.
 - Request types refer to opaque source artifact and test bundle IDs. They do not embed code or test data.
-- Structural validation requires version, IDs, action, language, runtime, 64-digit SHA-256 and positive resource limits.
+- Structural validation requires version, IDs, action, language, runtime, 64-digit SHA-256 and positive resource limits. Runtime-version labels are bounded canonical ASCII tokens; source digests are lowercase hexadecimal. Structural validation is not caller authentication, attempt authorization, artifact verification or approval of runtime/resource profiles.
 
 ## Not yet implemented
 - Queue or pull consumer.
