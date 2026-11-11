@@ -217,17 +217,17 @@ def self_test() -> None:
                                      expected_version=2, target="vm-other",
                                      predecessor_epoch=6, fence="e"),
            "same nonce with changed request must conflict")
-    expect(Conflict, lambda: request(authority, operation="op-1", nonce="f", request="g",
+    expect(Conflict, lambda: request(authority, operation="op-1", nonce="f", request="7",
                                      expected_version=2, target="vm-other",
                                      predecessor_epoch=6, fence="e"),
            "same operation ID with changed request must conflict")
-    expect(Denied, lambda: request(authority, operation="op-2", nonce="h", request="i",
+    expect(Denied, lambda: request(authority, operation="op-2", nonce="8", request="9",
                                    expected_version=2, target="vm-race",
-                                   predecessor_epoch=6, fence="j"),
+                                   predecessor_epoch=6, fence="a"),
            "second concurrent successor must not issue while first is pending")
     expect(Denied, lambda: request(authority, operation="op-no-fence", nonce="k",
                                    request="l", expected_version=2, target="vm-no-fence",
-                                   predecessor_epoch=6, fence="m", confirmed=False),
+                                   predecessor_epoch=6, fence="d", confirmed=False),
            "unconfirmed fence must deny issuance")
 
     response = first["response_bytes"]
@@ -240,11 +240,11 @@ def self_test() -> None:
 
     expect(Conflict, lambda: request(authority, operation="op-stale", nonce="n",
                                      request="o", expected_version=2, target="vm-next-2",
-                                     predecessor_epoch=6, fence="p"),
+                                     predecessor_epoch=6, fence="1"),
            "stale CAS version must conflict after acceptance")
-    second = request(authority, operation="op-2", nonce="q", request="r",
+    second = request(authority, operation="op-2", nonce="2", request="3",
                      expected_version=3, target="vm-next-2", predecessor_epoch=6,
-                     fence="s")
+                     fence="4")
     assert json.loads(second["response_bytes"])["incarnation_epoch"] == 7
 
     # Restore an old authority snapshot without rolling back the independent
@@ -254,7 +254,7 @@ def self_test() -> None:
            "restored stale authority snapshot must fail external anchor check")
     expect(Denied, lambda: request(authority, operation="op-rollback", nonce="t",
                                    request="u", expected_version=1, target="vm-rollback",
-                                   predecessor_epoch=5, fence="v"),
+                                   predecessor_epoch=5, fence="7"),
            "stale authority snapshot must not issue a successor")
 
     print("PASS  monotonic epoch issuance and compare-and-swap version fencing")
