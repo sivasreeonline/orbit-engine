@@ -86,3 +86,12 @@ func TestQualificationEvidenceManifestRejectsUnapprovedReview(t *testing.T) {
 		t.Fatal("pending review must never qualify")
 	}
 }
+
+func TestQualificationEvidenceManifestRejectsWindowsTraversal(t *testing.T) {
+	t.Parallel()
+	manifest := validEvidenceManifest()
+	manifest.Tests[0].Evidence[0].Path = `..\\outside.json`
+	if err := ValidateQualificationEvidenceManifest(manifest); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("Windows traversal error = %v, want ErrCorrupt", err)
+	}
+}
