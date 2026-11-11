@@ -218,8 +218,8 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	tamperedManifest := manifest
 	tamperedManifest.Review.Attestation.SHA256 = custodyEvidenceDigest(tamperedBytes)
 	if _, err := VerifyCheckpointCustodyEvidence(tamperedManifest, tamperedEvidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-		WitnessKeys: witnessKeys,
+		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		WitnessKeys:    witnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
 	}); err == nil {
@@ -227,8 +227,8 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	}
 
 	if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-		WitnessKeys: witnessKeys,
+		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		WitnessKeys:    witnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 30 * time.Minute,
 	}); err == nil {
@@ -249,8 +249,8 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		tamperedManifest := manifest
 		tamperedManifest.Review.Attestation.SHA256 = custodyEvidenceDigest(encoded)
 		if _, err := VerifyCheckpointCustodyEvidence(tamperedManifest, tamperedEvidence, CheckpointCustodyEvidenceVerifierTrust{
-			ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-			WitnessKeys: witnessKeys,
+			ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+			WitnessKeys:    witnessKeys,
 			Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 			MaxEvidenceAge: 24 * time.Hour,
 		}); err == nil {
