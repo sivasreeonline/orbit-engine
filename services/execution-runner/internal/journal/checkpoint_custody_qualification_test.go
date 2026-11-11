@@ -54,8 +54,9 @@ func custodyQualificationFixture() CheckpointCustodyQualificationManifest {
 				attestationDigest = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 			}
 			result.IndependentWitnessAttestation = CheckpointCustodyEvidenceReference{
-				Path: "evidence/witness-attestation-" + scenario.ID + ".json",
-				SHA256: attestationDigest, MediaType: "application/json",
+				Path:      "evidence/witness-attestation-" + scenario.ID + ".json",
+				SHA256:    attestationDigest,
+				MediaType: "application/json",
 			}
 		}
 		manifest.Scenarios = append(manifest.Scenarios, result)
