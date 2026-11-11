@@ -125,10 +125,10 @@ class Protocol:
             raise RuntimeError("CRASH_AFTER_WITNESS_ADVANCE")
         if receipt != intent:
             raise Denied("witness readback differs from exact checkpoint intent")
-        self.db.anchored_generation = receipt["generation"]
-        self.db.anchored_digest = digest(receipt)
         if lose_ack:
             raise RuntimeError("WITNESS_ACK_LOST")
+        self.db.anchored_generation = receipt["generation"]
+        self.db.anchored_digest = digest(receipt)
 
     def _commit_checkpointed(self, operation_id: str, *, lose_ack: bool = False,
                              crash_after_witness: bool = False) -> None:
@@ -151,6 +151,8 @@ class Protocol:
                 raise Conflict("nonce and operation indexes disagree")
             if prior_n != prior_o or prior_n["request_digest"] != request_digest:
                 raise Conflict("idempotency identity or request digest conflict")
+            if db.intent and db.anchored_generation < db.intent["generation"]:
+                self._anchor(operation_id)
             return prior_n["response_bytes"]
         if expected_version != db.version:
             raise Conflict("authority record CAS mismatch")
