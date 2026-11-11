@@ -329,7 +329,7 @@ The typed signed-envelope payload families and their structural validator are de
 - `docs/schemas/m0-key-revocation-payload.schema.json`
 - `scripts/validate_m0_crypto_contract.py`
 
-These schemas bind exact identities, epochs, immutable evidence references/digests, the 33-control independent review including `FENCE-001`, and explicit denial of Phase B/student/production execution in the Phase A payload. They validate shape and declared cross-field rules only; they do not authenticate a signature, independently verify provider fencing, or prove external evidence.
+These schemas bind exact identities, epochs, immutable evidence references/digests, the 33-control independent review including `FENCE-001`, and explicit denial of Phase B/student/production execution in the Phase A payload. They validate shape and declared cross-field rules only; they do not authenticate a signature, independently verify provider fencing, or prove external evidence. For FENCE-001, the host-epoch response's single fence reference must resolve to the aggregate predecessor bundle defined in `docs/specifications/m0-fence-001-predecessor-evidence-contract.md`; it must not be interpreted as one predecessor attestation when multiple predecessors exist.
 
 
 ### Authorization scope and principal separation clarification
