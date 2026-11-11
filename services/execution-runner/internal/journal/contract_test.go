@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/idempotency"
+
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/lifecycle"
 )
 
@@ -255,5 +257,95 @@ func TestTerminalCommitCommandValidate(t *testing.T) {
 	command.EvidenceBranchGeneration++
 	if err := command.Validate(); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("stale evidence generation error = %v, want ErrCorrupt", err)
+	}
+}
+
+func validIdempotentAttemptCommand() IdempotentAttemptCommand {
+	attempt := validAttemptRecord()
+	return IdempotentAttemptCommand{
+		Claim: idempotency.Record{
+			Scope: idempotency.Scope{
+				OwnerID:  attempt.OwnerID,
+				ClientID: "client-1",
+				RouteID:  "submit-code",
+			},
+			KeyDigest:                   strings.Repeat("c", 64),
+			RequestDigest:               attempt.RequestDigest,
+			AttemptID:                   attempt.AttemptID,
+			ClaimedAtUTC:                attempt.IntakeUTC,
+			ResponseDescriptorAvailable: false,
+		},
+		Attempt: attempt,
+	}
+}
+
+func TestIdempotentAttemptCommandRequiresAtomicIdentityPair(t *testing.T) {
+	t.Parallel()
+	command := validIdempotentAttemptCommand()
+	if err := command.Validate(); err != nil {
+		t.Fatalf("valid idempotent attempt command rejected: %v", err)
+	}
+
+	command.Attempt.AttemptID = "attempt-2"
+	if err := command.Validate(); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("mismatched attempt ID error = %v, want ErrCorrupt", err)
+	}
+
+	command = validIdempotentAttemptCommand()
+	command.Claim.Scope.OwnerID = "owner-2"
+	if err := command.Validate(); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("mismatched owner error = %v, want ErrCorrupt", err)
+	}
+
+	command = validIdempotentAttemptCommand()
+	command.Claim.RequestDigest = strings.Repeat("d", 64)
+	if err := command.Validate(); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("mismatched request digest error = %v, want ErrCorrupt", err)
+	}
+}
+
+func TestValidateIdempotentTerminalCommitBindsDescriptorToAttempt(t *testing.T) {
+	t.Parallel()
+	snapshot := validFinalizationSnapshot()
+	terminal := TerminalCommitCommand{
+		AttemptID:                  "attempt-1",
+		ExpectedState:              lifecycle.StateFinalizing,
+		ExpectedStateVersion:       12,
+		SupervisorGeneration:       4,
+		AttemptGeneration:          7,
+		CleanupBranchGeneration:    2,
+		CleanupBranchStateVersion:  5,
+		EvidenceBranchGeneration:   3,
+		EvidenceBranchStateVersion: 6,
+		TriggerWatermark:           1,
+		TerminalResultID:           "result-1",
+		CommittedAtUTC:             time.Date(2026, time.November, 11, 8, 2, 0, 0, time.UTC),
+		ResponseDescriptorDigest:   strings.Repeat("c", 64),
+		Classification:             lifecycle.TerminalSuccess,
+		Snapshot:                   snapshot,
+	}
+	response := idempotency.CommitResponseDescriptorCommand{
+		Scope: idempotency.Scope{
+			OwnerID:  "owner-1",
+			ClientID: "client-1",
+			RouteID:  "submit-code",
+		},
+		KeyDigest:             strings.Repeat("d", 64),
+		ExpectedRequestDigest: strings.Repeat("a", 64),
+		AttemptID:             "attempt-1",
+		DescriptorVersion:     1,
+		DescriptorDigest:      strings.Repeat("c", 64),
+	}
+	if err := ValidateIdempotentTerminalCommit(terminal, response); err != nil {
+		t.Fatalf("valid idempotent terminal commit rejected: %v", err)
+	}
+	response.AttemptID = "attempt-2"
+	if err := ValidateIdempotentTerminalCommit(terminal, response); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("mismatched terminal attempt error = %v, want ErrCorrupt", err)
+	}
+	response.AttemptID = "attempt-1"
+	response.DescriptorDigest = strings.Repeat("e", 64)
+	if err := ValidateIdempotentTerminalCommit(terminal, response); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("mismatched response digest error = %v, want ErrCorrupt", err)
 	}
 }
