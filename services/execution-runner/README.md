@@ -96,3 +96,14 @@ The journal package defines a separately signed custody receipt and a backend-ne
 ## Checkpoint custody qualification evidence
 
 The journal package defines a 12-scenario qualification catalog and machine-readable manifest for a future checkpoint-custody adapter. Readiness requires every scenario to PASS and independent review to be APPROVED. The structural validator checks exact catalog membership, provider/environment identity, timestamps, and confined evidence references; it does not read evidence files, recompute hashes, prove provider retention behavior, or establish reviewer independence. See [the custody qualification specification](../../docs/specifications/m0-checkpoint-custody-qualification.md).
+
+
+## Checkpoint custody evidence bundle verification
+
+`internal/journal/checkpoint_custody_evidence_verifier.go` adds a read-only verifier for the 12-scenario custody qualification manifest. It reads every scenario and independent-witness evidence reference, recomputes SHA-256, verifies the detached Ed25519 review envelope against caller-supplied reviewer public keys, and enforces a caller-supplied verification time and maximum evidence age.
+
+The filesystem source confines operations to an explicitly configured `os.Root`, rejects unsafe relative paths, rejects symlink entries observed during path inspection, requires regular files, and caps each artifact at 64 MiB. Root confinement prevents traversal and symlink escape outside the bundle; the inspection is not an atomic guarantee against concurrent replacement by a symlink within the bundle root.
+
+The verification report distinguishes the signed review decision from `ManifestDeclaresReady`. The latter is only the manifest's declared readiness after structural validation. Neither field proves that evidence is truthful, that a provider enforces retention, that backups are durable, that reviewer independence is genuine, or that the supplied clock and trust keys are authoritative.
+
+Trust keys and verification time are injected by the caller. This package does not distribute trust roots, authenticate time, retrieve evidence from a provider, qualify an adapter, or authorize deployment. The verifier must not be used as a production custody approval gate without those independent controls.
