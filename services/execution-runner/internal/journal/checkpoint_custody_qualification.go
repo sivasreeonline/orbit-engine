@@ -191,6 +191,22 @@ func ValidateCheckpointCustodyQualificationManifest(manifest CheckpointCustodyQu
 			allEvidencePaths[reference.Path] = struct{}{}
 			allEvidenceDigests[reference.SHA256] = struct{}{}
 		}
+		if scenario.RequiresIndependentWitness {
+			if err := validateCustodyEvidenceReference(result.IndependentWitnessAttestation); err != nil {
+				return fmt.Errorf("%w: custody scenario %s requires a valid witness attestation: %v", ErrCorrupt, result.ScenarioID, err)
+			}
+			if _, duplicate := allEvidencePaths[result.IndependentWitnessAttestation.Path]; duplicate {
+				return fmt.Errorf("%w: independent witness attestation must use a distinct path", ErrCorrupt)
+			}
+			if _, duplicate := allEvidenceDigests[result.IndependentWitnessAttestation.SHA256]; duplicate {
+				return fmt.Errorf("%w: independent witness attestation digest must be distinct", ErrCorrupt)
+			}
+			allEvidencePaths[result.IndependentWitnessAttestation.Path] = struct{}{}
+			allEvidenceDigests[result.IndependentWitnessAttestation.SHA256] = struct{}{}
+		} else if result.IndependentWitnessAttestation.Path != "" ||
+			result.IndependentWitnessAttestation.SHA256 != "" || result.IndependentWitnessAttestation.MediaType != "" {
+			return fmt.Errorf("%w: unexpected independent witness attestation for scenario %s", ErrCorrupt, result.ScenarioID)
+		}
 	}
 	if manifest.Review.Status != "APPROVED" && manifest.Review.Status != "PENDING" && manifest.Review.Status != "REJECTED" {
 		return fmt.Errorf("%w: custody review status is invalid", ErrCorrupt)
