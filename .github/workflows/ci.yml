@@ -115,6 +115,9 @@ jobs:
       - name: Verify FENCE-001 witness profile schema and cryptographic vectors
         run: python ../../scripts/validate_m0_fence_witness_profile.py
 
+      - name: Validate FENCE-001 external witness qualification record and fail-closed gates
+        run: python ../../scripts/validate_m0_fence_witness_qualification.py
+
       - name: Configure PostgreSQL client wrappers
         run: |
           set -euo pipefail
