@@ -71,3 +71,8 @@ Before any M0 workload is launched:
 8. Complete independent security review before any execution integration is enabled.
 
 Passing documentation checks or the existing Go protocol tests does not constitute host proof or authorize student execution.
+
+
+## Journal adapter qualification
+
+The backend-neutral journal package maintains the required fault and recovery scenario catalog in `internal/journal/qualification.go`. Adapter qualification must map every `JQ-*` scenario to reproducible backend-specific tests and retained evidence. The catalog validator checks completeness only; it does not execute fault injection or certify storage durability. See `docs/specifications/m0-journal-port-contract.md` for the acceptance and evidence requirements.
