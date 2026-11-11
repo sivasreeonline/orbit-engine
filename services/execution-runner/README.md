@@ -11,7 +11,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - Protocol validation is structural only: runtime and resource fields are not authority. A future trusted boundary must authenticate and authorize each attempt, resolve immutable server-owned profiles, and reject any caller value that differs from the approved profile.
 - An executor interface with a safe unconfigured implementation.
 - A pure lifecycle contract package enforcing the closed attempt-state transition table, concurrency-safe in-memory first-trigger arbitration, and backend-independent terminal-finalization preconditions.
-- Unit tests for health/readiness, request validation, strict JSON decoding and disabled execution.
+- Unit tests for health/readiness, request validation, strict JSON decoding, disabled execution, lifecycle transitions, trigger arbitration, and terminal-finalization preconditions.
 - Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
 
 ## Explicit safety boundary
