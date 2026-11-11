@@ -126,6 +126,64 @@ CREATE TRIGGER revocation_event_immutable
 BEFORE UPDATE OR DELETE ON m0_fence_authority_it.revocation_events
 FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
 
+CREATE FUNCTION m0_fence_authority_it.compute_authority_state_digest(
+    p_host_id text
+) RETURNS text LANGUAGE plpgsql AS $
+DECLARE
+    state_value jsonb;
+BEGIN
+    SELECT jsonb_build_object(
+        'host_id', authority.host_id,
+        'epoch', authority.epoch,
+        'provider_instance_id', authority.provider_instance_id,
+        'record_version', authority.record_version,
+        'pending_operation_id', authority.pending_operation_id,
+        'authority_status', authority.authority_status,
+        'issuances', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'operation_id', issuance.operation_id,
+                'nonce_digest', issuance.nonce_digest,
+                'request_digest', issuance.request_digest,
+                'response_bytes_hex', encode(issuance.response_bytes, 'hex'),
+                'response_digest', issuance.response_digest,
+                'issued_epoch', issuance.issued_epoch,
+                'target_instance_id', issuance.target_instance_id
+            ) ORDER BY issuance.operation_id)
+            FROM m0_fence_authority_it.issuances issuance
+            WHERE issuance.host_id = authority.host_id
+        ), '[]'::jsonb),
+        'nonce_index', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'nonce_digest', idx.nonce_digest,
+                'operation_id', idx.operation_id,
+                'request_digest', idx.request_digest,
+                'response_digest', idx.response_digest
+            ) ORDER BY idx.nonce_digest)
+            FROM m0_fence_authority_it.nonce_index idx
+            WHERE idx.host_id = authority.host_id
+        ), '[]'::jsonb),
+        'operation_index', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+                'operation_id', idx.operation_id,
+                'nonce_digest', idx.nonce_digest,
+                'request_digest', idx.request_digest,
+                'response_digest', idx.response_digest
+            ) ORDER BY idx.operation_id)
+            FROM m0_fence_authority_it.operation_index idx
+            WHERE idx.host_id = authority.host_id
+        ), '[]'::jsonb)
+    )
+      INTO state_value
+      FROM m0_fence_authority_it.host_authority authority
+     WHERE authority.host_id = p_host_id;
+
+    IF state_value IS NULL THEN
+        RAISE EXCEPTION 'authority aggregate missing' USING ERRCODE = '23503';
+    END IF;
+    RETURN encode(digest(convert_to(state_value::text, 'UTF8'), 'sha256'), 'hex');
+END;
+$;
+
 CREATE FUNCTION m0_fence_authority_it.issue(
     p_host_id text,
     p_operation_id text,
@@ -244,15 +302,7 @@ BEGIN
       FROM m0_fence_authority_it.checkpoint_intents
      WHERE host_id = p_host_id;
 
-    state_hash := encode(digest(convert_to(
-        jsonb_build_object(
-            'host_id', p_host_id,
-            'epoch', next_epoch,
-            'provider_instance_id', p_target_instance_id,
-            'record_version', authority_row.record_version + 1,
-            'operation_id', p_operation_id,
-            'response_digest', response_hash
-        )::text, 'UTF8'), 'sha256'), 'hex');
+    state_hash := m0_fence_authority_it.compute_authority_state_digest(p_host_id);
 
     INSERT INTO m0_fence_authority_it.checkpoint_intents (
         host_id, generation, operation_id, previous_checkpoint_digest,
@@ -312,6 +362,16 @@ BEGIN
        OR issuance_row.issued_epoch <> p_epoch
        OR issuance_row.response_bytes <> p_response_bytes THEN
         RAISE EXCEPTION 'acceptance does not match exact pending response/instance/epoch'
+            USING ERRCODE = '55000';
+    END IF;
+
+    IF m0_fence_authority_it.compute_authority_state_digest(p_host_id)
+         <> (SELECT authority_state_digest
+               FROM m0_fence_authority_it.checkpoint_intents
+              WHERE host_id = p_host_id AND operation_id = p_operation_id)
+       OR encode(digest(issuance_row.response_bytes, 'sha256'), 'hex')
+         <> issuance_row.response_digest THEN
+        RAISE EXCEPTION 'authority aggregate or response digest differs from checkpoint intent'
             USING ERRCODE = '55000';
     END IF;
 
@@ -404,6 +464,14 @@ BEGIN
     SELECT response_bytes INTO response_value
       FROM m0_fence_authority_it.issuances
      WHERE host_id = p_host_id AND operation_id = p_operation_id;
+
+    IF NOT FOUND
+       OR encode(digest(response_value, 'sha256'), 'hex') <> intent_row.response_digest
+       OR m0_fence_authority_it.compute_authority_state_digest(p_host_id)
+            <> intent_row.authority_state_digest THEN
+        RAISE EXCEPTION 'authority state or retained response differs from anchored intent'
+            USING ERRCODE = '55000';
+    END IF;
     RETURN response_value;
 END;
 $$;
