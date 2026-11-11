@@ -2,6 +2,8 @@ package idempotency
 
 import (
 	"errors"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -39,6 +41,16 @@ const (
 )
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,191}$`)
+
+// DigestKey converts a caller-supplied opaque key to the only representation
+// persisted by the journal. The raw key must not be logged or stored.
+func DigestKey(key string) (string, error) {
+	if len(key) == 0 || len(key) > 256 || strings.TrimSpace(key) == "" {
+		return "", fmt.Errorf("%w: idempotency key must contain 1..256 non-whitespace bytes", ErrInvalidRecord)
+	}
+	digest := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(digest[:]), nil
+}
 
 type Scope struct {
 	OwnerID  string
