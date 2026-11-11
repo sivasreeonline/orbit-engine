@@ -1127,9 +1127,9 @@ SELECT m0_fence_authority_it.issue(
 );
 
 INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
-    host_id, generation, operation_id, authority_state_digest
+    host_id, generation, operation_id, authority_state_digest, checkpoint_digest
 )
-SELECT host_id, generation, operation_id, authority_state_digest
+SELECT host_id, generation, operation_id, authority_state_digest, checkpoint_digest
   FROM m0_fence_authority_it.checkpoint_intents
  WHERE host_id = 'host-response-corrupt';
 
