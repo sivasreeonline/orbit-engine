@@ -7,8 +7,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
-	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -69,20 +69,28 @@ func RunCheckpointCustodyStoreConformance(t *testing.T, newStore StoreFactory) {
 			checkpoint journal.SignedVerificationAuditCheckpoint
 			err        error
 		}
+		type candidatePair struct {
+			checkpoint journal.SignedVerificationAuditCheckpoint
+			receipt    journal.CheckpointCustodyReceipt
+		}
+		candidates := []candidatePair{
+			{checkpoint: first, receipt: makeReceipt(t, first)},
+			{checkpoint: second, receipt: makeReceipt(t, second)},
+		}
 		results := make(chan result, 2)
-		var start syncStart
-		start.ready.Add(2)
-		start.goNow = make(chan struct{})
-		for _, candidate := range []journal.SignedVerificationAuditCheckpoint{first, second} {
+		var ready sync.WaitGroup
+		ready.Add(2)
+		start := make(chan struct{})
+		for _, candidate := range candidates {
 			candidate := candidate
 			go func() {
-				start.ready.Done()
-				<-start.goNow
-				results <- result{checkpoint: candidate, err: store.StoreIfCurrent(ctx, candidate, makeReceipt(t, candidate), previousDigest)}
+				ready.Done()
+				<-start
+				results <- result{checkpoint: candidate.checkpoint, err: store.StoreIfCurrent(ctx, candidate.checkpoint, candidate.receipt, previousDigest)}
 			}()
 		}
-		start.ready.Wait()
-		close(start.goNow)
+		ready.Wait()
+		close(start)
 
 		var winner *journal.SignedVerificationAuditCheckpoint
 		conflicts := 0
@@ -143,10 +151,6 @@ func RunCheckpointCustodyStoreConformance(t *testing.T, newStore StoreFactory) {
 	})
 }
 
-type syncStart struct {
-	ready  sync.WaitGroup
-	goNow  chan struct{}
-}
 
 func deterministicKey(seed byte) ed25519.PrivateKey {
 	material := make([]byte, ed25519.SeedSize)
@@ -193,7 +197,7 @@ func makeReceipt(t *testing.T, checkpoint journal.SignedVerificationAuditCheckpo
 func assertPair(t *testing.T, checkpoint journal.SignedVerificationAuditCheckpoint, receipt journal.CheckpointCustodyReceipt, expected journal.SignedVerificationAuditCheckpoint) {
 	t.Helper()
 	if journal.VerificationAuditCheckpointDigest(checkpoint) != journal.VerificationAuditCheckpointDigest(expected) {
-		t.Fatal(fmt.Sprintf("stored checkpoint digest does not match expected checkpoint"))
+		t.Fatal("stored checkpoint digest does not match expected checkpoint")
 	}
 	if receipt.CheckpointSHA256 != journal.VerificationAuditCheckpointDigest(checkpoint) {
 		t.Fatal("stored receipt is not bound to the stored checkpoint")
