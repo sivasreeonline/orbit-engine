@@ -38,6 +38,9 @@ on:
       - "docs/schemas/m0-crypto-key-lifecycle-event.schema.json"
       - "docs/schemas/m0-host-epoch-response-payload.schema.json"
       - "docs/schemas/m0-provider-fence-attestation-payload.schema.json"
+      - "docs/schemas/m0-predecessor-fence-bundle.schema.json"
+      - "docs/specifications/m0-fence-001-predecessor-evidence-contract.md"
+      - "scripts/validate_m0_predecessor_fence_bundle.py"
       - "docs/schemas/m0-phase-a-authorization-payload.schema.json"
       - "docs/schemas/m0-key-revocation-payload.schema.json"
       - "docs/schemas/m0-crypto-verification-fixture-catalog.json"
@@ -109,6 +112,9 @@ jobs:
 
       - name: Validate M0 cryptographic schemas and structural fixtures
         run: python scripts/validate_m0_crypto_contract.py
+
+      - name: Validate FENCE-001 complete predecessor evidence bundle
+        run: python scripts/validate_m0_predecessor_fence_bundle.py
 
       - name: Validate supervisor, journal and watchdog contract alignment
         run: python scripts/validate_m0_supervisor_journal_contract.py

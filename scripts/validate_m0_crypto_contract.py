@@ -103,7 +103,7 @@ def main() -> None:
         "operation_id": "operation-01", "response_id": "response-01",
         "request_nonce_sha256": "a" * 64, "request_sha256": "b" * 64,
         "predecessor_set_sha256": "c" * 64, "fence_attestation_ref": "evidence://fence/01",
-        "fence_attestation_sha256": "d" * 64, "authority_observed_at": "2026-01-01T00:00:00Z",
+        "fence_attestation_object_version": "object-version-01", "fence_attestation_sha256": "d" * 64, "authority_observed_at": "2026-01-01T00:00:00Z",
         "authority_record_version": "record-v1",
     }
     fence_payload = {

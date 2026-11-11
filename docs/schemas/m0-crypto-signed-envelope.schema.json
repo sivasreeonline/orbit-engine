@@ -138,7 +138,7 @@
           "payload": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "title": "M0 Host Epoch Response Payload",
-            "description": "Proposed contract schema only. It validates structure and binding metadata; it does not authenticate signatures, verify external provider operations, or authorize execution.",
+            "description": "Proposed contract schema only. fence_attestation_ref and fence_attestation_sha256 identify the exact immutable aggregate predecessor-fence bundle defined by m0-predecessor-fence-bundle.schema.json. This schema does not authenticate signatures, verify external provider operations, or authorize execution.",
             "type": "object",
             "additionalProperties": false,
             "required": [
@@ -154,6 +154,7 @@
               "request_sha256",
               "predecessor_set_sha256",
               "fence_attestation_ref",
+              "fence_attestation_object_version",
               "fence_attestation_sha256",
               "authority_observed_at",
               "authority_record_version"
@@ -224,6 +225,11 @@
                 "maxLength": 2048,
                 "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"
               },
+              "fence_attestation_object_version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
               "fence_attestation_sha256": {
                 "type": "string",
                 "pattern": "^[a-f0-9]{64}$"
@@ -262,7 +268,7 @@
           "payload": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "title": "M0 Provider Fence Attestation Payload",
-            "description": "Proposed contract schema only. It validates structure and binding metadata; it does not authenticate signatures, verify external provider operations, or authorize execution.",
+            "description": "Proposed per-predecessor contract schema only. Each payload must be referenced by exactly one predecessor entry in the aggregate m0-predecessor-fence-bundle.schema.json and bind the same operation and predecessor-set digest. It does not authenticate signatures, verify external provider operations, or authorize execution.",
             "type": "object",
             "additionalProperties": false,
             "required": [
