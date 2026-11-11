@@ -81,3 +81,8 @@ The backend-neutral journal package maintains the required fault and recovery sc
 ## Qualification evidence manifest
 
 The journal qualification evidence model and validator are in `internal/journal/evidence_manifest.go`; the JSON Schema is `../../docs/schemas/m0-journal-qualification-evidence.schema.json`. A structurally valid manifest is not automatically qualified: all 25 scenarios must PASS and the independent review must be APPROVED. Hash and signature verification are implemented as an explicit verifier contract in `internal/journal/evidence_verifier.go`; trusted policy distribution, actual provider evidence retrieval, organizational reviewer-independence assurance, and deployment authorization remain external gates. See `docs/specifications/m0-journal-evidence-verification.md`.
+
+
+## Signed verification audit checkpoints
+
+The journal package defines externally signed Ed25519 checkpoints for audit-ledger heads. The verifier checks signer identity and role against an injected trust policy, signing-time key validity, current revocation, policy version, signature and checkpoint digest, ledger incarnation, predecessor linkage, monotonic sequence/time, and optional signer separation. See [the signed checkpoint specification](../../docs/specifications/m0-signed-verification-audit-checkpoints.md). This is a contract and in-process verifier only: no production keys, trust roots, policy distribution, durable checkpoint store, WORM retention, trusted clock, or recovery authority is provided.

@@ -19,49 +19,49 @@ type EvidenceSource interface {
 }
 
 type TrustedReviewerKey struct {
-	KeyID      string
-	Principal  string
-	Role       string
-	PublicKey  ed25519.PublicKey
-	NotBefore  time.Time
-	NotAfter   time.Time
-	RevokedAt  *time.Time
+	KeyID     string
+	Principal string
+	Role      string
+	PublicKey ed25519.PublicKey
+	NotBefore time.Time
+	NotAfter  time.Time
+	RevokedAt *time.Time
 }
 
 type EvidenceVerificationPolicy struct {
-	PolicyID                 string
-	Version                  string
-	ImplementerIdentity      string
-	RequireDistinctReviewer  bool
-	MaximumEvidenceAge       time.Duration
-	TrustedReviewerKeys      []TrustedReviewerKey
+	PolicyID                string
+	Version                 string
+	ImplementerIdentity     string
+	RequireDistinctReviewer bool
+	MaximumEvidenceAge      time.Duration
+	TrustedReviewerKeys     []TrustedReviewerKey
 }
 
 type QualificationAttestationPayload struct {
-	QualificationID string `json:"qualification_id"`
-	ManifestSHA256  string `json:"manifest_sha256"`
+	QualificationID  string `json:"qualification_id"`
+	ManifestSHA256   string `json:"manifest_sha256"`
 	ReviewerIdentity string `json:"reviewer_identity"`
-	KeyID           string `json:"key_id"`
-	SignedAt        string `json:"signed_at"`
+	KeyID            string `json:"key_id"`
+	SignedAt         string `json:"signed_at"`
 }
 
 type QualificationAttestation struct {
 	Payload   QualificationAttestationPayload `json:"payload"`
-	Algorithm string                           `json:"algorithm"`
-	Signature string                           `json:"signature"`
+	Algorithm string                          `json:"algorithm"`
+	Signature string                          `json:"signature"`
 }
 
 type EvidenceVerificationReport struct {
-	PolicyID          string   `json:"policy_id"`
-	PolicyVersion     string   `json:"policy_version"`
-	QualificationID   string   `json:"qualification_id"`
-	ManifestSHA256    string   `json:"manifest_sha256"`
-	EvidenceChecked   int      `json:"evidence_checked"`
-	ReviewerIdentity  string   `json:"reviewer_identity"`
-	ReviewerKeyID     string   `json:"reviewer_key_id"`
-	VerifiedAt        string   `json:"verified_at"`
-	Ready             bool     `json:"ready"`
-	Findings          []string `json:"findings"`
+	PolicyID         string   `json:"policy_id"`
+	PolicyVersion    string   `json:"policy_version"`
+	QualificationID  string   `json:"qualification_id"`
+	ManifestSHA256   string   `json:"manifest_sha256"`
+	EvidenceChecked  int      `json:"evidence_checked"`
+	ReviewerIdentity string   `json:"reviewer_identity"`
+	ReviewerKeyID    string   `json:"reviewer_key_id"`
+	VerifiedAt       string   `json:"verified_at"`
+	Ready            bool     `json:"ready"`
+	Findings         []string `json:"findings"`
 }
 
 const QualificationReviewerRole = "JOURNAL_QUALIFICATION_REVIEWER"

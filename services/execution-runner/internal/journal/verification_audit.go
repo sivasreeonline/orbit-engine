@@ -11,19 +11,19 @@ import (
 // VerificationAuditHead is the compare-and-append cursor for an audit ledger.
 // The zero head is Sequence=0 with an empty RecordSHA256.
 type VerificationAuditHead struct {
-	Sequence      uint64 `json:"sequence"`
-	RecordSHA256  string `json:"record_sha256"`
+	Sequence     uint64 `json:"sequence"`
+	RecordSHA256 string `json:"record_sha256"`
 }
 
 // VerificationAuditRecord is a hash-linked snapshot of one verification
 // decision. It records failed as well as successful decisions.
 type VerificationAuditRecord struct {
-	Sequence       uint64                    `json:"sequence"`
-	RecordID       string                    `json:"record_id"`
-	PreviousSHA256 string                    `json:"previous_sha256"`
-	RecordedAt     string                    `json:"recorded_at"`
+	Sequence       uint64                     `json:"sequence"`
+	RecordID       string                     `json:"record_id"`
+	PreviousSHA256 string                     `json:"previous_sha256"`
+	RecordedAt     string                     `json:"recorded_at"`
 	Report         EvidenceVerificationReport `json:"report"`
-	RecordSHA256   string                    `json:"record_sha256"`
+	RecordSHA256   string                     `json:"record_sha256"`
 }
 
 // VerificationAuditLedger is a storage contract, not a storage adapter.
@@ -106,7 +106,6 @@ func ValidateVerificationAuditChain(records []VerificationAuditRecord) error {
 	return nil
 }
 
- 
 // ValidateVerificationAuditChainAgainstHead validates the supplied chain and
 // requires its final head to match an independently retained checkpoint. This
 // detects a valid-prefix rollback when the checkpoint is authentic and current.
