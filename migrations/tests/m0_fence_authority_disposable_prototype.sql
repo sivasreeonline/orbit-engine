@@ -664,7 +664,7 @@ DELETE FROM m0_fence_authority_it.nonce_index
  WHERE host_id = 'host-index-corrupt' AND nonce_digest = 'nonce-index-corrupt';
 ALTER TABLE m0_fence_authority_it.nonce_index ENABLE TRIGGER nonce_index_immutable;
 
-DO $
+DO $$
 BEGIN
     BEGIN
         PERFORM m0_fence_authority_it.publish_if_test_receipt_matches(
