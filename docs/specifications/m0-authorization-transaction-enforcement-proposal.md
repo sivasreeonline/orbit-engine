@@ -86,9 +86,10 @@ No production DDL or migration may be applied until the external authority/provi
 
 The General CI test harness at `apps/api/src/db/authorization-ledger.integration.test.ts` now exercises a uniquely named disposable schema against PostgreSQL 17. It creates only test-local tables, triggers, a NOLOGIN application role and the `pgcrypto` extension in the ephemeral CI database; it does not apply authorization production DDL.
 
-Eleven integration cases are defined in the harness; exact-head CI execution is required before treating the new cases as passing:
+Twelve integration cases are defined in the harness; exact-head CI execution is required before treating the new cases as passing:
 - Independent database sessions race for the final budget slot; exactly one claim is committed.
 - A committed claim is resolved by retrying the same request identity; changed digest conflicts. The test simulates an acknowledgement not consumed by the client after the helper returns; it does not simulate a TCP proxy dropping the COMMIT response.
+- A separate controlled TCP proxy test forwards the PostgreSQL wire stream, detects the backend `CommandComplete` frame tagged `COMMIT`, drops that frame before it reaches the client, and closes the connection. A fresh connection verifies the claim, event and consumed counter committed exactly once; an identical retry replays and a changed digest conflicts.
 - Explicit rollback removes tentative claim, event and counter writes together.
 - Revocation-first and claim-first orderings serialize on the same authorization row.
 - The application role cannot update/delete immutable claim or run-event rows.
@@ -100,6 +101,6 @@ Eleven integration cases are defined in the harness; exact-head CI execution is 
 
 The test-only event digest is an integrity-chain check, not a signature or independent cryptographic attestation. The database trigger cannot establish trust in an external signer, authority, host or provider. The deferred counter constraint demonstrates prevention of inconsistent committed state in this fixture; it does not provide production quarantine workflows or replace independent ledger reconciliation.
 
-The backend-termination test covers server-side cancellation before COMMIT. A real lost-COMMIT-acknowledgement test still requires a controllable network proxy or fault-injection layer capable of severing the client connection after the server commits but before the response is received. That test remains outstanding. Serialization-failure (`40001`) retry behavior is also not yet exercised or implemented; the deadlock test proves PostgreSQL detection only and does not define a production retry policy.
+The backend-termination test covers server-side cancellation before COMMIT. The TCP proxy test now exercises a genuine lost-COMMIT-acknowledgement boundary in the disposable CI database. It is test-only fault injection, not a production proxy or proof of network behavior in every deployment environment. Serialization-failure (`40001`) retry behavior is also not yet exercised or implemented; the deadlock test proves PostgreSQL detection only and does not define a production retry policy.
 
 These tests strengthen the proposed transaction semantics but do not approve production migrations, stored procedures, runtime signing, external fencing, guest execution or Phase A/Phase B/student/production authorization.
