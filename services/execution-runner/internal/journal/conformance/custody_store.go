@@ -151,7 +151,6 @@ func RunCheckpointCustodyStoreConformance(t *testing.T, newStore StoreFactory) {
 	})
 }
 
-
 func deterministicKey(seed byte) ed25519.PrivateKey {
 	material := make([]byte, ed25519.SeedSize)
 	for i := range material {
@@ -165,8 +164,8 @@ func makeCheckpoint(t *testing.T, ledgerID, epoch string, sequence uint64, previ
 	privateKey := deterministicKey(31)
 	checkpoint, err := journal.SealVerificationAuditCheckpoint(journal.VerificationAuditCheckpointPayload{
 		LedgerID: ledgerID, LedgerEpoch: epoch, Sequence: sequence,
-		RecordSHA256: strings.Repeat(recordMarker, 64),
-		CreatedAt: createdAt.UTC().Format(time.RFC3339Nano),
+		RecordSHA256:             strings.Repeat(recordMarker, 64),
+		CreatedAt:                createdAt.UTC().Format(time.RFC3339Nano),
 		PreviousCheckpointSHA256: previous, PolicyVersion: "conformance-policy-v1",
 	}, "conformance-checkpoint-signer", journal.VerificationCheckpointSignerRole, "conformance-checkpoint-key", privateKey)
 	if err != nil {
