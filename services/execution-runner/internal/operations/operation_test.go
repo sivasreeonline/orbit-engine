@@ -83,6 +83,9 @@ func TestDeterministicResourceIdentityBindsEveryImmutableField(t *testing.T) {
 	if first == second {
 		t.Fatal("different operation IDs produced the same resource identity")
 	}
+	if len(first) != len("skyhigh-m0-")+64 {
+		t.Fatalf("resource identity length = %d, want %d", len(first), len("skyhigh-m0-")+64)
+	}
 	identity = validIdentity()
 	identity.RequestDigest = strings.Repeat("A", 64)
 	if _, err := DeterministicResourceIdentity(identity); !errors.Is(err, ErrInvalidOperation) {
@@ -168,6 +171,12 @@ func TestTransitionToObservedRequiresExactAuthoritativeInspection(t *testing.T) 
 	command.Inspection.IdentityVerified = false
 	if err := command.Validate(); !errors.Is(err, ErrReconciliationDenied) {
 		t.Fatalf("unverified resource identity error = %v, want ErrReconciliationDenied", err)
+	}
+
+	command.Inspection = validInspection(InspectionResourcePresent)
+	command.Inspection.ResourceIdentity = "skyhigh-m0-" + strings.Repeat("f", 64)
+	if err := command.Validate(); !errors.Is(err, ErrReconciliationDenied) {
+		t.Fatalf("mismatched resource identity error = %v, want ErrReconciliationDenied", err)
 	}
 }
 
