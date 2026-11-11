@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skyhigh.example/schemas/m0-fence-witness-qualification-record.schema.json",
+  "title": "FENCE-001 External Witness Qualification Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "schemaVersion",
+    "recordId",
+    "qualificationStatus",
+    "provider",
+    "adapter",
+    "monitors",
+    "tests",
+    "productionApproval"
+  ],
+  "properties": {
+    "profile": {
+      "const": "sky-high-fence-witness-qualification-v1"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "recordId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "qualificationStatus": {
+      "enum": [
+        "NOT_STARTED",
+        "BLOCKED",
+        "EVIDENCE_PENDING",
+        "READY_FOR_INDEPENDENT_REVIEW"
+      ]
+    },
+    "provider": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "account",
+        "region",
+        "service",
+        "contractReference"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "account": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contractReference": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "adapter": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "version",
+        "configurationDigest"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configurationDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "monitors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identities",
+        "independenceEvidence"
+      ],
+      "properties": {
+        "identities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "monitorId",
+              "operator",
+              "account",
+              "failureDomain"
+            ],
+            "properties": {
+              "monitorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "operator": {
+                "type": "string",
+                "minLength": 1
+              },
+              "account": {
+                "type": "string",
+                "minLength": 1
+              },
+              "failureDomain": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "independenceEvidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "WIT-001",
+              "WIT-002",
+              "WIT-003",
+              "WIT-004",
+              "WIT-005",
+              "WIT-006",
+              "WIT-007",
+              "WIT-008",
+              "WIT-009",
+              "WIT-010",
+              "WIT-011",
+              "WIT-012",
+              "WIT-013",
+              "WIT-014"
+            ]
+          },
+          "status": {
+            "enum": [
+              "NOT_RUN",
+              "PASS",
+              "FAIL",
+              "BLOCKED"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/evidence"
+            }
+          }
+        }
+      }
+    },
+    "independentSecurityReviewer": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "organization"
+      ],
+      "properties": {
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "organization": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "productionApproval": {
+      "const": false
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "objectRef",
+        "objectVersion",
+        "sha256",
+        "byteCount",
+        "acquiredAt",
+        "acquisitionMethod",
+        "collectorIdentity",
+        "independentVerifierIdentity",
+        "providerScope",
+        "redaction"
+      ],
+      "properties": {
+        "objectRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byteCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "acquiredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "acquisitionMethod": {
+          "type": "string",
+          "minLength": 1
+        },
+        "collectorIdentity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "independentVerifierIdentity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "providerScope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "redaction": {
+          "enum": [
+            "NONE",
+            "REDACTED_WITH_MANIFEST"
+          ]
+        }
+      }
+    }
+  }
+}
