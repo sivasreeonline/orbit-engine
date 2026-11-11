@@ -101,6 +101,12 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	if report.ReviewerIdentity != manifest.Review.ReviewerIdentity {
 		t.Fatalf("reviewer = %q, want %q", report.ReviewerIdentity, manifest.Review.ReviewerIdentity)
 	}
+	if report.ReviewDecision != manifest.Review.Status {
+		t.Fatalf("review decision = %q, want %q", report.ReviewDecision, manifest.Review.Status)
+	}
+	if report.ManifestDeclaresReady != CheckpointCustodyQualificationReady(manifest) {
+		t.Fatalf("manifest-declared readiness = %t, want %t", report.ManifestDeclaresReady, CheckpointCustodyQualificationReady(manifest))
+	}
 }
 
 func TestVerifyCheckpointCustodyEvidenceRejectsModifiedEvidence(t *testing.T) {
