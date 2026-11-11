@@ -30,7 +30,7 @@ func custodyQualificationFixture() CheckpointCustodyQualificationManifest {
 	}
 	for _, scenario := range CheckpointCustodyQualificationCatalog() {
 		manifest.Scenarios = append(manifest.Scenarios, CheckpointCustodyScenarioEvidence{
-			ScenarioID: scenario.ID, Status: EvidenceStatusPass, RunID: "run-" + scenario.ID,
+			ScenarioID: scenario.ID, Status: EvidencePass, RunID: "run-" + scenario.ID,
 			Command:   "qualification-runner --scenario " + scenario.ID,
 			StartedAt: "2026-11-11T09:00:00Z", CompletedAt: "2026-11-11T09:01:00Z",
 			Evidence: []CheckpointCustodyEvidenceReference{{
@@ -90,7 +90,7 @@ func TestCheckpointCustodyQualificationRejectsMissingAndDuplicateScenarios(t *te
 func TestCheckpointCustodyQualificationDoesNotTreatSkippedAsReady(t *testing.T) {
 	t.Parallel()
 	manifest := custodyQualificationFixture()
-	manifest.Scenarios[0].Status = EvidenceStatusSkipped
+	manifest.Scenarios[0].Status = EvidenceSkipped
 	if err := ValidateCheckpointCustodyQualificationManifest(manifest); err != nil {
 		t.Fatalf("structurally valid skipped manifest rejected: %v", err)
 	}
