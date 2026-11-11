@@ -1234,6 +1234,44 @@ $$;
 
 
 
+-- A checkpoint-record digest fork must be rejected even if the old
+-- simulated receipt remains present.
+INSERT INTO m0_fence_authority_it.host_authority (
+    host_id, epoch, provider_instance_id, record_version
+) VALUES ('host-checkpoint-corrupt', 55, 'vm-checkpoint-predecessor', 1);
+
+SELECT m0_fence_authority_it.issue(
+    'host-checkpoint-corrupt', 'op-checkpoint-corrupt',
+    'nonce-checkpoint-corrupt', 'request-checkpoint-corrupt',
+    1, 'vm-checkpoint-successor'
+);
+
+INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
+    host_id, generation, operation_id, authority_state_digest, checkpoint_digest
+)
+SELECT host_id, generation, operation_id, authority_state_digest, checkpoint_digest
+  FROM m0_fence_authority_it.checkpoint_intents
+ WHERE host_id = 'host-checkpoint-corrupt';
+
+ALTER TABLE m0_fence_authority_it.checkpoint_intents DISABLE TRIGGER checkpoint_intent_immutable;
+UPDATE m0_fence_authority_it.checkpoint_intents
+   SET checkpoint_digest = repeat('f', 64)
+ WHERE host_id = 'host-checkpoint-corrupt';
+ALTER TABLE m0_fence_authority_it.checkpoint_intents ENABLE TRIGGER checkpoint_intent_immutable;
+
+DO $
+BEGIN
+    BEGIN
+        PERFORM m0_fence_authority_it.publish_if_test_receipt_matches(
+            'host-checkpoint-corrupt', 'op-checkpoint-corrupt'
+        );
+        RAISE EXCEPTION 'publication with a forked checkpoint digest unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+END;
+$;
+
 -- Acceptance acknowledgement is a separate durable lifecycle checkpoint.
 -- A lost acknowledgement is resolved by the same intent and exact receipt;
 -- later issuance is blocked until that acceptance checkpoint is acknowledged.
