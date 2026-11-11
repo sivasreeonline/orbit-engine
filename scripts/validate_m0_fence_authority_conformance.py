@@ -250,7 +250,7 @@ def self_test() -> None:
 
     # A fresh successor may issue after the prior successor is accepted.
     third = request(authority, operation="op-3", nonce="5", request="6",
-                    expected_version=4, target="vm-next-3", predecessor_epoch=7,
+                    expected_version=5, target="vm-next-3", predecessor_epoch=7,
                     fence="8")
     assert json.loads(third["response_bytes"])["incarnation_epoch"] == 8
 
