@@ -76,3 +76,8 @@ Passing documentation checks or the existing Go protocol tests does not constitu
 ## Journal adapter qualification
 
 The backend-neutral journal package maintains the required fault and recovery scenario catalog in `internal/journal/qualification.go`. Adapter qualification must map every `JQ-*` scenario to reproducible backend-specific tests and retained evidence. The catalog validator checks completeness only; it does not execute fault injection or certify storage durability. See `docs/specifications/m0-journal-port-contract.md` for the acceptance and evidence requirements.
+
+
+## Qualification evidence manifest
+
+The journal qualification evidence model and validator are in `internal/journal/evidence_manifest.go`; the JSON Schema is `../../docs/schemas/m0-journal-qualification-evidence.schema.json`. A structurally valid manifest is not automatically qualified: all 25 scenarios must PASS and the independent review must be APPROVED. Hash verification, signature verification, reviewer-independence checks, and deployment authorization remain external gates.
