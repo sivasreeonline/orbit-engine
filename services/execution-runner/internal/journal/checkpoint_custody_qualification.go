@@ -47,13 +47,13 @@ type CheckpointCustodyEvidenceReference struct {
 }
 
 type CheckpointCustodyScenarioEvidence struct {
-	ScenarioID  string
-	Status      EvidenceStatus
-	RunID       string
-	Command     string
-	StartedAt   string
-	CompletedAt string
-	Evidence    []CheckpointCustodyEvidenceReference
+	ScenarioID                 string
+	Status                     EvidenceStatus
+	RunID                      string
+	Command                    string
+	StartedAt                  string
+	CompletedAt                string
+	Evidence                   []CheckpointCustodyEvidenceReference
 	IndependentWitnessEvidence []CheckpointCustodyEvidenceReference
 }
 
