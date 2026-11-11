@@ -70,13 +70,14 @@ def main() -> None:
         "m0-phase-a-authorization-payload.schema.json",
         "m0-key-revocation-payload.schema.json",
         "m0-crypto-key-lifecycle-event.schema.json",
+        "m0-checkpoint-custody-review-attestation-payload.schema.json",
     ]
     schemas = {name: validator(name) for name in schema_names}
     envelope_v = schemas[schema_names[0]]
     bundle_v = schemas[schema_names[1]]
     key_v = schemas[schema_names[2]]
     report_v = schemas[schema_names[3]]
-    host_v, fence_v, phase_v, revoke_v, key_event_v = (schemas[name] for name in schema_names[4:])
+    host_v, fence_v, phase_v, revoke_v, key_event_v, review_v = (schemas[name] for name in schema_names[4:])
 
     envelope_schema = load_json(SCHEMAS / schema_names[0])
     payload_schema_map = {
@@ -141,6 +142,16 @@ def main() -> None:
         "affected_artifact_inventory_ref": "evidence://inventory/01",
         "affected_artifact_inventory_sha256": "7" * 64, "reactivation_permitted": False,
     }
+
+    review_payload = {
+        "schema_version": "1.0", "qualification_id": "qualification-01",
+        "manifest_digest": "a" * 64, "reviewer": "reviewer-01",
+        "reviewer_key_id": "reviewer-key-01", "reviewed_at": "2026-01-01T00:00:00Z",
+        "decision": "APPROVED",
+    }
+    accepted(review_v, review_payload, "custody reviewer signed payload")
+    rejected(review_v, {key: value for key, value in review_payload.items() if key != "reviewer_key_id"}, "reviewer payload missing key ID")
+    rejected(review_v, dict(review_payload, manifest_digest="not-a-digest"), "reviewer payload invalid manifest digest")
 
     accepted(host_v, host_payload, "host epoch payload")
     accepted(fence_v, fence_payload, "provider fence payload")
