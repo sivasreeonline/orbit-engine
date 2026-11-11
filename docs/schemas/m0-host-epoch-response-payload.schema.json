@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "M0 Host Epoch Response Payload",
-  "description": "Proposed contract schema only. It validates structure and binding metadata; it does not authenticate signatures, verify external provider operations, or authorize execution.",
+  "description": "Proposed contract schema only. fence_attestation_ref and fence_attestation_sha256 identify the exact immutable aggregate predecessor-fence bundle defined by m0-predecessor-fence-bundle.schema.json. This schema does not authenticate signatures, verify external provider operations, or authorize execution.",
   "type": "object",
   "additionalProperties": false,
   "required": [
