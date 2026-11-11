@@ -1211,9 +1211,9 @@ SELECT m0_fence_authority_it.issue(
 );
 
 INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
-    host_id, generation, operation_id, authority_state_digest
+    host_id, generation, operation_id, authority_state_digest, checkpoint_digest
 )
-SELECT host_id, generation, operation_id, authority_state_digest
+SELECT host_id, generation, operation_id, authority_state_digest, checkpoint_digest
   FROM m0_fence_authority_it.checkpoint_intents
  WHERE host_id = 'host-accept-checkpoint';
 
@@ -1221,6 +1221,7 @@ DO $$
 DECLARE response_value bytea;
         result_value text;
         checkpoint_row m0_fence_authority_it.acceptance_checkpoint_intents%ROWTYPE;
+        issuance_checkpoint m0_fence_authority_it.checkpoint_intents%ROWTYPE;
 BEGIN
     SELECT response_bytes INTO response_value
       FROM m0_fence_authority_it.issuances
@@ -1239,6 +1240,15 @@ BEGIN
       FROM m0_fence_authority_it.acceptance_checkpoint_intents
      WHERE host_id = 'host-accept-checkpoint'
        AND operation_id = 'op-accept-checkpoint';
+
+    SELECT * INTO issuance_checkpoint
+      FROM m0_fence_authority_it.checkpoint_intents
+     WHERE host_id = 'host-accept-checkpoint'
+       AND operation_id = 'op-accept-checkpoint';
+
+    IF checkpoint_row.previous_checkpoint_digest <> issuance_checkpoint.checkpoint_digest THEN
+        RAISE EXCEPTION 'acceptance checkpoint does not link to the issuance checkpoint digest';
+    END IF;
 
     IF checkpoint_row.generation <> 2 THEN
         RAISE EXCEPTION 'acceptance checkpoint generation is not monotonic';
@@ -1277,6 +1287,12 @@ BEGIN
           FROM m0_fence_authority_it.checkpoint_intents
          WHERE host_id = 'host-accept-checkpoint') <> 3 THEN
         RAISE EXCEPTION 'post-acceptance issuance did not continue monotonic generation';
+    END IF;
+    IF (SELECT previous_checkpoint_digest
+          FROM m0_fence_authority_it.checkpoint_intents
+         WHERE host_id = 'host-accept-checkpoint' AND operation_id = 'op-after-accept')
+       <> checkpoint_row.checkpoint_digest THEN
+        RAISE EXCEPTION 'successor issuance did not link to the acceptance checkpoint digest';
     END IF;
 
     BEGIN
