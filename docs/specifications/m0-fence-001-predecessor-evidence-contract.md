@@ -17,7 +17,7 @@ The aggregate bundle is defined by `docs/schemas/m0-predecessor-fence-bundle.sch
 - issuance nonce and canonical request SHA-256 digests;
 - complete predecessor-enumeration observation and independently verified source evidence;
 - the canonical predecessor-set digest; and
-- one distinct immutable provider-fence attestation reference and digest for every enumerated predecessor.
+- one distinct immutable provider-fence attestation reference, object version and digest for every enumerated predecessor.
 
 An empty predecessor array is permitted only when the enumeration is explicitly complete and backed by independently verified inventory evidence. An empty array must never be used to mean that enumeration was skipped or unavailable.
 
@@ -35,13 +35,13 @@ Provider-fence attestation references and evidence digests are deliberately excl
 
 ## Per-predecessor fence evidence
 
-Every predecessor entry must state `FENCED`, the provider-native or separately reviewed fencing method, a timezone-aware observation time, and a unique immutable attestation reference/digest. The referenced attestation payload must match the bundle's provider/account/region, operation ID, predecessor instance ID and epoch, predecessor-set digest, fence method, and observed time.
+Every predecessor entry must state `FENCED`, the provider-native or separately reviewed fencing method, a timezone-aware observation time, and a unique immutable attestation reference/object-version/digest tuple. The referenced attestation payload must match the bundle's provider/account/region, operation ID, predecessor instance ID and epoch, predecessor-set digest, fence method, and observed time.
 
 The existing `m0-provider-fence-attestation-payload.schema.json` defines the per-predecessor payload shape. It does not authenticate the provider response, signature, evidence object, or actual compute/storage/control-path isolation. Those checks require the independently selected production trust profile and provider-specific verifier.
 
 ## Host-epoch response binding
 
-The `fence_attestation_ref` and `fence_attestation_sha256` fields in `m0-host-epoch-response-payload.schema.json` identify the exact immutable aggregate bundle bytes. The authenticated authority response must also bind the same host enrollment, target provider instance, operation ID, nonce digest, request digest, predecessor-set digest, epoch and authority key version.
+The `fence_attestation_ref`, `fence_attestation_object_version` and `fence_attestation_sha256` fields in `m0-host-epoch-response-payload.schema.json` identify the exact immutable aggregate bundle object version and bytes. The authenticated authority response must also bind the same host enrollment, target provider instance, operation ID, nonce digest, request digest, predecessor-set digest, epoch and authority key version.
 
 The authority must not issue an admissible epoch until complete enumeration and every predecessor fence are independently verified. The response signature/MAC must be verified using separately pinned trust material. A reference string, schema-valid payload, provider API request ID, or successful stop request is not proof of effective fencing.
 
