@@ -12,7 +12,8 @@ func validFinalizationSnapshot() FinalizationSnapshot {
 		TriggerStreamSealed:  true,
 		TriggerWatermark:     2,
 		DurableTriggerSequences: []uint64{1, 2},
-		PrimaryTriggerID:     "trigger-1",
+		PrimaryTriggerID:       "trigger-1",
+		PrimaryTriggerSequence: 1,
 		Output: OutputSnapshot{
 			Finalized:        true,
 			StdoutObserved:   120,
@@ -230,5 +231,29 @@ func TestValidateTerminalCommitRequiresBothBranchesForInfrastructureResult(t *te
 	snapshot.Quarantined = true
 	if err := ValidateTerminalCommit(snapshot, TerminalInfrastructureFailure); err != nil {
 		t.Fatalf("infrastructure failure with failed cleanup and verified evidence error = %v", err)
+	}
+}
+
+func TestValidateTerminalCommitRequiresPrimaryTriggerToBeFirst(t *testing.T) {
+	t.Parallel()
+
+	snapshot := validFinalizationSnapshot()
+	snapshot.PrimaryTriggerSequence = 2
+	if err := ValidateTerminalCommit(snapshot, TerminalSuccess); !errors.Is(err, ErrInvalidFinalization) {
+		t.Fatalf("non-first primary trigger error = %v, want ErrInvalidFinalization", err)
+	}
+}
+
+func TestValidateTerminalCommitRejectsOutputCounterOverflow(t *testing.T) {
+	t.Parallel()
+
+	snapshot := validFinalizationSnapshot()
+	snapshot.Output.StdoutRetained = ^uint64(0)
+	snapshot.Output.StderrRetained = 1
+	snapshot.Output.StdoutObserved = ^uint64(0)
+	snapshot.Output.StderrObserved = 1
+	snapshot.Output.CombinedRetained = 0
+	if err := ValidateTerminalCommit(snapshot, TerminalSuccess); !errors.Is(err, ErrInvalidFinalization) {
+		t.Fatalf("overflowed output accounting error = %v, want ErrInvalidFinalization", err)
 	}
 }
