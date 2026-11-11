@@ -109,6 +109,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest.Review.ReviewerIdentity = "reviewer-2026"
+	reviewerKeyID := "reviewer-key-2026"
 	manifest.Review.Status = "APPROVED"
 	manifest.Review.ReviewedAt = "2026-11-11T10:00:00Z"
 	manifest.Review.Attestation = CheckpointCustodyEvidenceReference{
@@ -135,6 +136,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	envelope, err := json.Marshal(custodyDetachedSignature{
 		SchemaVersion: "1.0",
 		Reviewer:      manifest.Review.ReviewerIdentity,
+		ReviewerKeyID: reviewerKeyID,
 		Algorithm:     "Ed25519",
 		Signature:     base64.StdEncoding.EncodeToString(signature),
 	})
@@ -144,7 +146,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	add(&manifest.Review.Attestation, manifest.Review.Attestation.Path, envelope)
 
 	report, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		ReviewerKeys: map[string]TrustedCheckpointCustodyReviewerKey{reviewerKeyID: {KeyID: reviewerKeyID, Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
 		WitnessKeys:    witnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
@@ -320,7 +322,7 @@ func TestVerifyCheckpointCustodyEvidenceRejectsModifiedEvidence(t *testing.T) {
 		}
 	}
 	_, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys:   map[string]ed25519.PublicKey{"independent-reviewer": make(ed25519.PublicKey, ed25519.PublicKeySize)},
+		ReviewerKeys: map[string]TrustedCheckpointCustodyReviewerKey{"reviewer-key": {KeyID: "reviewer-key", Principal: "independent-reviewer", Role: CheckpointCustodyReviewerRole, PublicKey: make(ed25519.PublicKey, ed25519.PublicKeySize), NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: time.Hour,
 	})
