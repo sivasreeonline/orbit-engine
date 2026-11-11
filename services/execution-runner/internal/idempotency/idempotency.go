@@ -15,6 +15,19 @@ var (
 	ErrResponsePruned = errors.New("idempotency response was pruned; key remains tombstoned")
 )
 
+// ValidateNewClaim ensures a newly inserted claim cannot arrive with a
+// fabricated terminal response descriptor or a pre-existing tombstone.
+func (record Record) ValidateNewClaim() error {
+	if err := record.Validate(); err != nil {
+		return err
+	}
+	if record.ResponseDescriptorAvailable || record.ResponseDescriptorVersion != 0 ||
+		record.ResponseDescriptorDigest != "" || !record.ResponseDescriptorPrunedAtUTC.IsZero() {
+		return fmt.Errorf("%w: new claims must begin without a response descriptor or tombstone", ErrInvalidRecord)
+	}
+	return nil
+}
+
 type Disposition string
 
 const (
