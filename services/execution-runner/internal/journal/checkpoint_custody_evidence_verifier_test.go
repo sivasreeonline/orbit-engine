@@ -199,7 +199,6 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		t.Fatal("invalid independent witness signature was accepted")
 	}
 
-
 	revokedWitnessKeys := make(map[string]TrustedCheckpointCustodyWitnessKey, len(witnessKeys))
 	for keyID, key := range witnessKeys {
 		revokedAt := time.Date(2026, 11, 11, 10, 59, 30, 0, time.UTC)
@@ -207,18 +206,18 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		revokedWitnessKeys[keyID] = key
 	}
 	if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-		WitnessKeys: revokedWitnessKeys,
-		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		WitnessKeys:    revokedWitnessKeys,
+		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
 	}); err == nil {
 		t.Fatal("revoked independent witness key was accepted")
 	}
 
 	if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-		WitnessKeys: witnessKeys,
-		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		WitnessKeys:    witnessKeys,
+		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 30 * time.Second,
 	}); err == nil {
 		t.Fatal("stale independent witness attestation was accepted")
@@ -243,9 +242,9 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		break
 	}
 	if _, err := VerifyCheckpointCustodyEvidence(malformedWitnessManifest, malformedWitnessEvidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-		WitnessKeys: witnessKeys,
-		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		WitnessKeys:    witnessKeys,
+		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
 	}); err == nil {
 		t.Fatal("unknown witness envelope field was accepted")
