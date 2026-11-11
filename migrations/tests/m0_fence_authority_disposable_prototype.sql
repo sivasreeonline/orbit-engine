@@ -534,7 +534,9 @@ INSERT INTO m0_fence_authority_it.host_authority (
     ('host-revoke-first', 5, 'vm-revoke-predecessor', 1),
     ('host-concurrent', 10, 'vm-concurrent-predecessor', 1),
     ('host-lost-ack', 20, 'vm-lost-ack-predecessor', 1),
-    ('host-uncommitted-crash', 30, 'vm-crash-predecessor', 1);
+    ('host-uncommitted-crash', 30, 'vm-crash-predecessor', 1),
+    ('host-operation-index-corrupt', 40, 'vm-operation-index-predecessor', 1),
+    ('host-response-corrupt', 50, 'vm-response-predecessor', 1);
 
 -- First committed issuance. The response is stored as exact BYTEA.
 DO $$
@@ -908,6 +910,81 @@ BEGIN
     END;
 END;
 $$;
+
+-- Independently corrupt the operation replay index and retained response
+-- bytes. The checkpoint aggregate digest must reject publication in both
+-- cases even though the simulated receipt still matches the old checkpoint.
+INSERT INTO m0_fence_authority_it.issuances (
+    host_id, operation_id, nonce_digest, request_digest,
+    response_bytes, response_digest, issued_epoch, target_instance_id
+)
+SELECT host_id, operation_id, nonce_digest, request_digest,
+       response_bytes, response_digest, issued_epoch, target_instance_id
+  FROM m0_fence_authority_it.issuances
+ WHERE false;
+
+SELECT m0_fence_authority_it.issue(
+    'host-operation-index-corrupt', 'op-operation-index-corrupt',
+    'nonce-operation-index-corrupt', 'request-operation-index-corrupt',
+    1, 'vm-operation-index-successor'
+);
+
+INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
+    host_id, generation, operation_id, authority_state_digest
+)
+SELECT host_id, generation, operation_id, authority_state_digest
+  FROM m0_fence_authority_it.checkpoint_intents
+ WHERE host_id = 'host-operation-index-corrupt';
+
+ALTER TABLE m0_fence_authority_it.operation_index DISABLE TRIGGER operation_index_immutable;
+DELETE FROM m0_fence_authority_it.operation_index
+ WHERE host_id = 'host-operation-index-corrupt';
+ALTER TABLE m0_fence_authority_it.operation_index ENABLE TRIGGER operation_index_immutable;
+
+DO $
+BEGIN
+    BEGIN
+        PERFORM m0_fence_authority_it.publish_if_test_receipt_matches(
+            'host-operation-index-corrupt', 'op-operation-index-corrupt'
+        );
+        RAISE EXCEPTION 'publication with corrupted operation index unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+END;
+$;
+
+SELECT m0_fence_authority_it.issue(
+    'host-response-corrupt', 'op-response-corrupt',
+    'nonce-response-corrupt', 'request-response-corrupt',
+    1, 'vm-response-successor'
+);
+
+INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
+    host_id, generation, operation_id, authority_state_digest
+)
+SELECT host_id, generation, operation_id, authority_state_digest
+  FROM m0_fence_authority_it.checkpoint_intents
+ WHERE host_id = 'host-response-corrupt';
+
+ALTER TABLE m0_fence_authority_it.issuances DISABLE TRIGGER issuance_immutable;
+UPDATE m0_fence_authority_it.issuances
+   SET response_bytes = convert_to('tampered-response', 'UTF8')
+ WHERE host_id = 'host-response-corrupt';
+ALTER TABLE m0_fence_authority_it.issuances ENABLE TRIGGER issuance_immutable;
+
+DO $
+BEGIN
+    BEGIN
+        PERFORM m0_fence_authority_it.publish_if_test_receipt_matches(
+            'host-response-corrupt', 'op-response-corrupt'
+        );
+        RAISE EXCEPTION 'publication with tampered response bytes unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+END;
+$;
 
 -- A transaction that aborts before COMMIT leaves no epoch, issuance, replay
 -- index or checkpoint intent behind.
