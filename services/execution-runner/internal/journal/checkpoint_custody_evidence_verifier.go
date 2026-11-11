@@ -35,8 +35,10 @@ func (s FilesystemCheckpointCustodyEvidenceSource) ReadEvidence(relativePath str
 	if err != nil {
 		return nil, fmt.Errorf("resolve evidence root: %w", err)
 	}
-	// os.Root confines every operation to the configured bundle even if a
-	// directory entry is concurrently replaced by a symlink.
+	// os.Root confines opens to the configured bundle, preventing path traversal
+	// and symlink escapes outside it. The preceding Lstat checks reject symlink
+	// entries observed during inspection; this is not an atomic no-symlink-open
+	// guarantee against concurrent replacement within the bundle root.
 	root, err := os.OpenRoot(rootPath)
 	if err != nil {
 		return nil, fmt.Errorf("open evidence root: %w", err)
