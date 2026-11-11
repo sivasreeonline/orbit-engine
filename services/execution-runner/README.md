@@ -117,3 +117,10 @@ Trust keys and verification time are injected by the caller. This package does n
 The harness checks atomic rejection of a checkpoint/receipt mismatch, successful pair round-trip, compare-and-store under concurrent successor writers, stale-fork rejection, and ledger/epoch namespace isolation. It is test support only and must not be imported by production code.
 
 The harness does not prove process-crash or power-loss durability, provider-enforced retention, backup/restore behavior, FENCE-001 host-incarnation fencing, or organizational independence. Those remain adapter- and provider-specific qualification obligations.
+
+
+### Independent witness attestations — custody manifest v1.1
+
+Custody qualification manifest schema 1.1 requires CUSTODY-011 and CUSTODY-012 to carry a separate detached Ed25519 witness attestation. The verifier binds it to the exact qualification, scenario, run ID, status, command, start/completion timestamps, witness principal/key, observation time, and sorted digest set of the independent witness evidence.
+
+Witness public keys and validity/revocation metadata are injected by the caller. The witness principal must differ from the final reviewer principal. This proves key-controlled attribution and byte binding only; distinct principals do not prove organizational independence or provider behavior.
