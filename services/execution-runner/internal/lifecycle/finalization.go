@@ -8,7 +8,7 @@ import (
 type BranchKind string
 
 const (
-	BranchCleanup BranchKind = "cleanup"
+	BranchCleanup  BranchKind = "cleanup"
 	BranchEvidence BranchKind = "evidence"
 )
 
@@ -21,48 +21,48 @@ const (
 )
 
 type FinalizationBranch struct {
-	Kind               BranchKind
-	Generation         uint64
-	StateVersion       uint64
+	Kind                 BranchKind
+	Generation           uint64
+	StateVersion         uint64
 	SupervisorGeneration uint64
-	AttemptGeneration  uint64
-	Disposition        BranchDisposition
-	Durable            bool
+	AttemptGeneration    uint64
+	Disposition          BranchDisposition
+	Durable              bool
 }
 
 type OutputSnapshot struct {
-	Finalized          bool
-	StdoutObserved     uint64
-	StderrObserved     uint64
-	StdoutRetained     uint64
-	StderrRetained     uint64
-	CombinedRetained   uint64
+	Finalized        bool
+	StdoutObserved   uint64
+	StderrObserved   uint64
+	StdoutRetained   uint64
+	StderrRetained   uint64
+	CombinedRetained uint64
 }
 
 type FinalizationSnapshot struct {
-	SupervisorGeneration uint64
-	AttemptGeneration    uint64
-	TriggerStreamSealed  bool
-	TriggerWatermark     uint64
+	SupervisorGeneration    uint64
+	AttemptGeneration       uint64
+	TriggerStreamSealed     bool
+	TriggerWatermark        uint64
 	DurableTriggerSequences []uint64
-	PrimaryTriggerID     string
+	PrimaryTriggerID        string
 	PrimaryTriggerSequence uint64
-	Output               OutputSnapshot
-	Cleanup              FinalizationBranch
-	Evidence             FinalizationBranch
-	Quarantined          bool
+	Output                  OutputSnapshot
+	Cleanup                 FinalizationBranch
+	Evidence                FinalizationBranch
+	Quarantined             bool
 }
 
 type TerminalClassification string
 
 const (
-	TerminalSuccess                TerminalClassification = "SUCCESS"
-	TerminalInfrastructureFailure  TerminalClassification = "INFRASTRUCTURE_FAILURE"
+	TerminalSuccess               TerminalClassification = "SUCCESS"
+	TerminalInfrastructureFailure TerminalClassification = "INFRASTRUCTURE_FAILURE"
 )
 
 var (
 	ErrFinalizationNotReady = errors.New("finalization is not ready for terminal commit")
-	ErrInvalidFinalization = errors.New("invalid finalization snapshot")
+	ErrInvalidFinalization  = errors.New("invalid finalization snapshot")
 )
 
 // ValidateTerminalCommit verifies the backend-independent preconditions for
