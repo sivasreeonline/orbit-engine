@@ -86,6 +86,39 @@ export interface WitnessReceiptVerifier {
   verify(record: WitnessRecord): Promise<boolean>;
 }
 
+/**
+ * Check that a receipt is bound to the exact checkpoint and trusted witness
+ * identity before invoking a cryptographic WitnessReceiptVerifier.
+ * This function does not verify the signature itself.
+ */
+export function assertReceiptMatchesCheckpoint(
+  record: WitnessRecord,
+  expectedWitnessId: string,
+): void {
+  const { checkpoint, receipt } = record;
+  const committedAtIsUtc =
+    /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$/.test(receipt.committedAt)
+    && Number.isFinite(Date.parse(receipt.committedAt));
+
+  if (
+    receipt.schemaVersion !== 1
+    || !expectedWitnessId
+    || receipt.witnessId !== expectedWitnessId
+    || receipt.authorityId !== checkpoint.authorityId
+    || receipt.hostId !== checkpoint.hostId
+    || receipt.generation !== checkpoint.generation
+    || receipt.operationId !== checkpoint.operationId
+    || receipt.checkpointDigest !== checkpoint.checkpointDigest
+    || receipt.previousCheckpointDigest !== checkpoint.previousCheckpointDigest
+    || !receipt.keyId
+    || !receipt.signature
+    || !receipt.consistencyToken
+    || !committedAtIsUtc
+  ) {
+    throw new WitnessConflictError("witness receipt does not bind the expected checkpoint and trust identity");
+  }
+}
+
 export class WitnessUnavailableError extends Error {
   readonly code = "WITNESS_UNAVAILABLE";
 
