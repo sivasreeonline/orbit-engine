@@ -53,15 +53,20 @@ async function appendRunEvent(
 }
 
 
-async function createCommitAckDroppingProxy(): Promise<{
+async function createCommitAckDroppingProxy(
+  verifyCommitted: () => Promise<boolean>,
+): Promise<{
   connectionString: string;
   dropped: Promise<void>;
+  arm: () => void;
   close: () => Promise<void>;
 }> {
   if (!databaseUrl) throw new Error("DATABASE_URL is required for the commit-ack proxy test");
   const target = new URL(databaseUrl);
   const sockets = new Set<Socket>();
   let settled = false;
+  let armed = false;
+  let handlingResponse = false;
   let resolveDropped!: () => void;
   let rejectDropped!: (error: Error) => void;
   const dropped = new Promise<void>((resolve, reject) => {
@@ -85,26 +90,43 @@ async function createCommitAckDroppingProxy(): Promise<{
       port: Number(target.port || 5432),
     });
     sockets.add(upstream);
-    let upstreamTail = Buffer.alloc(0);
-    const commitTag = Buffer.from("COMMIT\\0", "utf8");
 
     clientSocket.on("data", (chunk) => {
       if (!upstream.destroyed) upstream.write(chunk);
     });
 
     upstream.on("data", (chunk) => {
-      // PostgreSQL's successful CommandComplete response contains the
-      // NUL-terminated command tag "COMMIT". Retain a short tail so the tag
-      // is detected even when TCP splits it across packets.
-      const searchable = Buffer.concat([upstreamTail, chunk]);
-      if (searchable.includes(commitTag)) {
-        resolveDropped();
-        clientSocket.destroy();
-        upstream.destroy();
+      if (!armed || handlingResponse) {
+        if (!clientSocket.destroyed) clientSocket.write(chunk);
         return;
       }
-      upstreamTail = searchable.subarray(Math.max(0, searchable.length - commitTag.length + 1));
-      if (!clientSocket.destroyed) clientSocket.write(chunk);
+
+      // The test arms this only immediately before COMMIT, after every prior
+      // query response has been consumed. Hold the next backend response until
+      // an independent database session confirms the transaction is durable.
+      handlingResponse = true;
+      upstream.pause();
+      void verifyCommitted()
+        .then((committed) => {
+          if (committed) {
+            resolveDropped();
+            clientSocket.destroy();
+            upstream.destroy();
+            return;
+          }
+          armed = false;
+          if (!clientSocket.destroyed) clientSocket.write(chunk);
+          if (!upstream.destroyed) upstream.resume();
+        })
+        .catch((error: Error) => {
+          rejectDropped(error);
+          armed = false;
+          if (!clientSocket.destroyed) clientSocket.write(chunk);
+          if (!upstream.destroyed) upstream.resume();
+        })
+        .finally(() => {
+          handlingResponse = false;
+        });
     });
 
     clientSocket.on("close", () => {
@@ -136,6 +158,10 @@ async function createCommitAckDroppingProxy(): Promise<{
   return {
     connectionString: proxyUrl.toString(),
     dropped,
+    arm: () => {
+      if (armed || settled) throw new Error("Commit-ack proxy can only be armed once");
+      armed = true;
+    },
     close: async () => {
       for (const socket of sockets) socket.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -363,7 +389,17 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
   it("recovers a committed claim after a TCP proxy drops the COMMIT acknowledgement", async () => {
     const setup = await connect();
     await seedAuthorization(setup, 2);
-    const proxy = await createCommitAckDroppingProxy();
+    const requestId = "tcp-lost-ack-request";
+    const requestDigest = "sha256:tcp-lost-ack";
+    const proxy = await createCommitAckDroppingProxy(async () => {
+      const durable = await setup.query(
+        "SELECT s.consumed_runs, (SELECT count(*)::int FROM authorization_run_claims WHERE authorization_id = $1 AND request_id = $2) AS claims, (SELECT count(*)::int FROM authorization_run_events WHERE authorization_id = $1 AND request_id = $2) AS events FROM authorization_state s WHERE s.authorization_id = $1",
+        [authId, requestId],
+      );
+      return durable.rows[0]?.consumed_runs === 1
+        && durable.rows[0]?.claims === 1
+        && durable.rows[0]?.events === 1;
+    });
     const writer = new Client({
       connectionString: proxy.connectionString,
       connectionTimeoutMillis: 5_000,
@@ -380,15 +416,16 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
         [authId],
       );
       await writer.query(
-        "INSERT INTO authorization_run_claims (authorization_id, claim_id, request_id, request_digest, claim_sequence) VALUES ($1, $2, 'tcp-lost-ack-request', 'sha256:tcp-lost-ack', 1)",
-        [authId, randomUUID()],
+        "INSERT INTO authorization_run_claims (authorization_id, claim_id, request_id, request_digest, claim_sequence) VALUES ($1, $2, $3, $4, 1)",
+        [authId, randomUUID(), requestId, requestDigest],
       );
-      await appendRunEvent(writer, "tcp-lost-ack-request", "CLAIMED", "sha256:tcp-lost-ack");
+      await appendRunEvent(writer, requestId, "CLAIMED", requestDigest);
       await writer.query(
         "UPDATE authorization_state SET consumed_runs = consumed_runs + 1, state_version = state_version + 1 WHERE authorization_id = $1",
         [authId],
       );
 
+      proxy.arm();
       await expect(writer.query("COMMIT")).rejects.toBeDefined();
       await proxy.dropped;
     } finally {
@@ -403,8 +440,8 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     expect(persisted.rows[0]).toEqual({ consumed_runs: 1, claims: 1, events: 1 });
 
     const retry = await connect(true);
-    expect(await claim(retry, "tcp-lost-ack-request", "sha256:tcp-lost-ack")).toBe("REPLAYED");
-    expect(await claim(retry, "tcp-lost-ack-request", "sha256:changed")).toBe("CONFLICT");
+    expect(await claim(retry, requestId, requestDigest)).toBe("REPLAYED");
+    expect(await claim(retry, requestId, "sha256:changed")).toBe("CONFLICT");
   });
 
   it("rolls back claim, event and counter together before commit", async () => {
