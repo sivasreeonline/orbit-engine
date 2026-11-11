@@ -163,14 +163,20 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	// A key-ID alias with the same principal and public key must not be able to
 	// relabel the signature: the selected key ID is part of the signed payload.
 	aliasEnvelope := custodyDetachedSignature{}
-	if err := json.Unmarshal(envelope, &aliasEnvelope); err != nil { t.Fatal(err) }
+	if err := json.Unmarshal(envelope, &aliasEnvelope); err != nil {
+		t.Fatal(err)
+	}
 	aliasEnvelope.ReviewerKeyID = "reviewer-key-alias"
 	aliasBytes, err := json.Marshal(aliasEnvelope)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	aliasManifest := manifest
 	aliasManifest.Review.Attestation.SHA256 = custodyEvidenceDigest(aliasBytes)
 	aliasEvidence := make(custodyEvidenceMemory, len(evidence))
-	for name, data := range evidence { aliasEvidence[name] = data }
+	for name, data := range evidence {
+		aliasEvidence[name] = data
+	}
 	aliasEvidence[manifest.Review.Attestation.Path] = aliasBytes
 	aliasKeys := map[string]TrustedCheckpointCustodyReviewerKey{
 		"reviewer-key-alias": {KeyID: "reviewer-key-alias", Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)},
@@ -178,7 +184,9 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	if _, err := VerifyCheckpointCustodyEvidence(aliasManifest, aliasEvidence, CheckpointCustodyEvidenceVerifierTrust{
 		ReviewerKeys: aliasKeys, WitnessKeys: witnessKeys,
 		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC), MaxEvidenceAge: 24 * time.Hour,
-	}); err == nil { t.Fatal("reviewer key-ID alias was accepted without a matching signature") }
+	}); err == nil {
+		t.Fatal("reviewer key-ID alias was accepted without a matching signature")
+	}
 	if report.ReviewerIdentity != manifest.Review.ReviewerIdentity {
 		t.Fatalf("reviewer = %q, want %q", report.ReviewerIdentity, manifest.Review.ReviewerIdentity)
 	}
