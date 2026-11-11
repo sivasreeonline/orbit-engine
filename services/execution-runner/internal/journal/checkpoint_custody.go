@@ -102,7 +102,8 @@ func SealCheckpointCustodyReceipt(checkpoint SignedVerificationAuditCheckpoint, 
 // assertion against a separately supplied trust policy and checkpoint.
 func ValidateCheckpointCustodyReceipt(checkpoint SignedVerificationAuditCheckpoint, receipt CheckpointCustodyReceipt, policy CheckpointCustodyPolicy, verifiedAt time.Time) error {
 	if strings.TrimSpace(policy.PolicyID) == "" || strings.TrimSpace(policy.PolicyVersion) == "" ||
-		receipt.RetentionPolicyID != policy.PolicyID || receipt.RetentionPolicyVersion != policy.PolicyVersion {
+		policy.MinimumRetention <= 0 || receipt.RetentionPolicyID != policy.PolicyID ||
+		receipt.RetentionPolicyVersion != policy.PolicyVersion {
 		return fmt.Errorf("%w: custody policy identity mismatch", ErrCorrupt)
 	}
 	if receipt.CheckpointSHA256 != VerificationAuditCheckpointDigest(checkpoint) ||
