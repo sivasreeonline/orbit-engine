@@ -28,10 +28,10 @@ The Go catalog validator enforces exact membership and uniqueness. JSON Schema e
 Each manifest records:
 - actual provider, product, API/SDK version, account/tenant scope, region, storage class, and retention mode;
 - OS, kernel, architecture, endpoint, encryption, versioning, replication, and exact retention configuration;
-- each scenario's status, run ID, exact command, start/completion times, and one or more evidence references;
+- each scenario's status, run ID, exact command, start/completion times, and one or more evidence references; scenarios CUSTODY-011 and CUSTODY-012 additionally require separate independent-witness evidence;
 - independent review status, reviewer identity, timestamp, and attestation evidence reference.
 
-Evidence references contain confined relative paths, SHA-256 digests, and media types. The structural validator rejects absolute paths, traversal, backslashes, NUL bytes, malformed digests, missing evidence, duplicate or unknown scenario IDs, invalid timestamps, and incomplete provider/environment identity.
+Evidence references contain confined relative paths, SHA-256 digests, and media types. The structural validator rejects absolute paths, traversal, Windows drive paths, backslashes, NUL bytes, malformed digests, missing evidence, duplicate or unknown scenario IDs, invalid timestamps, and incomplete provider/environment identity. It requires independent-witness evidence for CUSTODY-011 and CUSTODY-012.
 
 ## Readiness rule
 
