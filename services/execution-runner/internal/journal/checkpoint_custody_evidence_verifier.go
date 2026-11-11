@@ -112,13 +112,13 @@ type CheckpointCustodyEvidenceVerifierTrust struct {
 // CheckpointCustodyEvidenceVerificationReport is a result of reading and
 // cryptographically checking evidence bytes. It is not provider qualification.
 type CheckpointCustodyEvidenceVerificationReport struct {
-	VerifiedReferences   int
-	VerifiedScenarios    []string
-	ReviewerIdentity     string
-	ReviewDecision       string
+	VerifiedReferences    int
+	VerifiedScenarios     []string
+	ReviewerIdentity      string
+	ReviewDecision        string
 	ManifestDeclaresReady bool
-	ManifestDigest       string
-	VerifiedAt            time.Time
+	ManifestDigest        string
+	VerifiedAt             time.Time
 }
 
 type custodyReviewAttestation struct {
