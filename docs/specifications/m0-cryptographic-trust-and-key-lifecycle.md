@@ -233,3 +233,6 @@ Key lifecycle event schema:
 ### Local custody evidence signatures are not the production crypto profile
 
 The Ed25519 verifier used by the local checkpoint-custody evidence bundle is narrowly scoped to reviewer and independent-witness artifact attribution. It does not select or approve the M0 host-epoch response, provider-fence attestation, trust-bundle, or Phase A authorization signing profile. It has no authority to admit a host or authorize execution. Production profile selection, root custody, trusted time, revocation distribution, and external anti-rollback remain blocked on the independent approvals defined above.
+
+
+The local checkpoint-custody reviewer signed-payload schema is `docs/schemas/m0-checkpoint-custody-review-attestation-payload.schema.json`. It binds the reviewer key ID into the signed bytes so an envelope cannot relabel a valid signature through a different trusted key ID. This local evidence-attribution format is separate from the production M0 host-epoch and Phase A signing profile.

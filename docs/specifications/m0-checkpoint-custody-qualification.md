@@ -42,7 +42,7 @@ BLOCKED and SKIPPED are not PASS. A structurally valid manifest with a pending r
 
 ## Evidence integrity and trust boundaries
 
-The evidence verifier reads and hashes the referenced artifacts, verifies the final reviewer attestation, and verifies the detached Ed25519 witness attestations for CUSTODY-011 and CUSTODY-012 against externally supplied witness keys. Each witness signature binds the exact scenario/run metadata and the complete sorted digest set of the witness evidence files. It rejects stale/future witness observations, revoked or out-of-validity keys, unknown fields, duplicate JSON keys, non-canonical envelopes, and witness identities that equal the final reviewer identity.
+The evidence verifier reads and hashes the referenced artifacts, verifies the final reviewer attestation against a caller-injected reviewer key record, and verifies the detached Ed25519 witness attestations for CUSTODY-011 and CUSTODY-012 against externally supplied witness keys. Each witness signature binds the exact scenario/run metadata and the complete sorted digest set of the witness evidence files. It rejects stale/future reviewer and witness attestations, revoked or out-of-validity reviewer/witness keys, unknown fields, non-canonical envelopes, and witness identities that equal the final reviewer identity. Reviewer trust records bind key ID, principal, reviewer role, Ed25519 public key, validity interval, and optional revocation time.
 
 Cryptographic verification still does not establish organizational independence, prove the provider account or region, validate a WORM setting, or establish that a retention lock was enforced. A manifest is not evidence that its claims are true.
 
@@ -53,7 +53,9 @@ A real qualification must independently retrieve provider configuration and audi
 No provider or adapter is selected. No durable storage adapter, cloud account access, WORM/object-lock configuration, backup job, replication, production key, host deployment, privileged execution, Phase A/B, or student workload execution is implemented or authorized.
 
 
-The detached witness envelope is defined by [the witness attestation JSON Schema](../schemas/m0-checkpoint-custody-witness-attestation.schema.json). Its digest list must be unique, lowercase, and lexicographically sorted; the Go verifier enforces exact equality with the verified witness evidence references. JSON Schema alone does not verify the Ed25519 signature or external key validity/revocation.
+The detached reviewer envelope carries a reviewer key ID, and that same key ID is included in the signed reviewer payload. The verifier requires the caller's reviewer trust record to match that ID and principal, carry the CHECKPOINT_CUSTODY_REVIEWER role, be valid at signing time, and not be revoked at verification time. This prevents an envelope from relabeling a valid signature through a second key ID that aliases the same public key. The reviewer signature remains scoped to local evidence attribution.
+
+The detached reviewer envelope is defined by [the reviewer attestation JSON Schema](../schemas/m0-checkpoint-custody-review-attestation.schema.json), and its signed bytes are defined by [the reviewer signed-payload JSON Schema](../schemas/m0-checkpoint-custody-review-attestation-payload.schema.json). The detached witness envelope is defined by [the witness attestation JSON Schema](../schemas/m0-checkpoint-custody-witness-attestation.schema.json). Its digest list must be unique, lowercase, and lexicographically sorted; the Go verifier enforces exact equality with the verified witness evidence references. JSON Schema alone does not verify the Ed25519 signature or external key validity/revocation.
 
 
 ### Cryptographic profile boundary
