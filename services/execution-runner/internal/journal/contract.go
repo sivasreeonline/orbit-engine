@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/lifecycle"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/operations"
 )
 
 var (
@@ -241,6 +242,8 @@ type Transaction interface {
 	SealTriggerStream(command SealTriggerStreamCommand) error
 	CompareAndSwapBranch(command BranchCASCommand) (lifecycle.FinalizationBranch, error)
 	CommitTerminal(command TerminalCommitCommand) error
+	InsertOperation(record operations.Record) error
+	CompareAndSwapOperation(command operations.TransitionCommand) (operations.Record, error)
 }
 
 // Store is the backend-neutral journal port. WithTransaction must provide one
@@ -250,6 +253,8 @@ type Transaction interface {
 type Store interface {
 	WithTransaction(ctx context.Context, callback func(Transaction) error) error
 	ReadAttempt(ctx context.Context, attemptID string) (AttemptRecord, error)
+	ReadOperation(ctx context.Context, operationID string) (operations.Record, error)
+	ListNonTerminalOperations(ctx context.Context, attemptID string) ([]operations.Record, error)
 }
 
 func validSHA256(value string) bool {
