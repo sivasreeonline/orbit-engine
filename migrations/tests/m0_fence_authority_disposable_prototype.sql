@@ -1215,9 +1215,8 @@ BEGIN
      WHERE host_id = 'host-accept-checkpoint'
        AND operation_id = 'op-accept-checkpoint';
 
-    IF checkpoint_row.generation <> 2
-       OR checkpoint_row.phase IS NOT NULL THEN
-        NULL;
+    IF checkpoint_row.generation <> 2 THEN
+        RAISE EXCEPTION 'acceptance checkpoint generation is not monotonic';
     END IF;
 
     BEGIN
@@ -1245,14 +1244,16 @@ BEGIN
         RAISE EXCEPTION 'exact acceptance retry did not resolve acknowledged checkpoint';
     END IF;
 
-    result_value := m0_fence_authority_it.accept_and_checkpoint(
-        'host-accept-checkpoint', 'op-accept-checkpoint',
-        response_value || convert_to('tamper', 'UTF8'),
-        'vm-accept-successor', 61
-    );
-    IF result_value <> 'EXISTING' THEN
-        RAISE EXCEPTION 'unexpected result for altered acceptance retry';
-    END IF;
+    BEGIN
+        PERFORM m0_fence_authority_it.accept_and_checkpoint(
+            'host-accept-checkpoint', 'op-accept-checkpoint',
+            response_value || convert_to('tamper', 'UTF8'),
+            'vm-accept-successor', 61
+        );
+        RAISE EXCEPTION 'altered acceptance retry unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '23505' THEN
+        NULL;
+    END;
 END;
 $$;
 
