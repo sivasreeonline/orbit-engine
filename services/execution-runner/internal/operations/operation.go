@@ -1,6 +1,8 @@
 package operations
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
@@ -77,15 +79,15 @@ func (identity Identity) Validate() error {
 	return nil
 }
 
-// DeterministicResourceIdentity binds a host-owned external resource name to
-// the complete immutable operation identity. External labels alone are not
-// proof of ownership; reconciliation must inspect and compare all metadata.
+// DeterministicResourceIdentity returns a bounded supervisor-owned resource
+// name derived from every immutable operation identity field. Reconciliation
+// must still inspect and compare the full metadata; the name is not ownership
+// proof by itself.
 func DeterministicResourceIdentity(identity Identity) (string, error) {
 	if err := identity.Validate(); err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
-		"skyhigh-m0",
+	canonical := strings.Join([]string{
 		identity.HostInstanceID,
 		identity.ProofRunID,
 		identity.FixtureID,
@@ -93,7 +95,9 @@ func DeterministicResourceIdentity(identity Identity) (string, error) {
 		identity.OperationID,
 		identity.RequestDigest,
 		identity.ProfileDigest,
-	}, "/"), nil
+	}, "/")
+	digest := sha256.Sum256([]byte(canonical))
+	return "skyhigh-m0-" + hex.EncodeToString(digest[:]), nil
 }
 
 type Record struct {
@@ -167,7 +171,7 @@ type InspectionProof struct {
 func (proof InspectionProof) validatePresent(expectedResourceIdentity string) error {
 	if proof.Disposition != InspectionResourcePresent ||
 		proof.ResourceIdentity != expectedResourceIdentity ||
-		strings.TrimSpace(proof.ResourceIdentity) == "" ||
+		!validResourceIdentity(proof.ResourceIdentity) ||
 		strings.TrimSpace(proof.InspectionID) == "" ||
 		proof.InspectedAtUTC.IsZero() ||
 		proof.InspectedAtUTC.Location() != time.UTC ||
@@ -220,7 +224,7 @@ func (command TransitionCommand) Validate() error {
 		command.ExpectedPhaseVersion == 0 ||
 		command.SupervisorGeneration == 0 ||
 		command.AttemptGeneration == 0 ||
-		strings.TrimSpace(command.ExpectedResourceIdentity) == "" {
+		!validResourceIdentity(command.ExpectedResourceIdentity) {
 		return fmt.Errorf("%w: operation transition identity, version, and generations are required", ErrInvalidOperation)
 	}
 	if err := ValidatePhaseTransition(command.ExpectedPhase, command.TargetPhase); err != nil {
@@ -291,4 +295,10 @@ func validDigest(value string) bool {
 		}
 	}
 	return true
+}
+
+func validResourceIdentity(value string) bool {
+	return len(value) == len("skyhigh-m0-")+64 &&
+		strings.HasPrefix(value, "skyhigh-m0-") &&
+		validDigest(strings.TrimPrefix(value, "skyhigh-m0-"))
 }
