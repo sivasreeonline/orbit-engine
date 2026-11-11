@@ -6,6 +6,7 @@ import {
   AppendCheckpointInput,
   AppendCheckpointResult,
   WitnessCheckpoint,
+  CheckpointPhase,
   WitnessConflictError,
   WitnessRecord,
   WitnessScope,
@@ -43,7 +44,7 @@ class InMemoryWitnessContractAdapter implements ExternalWitnessAdapter {
     if (this.unavailable) throw new WitnessUnavailableError();
 
     const key = this.scopeKey(input.checkpoint);
-    const operationKey = `${key}:${input.checkpoint.operationId}`;
+    const operationKey = `${key}:${input.checkpoint.phase}:${input.checkpoint.operationId}`;
     const existing = this.operations.get(operationKey);
     if (existing) {
       if (JSON.stringify(existing.checkpoint) !== JSON.stringify(input.checkpoint)) {
@@ -103,9 +104,10 @@ class InMemoryWitnessContractAdapter implements ExternalWitnessAdapter {
   async readByOperation(
     requestedScope: WitnessScope,
     operationId: string,
+    phase: CheckpointPhase,
   ): Promise<WitnessRecord | null> {
     if (this.unavailable) throw new WitnessUnavailableError();
-    return this.operations.get(`${this.scopeKey(requestedScope)}:${operationId}`) ?? null;
+    return this.operations.get(`${this.scopeKey(requestedScope)}:${phase}:${operationId}`) ?? null;
   }
 
   private scopeKey(value: WitnessScope): string {
@@ -182,7 +184,7 @@ describe("provider-neutral external witness contract", () => {
     await expect(adapter.appendCheckpoint(inputFor(first, 0, ZERO_CHECKPOINT_DIGEST)))
       .rejects.toBeInstanceOf(WitnessUnavailableError);
 
-    const recovered = await adapter.readByOperation(scope, first.operationId);
+    const recovered = await adapter.readByOperation(scope, first.operationId, first.phase);
     expect(recovered?.checkpoint).toEqual(first);
     expect(recovered?.receipt.signature).toBe("not-a-real-signature");
 
