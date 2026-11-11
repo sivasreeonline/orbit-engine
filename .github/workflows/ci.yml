@@ -106,10 +106,32 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Install PostgreSQL client
+      # The postgres:17-alpine service already contains psql and pg_isready.
+      # Execute those clients inside the service container instead of installing
+      # Ubuntu packages on the runner; CI must not depend on apt repository DNS.
+      - name: Configure PostgreSQL client wrappers
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/postgres-client-bin"
+
+          cat > "$RUNNER_TEMP/postgres-client-bin/psql" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          container_id="$(docker ps --filter "ancestor=postgres:17-alpine" --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+          exec docker exec -i -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" psql "$@"
+          SH
+
+          cat > "$RUNNER_TEMP/postgres-client-bin/pg_isready" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          container_id="$(docker ps --filter "ancestor=postgres:17-alpine" --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+          exec docker exec -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" pg_isready "$@"
+          SH
+
+          chmod +x "$RUNNER_TEMP/postgres-client-bin/psql" "$RUNNER_TEMP/postgres-client-bin/pg_isready"
+          echo "$RUNNER_TEMP/postgres-client-bin" >> "$GITHUB_PATH"
 
       - name: Apply problem catalog migration
         env:
