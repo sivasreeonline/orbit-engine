@@ -3,9 +3,6 @@ package journal
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/hex"
-	"crypto/ed25519"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
