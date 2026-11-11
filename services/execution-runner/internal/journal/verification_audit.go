@@ -105,3 +105,22 @@ func ValidateVerificationAuditChain(records []VerificationAuditRecord) error {
 	}
 	return nil
 }
+
+ 
+// ValidateVerificationAuditChainAgainstHead validates the supplied chain and
+// requires its final head to match an independently retained checkpoint. This
+// detects a valid-prefix rollback when the checkpoint is authentic and current.
+func ValidateVerificationAuditChainAgainstHead(records []VerificationAuditRecord, expected VerificationAuditHead) error {
+	if err := ValidateVerificationAuditChain(records); err != nil {
+		return err
+	}
+	var actual VerificationAuditHead
+	if len(records) > 0 {
+		last := records[len(records)-1]
+		actual = VerificationAuditHead{Sequence: last.Sequence, RecordSHA256: last.RecordSHA256}
+	}
+	if actual != expected {
+		return fmt.Errorf("%w: audit chain head does not match trusted checkpoint", ErrCorrupt)
+	}
+	return nil
+}
