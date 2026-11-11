@@ -199,7 +199,7 @@ func CheckpointCustodyQualificationReady(manifest CheckpointCustodyQualification
 		return false
 	}
 	for _, result := range manifest.Scenarios {
-		if result.Status != EvidenceStatusPass {
+		if result.Status != EvidencePass {
 			return false
 		}
 	}
