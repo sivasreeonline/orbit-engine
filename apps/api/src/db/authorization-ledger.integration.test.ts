@@ -86,22 +86,43 @@ async function createCommitAckDroppingProxy(): Promise<{
     });
     sockets.add(upstream);
     let commitQueryForwarded = false;
+    let clientTail = Buffer.alloc(0);
+    let upstreamBuffer = Buffer.alloc(0);
+    const commitTag = Buffer.from("COMMIT\\0", "utf8");
 
     clientSocket.on("data", (chunk) => {
-      if (chunk.includes(Buffer.from("COMMIT\0", "utf8"))) commitQueryForwarded = true;
+      const searchable = Buffer.concat([clientTail, chunk]);
+      if (searchable.includes(commitTag)) commitQueryForwarded = true;
+      clientTail = searchable.subarray(Math.max(0, searchable.length - commitTag.length + 1));
       if (!upstream.destroyed) upstream.write(chunk);
     });
 
     upstream.on("data", (chunk) => {
-      // PostgreSQL CommandComplete carries the command tag "COMMIT". The
-      // server emits it only after the transaction has committed.
-      if (commitQueryForwarded && chunk.includes(Buffer.from("COMMIT\0", "utf8"))) {
-        resolveDropped();
-        clientSocket.destroy();
-        upstream.destroy();
-        return;
+      // Parse complete PostgreSQL backend frames so TCP segmentation cannot
+      // hide the CommandComplete frame carrying the "COMMIT" command tag.
+      upstreamBuffer = Buffer.concat([upstreamBuffer, chunk]);
+      while (upstreamBuffer.length >= 5) {
+        const messageLength = upstreamBuffer.readInt32BE(1);
+        if (messageLength < 4) {
+          rejectDropped(new Error("Invalid PostgreSQL backend message length"));
+          clientSocket.destroy();
+          upstream.destroy();
+          return;
+        }
+        const frameLength = 1 + messageLength;
+        if (upstreamBuffer.length < frameLength) break;
+        const frame = upstreamBuffer.subarray(0, frameLength);
+        upstreamBuffer = upstreamBuffer.subarray(frameLength);
+
+        if (commitQueryForwarded && frame[0] === 0x43 && frame.subarray(5).includes(commitTag)) {
+          // CommandComplete is emitted only after PostgreSQL has committed.
+          resolveDropped();
+          clientSocket.destroy();
+          upstream.destroy();
+          return;
+        }
+        if (!clientSocket.destroyed) clientSocket.write(frame);
       }
-      if (!clientSocket.destroyed) clientSocket.write(chunk);
     });
 
     clientSocket.on("close", () => {
