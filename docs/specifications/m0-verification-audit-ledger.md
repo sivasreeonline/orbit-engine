@@ -42,3 +42,11 @@ This contract does not select a signing algorithm or key owner and does not
 embed signing keys. It does not claim WORM/immutable storage, trusted time,
 independent checkpoint custody, or deployment authority. Production use
 requires a separately reviewed checkpoint-signing and retention design.
+
+## Integration boundary
+
+The journal package exposes record sealing, chain validation, trusted-checkpoint
+comparison, and the `VerificationAuditLedger` interface. It does not connect
+the evidence verifier to a durable ledger automatically. A caller must persist
+each decision, including failed verification results, and retain an independently
+authenticated checkpoint. No storage adapter or checkpoint signer is selected.
