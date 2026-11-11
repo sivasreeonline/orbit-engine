@@ -7,7 +7,7 @@ import (
 
 func custodyQualificationFixture() CheckpointCustodyQualificationManifest {
 	manifest := CheckpointCustodyQualificationManifest{
-		SchemaVersion: "1.0", QualificationID: "custody-qualification-2026-01",
+		SchemaVersion: "1.1", QualificationID: "custody-qualification-2026-01",
 		Adapter: CheckpointCustodyAdapterIdentity{
 			Provider: "test-provider", Product: "object-lock-service", APIOrSDKVersion: "v1",
 			AccountScope: "test-account", Region: "test-region", StorageClass: "immutable-object",
@@ -49,6 +49,15 @@ func custodyQualificationFixture() CheckpointCustodyQualificationManifest {
 				SHA256:    witnessDigest,
 				MediaType: "application/json",
 			}}
+			attestationDigest := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+			if scenario.ID == "CUSTODY-012" {
+				attestationDigest = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+			}
+			result.IndependentWitnessAttestation = CheckpointCustodyEvidenceReference{
+				Path:      "evidence/witness-attestation-" + scenario.ID + ".json",
+				SHA256:    attestationDigest,
+				MediaType: "application/json",
+			}
 		}
 		manifest.Scenarios = append(manifest.Scenarios, result)
 	}

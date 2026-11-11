@@ -103,8 +103,21 @@ func pathCleanSlash(value string) string {
 // CheckpointCustodyEvidenceVerifierTrust is injected by the caller. This
 // package does not discover trust roots, establish reviewer independence, or
 // provide trusted time.
+const CheckpointCustodyWitnessRole = "INDEPENDENT_CUSTODY_WITNESS"
+
+type TrustedCheckpointCustodyWitnessKey struct {
+	KeyID     string
+	Principal string
+	Role      string
+	PublicKey ed25519.PublicKey
+	NotBefore time.Time
+	NotAfter  time.Time
+	RevokedAt *time.Time
+}
+
 type CheckpointCustodyEvidenceVerifierTrust struct {
 	ReviewerKeys   map[string]ed25519.PublicKey
+	WitnessKeys    map[string]TrustedCheckpointCustodyWitnessKey
 	Now            time.Time
 	MaxEvidenceAge time.Duration
 }
@@ -137,6 +150,30 @@ type custodyDetachedSignature struct {
 	Signature     string `json:"signature"`
 }
 
+type custodyWitnessAttestation struct {
+	SchemaVersion    string   `json:"schema_version"`
+	QualificationID  string   `json:"qualification_id"`
+	ScenarioID       string   `json:"scenario_id"`
+	RunID            string   `json:"run_id"`
+	ScenarioStatus   string   `json:"scenario_status"`
+	Command          string   `json:"command"`
+	StartedAt        string   `json:"started_at"`
+	CompletedAt      string   `json:"completed_at"`
+	WitnessPrincipal string   `json:"witness_principal"`
+	WitnessRole      string   `json:"witness_role"`
+	WitnessKeyID     string   `json:"witness_key_id"`
+	ObservedAt       string   `json:"observed_at"`
+	Decision         string   `json:"decision"`
+	EvidenceSHA256   []string `json:"evidence_sha256"`
+}
+
+type custodyWitnessSignatureEnvelope struct {
+	SchemaVersion string                    `json:"schema_version"`
+	Algorithm     string                    `json:"algorithm"`
+	Attestation   custodyWitnessAttestation `json:"attestation"`
+	Signature     string                    `json:"signature"`
+}
+
 func VerifyCheckpointCustodyEvidence(
 	manifest CheckpointCustodyQualificationManifest,
 	source CheckpointCustodyEvidenceSource,
@@ -164,45 +201,52 @@ func VerifyCheckpointCustodyEvidence(
 	report.VerifiedAt = trust.Now.UTC()
 
 	seenPaths := make(map[string]struct{})
-	verifyReference := func(reference CheckpointCustodyEvidenceReference) error {
+	verifyReference := func(reference CheckpointCustodyEvidenceReference) ([]byte, error) {
 		if _, exists := seenPaths[reference.Path]; exists {
-			return fmt.Errorf("%w: evidence reference path is repeated", ErrCorrupt)
+			return nil, fmt.Errorf("%w: evidence reference path is repeated", ErrCorrupt)
 		}
 		seenPaths[reference.Path] = struct{}{}
 		data, readErr := source.ReadEvidence(reference.Path)
 		if readErr != nil {
-			return readErr
+			return nil, readErr
 		}
 		digest := sha256.Sum256(data)
 		if !strings.EqualFold(hex.EncodeToString(digest[:]), reference.SHA256) {
-			return fmt.Errorf("%w: evidence digest mismatch for %q", ErrCorrupt, reference.Path)
+			return nil, fmt.Errorf("%w: evidence digest mismatch for %q", ErrCorrupt, reference.Path)
 		}
 		report.VerifiedReferences++
-		return nil
+		return data, nil
 	}
 	for _, scenario := range manifest.Scenarios {
 		for _, reference := range scenario.Evidence {
-			if err := verifyReference(reference); err != nil {
+			if _, err := verifyReference(reference); err != nil {
 				return CheckpointCustodyEvidenceVerificationReport{}, err
 			}
 		}
 		for _, reference := range scenario.IndependentWitnessEvidence {
-			if err := verifyReference(reference); err != nil {
+			if _, err := verifyReference(reference); err != nil {
+				return CheckpointCustodyEvidenceVerificationReport{}, err
+			}
+		}
+		if len(scenario.IndependentWitnessEvidence) > 0 {
+			if len(trust.WitnessKeys) == 0 {
+				return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: independent witness trust keys are required", ErrCorrupt)
+			}
+			witnessBytes, err := verifyReference(scenario.IndependentWitnessAttestation)
+			if err != nil {
+				return CheckpointCustodyEvidenceVerificationReport{}, err
+			}
+			if err := verifyCustodyWitnessAttestation(manifest, scenario, witnessBytes, trust); err != nil {
 				return CheckpointCustodyEvidenceVerificationReport{}, err
 			}
 		}
 		report.VerifiedScenarios = append(report.VerifiedScenarios, scenario.ScenarioID)
 	}
 
-	attestationBytes, err := source.ReadEvidence(manifest.Review.Attestation.Path)
+	attestationBytes, err := verifyReference(manifest.Review.Attestation)
 	if err != nil {
 		return CheckpointCustodyEvidenceVerificationReport{}, err
 	}
-	attestationHash := sha256.Sum256(attestationBytes)
-	if !strings.EqualFold(hex.EncodeToString(attestationHash[:]), manifest.Review.Attestation.SHA256) {
-		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review attestation digest mismatch", ErrCorrupt)
-	}
-	report.VerifiedReferences++
 
 	// The review attestation is a canonical, typed payload signed by the
 	// independently configured reviewer key. JSON input itself is not signed;
@@ -257,6 +301,89 @@ func VerifyCheckpointCustodyEvidence(
 	report.ManifestDeclaresReady = CheckpointCustodyQualificationReady(manifest)
 	sort.Strings(report.VerifiedScenarios)
 	return report, nil
+}
+
+func verifyCustodyWitnessAttestation(
+	manifest CheckpointCustodyQualificationManifest,
+	scenario CheckpointCustodyScenarioEvidence,
+	data []byte,
+	trust CheckpointCustodyEvidenceVerifierTrust,
+) error {
+	var envelope custodyWitnessSignatureEnvelope
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&envelope); err != nil {
+		return fmt.Errorf("%w: witness signature envelope is invalid", ErrCorrupt)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return fmt.Errorf("%w: witness signature envelope has trailing data", ErrCorrupt)
+	}
+	canonical, err := json.Marshal(envelope)
+	if err != nil || !bytes.Equal(canonical, data) {
+		return fmt.Errorf("%w: witness signature envelope is not canonical JSON", ErrCorrupt)
+	}
+
+	attestation := envelope.Attestation
+	if envelope.SchemaVersion != "1.0" || envelope.Algorithm != "Ed25519" ||
+		attestation.SchemaVersion != "1.0" || attestation.WitnessRole != CheckpointCustodyWitnessRole ||
+		attestation.Decision != "ATTESTED" || attestation.QualificationID != manifest.QualificationID ||
+		attestation.ScenarioID != scenario.ScenarioID || attestation.RunID != scenario.RunID ||
+		attestation.ScenarioStatus != string(scenario.Status) || attestation.Command != scenario.Command ||
+		attestation.StartedAt != scenario.StartedAt || attestation.CompletedAt != scenario.CompletedAt ||
+		strings.TrimSpace(attestation.WitnessPrincipal) == "" ||
+		attestation.WitnessPrincipal == manifest.Review.ReviewerIdentity {
+		return fmt.Errorf("%w: witness attestation identity, role, or scenario binding is invalid", ErrCorrupt)
+	}
+
+	trusted, ok := trust.WitnessKeys[attestation.WitnessKeyID]
+	if !ok || trusted.KeyID != attestation.WitnessKeyID ||
+		trusted.Principal != attestation.WitnessPrincipal || trusted.Role != CheckpointCustodyWitnessRole ||
+		len(trusted.PublicKey) != ed25519.PublicKeySize {
+		return fmt.Errorf("%w: independent witness key is not trusted", ErrCorrupt)
+	}
+	observedAt, err := time.Parse(time.RFC3339Nano, attestation.ObservedAt)
+	if err != nil || observedAt.Before(trusted.NotBefore) || observedAt.After(trusted.NotAfter) ||
+		observedAt.After(trust.Now) || trust.Now.Sub(observedAt) > trust.MaxEvidenceAge {
+		return fmt.Errorf("%w: witness observation time is outside the accepted window", ErrCorrupt)
+	}
+	completedAt, err := time.Parse(time.RFC3339Nano, scenario.CompletedAt)
+	if err != nil || observedAt.Before(completedAt) {
+		return fmt.Errorf("%w: witness observation predates scenario completion", ErrCorrupt)
+	}
+	if trusted.RevokedAt != nil && !trust.Now.Before(*trusted.RevokedAt) {
+		return fmt.Errorf("%w: independent witness key is revoked", ErrCorrupt)
+	}
+
+	expectedDigests := make([]string, 0, len(scenario.IndependentWitnessEvidence))
+	for _, reference := range scenario.IndependentWitnessEvidence {
+		expectedDigests = append(expectedDigests, strings.ToLower(reference.SHA256))
+	}
+	sort.Strings(expectedDigests)
+	actualDigests := append([]string(nil), attestation.EvidenceSHA256...)
+	for _, digest := range actualDigests {
+		if !validAuditDigest(digest) || digest != strings.ToLower(digest) {
+			return fmt.Errorf("%w: witness evidence digest is invalid or non-canonical", ErrCorrupt)
+		}
+	}
+	if len(actualDigests) != len(expectedDigests) {
+		return fmt.Errorf("%w: witness attestation evidence set is incomplete", ErrCorrupt)
+	}
+	for i := range expectedDigests {
+		if actualDigests[i] != expectedDigests[i] {
+			return fmt.Errorf("%w: witness attestation evidence set does not match the manifest", ErrCorrupt)
+		}
+	}
+
+	signature, err := base64.StdEncoding.DecodeString(envelope.Signature)
+	if err != nil || len(signature) != ed25519.SignatureSize {
+		return fmt.Errorf("%w: witness signature encoding is invalid", ErrCorrupt)
+	}
+	payload, err := json.Marshal(attestation)
+	if err != nil || !ed25519.Verify(trusted.PublicKey, payload, signature) {
+		return fmt.Errorf("%w: witness signature verification failed", ErrCorrupt)
+	}
+	return nil
 }
 
 func canonicalCustodyManifestBytes(manifest CheckpointCustodyQualificationManifest) ([]byte, error) {

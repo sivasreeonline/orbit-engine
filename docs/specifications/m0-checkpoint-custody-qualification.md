@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This specification defines a machine-readable qualification manifest for a future durable checkpoint-custody adapter. It is intended to turn the storage contract in [the custody and retention specification](m0-checkpoint-custody-and-retention.md) into provider-specific, reproducible evidence requirements.
+This specification defines schema version 1.1 of a machine-readable qualification manifest for a future durable checkpoint-custody adapter. It is intended to turn the storage contract in [the custody and retention specification](m0-checkpoint-custody-and-retention.md) into provider-specific, reproducible evidence requirements.
 
 The catalog contains 12 stable scenarios:
 
@@ -29,9 +29,10 @@ Each manifest records:
 - actual provider, product, API/SDK version, account/tenant scope, region, storage class, and retention mode;
 - OS, kernel, architecture, endpoint, encryption, versioning, replication, and exact retention configuration;
 - each scenario's status, run ID, exact command, start/completion times, and one or more evidence references; scenarios CUSTODY-011 and CUSTODY-012 additionally require separate independent-witness evidence;
-- independent review status, reviewer identity, timestamp, and attestation evidence reference.
+- independent review status, reviewer identity, timestamp, and attestation evidence reference;
+- for CUSTODY-011 and CUSTODY-012, a detached Ed25519 witness attestation bound to the qualification ID, exact scenario/run metadata, witness identity/key, observation time, decision, and sorted SHA-256 set of the independent witness evidence files.
 
-Evidence references contain confined relative paths, SHA-256 digests, and media types. The structural validator rejects absolute paths, traversal, Windows drive paths, backslashes, NUL bytes, malformed digests, missing evidence, duplicate or unknown scenario IDs, invalid timestamps, and incomplete provider/environment identity. It requires independent-witness evidence for CUSTODY-011 and CUSTODY-012.
+Evidence references contain confined relative paths, SHA-256 digests, and media types. The structural validator rejects absolute paths, traversal, Windows drive paths, backslashes, NUL bytes, malformed digests, missing evidence, duplicate or unknown scenario IDs, invalid timestamps, and incomplete provider/environment identity. Schema 1.1 requires both independent-witness evidence files and a separate signed witness-attestation artifact for CUSTODY-011 and CUSTODY-012.
 
 ## Readiness rule
 
@@ -41,10 +42,20 @@ BLOCKED and SKIPPED are not PASS. A structurally valid manifest with a pending r
 
 ## Evidence integrity and trust boundaries
 
-This package validates metadata only. It does not open evidence files, recompute their hashes, verify signatures, establish reviewer independence, prove the provider account or region, validate a WORM setting, or establish that a retention lock was enforced. A manifest is not evidence that its claims are true.
+The evidence verifier reads and hashes the referenced artifacts, verifies the final reviewer attestation, and verifies the detached Ed25519 witness attestations for CUSTODY-011 and CUSTODY-012 against externally supplied witness keys. Each witness signature binds the exact scenario/run metadata and the complete sorted digest set of the witness evidence files. It rejects stale/future witness observations, revoked or out-of-validity keys, unknown fields, duplicate JSON keys, non-canonical envelopes, and witness identities that equal the final reviewer identity.
+
+Cryptographic verification still does not establish organizational independence, prove the provider account or region, validate a WORM setting, or establish that a retention lock was enforced. A manifest is not evidence that its claims are true.
 
 A real qualification must independently retrieve provider configuration and audit events, verify each evidence digest and provenance, perform the destructive/fault-injection scenarios in a dedicated non-production account, and have an independent reviewer attest to the actual results. Test fixtures are synthetic and do not represent a provider qualification.
 
 ## Explicit gates
 
 No provider or adapter is selected. No durable storage adapter, cloud account access, WORM/object-lock configuration, backup job, replication, production key, host deployment, privileged execution, Phase A/B, or student workload execution is implemented or authorized.
+
+
+The detached witness envelope is defined by [the witness attestation JSON Schema](../schemas/m0-checkpoint-custody-witness-attestation.schema.json). Its digest list must be unique, lowercase, and lexicographically sorted; the Go verifier enforces exact equality with the verified witness evidence references. JSON Schema alone does not verify the Ed25519 signature or external key validity/revocation.
+
+
+### Cryptographic profile boundary
+
+The Ed25519 signatures in schema 1.1 are limited to local custody evidence review and witness attribution. They are not host-epoch authority signatures, provider-fence attestations, Phase A authorization signatures, or a system-wide production cryptographic profile. Their keys are supplied by an offline verifier policy and are not provisioned by this repository. The M0 production signing profile, root custody, trusted-time source, and external anti-rollback witness remain unselected and independently gated.

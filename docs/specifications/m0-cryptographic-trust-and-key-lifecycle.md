@@ -228,3 +228,8 @@ The ledger remains an application-side projection. An externally anchored anti-r
 
 Key lifecycle event schema:
 - `docs/schemas/m0-crypto-key-lifecycle-event.schema.json`
+
+
+### Local custody evidence signatures are not the production crypto profile
+
+The Ed25519 verifier used by the local checkpoint-custody evidence bundle is narrowly scoped to reviewer and independent-witness artifact attribution. It does not select or approve the M0 host-epoch response, provider-fence attestation, trust-bundle, or Phase A authorization signing profile. It has no authority to admit a host or authorize execution. Production profile selection, root custody, trusted time, revocation distribution, and external anti-rollback remain blocked on the independent approvals defined above.
