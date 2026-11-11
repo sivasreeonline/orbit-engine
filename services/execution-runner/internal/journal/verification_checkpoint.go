@@ -16,13 +16,13 @@ const VerificationCheckpointSignerRole = "VERIFICATION_CHECKPOINT_SIGNER"
 // the Go struct encoding used below; cross-language implementations must
 // implement the documented canonical JSON representation.
 type VerificationAuditCheckpointPayload struct {
-	LedgerID             string `json:"ledger_id"`
-	LedgerEpoch          string `json:"ledger_epoch"`
-	Sequence             uint64 `json:"sequence"`
-	RecordSHA256          string `json:"record_sha256"`
-	CreatedAt             string `json:"created_at"`
+	LedgerID                 string `json:"ledger_id"`
+	LedgerEpoch              string `json:"ledger_epoch"`
+	Sequence                 uint64 `json:"sequence"`
+	RecordSHA256             string `json:"record_sha256"`
+	CreatedAt                string `json:"created_at"`
 	PreviousCheckpointSHA256 string `json:"previous_checkpoint_sha256"`
-	PolicyVersion         string `json:"policy_version"`
+	PolicyVersion            string `json:"policy_version"`
 }
 
 // SignedVerificationAuditCheckpoint is a detached Ed25519 attestation over
