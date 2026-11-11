@@ -118,7 +118,7 @@ type CheckpointCustodyEvidenceVerificationReport struct {
 	ReviewDecision        string
 	ManifestDeclaresReady bool
 	ManifestDigest        string
-	VerifiedAt             time.Time
+	VerifiedAt            time.Time
 }
 
 type custodyReviewAttestation struct {
