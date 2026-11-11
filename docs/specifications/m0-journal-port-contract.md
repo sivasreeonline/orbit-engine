@@ -150,3 +150,20 @@ The validator checks manifest structure and complete catalog coverage. `Qualific
 **Verification boundary:** this code does not read evidence files, recompute their hashes, verify cryptographic signatures, prove reviewer independence, or authorize deployment. Those require a separate evidence-verification process and trusted identity/key policy. The schema's 25-item array bound does not itself enforce unique IDs or exact catalog membership; the Go validator performs those checks. A manifest is evidence metadata, not evidence of its own truth.
 
 No adapter or backend is selected by this work. No production qualification, host deployment, or workload execution is authorized.
+
+
+## Independent evidence verification
+
+The separate verifier contract is documented in
+`m0-journal-evidence-verification.md` and implemented in
+`internal/journal/evidence_verifier.go`. It resolves each manifest evidence
+reference through an injected source, recomputes SHA-256, and verifies a
+detached Ed25519 attestation against an explicitly supplied reviewer trust
+policy. It enforces reviewer role, optional implementer/reviewer separation,
+key validity/revocation, and the policy-supplied maximum evidence age.
+
+No trust root, reviewer key, policy distribution mechanism, evidence-age
+default, or provider resolver is embedded. A successful unit test proves only
+the verifier's behavior against controlled fixtures. It does not authenticate
+the policy distribution channel, establish organizational independence,
+prove provider evidence provenance, or authorize host/workload execution.
