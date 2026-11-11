@@ -40,8 +40,8 @@ def semantic_errors(record: dict[str, Any]) -> list[str]:
         evidence = item.get("evidence", [])
         if item.get("status") == "PASS" and not evidence:
             errors.append(f"{test_id}: PASS requires immutable evidence")
-        if item.get("status") != "PASS" and evidence:
-            errors.append(f"{test_id}: evidence may only be attached after independent verification and PASS")
+        if item.get("status") == "NOT_RUN" and evidence:
+            errors.append(f"{test_id}: NOT_RUN must not carry evidence")
         for entry in evidence:
             if entry.get("collectorIdentity") == entry.get("independentVerifierIdentity"):
                 errors.append(f"{test_id}: evidence collector and independent verifier must differ")
