@@ -29,11 +29,11 @@ type VerificationAuditCheckpointPayload struct {
 // the canonical payload. The private key is never part of this contract.
 type SignedVerificationAuditCheckpoint struct {
 	Payload          VerificationAuditCheckpointPayload `json:"payload"`
-	SignerPrincipal  string `json:"signer_principal"`
-	SignerRole       string `json:"signer_role"`
-	SignerKeyID      string `json:"signer_key_id"`
-	SignatureHex     string `json:"signature_hex"`
-	CheckpointSHA256 string `json:"checkpoint_sha256"`
+	SignerPrincipal  string                             `json:"signer_principal"`
+	SignerRole       string                             `json:"signer_role"`
+	SignerKeyID      string                             `json:"signer_key_id"`
+	SignatureHex     string                             `json:"signature_hex"`
+	CheckpointSHA256 string                             `json:"checkpoint_sha256"`
 }
 
 // TrustedCheckpointSigningKey is supplied by an independently governed trust
@@ -63,9 +63,9 @@ func checkpointPayloadBytes(payload VerificationAuditCheckpointPayload) ([]byte,
 func checkpointSigningBytes(checkpoint SignedVerificationAuditCheckpoint) ([]byte, error) {
 	return json.Marshal(struct {
 		Payload         VerificationAuditCheckpointPayload `json:"payload"`
-		SignerPrincipal string                              `json:"signer_principal"`
-		SignerRole      string                              `json:"signer_role"`
-		SignerKeyID     string                              `json:"signer_key_id"`
+		SignerPrincipal string                             `json:"signer_principal"`
+		SignerRole      string                             `json:"signer_role"`
+		SignerKeyID     string                             `json:"signer_key_id"`
 	}{
 		Payload: checkpoint.Payload, SignerPrincipal: checkpoint.SignerPrincipal,
 		SignerRole: checkpoint.SignerRole, SignerKeyID: checkpoint.SignerKeyID,
