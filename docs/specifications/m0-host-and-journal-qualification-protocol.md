@@ -275,7 +275,7 @@ A schema-valid Phase A manifest is only an immutable signed decision payload. It
 
 ## ADR-0019 candidate decision linkage
 
-`docs/adr/ADR-0019-decision-dossier.md` defines the candidate-specific configuration and evidence rules. Candidate A and Candidate B must each use the same 32 security control IDs and 33 common host qualification tests. Candidate B must additionally pass RLS-001 through RLS-004; these tests are mandatory only for rootless containerd/userns and are not-applicable to Candidate A. A host qualification report is candidate-, host-, commit- and profile-specific; it cannot be transferred between rootful and rootless deployments.
+`docs/adr/ADR-0019-decision-dossier.md` defines the candidate-specific configuration and evidence rules. Candidate A and Candidate B must each use the same 33 security control IDs, including FENCE-001, and 33 common host qualification tests. Candidate B must additionally pass RLS-001 through RLS-004; these tests are mandatory only for rootless containerd/userns and are not-applicable to Candidate A. A host qualification report is candidate-, host-, commit- and profile-specific; it cannot be transferred between rootful and rootless deployments.
 
 The machine-readable ADR decision record is `docs/schemas/m0-adr-0019-decision-record.template.json`. Its blank state is pending and grants no implementation, Phase A, Phase B, student or production authorization.
 
