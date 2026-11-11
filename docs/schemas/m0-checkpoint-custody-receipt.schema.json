@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sivasreeonline.github.io/orbit-engine/schemas/m0-checkpoint-custody-receipt.schema.json",
+  "title": "M0 Verification Audit Checkpoint Custody Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["checkpoint_sha256", "custody_domain", "retention_policy_id", "retention_policy_version", "retained_at", "immutable_until", "custodian_principal", "custodian_role", "custodian_key_id", "signature_hex", "receipt_sha256"],
+  "properties": {
+    "checkpoint_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+    "custody_domain": {"type": "string", "minLength": 1},
+    "retention_policy_id": {"type": "string", "minLength": 1},
+    "retention_policy_version": {"type": "string", "minLength": 1},
+    "retained_at": {"type": "string", "format": "date-time"},
+    "immutable_until": {"type": "string", "format": "date-time"},
+    "custodian_principal": {"type": "string", "minLength": 1},
+    "custodian_role": {"const": "VERIFICATION_CHECKPOINT_CUSTODIAN"},
+    "custodian_key_id": {"type": "string", "minLength": 1},
+    "signature_hex": {"type": "string", "pattern": "^[A-Fa-f0-9]{128}$"},
+    "receipt_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+  }
+}
