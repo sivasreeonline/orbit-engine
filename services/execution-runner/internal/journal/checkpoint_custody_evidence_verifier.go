@@ -197,45 +197,52 @@ func VerifyCheckpointCustodyEvidence(
 	report.VerifiedAt = trust.Now.UTC()
 
 	seenPaths := make(map[string]struct{})
-	verifyReference := func(reference CheckpointCustodyEvidenceReference) error {
+	verifyReference := func(reference CheckpointCustodyEvidenceReference) ([]byte, error) {
 		if _, exists := seenPaths[reference.Path]; exists {
-			return fmt.Errorf("%w: evidence reference path is repeated", ErrCorrupt)
+			return nil, fmt.Errorf("%w: evidence reference path is repeated", ErrCorrupt)
 		}
 		seenPaths[reference.Path] = struct{}{}
 		data, readErr := source.ReadEvidence(reference.Path)
 		if readErr != nil {
-			return readErr
+			return nil, readErr
 		}
 		digest := sha256.Sum256(data)
 		if !strings.EqualFold(hex.EncodeToString(digest[:]), reference.SHA256) {
-			return fmt.Errorf("%w: evidence digest mismatch for %q", ErrCorrupt, reference.Path)
+			return nil, fmt.Errorf("%w: evidence digest mismatch for %q", ErrCorrupt, reference.Path)
 		}
 		report.VerifiedReferences++
-		return nil
+		return data, nil
 	}
 	for _, scenario := range manifest.Scenarios {
 		for _, reference := range scenario.Evidence {
-			if err := verifyReference(reference); err != nil {
+			if _, err := verifyReference(reference); err != nil {
 				return CheckpointCustodyEvidenceVerificationReport{}, err
 			}
 		}
 		for _, reference := range scenario.IndependentWitnessEvidence {
-			if err := verifyReference(reference); err != nil {
+			if _, err := verifyReference(reference); err != nil {
+				return CheckpointCustodyEvidenceVerificationReport{}, err
+			}
+		}
+		if len(scenario.IndependentWitnessEvidence) > 0 {
+			if len(trust.WitnessKeys) == 0 {
+				return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: independent witness trust keys are required", ErrCorrupt)
+			}
+			witnessBytes, err := verifyReference(scenario.IndependentWitnessAttestation)
+			if err != nil {
+				return CheckpointCustodyEvidenceVerificationReport{}, err
+			}
+			if err := verifyCustodyWitnessAttestation(manifest, scenario, witnessBytes, trust); err != nil {
 				return CheckpointCustodyEvidenceVerificationReport{}, err
 			}
 		}
 		report.VerifiedScenarios = append(report.VerifiedScenarios, scenario.ScenarioID)
 	}
 
-	attestationBytes, err := source.ReadEvidence(manifest.Review.Attestation.Path)
+	attestationBytes, err := verifyReference(manifest.Review.Attestation)
 	if err != nil {
 		return CheckpointCustodyEvidenceVerificationReport{}, err
 	}
-	attestationHash := sha256.Sum256(attestationBytes)
-	if !strings.EqualFold(hex.EncodeToString(attestationHash[:]), manifest.Review.Attestation.SHA256) {
-		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review attestation digest mismatch", ErrCorrupt)
-	}
-	report.VerifiedReferences++
 
 	// The review attestation is a canonical, typed payload signed by the
 	// independently configured reviewer key. JSON input itself is not signed;
