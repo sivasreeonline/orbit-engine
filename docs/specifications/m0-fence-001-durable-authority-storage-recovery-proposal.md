@@ -114,6 +114,21 @@ Acceptance must not be treated as a flag folded into the original issuance check
 
 The disposable PostgreSQL fixture now has a separate acceptance-checkpoint intent/receipt pair and an acceptance wrapper that models this ordering. Its receipt table remains in the same disposable database and is only a test double. The fixture does not prove independent witness durability, cryptographic guest readback, or production admission. A future implementation must place acceptance and issuance checkpoints in one unified append-only chain with an independently administered witness and independently verified predecessor digest.
 
+## 3.2 Checkpoint records form one cryptographically linked sequence
+
+Issuance and acceptance checkpoints share one per-host generation sequence. Each immutable checkpoint record binds:
+
+- Host authority identity.
+- Monotonic generation and lifecycle phase.
+- Operation identity.
+- Exact predecessor checkpoint digest.
+- Canonical post-transition authority-state digest.
+- Exact response digest.
+
+The checkpoint-record digest is computed over a canonical structured envelope, not delimiter-concatenated caller-controlled strings. The next transition references the preceding checkpoint-record digest, not merely the preceding state digest. Publication, acceptance and retry reconciliation must recompute the record digest and compare the exact receipt against the full record identity.
+
+The disposable PostgreSQL prototype now models this digest envelope and verifies the issuance → acceptance → next-issuance predecessor links, including rejection of a deliberately forked checkpoint digest. Its receipt remains local test data. This is not proof of witness anti-equivocation, independently retained high-water state, signatures, or provider fencing; those remain separate gates.
+
 ## 4. Crash-point and recovery matrix
 
 | Crash or uncertainty point | Durable facts that may exist | Required recovery |
