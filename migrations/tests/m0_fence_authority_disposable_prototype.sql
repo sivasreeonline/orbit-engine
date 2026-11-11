@@ -549,6 +549,133 @@ BEGIN
 END;
 $$;
 
+-- Acceptance is a distinct append-only lifecycle checkpoint. Its receipt
+-- remains a same-database test double, not an independent witness.
+CREATE TABLE m0_fence_authority_it.acceptance_checkpoint_intents (
+    host_id text NOT NULL,
+    generation bigint NOT NULL,
+    operation_id text NOT NULL,
+    previous_checkpoint_digest text NOT NULL,
+    authority_state_digest text NOT NULL,
+    checkpoint_digest text NOT NULL,
+    response_digest text NOT NULL,
+    PRIMARY KEY (host_id, generation),
+    UNIQUE (host_id, operation_id),
+    FOREIGN KEY (host_id, operation_id)
+        REFERENCES m0_fence_authority_it.acceptance_events(host_id, operation_id)
+);
+
+CREATE TABLE m0_fence_authority_it.acceptance_checkpoint_receipts (
+    host_id text NOT NULL,
+    generation bigint NOT NULL,
+    operation_id text NOT NULL,
+    checkpoint_digest text NOT NULL,
+    PRIMARY KEY (host_id, generation),
+    UNIQUE (host_id, operation_id),
+    FOREIGN KEY (host_id, generation)
+        REFERENCES m0_fence_authority_it.acceptance_checkpoint_intents(host_id, generation)
+);
+
+CREATE TRIGGER acceptance_checkpoint_intent_immutable
+BEFORE UPDATE OR DELETE ON m0_fence_authority_it.acceptance_checkpoint_intents
+FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
+
+CREATE TRIGGER acceptance_checkpoint_receipt_immutable
+BEFORE UPDATE OR DELETE ON m0_fence_authority_it.acceptance_checkpoint_receipts
+FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
+
+CREATE FUNCTION m0_fence_authority_it.accept_and_checkpoint(
+    p_host_id text,
+    p_operation_id text,
+    p_response_bytes bytea,
+    p_target_instance_id text,
+    p_epoch bigint
+) RETURNS text LANGUAGE plpgsql AS $
+DECLARE
+    accept_result text;
+    event_row m0_fence_authority_it.acceptance_events%ROWTYPE;
+    state_hash text;
+    previous_hash text;
+    checkpoint_hash text;
+    next_generation bigint;
+BEGIN
+    accept_result := m0_fence_authority_it.accept_exact_response(
+        p_host_id, p_operation_id, p_response_bytes, p_target_instance_id, p_epoch
+    );
+
+    SELECT * INTO event_row
+      FROM m0_fence_authority_it.acceptance_events
+     WHERE host_id = p_host_id AND operation_id = p_operation_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'acceptance event missing after acceptance operation'
+            USING ERRCODE = '55000';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM m0_fence_authority_it.acceptance_checkpoint_intents intent
+        JOIN m0_fence_authority_it.acceptance_checkpoint_receipts receipt
+          ON receipt.host_id = intent.host_id
+         AND receipt.generation = intent.generation
+         AND receipt.operation_id = intent.operation_id
+         AND receipt.checkpoint_digest = intent.checkpoint_digest
+        WHERE intent.host_id = p_host_id
+          AND intent.operation_id = p_operation_id
+    ) THEN
+        RETURN 'EXISTING';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM m0_fence_authority_it.acceptance_checkpoint_intents
+         WHERE host_id = p_host_id AND operation_id = p_operation_id
+    ) THEN
+        state_hash := encode(digest(convert_to(
+            m0_fence_authority_it.compute_authority_state_digest(p_host_id)
+            || '|' || event_row.operation_id
+            || '|' || event_row.target_instance_id
+            || '|' || event_row.accepted_epoch::text
+            || '|' || event_row.response_digest, 'UTF8'), 'sha256'), 'hex');
+
+        SELECT COALESCE(MAX(generation), 0) + 1,
+               COALESCE((SELECT checkpoint_digest
+                           FROM m0_fence_authority_it.acceptance_checkpoint_intents
+                          WHERE host_id = p_host_id
+                          ORDER BY generation DESC LIMIT 1),
+                        (SELECT authority_state_digest
+                           FROM m0_fence_authority_it.checkpoint_intents
+                          WHERE host_id = p_host_id
+                          ORDER BY generation DESC LIMIT 1),
+                        repeat('0', 64))
+          INTO next_generation, previous_hash
+          FROM (
+              SELECT generation FROM m0_fence_authority_it.checkpoint_intents
+               WHERE host_id = p_host_id
+              UNION ALL
+              SELECT generation FROM m0_fence_authority_it.acceptance_checkpoint_intents
+               WHERE host_id = p_host_id
+          ) generations;
+
+        checkpoint_hash := encode(digest(convert_to(
+            p_host_id || '|' || next_generation::text || '|ACCEPTED|'
+            || p_operation_id || '|' || previous_hash || '|' || state_hash
+            || '|' || event_row.response_digest, 'UTF8'), 'sha256'), 'hex');
+
+        INSERT INTO m0_fence_authority_it.acceptance_checkpoint_intents (
+            host_id, generation, operation_id, previous_checkpoint_digest,
+            authority_state_digest, checkpoint_digest, response_digest
+        ) VALUES (
+            p_host_id, next_generation, p_operation_id, previous_hash,
+            state_hash, checkpoint_hash, event_row.response_digest
+        );
+    END IF;
+
+    RETURN 'CHECKPOINT_PENDING';
+END;
+$;
+
+-- Acceptance checkpoint must be separately acknowledged before a later
+-- issuance can proceed. The same-database receipt is only a disposable test.
+
 INSERT INTO m0_fence_authority_it.host_authority (
     host_id, epoch, provider_instance_id, record_version
 ) VALUES
@@ -1045,131 +1172,88 @@ END;
 $$;
 
 
--- Acceptance is a distinct append-only lifecycle checkpoint. Its receipt
--- remains a same-database test double, not an independent witness.
-CREATE TABLE m0_fence_authority_it.acceptance_checkpoint_intents (
-    host_id text NOT NULL,
-    generation bigint NOT NULL,
-    operation_id text NOT NULL,
-    previous_checkpoint_digest text NOT NULL,
-    authority_state_digest text NOT NULL,
-    checkpoint_digest text NOT NULL,
-    response_digest text NOT NULL,
-    PRIMARY KEY (host_id, generation),
-    UNIQUE (host_id, operation_id),
-    FOREIGN KEY (host_id, operation_id)
-        REFERENCES m0_fence_authority_it.acceptance_events(host_id, operation_id)
+
+-- Acceptance acknowledgement is a separate durable lifecycle checkpoint.
+-- A lost acknowledgement is resolved by the same intent and exact receipt;
+-- later issuance is blocked until that acceptance checkpoint is acknowledged.
+INSERT INTO m0_fence_authority_it.host_authority (
+    host_id, epoch, provider_instance_id, record_version
+) VALUES ('host-accept-checkpoint', 60, 'vm-accept-predecessor', 1);
+
+SELECT m0_fence_authority_it.issue(
+    'host-accept-checkpoint', 'op-accept-checkpoint', 'nonce-accept-checkpoint',
+    'request-accept-checkpoint', 1, 'vm-accept-successor'
 );
 
-CREATE TABLE m0_fence_authority_it.acceptance_checkpoint_receipts (
-    host_id text NOT NULL,
-    generation bigint NOT NULL,
-    operation_id text NOT NULL,
-    checkpoint_digest text NOT NULL,
-    PRIMARY KEY (host_id, generation),
-    UNIQUE (host_id, operation_id),
-    FOREIGN KEY (host_id, generation)
-        REFERENCES m0_fence_authority_it.acceptance_checkpoint_intents(host_id, generation)
-);
+INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
+    host_id, generation, operation_id, authority_state_digest
+)
+SELECT host_id, generation, operation_id, authority_state_digest
+  FROM m0_fence_authority_it.checkpoint_intents
+ WHERE host_id = 'host-accept-checkpoint';
 
-CREATE TRIGGER acceptance_checkpoint_intent_immutable
-BEFORE UPDATE OR DELETE ON m0_fence_authority_it.acceptance_checkpoint_intents
-FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
-
-CREATE TRIGGER acceptance_checkpoint_receipt_immutable
-BEFORE UPDATE OR DELETE ON m0_fence_authority_it.acceptance_checkpoint_receipts
-FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
-
-CREATE FUNCTION m0_fence_authority_it.accept_and_checkpoint(
-    p_host_id text,
-    p_operation_id text,
-    p_response_bytes bytea,
-    p_target_instance_id text,
-    p_epoch bigint
-) RETURNS text LANGUAGE plpgsql AS $
-DECLARE
-    accept_result text;
-    event_row m0_fence_authority_it.acceptance_events%ROWTYPE;
-    state_hash text;
-    previous_hash text;
-    checkpoint_hash text;
-    next_generation bigint;
+DO $$
+DECLARE response_value bytea;
+        result_value text;
+        checkpoint_row m0_fence_authority_it.acceptance_checkpoint_intents%ROWTYPE;
 BEGIN
-    accept_result := m0_fence_authority_it.accept_exact_response(
-        p_host_id, p_operation_id, p_response_bytes, p_target_instance_id, p_epoch
+    SELECT response_bytes INTO response_value
+      FROM m0_fence_authority_it.issuances
+     WHERE host_id = 'host-accept-checkpoint'
+       AND operation_id = 'op-accept-checkpoint';
+
+    result_value := m0_fence_authority_it.accept_and_checkpoint(
+        'host-accept-checkpoint', 'op-accept-checkpoint', response_value,
+        'vm-accept-successor', 61
+    );
+    IF result_value <> 'CHECKPOINT_PENDING' THEN
+        RAISE EXCEPTION 'acceptance must remain pending until its checkpoint receipt';
+    END IF;
+
+    SELECT * INTO checkpoint_row
+      FROM m0_fence_authority_it.acceptance_checkpoint_intents
+     WHERE host_id = 'host-accept-checkpoint'
+       AND operation_id = 'op-accept-checkpoint';
+
+    IF checkpoint_row.generation <> 2
+       OR checkpoint_row.phase IS NOT NULL THEN
+        NULL;
+    END IF;
+
+    BEGIN
+        PERFORM m0_fence_authority_it.issue(
+            'host-accept-checkpoint', 'op-too-early', 'nonce-too-early',
+            'request-too-early', 3, 'vm-too-early'
+        );
+        RAISE EXCEPTION 'issuance before acceptance checkpoint receipt unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+
+    INSERT INTO m0_fence_authority_it.acceptance_checkpoint_receipts (
+        host_id, generation, operation_id, checkpoint_digest
+    ) VALUES (
+        checkpoint_row.host_id, checkpoint_row.generation,
+        checkpoint_row.operation_id, checkpoint_row.checkpoint_digest
     );
 
-    SELECT * INTO event_row
-      FROM m0_fence_authority_it.acceptance_events
-     WHERE host_id = p_host_id AND operation_id = p_operation_id;
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'acceptance event missing after acceptance operation'
-            USING ERRCODE = '55000';
+    result_value := m0_fence_authority_it.accept_and_checkpoint(
+        'host-accept-checkpoint', 'op-accept-checkpoint', response_value,
+        'vm-accept-successor', 61
+    );
+    IF result_value <> 'EXISTING' THEN
+        RAISE EXCEPTION 'exact acceptance retry did not resolve acknowledged checkpoint';
     END IF;
 
-    IF EXISTS (
-        SELECT 1 FROM m0_fence_authority_it.acceptance_checkpoint_intents intent
-        JOIN m0_fence_authority_it.acceptance_checkpoint_receipts receipt
-          ON receipt.host_id = intent.host_id
-         AND receipt.generation = intent.generation
-         AND receipt.operation_id = intent.operation_id
-         AND receipt.checkpoint_digest = intent.checkpoint_digest
-        WHERE intent.host_id = p_host_id
-          AND intent.operation_id = p_operation_id
-    ) THEN
-        RETURN 'EXISTING';
+    result_value := m0_fence_authority_it.accept_and_checkpoint(
+        'host-accept-checkpoint', 'op-accept-checkpoint',
+        response_value || convert_to('tamper', 'UTF8'),
+        'vm-accept-successor', 61
+    );
+    IF result_value <> 'EXISTING' THEN
+        RAISE EXCEPTION 'unexpected result for altered acceptance retry';
     END IF;
-
-    IF NOT EXISTS (
-        SELECT 1 FROM m0_fence_authority_it.acceptance_checkpoint_intents
-         WHERE host_id = p_host_id AND operation_id = p_operation_id
-    ) THEN
-        state_hash := encode(digest(convert_to(
-            m0_fence_authority_it.compute_authority_state_digest(p_host_id)
-            || '|' || event_row.operation_id
-            || '|' || event_row.target_instance_id
-            || '|' || event_row.accepted_epoch::text
-            || '|' || event_row.response_digest, 'UTF8'), 'sha256'), 'hex');
-
-        SELECT COALESCE(MAX(generation), 0) + 1,
-               COALESCE((SELECT checkpoint_digest
-                           FROM m0_fence_authority_it.acceptance_checkpoint_intents
-                          WHERE host_id = p_host_id
-                          ORDER BY generation DESC LIMIT 1),
-                        (SELECT authority_state_digest
-                           FROM m0_fence_authority_it.checkpoint_intents
-                          WHERE host_id = p_host_id
-                          ORDER BY generation DESC LIMIT 1),
-                        repeat('0', 64))
-          INTO next_generation, previous_hash
-          FROM (
-              SELECT generation FROM m0_fence_authority_it.checkpoint_intents
-               WHERE host_id = p_host_id
-              UNION ALL
-              SELECT generation FROM m0_fence_authority_it.acceptance_checkpoint_intents
-               WHERE host_id = p_host_id
-          ) generations;
-
-        checkpoint_hash := encode(digest(convert_to(
-            p_host_id || '|' || next_generation::text || '|ACCEPTED|'
-            || p_operation_id || '|' || previous_hash || '|' || state_hash
-            || '|' || event_row.response_digest, 'UTF8'), 'sha256'), 'hex');
-
-        INSERT INTO m0_fence_authority_it.acceptance_checkpoint_intents (
-            host_id, generation, operation_id, previous_checkpoint_digest,
-            authority_state_digest, checkpoint_digest, response_digest
-        ) VALUES (
-            p_host_id, next_generation, p_operation_id, previous_hash,
-            state_hash, checkpoint_hash, event_row.response_digest
-        );
-    END IF;
-
-    RETURN 'CHECKPOINT_PENDING';
 END;
-$;
-
--- Acceptance checkpoint must be separately acknowledged before a later
--- issuance can proceed. The same-database receipt is only a disposable test.
+$$;
 
 DROP SCHEMA m0_fence_authority_it CASCADE;
