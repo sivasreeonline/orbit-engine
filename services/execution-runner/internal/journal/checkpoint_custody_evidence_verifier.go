@@ -299,6 +299,88 @@ func VerifyCheckpointCustodyEvidence(
 	return report, nil
 }
 
+func verifyCustodyWitnessAttestation(
+	manifest CheckpointCustodyQualificationManifest,
+	scenario CheckpointCustodyScenarioEvidence,
+	data []byte,
+	trust CheckpointCustodyEvidenceVerifierTrust,
+) error {
+	var envelope custodyWitnessSignatureEnvelope
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&envelope); err != nil {
+		return fmt.Errorf("%w: witness signature envelope is invalid", ErrCorrupt)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return fmt.Errorf("%w: witness signature envelope has trailing data", ErrCorrupt)
+	}
+	canonical, err := json.Marshal(envelope)
+	if err != nil || !bytes.Equal(canonical, data) {
+		return fmt.Errorf("%w: witness signature envelope is not canonical JSON", ErrCorrupt)
+	}
+
+	attestation := envelope.Attestation
+	if envelope.SchemaVersion != "1.0" || envelope.Algorithm != "Ed25519" ||
+		attestation.SchemaVersion != "1.0" || attestation.WitnessRole != CheckpointCustodyWitnessRole ||
+		attestation.Decision != "ATTESTED" || attestation.QualificationID != manifest.QualificationID ||
+		attestation.ScenarioID != scenario.ScenarioID || attestation.RunID != scenario.RunID ||
+		strings.TrimSpace(attestation.WitnessPrincipal) == "" ||
+		attestation.WitnessPrincipal == manifest.Review.ReviewerIdentity {
+		return fmt.Errorf("%w: witness attestation identity, role, or scenario binding is invalid", ErrCorrupt)
+	}
+
+	trusted, ok := trust.WitnessKeys[attestation.WitnessKeyID]
+	if !ok || trusted.KeyID != attestation.WitnessKeyID ||
+		trusted.Principal != attestation.WitnessPrincipal || trusted.Role != CheckpointCustodyWitnessRole ||
+		len(trusted.PublicKey) != ed25519.PublicKeySize {
+		return fmt.Errorf("%w: independent witness key is not trusted", ErrCorrupt)
+	}
+	observedAt, err := time.Parse(time.RFC3339Nano, attestation.ObservedAt)
+	if err != nil || observedAt.Before(trusted.NotBefore) || observedAt.After(trusted.NotAfter) ||
+		observedAt.After(trust.Now) || trust.Now.Sub(observedAt) > trust.MaxEvidenceAge {
+		return fmt.Errorf("%w: witness observation time is outside the accepted window", ErrCorrupt)
+	}
+	completedAt, err := time.Parse(time.RFC3339Nano, scenario.CompletedAt)
+	if err != nil || observedAt.Before(completedAt) {
+		return fmt.Errorf("%w: witness observation predates scenario completion", ErrCorrupt)
+	}
+	if trusted.RevokedAt != nil && !trust.Now.Before(*trusted.RevokedAt) {
+		return fmt.Errorf("%w: independent witness key is revoked", ErrCorrupt)
+	}
+
+	expectedDigests := make([]string, 0, len(scenario.IndependentWitnessEvidence))
+	for _, reference := range scenario.IndependentWitnessEvidence {
+		expectedDigests = append(expectedDigests, strings.ToLower(reference.SHA256))
+	}
+	sort.Strings(expectedDigests)
+	actualDigests := append([]string(nil), attestation.EvidenceSHA256...)
+	for _, digest := range actualDigests {
+		if !validAuditDigest(digest) {
+			return fmt.Errorf("%w: witness evidence digest is invalid", ErrCorrupt)
+		}
+	}
+	sort.Strings(actualDigests)
+	if len(actualDigests) != len(expectedDigests) {
+		return fmt.Errorf("%w: witness attestation evidence set is incomplete", ErrCorrupt)
+	}
+	for i := range expectedDigests {
+		if actualDigests[i] != expectedDigests[i] {
+			return fmt.Errorf("%w: witness attestation evidence set does not match the manifest", ErrCorrupt)
+		}
+	}
+
+	signature, err := base64.StdEncoding.DecodeString(envelope.Signature)
+	if err != nil || len(signature) != ed25519.SignatureSize {
+		return fmt.Errorf("%w: witness signature encoding is invalid", ErrCorrupt)
+	}
+	payload, err := json.Marshal(attestation)
+	if err != nil || !ed25519.Verify(trusted.PublicKey, payload, signature) {
+		return fmt.Errorf("%w: witness signature verification failed", ErrCorrupt)
+	}
+	return nil
+}
+
 func canonicalCustodyManifestBytes(manifest CheckpointCustodyQualificationManifest) ([]byte, error) {
 	// The detached review signature cannot sign an envelope that contains its
 	// own digest. Normalize only that digest field; all other manifest fields,
