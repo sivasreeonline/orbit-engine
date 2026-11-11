@@ -131,6 +131,30 @@ func ResolveExisting(existing Record, scope Scope, keyDigest, requestDigest stri
 	return DispositionReplay, existing, nil
 }
 
+type CommitResponseDescriptorCommand struct {
+	Scope                 Scope
+	KeyDigest             string
+	ExpectedRequestDigest string
+	AttemptID             string
+	DescriptorVersion     uint64
+	DescriptorDigest      string
+}
+
+// Validate binds a terminal response descriptor to the exact original scoped
+// claim. The adapter must execute this as a compare-and-set in the same durable
+// transaction as terminal-result commitment.
+func (command CommitResponseDescriptorCommand) Validate() error {
+	if err := command.Scope.Validate(); err != nil {
+		return err
+	}
+	if !validDigest(command.KeyDigest) || !validDigest(command.ExpectedRequestDigest) ||
+		!identifierPattern.MatchString(command.AttemptID) || command.DescriptorVersion == 0 ||
+		!validDigest(command.DescriptorDigest) {
+		return fmt.Errorf("%w: response descriptor command identity/version/digest is incomplete", ErrInvalidRecord)
+	}
+	return nil
+}
+
 type PruneResponseCommand struct {
 	Scope                     Scope
 	KeyDigest                 string
