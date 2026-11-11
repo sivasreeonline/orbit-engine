@@ -14,7 +14,7 @@ func checkpointFixture(t *testing.T, principal, keyID string, privateKey ed25519
 	checkpoint, err := SealVerificationAuditCheckpoint(VerificationAuditCheckpointPayload{
 		LedgerID: "ledger-a", LedgerEpoch: "epoch-1", Sequence: sequence,
 		RecordSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		CreatedAt: createdAt, PreviousCheckpointSHA256: previousDigest, PolicyVersion: "policy-v1",
+		CreatedAt:    createdAt, PreviousCheckpointSHA256: previousDigest, PolicyVersion: "policy-v1",
 	}, principal, VerificationCheckpointSignerRole, keyID, privateKey)
 	if err != nil {
 		t.Fatalf("seal checkpoint: %v", err)
@@ -38,7 +38,7 @@ func checkpointPolicy(publicKey ed25519.PublicKey, principal, keyID string) Veri
 			KeyID: keyID, Principal: principal, Role: VerificationCheckpointSignerRole,
 			PublicKey: publicKey,
 			NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-			NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+			NotAfter:  time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
 		}},
 	}
 }
@@ -167,7 +167,7 @@ func TestSignedVerificationAuditCheckpointRejectsPolicyVersionAndRoleMismatch(t 
 	wrongVersionPayload := VerificationAuditCheckpointPayload{
 		LedgerID: "ledger-a", LedgerEpoch: "epoch-1", Sequence: 10,
 		RecordSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		CreatedAt: "2026-11-11T10:00:00Z", PolicyVersion: "policy-v2",
+		CreatedAt:    "2026-11-11T10:00:00Z", PolicyVersion: "policy-v2",
 	}
 	wrongVersion, err := SealVerificationAuditCheckpoint(wrongVersionPayload, "custodian-a", VerificationCheckpointSignerRole, "key-a", privateKey)
 	if err != nil {
@@ -196,7 +196,7 @@ func TestSignedVerificationAuditCheckpointRejectsEpochAndTimestampRollback(t *te
 	changedEpochPayload := VerificationAuditCheckpointPayload{
 		LedgerID: "ledger-a", LedgerEpoch: "epoch-2", Sequence: 20,
 		RecordSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		CreatedAt: "2026-11-11T10:06:00Z", PreviousCheckpointSHA256: VerificationAuditCheckpointDigest(first),
+		CreatedAt:    "2026-11-11T10:06:00Z", PreviousCheckpointSHA256: VerificationAuditCheckpointDigest(first),
 		PolicyVersion: "policy-v1",
 	}
 	changedEpoch, err := SealVerificationAuditCheckpoint(changedEpochPayload, "custodian-b", VerificationCheckpointSignerRole, "key-b", privateB)
