@@ -89,7 +89,7 @@ The General CI test harness at `apps/api/src/db/authorization-ledger.integration
 Twelve integration cases are defined in the harness; exact-head CI execution is required before treating the new cases as passing:
 - Independent database sessions race for the final budget slot; exactly one claim is committed.
 - A committed claim is resolved by retrying the same request identity; changed digest conflicts. The test simulates an acknowledgement not consumed by the client after the helper returns; it does not simulate a TCP proxy dropping the COMMIT response.
-- A separate controlled TCP proxy test forwards the PostgreSQL wire stream, detects the backend's NUL-terminated `COMMIT` command tag in the response stream, drops the containing response data before it reaches the client, and closes the connection. A fresh connection verifies the claim, event and consumed counter committed exactly once; an identical retry replays and a changed digest conflicts.
+- A separate controlled TCP proxy test forwards the PostgreSQL wire stream, is explicitly armed immediately before `COMMIT`, withholds the next backend response, and uses a separate PostgreSQL session to verify the exact claim, event and consumed counter are already durable before dropping the response and closing the client connection. A fresh connection verifies the claim, event and consumed counter committed exactly once; an identical retry replays and a changed digest conflicts.
 - Explicit rollback removes tentative claim, event and counter writes together.
 - Revocation-first and claim-first orderings serialize on the same authorization row.
 - The application role cannot update/delete immutable claim or run-event rows.
