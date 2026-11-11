@@ -737,6 +737,8 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
       await Promise.all([
         first.query("ROLLBACK").catch(() => undefined),
         second.query("ROLLBACK").catch(() => undefined),
+      ]);
+      await Promise.all([
         first.end().catch(() => undefined),
         second.end().catch(() => undefined),
       ]);
