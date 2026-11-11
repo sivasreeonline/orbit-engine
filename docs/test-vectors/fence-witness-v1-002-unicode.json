@@ -1,0 +1,57 @@
+{
+  "profile": "sky-high-fence-witness-v1",
+  "vectorId": "FENCE-WITNESS-V1-002",
+  "purpose": "Unicode and exact-code-point canonicalization test vector",
+  "testOnly": true,
+  "unicodePolicy": "JCS does not normalize Unicode. Implementations hash the exact Unicode scalar sequence supplied by the protocol; NFC/NFD-equivalent strings are distinct byte sequences and therefore produce distinct digests.",
+  "algorithm": {
+    "canonicalization": "RFC8785-JCS",
+    "digest": "SHA-256",
+    "signature": "Ed25519",
+    "signatureInputPrefixUtf8": "SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\\u0000"
+  },
+  "testKey": {
+    "publicKeyBase64Url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+    "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+    "privateSeedReference": "FENCE-WITNESS-V1-001 test-only seed; never use outside fixtures"
+  },
+  "checkpointBody": {
+    "profile": "sky-high-fence-witness-v1",
+    "schemaVersion": 1,
+    "authorityId": "authority-é-雪",
+    "hostId": "host-𝄞",
+    "generation": 2,
+    "phase": "ACCEPTED",
+    "operationId": "operation/β/02",
+    "previousCheckpointDigest": "05ad1de59f9c76354739640a0012eaaa45a2432dab7f656a5f9f444ac0019832",
+    "authorityStateDigest": "3333333333333333333333333333333333333333333333333333333333333333",
+    "responseDigest": "4444444444444444444444444444444444444444444444444444444444444444",
+    "epoch": 1,
+    "recordVersion": 2
+  },
+  "checkpointCanonicalUtf8": "{\"authorityId\":\"authority-é-雪\",\"authorityStateDigest\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"epoch\":1,\"generation\":2,\"hostId\":\"host-𝄞\",\"operationId\":\"operation/β/02\",\"phase\":\"ACCEPTED\",\"previousCheckpointDigest\":\"05ad1de59f9c76354739640a0012eaaa45a2432dab7f656a5f9f444ac0019832\",\"profile\":\"sky-high-fence-witness-v1\",\"recordVersion\":2,\"responseDigest\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"schemaVersion\":1}",
+  "checkpointDigest": "692fd91a96ccc3bf5e57b32ed5cab8d0b7c32ce870aaf48f90d4a5271171b9c3",
+  "receiptBody": {
+    "profile": "sky-high-fence-witness-v1",
+    "schemaVersion": 1,
+    "witnessId": "witness-vector-01",
+    "authorityId": "authority-é-雪",
+    "hostId": "host-𝄞",
+    "generation": 2,
+    "operationId": "operation/β/02",
+    "checkpointDigest": "692fd91a96ccc3bf5e57b32ed5cab8d0b7c32ce870aaf48f90d4a5271171b9c3",
+    "previousCheckpointDigest": "05ad1de59f9c76354739640a0012eaaa45a2432dab7f656a5f9f444ac0019832",
+    "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+    "committedAt": "2026-01-02T03:05:06Z",
+    "consistencyToken": "test-only-token-generation-2"
+  },
+  "receiptCanonicalUtf8": "{\"authorityId\":\"authority-é-雪\",\"checkpointDigest\":\"692fd91a96ccc3bf5e57b32ed5cab8d0b7c32ce870aaf48f90d4a5271171b9c3\",\"committedAt\":\"2026-01-02T03:05:06Z\",\"consistencyToken\":\"test-only-token-generation-2\",\"generation\":2,\"hostId\":\"host-𝄞\",\"keyId\":\"21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9\",\"operationId\":\"operation/β/02\",\"previousCheckpointDigest\":\"05ad1de59f9c76354739640a0012eaaa45a2432dab7f656a5f9f444ac0019832\",\"profile\":\"sky-high-fence-witness-v1\",\"schemaVersion\":1,\"witnessId\":\"witness-vector-01\"}",
+  "signatureBase64Url": "_gL6TDcM2zPIaFRrihBekkdgu3EuQQKaBqxglf9twNeTVTt-R75C8KbefpUYBf01S3LPzWfbIoV9JjOmHzi8BQ",
+  "expectedVerification": true,
+  "requiredNegativeMutations": [
+    "Replace authorityId with its Unicode-normalized alternative; reject because the checkpoint digest and receipt binding change.",
+    "Replace hostId with a visually similar but different code-point sequence; reject.",
+    "Reorder JSON properties without changing parsed values; canonical JCS bytes and digest must remain unchanged.",
+    "Change one Unicode scalar in checkpoint or receipt; reject unless all dependent digests and signature are recomputed by a trusted signer."
+  ]
+}
