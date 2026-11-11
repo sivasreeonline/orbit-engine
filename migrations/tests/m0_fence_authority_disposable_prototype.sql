@@ -214,7 +214,8 @@ CREATE FUNCTION m0_fence_authority_it.issue(
     p_request_digest text,
     p_expected_version bigint,
     p_target_instance_id text
-) RETURNS bytea LANGUAGE plpgsql AS $$
+) RETURNS bytea LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, m0_fence_authority_it AS $
 DECLARE
     authority_row m0_fence_authority_it.host_authority%ROWTYPE;
     operation_row m0_fence_authority_it.issuances%ROWTYPE;
@@ -436,7 +437,8 @@ CREATE FUNCTION m0_fence_authority_it.accept_exact_response(
     p_response_bytes bytea,
     p_target_instance_id text,
     p_epoch bigint
-) RETURNS text LANGUAGE plpgsql AS $$
+) RETURNS text LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, m0_fence_authority_it AS $
 DECLARE
     authority_row m0_fence_authority_it.host_authority%ROWTYPE;
     issuance_row m0_fence_authority_it.issuances%ROWTYPE;
@@ -527,7 +529,8 @@ $$;
 
 CREATE FUNCTION m0_fence_authority_it.revoke_host(
     p_host_id text, p_revocation_id text, p_reason text
-) RETURNS text LANGUAGE plpgsql AS $$
+) RETURNS text LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, m0_fence_authority_it AS $
 DECLARE
     authority_row m0_fence_authority_it.host_authority%ROWTYPE;
 BEGIN
@@ -556,7 +559,8 @@ $$;
 
 CREATE FUNCTION m0_fence_authority_it.publish_if_test_receipt_matches(
     p_host_id text, p_operation_id text
-) RETURNS bytea LANGUAGE plpgsql AS $$
+) RETURNS bytea LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, m0_fence_authority_it AS $
 DECLARE
     intent_row m0_fence_authority_it.checkpoint_intents%ROWTYPE;
     response_value bytea;
@@ -643,7 +647,8 @@ CREATE FUNCTION m0_fence_authority_it.accept_and_checkpoint(
     p_response_bytes bytea,
     p_target_instance_id text,
     p_epoch bigint
-) RETURNS text LANGUAGE plpgsql AS $accept$
+) RETURNS text LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public, m0_fence_authority_it AS $accept$
 DECLARE
     accept_result text;
     event_row m0_fence_authority_it.acceptance_events%ROWTYPE;
@@ -754,6 +759,59 @@ INSERT INTO m0_fence_authority_it.host_authority (
     ('host-uncommitted-crash', 30, 'vm-crash-predecessor', 1),
     ('host-operation-index-corrupt', 40, 'vm-operation-index-predecessor', 1),
     ('host-response-corrupt', 50, 'vm-response-predecessor', 1);
+
+-- Separate application and operator roles: callers receive function-only
+-- capabilities, never direct authority-table privileges.
+DROP OWNED BY m0_fence_authority_app;
+DROP OWNED BY m0_fence_authority_operator;
+DROP ROLE IF EXISTS m0_fence_authority_app;
+DROP ROLE IF EXISTS m0_fence_authority_operator;
+CREATE ROLE m0_fence_authority_app NOLOGIN;
+CREATE ROLE m0_fence_authority_operator NOLOGIN;
+
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA m0_fence_authority_it FROM PUBLIC;
+REVOKE ALL ON ALL TABLES IN SCHEMA m0_fence_authority_it
+    FROM m0_fence_authority_app, m0_fence_authority_operator;
+GRANT USAGE ON SCHEMA m0_fence_authority_it
+    TO m0_fence_authority_app, m0_fence_authority_operator;
+GRANT EXECUTE ON FUNCTION m0_fence_authority_it.issue(text,text,text,text,bigint,text)
+    TO m0_fence_authority_app;
+GRANT EXECUTE ON FUNCTION m0_fence_authority_it.publish_if_test_receipt_matches(text,text)
+    TO m0_fence_authority_app;
+GRANT EXECUTE ON FUNCTION m0_fence_authority_it.accept_and_checkpoint(text,text,bytea,text,bigint)
+    TO m0_fence_authority_app;
+GRANT EXECUTE ON FUNCTION m0_fence_authority_it.revoke_host(text,text,text)
+    TO m0_fence_authority_operator;
+
+DO $roles$
+BEGIN
+    IF has_table_privilege('m0_fence_authority_app',
+            'm0_fence_authority_it.host_authority', 'SELECT')
+       OR has_table_privilege('m0_fence_authority_app',
+            'm0_fence_authority_it.host_authority', 'UPDATE')
+       OR has_table_privilege('m0_fence_authority_app',
+            'm0_fence_authority_it.issuances', 'SELECT')
+       OR has_table_privilege('m0_fence_authority_operator',
+            'm0_fence_authority_it.host_authority', 'UPDATE') THEN
+        RAISE EXCEPTION 'application/operator role has direct authority-table access';
+    END IF;
+
+    IF NOT has_function_privilege('m0_fence_authority_app',
+            'm0_fence_authority_it.issue(text,text,text,text,bigint,text)', 'EXECUTE')
+       OR NOT has_function_privilege('m0_fence_authority_app',
+            'm0_fence_authority_it.accept_and_checkpoint(text,text,bytea,text,bigint)', 'EXECUTE')
+       OR has_function_privilege('m0_fence_authority_app',
+            'm0_fence_authority_it.revoke_host(text,text,text)', 'EXECUTE')
+       OR has_function_privilege('m0_fence_authority_app',
+            'm0_fence_authority_it.accept_exact_response(text,text,bytea,text,bigint)', 'EXECUTE')
+       OR NOT has_function_privilege('m0_fence_authority_operator',
+            'm0_fence_authority_it.revoke_host(text,text,text)', 'EXECUTE')
+       OR has_function_privilege('m0_fence_authority_operator',
+            'm0_fence_authority_it.issue(text,text,text,text,bigint,text)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'authority function capability separation is incorrect';
+    END IF;
+END;
+$roles$;
 
 -- First committed issuance. The response is stored as exact BYTEA.
 DO $$
