@@ -59,6 +59,7 @@ CREATE TABLE m0_fence_authority_it.checkpoint_intents (
     operation_id text NOT NULL,
     previous_checkpoint_digest text NOT NULL,
     authority_state_digest text NOT NULL,
+    checkpoint_digest text NOT NULL,
     response_digest text NOT NULL,
     PRIMARY KEY (host_id, generation),
     UNIQUE (host_id, operation_id),
@@ -91,6 +92,7 @@ CREATE TABLE m0_fence_authority_it.simulated_witness_receipts (
     generation bigint NOT NULL,
     operation_id text NOT NULL,
     authority_state_digest text NOT NULL,
+    checkpoint_digest text NOT NULL,
     PRIMARY KEY (host_id, generation),
     UNIQUE (host_id, operation_id)
 );
@@ -203,6 +205,7 @@ DECLARE
     next_generation bigint;
     prior_checkpoint_digest text;
     state_hash text;
+    checkpoint_hash text;
 BEGIN
     SELECT * INTO authority_row
       FROM m0_fence_authority_it.host_authority
@@ -320,7 +323,7 @@ BEGIN
                   FROM m0_fence_authority_it.acceptance_checkpoint_intents
                  WHERE host_id = p_host_id
                  ORDER BY generation DESC LIMIT 1),
-               (SELECT authority_state_digest
+               (SELECT checkpoint_digest
                   FROM m0_fence_authority_it.checkpoint_intents
                  WHERE host_id = p_host_id
                  ORDER BY generation DESC LIMIT 1),
@@ -336,13 +339,17 @@ BEGIN
       ) generations;
 
     state_hash := m0_fence_authority_it.compute_authority_state_digest(p_host_id);
+    checkpoint_hash := encode(digest(convert_to(
+        p_host_id || '|' || next_generation::text || '|ISSUED|'
+        || p_operation_id || '|' || prior_checkpoint_digest || '|'
+        || state_hash || '|' || response_hash, 'UTF8'), 'sha256'), 'hex');
 
     INSERT INTO m0_fence_authority_it.checkpoint_intents (
         host_id, generation, operation_id, previous_checkpoint_digest,
-        authority_state_digest, response_digest
+        authority_state_digest, checkpoint_digest, response_digest
     ) VALUES (
         p_host_id, next_generation, p_operation_id, prior_checkpoint_digest,
-        state_hash, response_hash
+        state_hash, checkpoint_hash, response_hash
     );
 
     RETURN response_value;
@@ -465,6 +472,7 @@ BEGIN
            AND receipt.generation = intent.generation
            AND receipt.operation_id = intent.operation_id
            AND receipt.authority_state_digest = intent.authority_state_digest
+           AND receipt.checkpoint_digest = intent.checkpoint_digest
          WHERE intent.host_id = p_host_id
            AND intent.operation_id = p_operation_id
     ) THEN
@@ -538,6 +546,7 @@ BEGIN
            AND receipt.generation = intent_row.generation
            AND receipt.operation_id = intent_row.operation_id
            AND receipt.authority_state_digest = intent_row.authority_state_digest
+           AND receipt.checkpoint_digest = intent_row.checkpoint_digest
     ) THEN
         RAISE EXCEPTION 'matching test witness receipt is required before publication'
             USING ERRCODE = '55000';
@@ -650,7 +659,7 @@ BEGIN
                            FROM m0_fence_authority_it.acceptance_checkpoint_intents
                           WHERE host_id = p_host_id
                           ORDER BY generation DESC LIMIT 1),
-                        (SELECT authority_state_digest
+                        (SELECT checkpoint_digest
                            FROM m0_fence_authority_it.checkpoint_intents
                           WHERE host_id = p_host_id
                           ORDER BY generation DESC LIMIT 1),
@@ -766,10 +775,10 @@ BEGIN
      WHERE host_id = 'host-test-01' AND operation_id = 'op-001';
 
     INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
-        host_id, generation, operation_id, authority_state_digest
+        host_id, generation, operation_id, authority_state_digest, checkpoint_digest
     ) VALUES (
         intent_row.host_id, intent_row.generation, intent_row.operation_id,
-        intent_row.authority_state_digest
+        intent_row.authority_state_digest, intent_row.checkpoint_digest
     );
 
     published_bytes := m0_fence_authority_it.publish_if_test_receipt_matches('host-test-01', 'op-001');
