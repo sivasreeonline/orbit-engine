@@ -103,7 +103,20 @@ func pathCleanSlash(value string) string {
 // CheckpointCustodyEvidenceVerifierTrust is injected by the caller. This
 // package does not discover trust roots, establish reviewer independence, or
 // provide trusted time.
-const CheckpointCustodyWitnessRole = "INDEPENDENT_CUSTODY_WITNESS"
+const (
+	CheckpointCustodyWitnessRole = "INDEPENDENT_CUSTODY_WITNESS"
+	CheckpointCustodyReviewerRole = "CHECKPOINT_CUSTODY_REVIEWER"
+)
+
+type TrustedCheckpointCustodyReviewerKey struct {
+	KeyID     string
+	Principal string
+	Role      string
+	PublicKey ed25519.PublicKey
+	NotBefore time.Time
+	NotAfter  time.Time
+	RevokedAt *time.Time
+}
 
 type TrustedCheckpointCustodyWitnessKey struct {
 	KeyID     string
@@ -116,7 +129,7 @@ type TrustedCheckpointCustodyWitnessKey struct {
 }
 
 type CheckpointCustodyEvidenceVerifierTrust struct {
-	ReviewerKeys   map[string]ed25519.PublicKey
+	ReviewerKeys   map[string]TrustedCheckpointCustodyReviewerKey
 	WitnessKeys    map[string]TrustedCheckpointCustodyWitnessKey
 	Now            time.Time
 	MaxEvidenceAge time.Duration
@@ -146,6 +159,7 @@ type custodyReviewAttestation struct {
 type custodyDetachedSignature struct {
 	SchemaVersion string `json:"schema_version"`
 	Reviewer      string `json:"reviewer"`
+	ReviewerKeyID string `json:"reviewer_key_id"`
 	Algorithm     string `json:"algorithm"`
 	Signature     string `json:"signature"`
 }
@@ -269,9 +283,20 @@ func VerifyCheckpointCustodyEvidence(
 		signatureEnvelope.Reviewer != manifest.Review.ReviewerIdentity {
 		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review signature identity or algorithm mismatch", ErrCorrupt)
 	}
-	publicKey, ok := trust.ReviewerKeys[signatureEnvelope.Reviewer]
-	if !ok || len(publicKey) != ed25519.PublicKeySize {
-		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: reviewer key is not trusted", ErrCorrupt)
+	reviewedAt, err := time.Parse(time.RFC3339Nano, manifest.Review.ReviewedAt)
+	if err != nil || reviewedAt.After(trust.Now) || trust.Now.Sub(reviewedAt) > trust.MaxEvidenceAge {
+		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review attestation is outside the accepted age window", ErrCorrupt)
+	}
+	reviewerKey, ok := trust.ReviewerKeys[signatureEnvelope.ReviewerKeyID]
+	if !ok || reviewerKey.KeyID != signatureEnvelope.ReviewerKeyID ||
+		reviewerKey.Principal != signatureEnvelope.Reviewer ||
+		reviewerKey.Role != CheckpointCustodyReviewerRole ||
+		len(reviewerKey.PublicKey) != ed25519.PublicKeySize ||
+		reviewedAt.Before(reviewerKey.NotBefore) || reviewedAt.After(reviewerKey.NotAfter) {
+		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: reviewer key is not trusted or outside its validity period", ErrCorrupt)
+	}
+	if reviewerKey.RevokedAt != nil && !trust.Now.Before(*reviewerKey.RevokedAt) {
+		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: reviewer key is revoked", ErrCorrupt)
 	}
 	signature, err := base64.StdEncoding.DecodeString(signatureEnvelope.Signature)
 	if err != nil || len(signature) != ed25519.SignatureSize {
@@ -286,12 +311,8 @@ func VerifyCheckpointCustodyEvidence(
 	if err != nil {
 		return CheckpointCustodyEvidenceVerificationReport{}, err
 	}
-	if !ed25519.Verify(publicKey, payloadBytes, signature) {
+	if !ed25519.Verify(reviewerKey.PublicKey, payloadBytes, signature) {
 		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review attestation signature is invalid", ErrCorrupt)
-	}
-	reviewedAt, err := time.Parse(time.RFC3339Nano, manifest.Review.ReviewedAt)
-	if err != nil || reviewedAt.After(trust.Now) || trust.Now.Sub(reviewedAt) > trust.MaxEvidenceAge {
-		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review attestation is outside the accepted age window", ErrCorrupt)
 	}
 	report.ReviewerIdentity = signatureEnvelope.Reviewer
 	report.ReviewDecision = manifest.Review.Status
