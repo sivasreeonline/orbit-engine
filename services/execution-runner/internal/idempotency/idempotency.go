@@ -1,9 +1,9 @@
 package idempotency
 
 import (
-	"errors"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	ErrInvalidRecord = errors.New("invalid idempotency record")
-	ErrKeyConflict = errors.New("idempotency key reused with a different request")
-	ErrReplayPending = errors.New("idempotency claim exists but terminal response is not yet available")
+	ErrInvalidRecord  = errors.New("invalid idempotency record")
+	ErrKeyConflict    = errors.New("idempotency key reused with a different request")
+	ErrReplayPending  = errors.New("idempotency claim exists but terminal response is not yet available")
 	ErrResponsePruned = errors.New("idempotency response was pruned; key remains tombstoned")
 )
 
