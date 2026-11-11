@@ -50,7 +50,7 @@ func TestValidateTransitionMatchesContract(t *testing.T) {
 	}
 }
 
-func TestIsResourceBearingOnlyAfterCreateIntent(t *testing.T) {
+func TestCanEnterTerminationPathOnlyAfterCreateIntent(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -74,8 +74,8 @@ func TestIsResourceBearingOnlyAfterCreateIntent(t *testing.T) {
 		test := test
 		t.Run(string(test.state), func(t *testing.T) {
 			t.Parallel()
-			if got := IsResourceBearing(test.state); got != test.want {
-				t.Fatalf("IsResourceBearing(%q) = %t, want %t", test.state, got, test.want)
+			if got := CanEnterTerminationPath(test.state); got != test.want {
+				t.Fatalf("CanEnterTerminationPath(%q) = %t, want %t", test.state, got, test.want)
 			}
 		})
 	}
