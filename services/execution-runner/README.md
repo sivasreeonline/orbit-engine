@@ -124,3 +124,6 @@ The harness does not prove process-crash or power-loss durability, provider-enfo
 Custody qualification manifest schema 1.1 requires CUSTODY-011 and CUSTODY-012 to carry a separate detached Ed25519 witness attestation. The verifier binds it to the exact qualification, scenario, run ID, status, command, start/completion timestamps, witness principal/key, observation time, and sorted digest set of the independent witness evidence.
 
 Witness public keys and validity/revocation metadata are injected by the caller. The witness principal must differ from the final reviewer principal. This proves key-controlled attribution and byte binding only; distinct principals do not prove organizational independence or provider behavior.
+
+
+Witness envelope format: [m0-checkpoint-custody-witness-attestation.schema.json](../../docs/schemas/m0-checkpoint-custody-witness-attestation.schema.json).
