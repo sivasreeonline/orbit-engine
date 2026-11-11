@@ -43,8 +43,8 @@ class Authority:
         self.instance_id = instance_id
         self.version = 1
         self.pending: dict | None = None
-        self.nonces: dict[str, tuple[str, bytes]] = {}
-        self.operations: dict[str, tuple[str, bytes]] = {}
+        self.nonces: dict[str, tuple[str, str, bytes]] = {}
+        self.operations: dict[str, tuple[str, str, bytes]] = {}
         # Test-only external checkpoint; deliberately excluded from snapshots.
         self.anchor = (self.epoch, self.version, self._state_digest())
 
@@ -114,14 +114,17 @@ class Authority:
         if prior_nonce:
             if prior_nonce[0] != request_digest:
                 raise Conflict("nonce reused with a different request digest")
+            if prior_nonce[1] != operation_id:
+                raise Conflict("nonce is already bound to a different operation ID")
             return {"result": "ACK_LOST" if lose_acknowledgement else "IDEMPOTENT_REPLAY",
-                    "response_bytes": prior_nonce[1]}
+                    "response_bytes": prior_nonce[2]}
 
         prior_operation = self.operations.get(operation_id)
         if prior_operation:
-            if prior_operation[0] != request_digest:
+            if prior_operation[1] != request_digest:
                 raise Conflict("operation ID reused with a different request digest")
-            raise Conflict("operation ID exists but nonce binding differs")
+            if prior_operation[0] != nonce_digest:
+                raise Conflict("operation ID exists but nonce binding differs")
 
         if expected_version != self.version:
             raise Conflict("compare-and-swap record version mismatch")
@@ -155,8 +158,8 @@ class Authority:
             "sha256": sha256(response_bytes),
             "accepted": False,
         }
-        self.nonces[nonce_digest] = (request_digest, response_bytes)
-        self.operations[operation_id] = (request_digest, response_bytes)
+        self.nonces[nonce_digest] = (request_digest, operation_id, response_bytes)
+        self.operations[operation_id] = (nonce_digest, request_digest, response_bytes)
         self._advance_anchor()
         return {"result": "ACK_LOST" if lose_acknowledgement else "ISSUED",
                 "response_bytes": response_bytes}
@@ -217,6 +220,14 @@ def self_test() -> None:
                                      expected_version=2, target="vm-other",
                                      predecessor_epoch=6, fence="e"),
            "same nonce with changed request must conflict")
+    expect(Conflict, lambda: request(authority, operation="op-rebound", nonce="a", request="b",
+                                     expected_version=2, target="vm-next",
+                                     predecessor_epoch=5, fence="c"),
+           "same nonce must not be rebound to a different operation ID")
+    expect(Conflict, lambda: request(authority, operation="op-1", nonce="f", request="b",
+                                     expected_version=2, target="vm-next",
+                                     predecessor_epoch=5, fence="c"),
+           "same operation ID must not be rebound to a different nonce")
     expect(Conflict, lambda: request(authority, operation="op-1", nonce="f", request="7",
                                      expected_version=2, target="vm-other",
                                      predecessor_epoch=6, fence="e"),
@@ -296,7 +307,7 @@ def self_test() -> None:
 
     print("PASS  monotonic epoch issuance and compare-and-swap version fencing")
     print("PASS  lost-ack retry returns exact prior response bytes without a second epoch")
-    print("PASS  nonce/request and operation-ID collision/replay rejection")
+    print("PASS  nonce/request and operation-ID collision/rebinding/replay rejection")
     print("PASS  pending successor serialization and predecessor-fence precondition")
     print("PASS  exact response/instance/epoch acceptance and idempotent acceptance")
     print("PASS  delayed historical retry cannot roll back a newer accepted epoch")
