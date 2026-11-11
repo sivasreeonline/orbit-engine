@@ -4,16 +4,19 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
+	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
-	"path"
-	"time"
+	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // CheckpointCustodyEvidenceSource resolves evidence paths beneath one explicit
