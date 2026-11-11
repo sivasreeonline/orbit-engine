@@ -31,7 +31,8 @@ func custodyPolicy(publicKey ed25519.PublicKey, principal, keyID string) Checkpo
 
 func custodyFixture(t *testing.T, signer string, custodian string, keyID string, privateKey ed25519.PrivateKey) (SignedVerificationAuditCheckpoint, CheckpointCustodyReceipt) {
 	t.Helper()
-	checkpoint := checkpointFixture(t, signer, "checkpoint-key", privateKey, 15, "", "2026-11-11T10:00:00Z")
+	_, checkpointPrivateKey := checkpointKeyPair(99)
+	checkpoint := checkpointFixture(t, signer, "checkpoint-key", checkpointPrivateKey, 15, "", "2026-11-11T10:00:00Z")
 	receipt, err := SealCheckpointCustodyReceipt(
 		checkpoint, "independent-vault-a", "custody-policy", "v1",
 		"2026-11-11T10:01:00Z", "2027-01-01T10:01:00Z",
@@ -78,7 +79,6 @@ func TestValidateCheckpointCustodyReceiptRejectsInsufficientRetention(t *testing
 	t.Parallel()
 	publicKey, privateKey := custodyKeyPair(23)
 	checkpoint, receipt := custodyFixture(t, "checkpoint-author", "vault-custodian", "custody-key", privateKey)
-	receipt.ImmutableUntil = "2026-11-12T10:01:00Z"
 	receipt, err := SealCheckpointCustodyReceipt(
 		checkpoint, "independent-vault-a", "custody-policy", "v1",
 		"2026-11-11T10:01:00Z", "2026-11-12T10:01:00Z",
