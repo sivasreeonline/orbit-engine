@@ -241,7 +241,7 @@ def self_test(response_schema: dict, bundle_schema: dict) -> None:
     cases.append(("bundle digest mismatch", changed, deepcopy(bundle), version))
 
     changed = deepcopy(response)
-    changed["fence_attestation_ref"] = "urn:orbit:m0:predecessor-fence-bundle:other"
+    changed["fence_attestation_ref"] = "https://evidence.example/bundles/other"
     cases.append(("bundle reference mismatch", changed, deepcopy(bundle), version))
 
     changed_bundle = deepcopy(bundle)
