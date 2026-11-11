@@ -9,7 +9,7 @@
 1. **Monotonic issuance:** a newly committed successor epoch is exactly the current epoch plus one in this reference model; the production contract requires strictly increasing epochs.
 2. **Nonce idempotency:** the same nonce digest and same request digest return byte-identical previously committed response bytes after a lost acknowledgement. They never allocate a second epoch.
 3. **Nonce collision rejection:** the same nonce digest with a different request digest is a hard conflict.
-4. **Operation identity:** an operation ID cannot be reused with changed request content or silently rebound to a different nonce.
+4. **Operation identity:** an operation ID cannot be reused with changed request content or silently rebound to a different nonce. A nonce cannot be replayed under a different operation ID, even when a caller supplies the same request digest.
 5. **Compare-and-swap:** every new issuance checks the expected host-record version. A stale writer conflicts.
 6. **Single pending successor:** a second successor cannot issue while the prior response is pending durable acceptance. A new issuance also requires a newly confirmed predecessor-fence input and a predecessor set whose maximum epoch equals the current authority epoch.
 7. **Exact acceptance:** acceptance is bound to exact response bytes, provider instance identity, and epoch. Repeated acceptance of the same bytes is idempotent.
@@ -23,7 +23,7 @@ Run:
 python scripts/validate_m0_fence_authority_conformance.py
 ```
 
-The synthetic fixture exercises lost acknowledgement and exact-byte retry, nonce/request mismatch, operation-ID collision, pending-successor contention, missing fence confirmation, stale compare-and-swap, response alteration, wrong target instance, idempotent acceptance, monotonic next epoch, delayed replay of an older response after a newer epoch is accepted, two same-version issuers in both pending and post-acceptance ordering, and restoration of a stale authority snapshot.
+The synthetic fixture exercises lost acknowledgement and exact-byte retry, nonce/request mismatch, nonce-to-operation rebinding, operation-to-nonce rebinding, operation-ID collision, pending-successor contention, missing fence confirmation, stale compare-and-swap, response alteration, wrong target instance, idempotent acceptance, monotonic next epoch, delayed replay of an older response after a newer epoch is accepted, two same-version issuers in both pending and post-acceptance ordering, and restoration of a stale authority snapshot.
 
 The model's `synthetic_fence_confirmed` input is an untrusted test switch, not evidence. Its in-memory anti-rollback anchor is a test double, not an external witness or independently administered checkpoint. It does not test true concurrent transactions, crash consistency, provider APIs, predecessor discovery, compute/storage/control-path isolation, signatures, key rotation, durable response delivery, or real anti-rollback storage.
 
