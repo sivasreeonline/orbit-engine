@@ -91,3 +91,8 @@ The journal package defines externally signed Ed25519 checkpoints for audit-ledg
 ## Independent checkpoint custody
 
 The journal package defines a separately signed custody receipt and a backend-neutral compare-and-store contract for verification audit checkpoints. Custody receipts bind an exact signed checkpoint to a custody domain, retention policy/version, retained timestamp, and asserted immutability horizon. The verifier requires externally supplied custodian trust policy and can require a distinct custodian principal. See [the checkpoint custody specification](../../docs/specifications/m0-checkpoint-custody-and-retention.md). Receipts are assertions, not proof of actual provider-enforced immutability; no durable store, WORM configuration, provider integration, or external custodian qualification is implemented.
+
+
+## Checkpoint custody qualification evidence
+
+The journal package defines a 12-scenario qualification catalog and machine-readable manifest for a future checkpoint-custody adapter. Readiness requires every scenario to PASS and independent review to be APPROVED. The structural validator checks exact catalog membership, provider/environment identity, timestamps, and confined evidence references; it does not read evidence files, recompute hashes, prove provider retention behavior, or establish reviewer independence. See [the custody qualification specification](../../docs/specifications/m0-checkpoint-custody-qualification.md).
