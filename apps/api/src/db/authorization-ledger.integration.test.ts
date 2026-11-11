@@ -24,6 +24,25 @@ async function connect(role = false): Promise<Client> {
   return client;
 }
 
+async function waitForLockWaiter(pid: number, description: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const result = await admin.query<{
+      wait_event_type: string | null;
+      blocking_pids: number[];
+    }>(
+      "SELECT wait_event_type, pg_blocking_pids(pid) AS blocking_pids FROM pg_stat_activity WHERE pid = $1",
+      [pid],
+    );
+    const activity = result.rows[0];
+    if (activity?.wait_event_type === "Lock" && activity.blocking_pids.length > 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for PostgreSQL lock state: ${description}`);
+}
+
 async function seedAuthorization(client: Client, budget = 1): Promise<void> {
   await client.query(
     "INSERT INTO authorization_state (authorization_id, run_budget, consumed_runs, state_version, revoked) VALUES ($1, $2, 0, 0, false)",
@@ -524,8 +543,12 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
       "UPDATE authorization_state SET consumed_runs = 1, state_version = state_version + 1 WHERE authorization_id = $1",
       [authId],
     );
+    const revokerBackend = await revoker.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
     const waitingRevocation = revoke(revoker);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await waitForLockWaiter(
+      revokerBackend.rows[0]!.pid,
+      "revocation blocked by the in-flight claim transaction",
+    );
     await claimant.query("COMMIT");
     await waitingRevocation;
     const result = await setup.query(
@@ -767,11 +790,15 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
       await first.query("SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE", [firstId]);
       await second.query("SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE", [secondId]);
 
+      const firstBackend = await first.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
       const firstWaits = first.query(
         "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
         [secondId],
       );
-      await new Promise((resolve) => setTimeout(resolve, 75));
+      await waitForLockWaiter(
+        firstBackend.rows[0]!.pid,
+        "first deadlock participant blocked by the second participant",
+      );
       const secondWaits = second.query(
         "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
         [firstId],
