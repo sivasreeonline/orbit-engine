@@ -65,6 +65,46 @@ func (record AttemptRecord) Validate() error {
 	return nil
 }
 
+// IdempotentAttemptCommand binds a new scoped key claim and its initial
+// attempt. Adapters must insert both records atomically or neither.
+type IdempotentAttemptCommand struct {
+	Claim   idempotency.Record
+	Attempt AttemptRecord
+}
+
+func (command IdempotentAttemptCommand) Validate() error {
+	if err := command.Claim.ValidateNewClaim(); err != nil {
+		return fmt.Errorf("%w: invalid initial idempotency claim: %v", ErrCorrupt, err)
+	}
+	if err := command.Attempt.Validate(); err != nil {
+		return err
+	}
+	if command.Claim.AttemptID != command.Attempt.AttemptID ||
+		command.Claim.RequestDigest != command.Attempt.RequestDigest ||
+		command.Claim.Scope.OwnerID != command.Attempt.OwnerID {
+		return fmt.Errorf("%w: idempotency claim and attempt identity/request/owner do not match", ErrCorrupt)
+	}
+	return nil
+}
+
+// ValidateIdempotentTerminalCommit binds the response descriptor to the exact
+// terminal attempt and digest. The adapter must additionally verify the
+// persisted claim's owner/client/route and request digest inside the same
+// transaction as terminal-result commitment.
+func ValidateIdempotentTerminalCommit(terminal TerminalCommitCommand, response idempotency.CommitResponseDescriptorCommand) error {
+	if err := terminal.Validate(); err != nil {
+		return err
+	}
+	if err := response.Validate(); err != nil {
+		return fmt.Errorf("%w: invalid idempotency response descriptor: %v", ErrCorrupt, err)
+	}
+	if response.AttemptID != terminal.AttemptID ||
+		response.DescriptorDigest != terminal.ResponseDescriptorDigest {
+		return fmt.Errorf("%w: terminal result and idempotency response descriptor do not match", ErrCorrupt)
+	}
+	return nil
+}
+
 type AttemptCASCommand struct {
 	AttemptID            string
 	ExpectedState        lifecycle.State
@@ -233,8 +273,8 @@ func (command TerminalCommitCommand) Validate() error {
 
 // Transaction is a single journal transaction. Implementations must use
 // parameterized values, enforce affected-row counts, and reject stale
-// supervisor/attempt/branch generations. CommitTerminal must insert the
-// immutable terminal result and perform the attempt's terminal compare-and-set
+// supervisor/attempt/branch generations. Terminal commit methods must insert
+// the immutable terminal result and perform the attempt's terminal compare-and-set
 // atomically in this transaction.
 type Transaction interface {
 	InsertAttempt(record AttemptRecord) error
@@ -244,8 +284,8 @@ type Transaction interface {
 	CompareAndSwapBranch(command BranchCASCommand) (lifecycle.FinalizationBranch, error)
 	CommitTerminal(command TerminalCommitCommand) error
 	InsertOperation(record operations.Record) error
-	ClaimIdempotencyKey(record idempotency.Record) (idempotency.Disposition, idempotency.Record, error)
-	CommitIdempotencyResponse(command idempotency.CommitResponseDescriptorCommand) (idempotency.Record, error)
+	ClaimIdempotentAttempt(command IdempotentAttemptCommand) (idempotency.Disposition, idempotency.Record, AttemptRecord, error)
+	CommitTerminalWithIdempotency(command TerminalCommitCommand, response idempotency.CommitResponseDescriptorCommand) error
 	PruneIdempotencyResponse(command idempotency.PruneResponseCommand) (idempotency.Record, error)
 	CompareAndSwapOperation(command operations.TransitionCommand) (operations.Record, error)
 }
