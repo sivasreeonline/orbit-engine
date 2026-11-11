@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assertCheckpointFollows,
+  assertReceiptMatchesCheckpoint,
   CheckpointTransitionError,
   ExternalWitnessAdapter,
   AppendCheckpointInput,
@@ -192,6 +193,30 @@ describe("provider-neutral external witness contract", () => {
     expect(retry.status).toBe("EXISTING");
     expect(retry.record.receipt).toBe(recovered?.receipt);
     expect((await adapter.readLatest(scope))?.checkpoint).toEqual(first);
+  });
+
+  it("binds receipts to the exact checkpoint and configured witness identity", async () => {
+    const adapter = new InMemoryWitnessContractAdapter();
+    const first = checkpoint();
+    const appended = await adapter.appendCheckpoint(inputFor(first, 0, ZERO_CHECKPOINT_DIGEST));
+
+    expect(() => assertReceiptMatchesCheckpoint(
+      appended.record,
+      "in-memory-contract-test-double",
+    )).not.toThrow();
+
+    expect(() => assertReceiptMatchesCheckpoint(
+      {
+        ...appended.record,
+        receipt: { ...appended.record.receipt, checkpointDigest: "f".repeat(64) },
+      },
+      "in-memory-contract-test-double",
+    )).toThrow(WitnessConflictError);
+
+    expect(() => assertReceiptMatchesCheckpoint(
+      appended.record,
+      "unexpected-witness",
+    )).toThrow(WitnessConflictError);
   });
 
   it("allows exactly one winner for concurrent successors using the same CAS predecessor", async () => {
