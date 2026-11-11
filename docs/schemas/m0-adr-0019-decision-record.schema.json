@@ -167,6 +167,7 @@
             "LIFE-003",
             "CLOCK-001",
             "CLOCK-002",
+            "FENCE-001",
             "JOURNAL-001",
             "JOURNAL-002",
             "JOURNAL-003",
@@ -696,8 +697,8 @@
         },
         "design_findings": {
           "type": "array",
-          "minItems": 32,
-          "maxItems": 32,
+          "minItems": 33,
+          "maxItems": 33,
           "items": {
             "$ref": "#/$defs/controlFinding"
           }
