@@ -4,7 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
+	"fmt"\n\t"encoding/base64"\n\t"encoding/json"\n\t"path"\n\t"time"
 	"io"
 	"os"
 	"path/filepath"
