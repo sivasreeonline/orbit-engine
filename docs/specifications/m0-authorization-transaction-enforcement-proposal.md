@@ -86,6 +86,8 @@ No production DDL or migration may be applied until the external authority/provi
 
 The General CI test harness at `apps/api/src/db/authorization-ledger.integration.test.ts` now exercises a uniquely named disposable schema against PostgreSQL 17. It creates only test-local tables, triggers, a NOLOGIN application role and the `pgcrypto` extension in the ephemeral CI database; it does not apply authorization production DDL.
 
+General CI also runs a separate PostgreSQL service-container crash-recovery check after the application integration tests: it checkpoints the disposable cluster, commits a marker row, starts a second transaction and waits until its uncommitted insert is active, then SIGKILLs and restarts the PostgreSQL container. After WAL recovery, the committed row must remain and the uncommitted row must be absent. This tests PostgreSQL process/container crash recovery on the ephemeral CI filesystem; it is not a host power-loss, storage-device failure, backup-restore or external-witness recovery test.
+
 Thirteen integration cases are defined in the harness; exact-head CI execution is required before treating the new cases as passing:
 - Independent database sessions race for the final budget slot; exactly one claim is committed.
 - A committed claim is resolved by retrying the same request identity; changed digest conflicts. The test simulates an acknowledgement not consumed by the client after the helper returns; it does not simulate a TCP proxy dropping the COMMIT response.
