@@ -196,11 +196,15 @@ CREATE FUNCTION m0_fence_authority_it.checkpoint_record_digest(
     p_state_digest text,
     p_response_digest text
 ) RETURNS text LANGUAGE sql IMMUTABLE STRICT AS $checkpoint$
-    SELECT encode(digest(convert_to(
-        p_host_id || '|' || p_generation::text || '|' || p_phase || '|'
-        || p_operation_id || '|' || p_previous_digest || '|'
-        || p_state_digest || '|' || p_response_digest, 'UTF8'
-    ), 'sha256'), 'hex');
+    SELECT encode(digest(convert_to(jsonb_build_object(
+        'host_id', p_host_id,
+        'generation', p_generation,
+        'phase', p_phase,
+        'operation_id', p_operation_id,
+        'previous_checkpoint_digest', p_previous_digest,
+        'authority_state_digest', p_state_digest,
+        'response_digest', p_response_digest
+    )::text, 'UTF8'), 'sha256'), 'hex');
 $checkpoint$;
 
 CREATE FUNCTION m0_fence_authority_it.issue(
@@ -683,12 +687,14 @@ BEGIN
         SELECT 1 FROM m0_fence_authority_it.acceptance_checkpoint_intents
          WHERE host_id = p_host_id AND operation_id = p_operation_id
     ) THEN
-        state_hash := encode(digest(convert_to(
-            m0_fence_authority_it.compute_authority_state_digest(p_host_id)
-            || '|' || event_row.operation_id
-            || '|' || event_row.target_instance_id
-            || '|' || event_row.accepted_epoch::text
-            || '|' || event_row.response_digest, 'UTF8'), 'sha256'), 'hex');
+        state_hash := encode(digest(convert_to(jsonb_build_object(
+            'authority_state_digest',
+                m0_fence_authority_it.compute_authority_state_digest(p_host_id),
+            'operation_id', event_row.operation_id,
+            'target_instance_id', event_row.target_instance_id,
+            'accepted_epoch', event_row.accepted_epoch,
+            'response_digest', event_row.response_digest
+        )::text, 'UTF8'), 'sha256'), 'hex');
 
         SELECT COALESCE(MAX(generation), 0) + 1,
                COALESCE((SELECT checkpoint_digest
