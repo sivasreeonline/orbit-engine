@@ -246,6 +246,43 @@ def self_test() -> None:
                      expected_version=3, target="vm-next-2", predecessor_epoch=6,
                      fence="4")
     assert json.loads(second["response_bytes"])["incarnation_epoch"] == 7
+    assert authority.accept(second["response_bytes"], "vm-next-2", 7) == "ACCEPTED"
+
+    # A fresh successor may issue after the prior successor is accepted.
+    third = request(authority, operation="op-3", nonce="5", request="6",
+                    expected_version=4, target="vm-next-3", predecessor_epoch=7,
+                    fence="8")
+    assert json.loads(third["response_bytes"])["incarnation_epoch"] == 8
+
+    # A delayed retry for an older operation returns its historical exact
+    # response, but must never roll the current authority epoch backwards.
+    historical_retry = request(authority, operation="op-1", nonce="a", request="b",
+                                expected_version=1, target="vm-next", predecessor_epoch=5,
+                                fence="c")
+    assert historical_retry["response_bytes"] == first["response_bytes"]
+    assert json.loads(historical_retry["response_bytes"])["incarnation_epoch"] == 6
+    assert authority.epoch == 8 and authority.instance_id == "vm-next-3"
+    expect(Denied, lambda: authority.accept(first["response_bytes"], "vm-next", 6),
+           "stale acceptance must not replace a newer pending successor")
+    assert authority.accept(third["response_bytes"], "vm-next-3", 8) == "ACCEPTED"
+
+    # Two contenders with the same authority version are serialized: the
+    # first can issue; the second is denied while it is pending and stale
+    # after the first is accepted.
+    contenders = Authority("host-race", 20, "vm-race-old")
+    winner = request(contenders, operation="race-a", nonce="9", request="a",
+                     expected_version=1, target="vm-race-a", predecessor_epoch=20,
+                     fence="b")
+    expect(Denied, lambda: request(contenders, operation="race-b", nonce="c",
+                                   request="d", expected_version=1,
+                                   target="vm-race-b", predecessor_epoch=20, fence="e"),
+           "second contender must not issue while first successor is pending")
+    assert contenders.accept(winner["response_bytes"], "vm-race-a", 21) == "ACCEPTED"
+    expect(Conflict, lambda: request(contenders, operation="race-b", nonce="c",
+                                     request="d", expected_version=1,
+                                     target="vm-race-b", predecessor_epoch=21, fence="e"),
+           "losing contender with stale version must conflict after winner acceptance")
+    assert contenders.epoch == 21 and contenders.instance_id == "vm-race-a"
 
     # Restore an old authority snapshot without rolling back the independent
     # anchor. The authority must refuse all subsequent issuance.
@@ -262,6 +299,8 @@ def self_test() -> None:
     print("PASS  nonce/request and operation-ID collision/replay rejection")
     print("PASS  pending successor serialization and predecessor-fence precondition")
     print("PASS  exact response/instance/epoch acceptance and idempotent acceptance")
+    print("PASS  delayed historical retry cannot roll back a newer accepted epoch")
+    print("PASS  two same-version contenders serialize; loser is stale after winner acceptance")
     print("PASS  stale authority snapshot rejected by independent anti-rollback anchor")
     print("NOTE  synthetic in-memory model only; no provider, database, signature or host proof")
 
