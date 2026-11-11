@@ -43,6 +43,7 @@ on:
       - "scripts/validate_m0_predecessor_fence_bundle.py"
       - "scripts/validate_m0_fence_epoch_response_binding.py"
       - "scripts/validate_m0_fence_authority_conformance.py"
+      - "scripts/validate_m0_fence_durable_authority_recovery.py"
       - "docs/specifications/m0-fence-001-authority-conformance-model.md"
       - "docs/specifications/m0-fence-001-durable-authority-storage-recovery-proposal.md"
       - "docs/schemas/m0-phase-a-authorization-payload.schema.json"
@@ -125,6 +126,9 @@ jobs:
 
       - name: Validate FENCE-001 authority state-machine conformance model
         run: python scripts/validate_m0_fence_authority_conformance.py
+
+      - name: Validate FENCE-001 durable authority crash recovery model
+        run: python scripts/validate_m0_fence_durable_authority_recovery.py
 
       - name: Validate supervisor, journal and watchdog contract alignment
         run: python scripts/validate_m0_supervisor_journal_contract.py
