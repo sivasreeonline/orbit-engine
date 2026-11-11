@@ -509,8 +509,12 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
       "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
       [authId],
     );
+    const secondBackend = await second.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
     const waitingClaim = claim(second, "claim-after-revocation");
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await waitForLockWaiter(
+      secondBackend.rows[0]!.pid,
+      "claim blocked by the in-flight revocation transaction",
+    );
     await first.query(
       "UPDATE authorization_state SET revoked = true, state_version = state_version + 1 WHERE authorization_id = $1",
       [authId],
