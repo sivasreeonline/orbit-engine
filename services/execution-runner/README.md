@@ -127,3 +127,5 @@ Witness public keys and validity/revocation metadata are injected by the caller.
 
 
 Witness envelope format: [m0-checkpoint-custody-witness-attestation.schema.json](../../docs/schemas/m0-checkpoint-custody-witness-attestation.schema.json).
+
+The Ed25519 witness/reviewer signatures are scoped to local custody evidence attribution only. They do not select the production M0 host-epoch/provider-fence/Phase A signing profile and do not grant execution authority.
