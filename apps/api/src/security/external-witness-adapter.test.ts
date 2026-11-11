@@ -53,7 +53,8 @@ class InMemoryWitnessContractAdapter implements ExternalWitnessAdapter {
     }
 
     const chain = this.records.get(key) ?? [];
-    const previous = chain.length === 0 ? null : chain[chain.length - 1].checkpoint;
+    const latest = chain[chain.length - 1];
+    const previous = latest ? latest.checkpoint : null;
     const currentGeneration = previous?.generation ?? 0;
     const currentDigest = previous?.checkpointDigest ?? ZERO_CHECKPOINT_DIGEST;
     if (
@@ -96,7 +97,7 @@ class InMemoryWitnessContractAdapter implements ExternalWitnessAdapter {
   async readLatest(requestedScope: WitnessScope): Promise<WitnessRecord | null> {
     if (this.unavailable) throw new WitnessUnavailableError();
     const chain = this.records.get(this.scopeKey(requestedScope)) ?? [];
-    return chain.length === 0 ? null : chain[chain.length - 1];
+    return chain[chain.length - 1] ?? null;
   }
 
   async readByOperation(
