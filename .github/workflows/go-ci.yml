@@ -68,4 +68,4 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
       - name: Vulnerability scan
-        run: "$(go env GOPATH)/bin/govulncheck" ./...
+        run: '"$(go env GOPATH)/bin/govulncheck" ./...'
