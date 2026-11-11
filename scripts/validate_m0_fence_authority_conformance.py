@@ -274,7 +274,7 @@ def self_test() -> None:
                      expected_version=1, target="vm-race-a", predecessor_epoch=20,
                      fence="b")
     expect(Denied, lambda: request(contenders, operation="race-b", nonce="c",
-                                   request="d", expected_version=1,
+                                   request="d", expected_version=2,
                                    target="vm-race-b", predecessor_epoch=20, fence="e"),
            "second contender must not issue while first successor is pending")
     assert contenders.accept(winner["response_bytes"], "vm-race-a", 21) == "ACCEPTED"
