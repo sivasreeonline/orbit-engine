@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -38,14 +39,56 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		reference.MediaType = "application/json"
 		evidence[name] = data
 	}
+	witnessKeys := make(map[string]TrustedCheckpointCustodyWitnessKey)
 	for i := range manifest.Scenarios {
-		for j := range manifest.Scenarios[i].Evidence {
-			name := manifest.Scenarios[i].Evidence[j].Path
-			add(&manifest.Scenarios[i].Evidence[j], name, []byte("scenario:"+manifest.Scenarios[i].ScenarioID))
+		scenario := &manifest.Scenarios[i]
+		for j := range scenario.Evidence {
+			name := scenario.Evidence[j].Path
+			add(&scenario.Evidence[j], name, []byte("scenario:"+scenario.ScenarioID))
 		}
-		for j := range manifest.Scenarios[i].IndependentWitnessEvidence {
-			name := manifest.Scenarios[i].IndependentWitnessEvidence[j].Path
-			add(&manifest.Scenarios[i].IndependentWitnessEvidence[j], name, []byte("witness:"+manifest.Scenarios[i].ScenarioID))
+		for j := range scenario.IndependentWitnessEvidence {
+			name := scenario.IndependentWitnessEvidence[j].Path
+			add(&scenario.IndependentWitnessEvidence[j], name, []byte("witness:"+scenario.ScenarioID))
+		}
+		if len(scenario.IndependentWitnessEvidence) == 0 {
+			continue
+		}
+		witnessPublicKey, witnessPrivateKey, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		witnessPrincipal := "witness-" + scenario.ScenarioID
+		witnessKeyID := "witness-key-" + scenario.ScenarioID
+		evidenceDigests := make([]string, 0, len(scenario.IndependentWitnessEvidence))
+		for _, reference := range scenario.IndependentWitnessEvidence {
+			evidenceDigests = append(evidenceDigests, reference.SHA256)
+		}
+		sort.Strings(evidenceDigests)
+		witnessPayload := custodyWitnessAttestation{
+			SchemaVersion: "1.0", QualificationID: manifest.QualificationID,
+			ScenarioID: scenario.ScenarioID, RunID: scenario.RunID,
+			WitnessPrincipal: witnessPrincipal, WitnessRole: CheckpointCustodyWitnessRole,
+			WitnessKeyID: witnessKeyID, ObservedAt: scenario.CompletedAt,
+			Decision: "ATTESTED", EvidenceSHA256: evidenceDigests,
+		}
+		witnessPayloadBytes, err := json.Marshal(witnessPayload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		witnessEnvelope, err := json.Marshal(custodyWitnessSignatureEnvelope{
+			SchemaVersion: "1.0", Algorithm: "Ed25519", Attestation: witnessPayload,
+			Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(witnessPrivateKey, witnessPayloadBytes)),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		attestationPath := scenario.IndependentWitnessAttestation.Path
+		add(&scenario.IndependentWitnessAttestation, attestationPath, witnessEnvelope)
+		witnessKeys[witnessKeyID] = TrustedCheckpointCustodyWitnessKey{
+			KeyID: witnessKeyID, Principal: witnessPrincipal, Role: CheckpointCustodyWitnessRole,
+			PublicKey: witnessPublicKey,
+			NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
 		}
 	}
 
@@ -90,14 +133,15 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 
 	report, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
 		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		WitnessKeys:    witnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
 	})
 	if err != nil {
 		t.Fatalf("verification failed: %v", err)
 	}
-	if report.VerifiedReferences != 15 {
-		t.Fatalf("verified references = %d, want 15", report.VerifiedReferences)
+	if report.VerifiedReferences != 17 {
+		t.Fatalf("verified references = %d, want 17", report.VerifiedReferences)
 	}
 	if report.ReviewerIdentity != manifest.Review.ReviewerIdentity {
 		t.Fatalf("reviewer = %q, want %q", report.ReviewerIdentity, manifest.Review.ReviewerIdentity)
