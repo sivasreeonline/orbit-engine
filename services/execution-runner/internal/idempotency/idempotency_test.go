@@ -24,6 +24,37 @@ func validRecord() Record {
 	}
 }
 
+func TestDigestKeyPersistsOnlyCanonicalDigest(t *testing.T) {
+	t.Parallel()
+	digest, err := DigestKey("client-request-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(digest) != 64 || digest != strings.ToLower(digest) {
+		t.Fatalf("key digest = %q, want lowercase 64-character SHA-256", digest)
+	}
+	if _, err := DigestKey("   "); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("blank key error = %v, want ErrInvalidRecord", err)
+	}
+}
+
+func TestNewClaimMustNotContainResponseOrTombstone(t *testing.T) {
+	t.Parallel()
+	record := validRecord()
+	record.ResponseDescriptorAvailable = false
+	record.ResponseDescriptorVersion = 0
+	record.ResponseDescriptorDigest = ""
+	if err := record.ValidateNewClaim(); err != nil {
+		t.Fatalf("valid initial claim rejected: %v", err)
+	}
+	record.ResponseDescriptorAvailable = true
+	record.ResponseDescriptorVersion = 1
+	record.ResponseDescriptorDigest = strings.Repeat("c", 64)
+	if err := record.ValidateNewClaim(); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("preloaded response descriptor error = %v, want ErrInvalidRecord", err)
+	}
+}
+
 func TestResolveExistingReturnsReplayForSameScopedKeyAndRequest(t *testing.T) {
 	t.Parallel()
 	record := validRecord()
