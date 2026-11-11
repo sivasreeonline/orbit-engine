@@ -149,6 +149,19 @@ The disposable PostgreSQL fixture now has a logically separate append-only high-
 
 The high-water table is still inside the same disposable PostgreSQL database. This test demonstrates the comparison contract only; it does not qualify independent storage, whole-database restore, witness availability, anti-equivocation, or forward reconstruction from a protected event log.
 
+## 3.5 Provider-neutral witness adapter boundary
+
+The runtime integration boundary is defined without selecting or connecting a provider. An adapter must expose:
+
+- Atomic compare-and-append using the expected generation and predecessor checkpoint digest.
+- Strongly consistent read of the latest retained checkpoint for an authority/host scope.
+- Idempotent lookup by operation ID **and lifecycle phase**, because issuance and acceptance intentionally share one operation ID.
+- A receipt verifier separate from transport, which checks witness identity, scope, signature, key status, checkpoint digest and predecessor binding.
+
+An append timeout is an unknown outcome, not proof of failure. Recovery must read by operation ID and phase, compare the exact checkpoint envelope and receipt, and retry only the same transition. A stale CAS, generation gap, fork, identity rebinding or witness outage must fail closed. There is no fallback to the application database as a witness.
+
+The API now contains provider-neutral TypeScript interfaces and a transition validator, plus an in-memory contract test double covering lifecycle linkage, exact retry after a lost acknowledgement, CAS competition, forks/gaps, terminal revocation and witness outage. These tests validate the interface contract only. There is no network adapter, provider credential, signing key, independent witness service or production integration in this change.
+
 ## 4. Crash-point and recovery matrix
 
 | Crash or uncertainty point | Durable facts that may exist | Required recovery |
