@@ -55,15 +55,15 @@ func validTransition(from, to Phase) TransitionCommand {
 func validInspection(disposition InspectionDisposition) InspectionProof {
 	resource, _ := DeterministicResourceIdentity(validIdentity())
 	return InspectionProof{
-		Disposition:             disposition,
-		ResourceIdentity:        resource,
-		InspectionID:            "inspection-01",
-		InspectedAtUTC:          time.Date(2026, time.November, 11, 8, 1, 0, 0, time.UTC),
-		Authoritative:           true,
-		IdentityVerified:        true,
-		GenerationsCurrent:      true,
-		WithinOriginalDeadline:  true,
-		AttemptStillAuthorized:  true,
+		Disposition:            disposition,
+		ResourceIdentity:       resource,
+		InspectionID:           "inspection-01",
+		InspectedAtUTC:         time.Date(2026, time.November, 11, 8, 1, 0, 0, time.UTC),
+		Authoritative:          true,
+		IdentityVerified:       true,
+		GenerationsCurrent:     true,
+		WithinOriginalDeadline: true,
+		AttemptStillAuthorized: true,
 	}
 }
 
