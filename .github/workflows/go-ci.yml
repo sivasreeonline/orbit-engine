@@ -52,6 +52,9 @@ jobs:
           if [ -n "$files" ]; then
             echo "The following Go files need gofmt:"
             echo "$files"
+            while IFS= read -r file; do
+              gofmt -d "$file"
+            done <<< "$files"
             exit 1
           fi
 
