@@ -128,8 +128,8 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	tamperedManifest := manifest
 	tamperedManifest.Review.Attestation.SHA256 = custodyEvidenceDigest(tamperedBytes)
 	if _, err := VerifyCheckpointCustodyEvidence(tamperedManifest, tamperedEvidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
 	}); err == nil {
 		t.Fatal("invalid detached signature was accepted")
@@ -176,8 +176,8 @@ func TestVerifyCheckpointCustodyEvidenceRejectsModifiedEvidence(t *testing.T) {
 		}
 	}
 	_, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]ed25519.PublicKey{"independent-reviewer": make(ed25519.PublicKey, ed25519.PublicKeySize)},
-		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		ReviewerKeys:   map[string]ed25519.PublicKey{"independent-reviewer": make(ed25519.PublicKey, ed25519.PublicKeySize)},
+		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: time.Hour,
 	})
 	if err == nil {
