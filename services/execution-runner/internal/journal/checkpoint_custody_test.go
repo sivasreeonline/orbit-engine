@@ -24,7 +24,7 @@ func custodyPolicy(publicKey ed25519.PublicKey, principal, keyID string) Checkpo
 			KeyID: keyID, Principal: principal, Role: CheckpointCustodianRole,
 			PublicKey: publicKey,
 			NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-			NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+			NotAfter:  time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
 		}},
 	}
 }
