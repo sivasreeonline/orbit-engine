@@ -914,15 +914,6 @@ $$;
 -- Independently corrupt the operation replay index and retained response
 -- bytes. The checkpoint aggregate digest must reject publication in both
 -- cases even though the simulated receipt still matches the old checkpoint.
-INSERT INTO m0_fence_authority_it.issuances (
-    host_id, operation_id, nonce_digest, request_digest,
-    response_bytes, response_digest, issued_epoch, target_instance_id
-)
-SELECT host_id, operation_id, nonce_digest, request_digest,
-       response_bytes, response_digest, issued_epoch, target_instance_id
-  FROM m0_fence_authority_it.issuances
- WHERE false;
-
 SELECT m0_fence_authority_it.issue(
     'host-operation-index-corrupt', 'op-operation-index-corrupt',
     'nonce-operation-index-corrupt', 'request-operation-index-corrupt',
@@ -941,7 +932,7 @@ DELETE FROM m0_fence_authority_it.operation_index
  WHERE host_id = 'host-operation-index-corrupt';
 ALTER TABLE m0_fence_authority_it.operation_index ENABLE TRIGGER operation_index_immutable;
 
-DO $
+DO $$
 BEGIN
     BEGIN
         PERFORM m0_fence_authority_it.publish_if_test_receipt_matches(
@@ -952,7 +943,7 @@ BEGIN
         NULL;
     END;
 END;
-$;
+$$;
 
 SELECT m0_fence_authority_it.issue(
     'host-response-corrupt', 'op-response-corrupt',
@@ -973,7 +964,7 @@ UPDATE m0_fence_authority_it.issuances
  WHERE host_id = 'host-response-corrupt';
 ALTER TABLE m0_fence_authority_it.issuances ENABLE TRIGGER issuance_immutable;
 
-DO $
+DO $$
 BEGIN
     BEGIN
         PERFORM m0_fence_authority_it.publish_if_test_receipt_matches(
@@ -984,7 +975,7 @@ BEGIN
         NULL;
     END;
 END;
-$;
+$$;
 
 -- A transaction that aborts before COMMIT leaves no epoch, issuance, replay
 -- index or checkpoint intent behind.
