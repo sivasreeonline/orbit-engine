@@ -495,7 +495,7 @@ $$;
 -- accepts first and is then revoked; the acceptance remains historical, but
 -- the host is terminally revoked. The second host is revoked first, so the
 -- pending response cannot be accepted.
-DO $
+DO $$
 DECLARE intent_row m0_fence_authority_it.checkpoint_intents%ROWTYPE;
         response_value bytea;
         result_value text;
