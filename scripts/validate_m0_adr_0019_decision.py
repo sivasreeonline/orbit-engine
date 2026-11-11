@@ -405,6 +405,12 @@ def main():
     for candidate in template["candidate_assessments"]:
         if {f["control_id"] for f in candidate["design_findings"]} != set(CONTROL_IDS):
             raise AssertionError("candidate security control inventory diverges")
+    if not all(f"`{control_id}`" in dossier for control_id in CONTROL_IDS):
+        raise AssertionError("decision dossier missing a required security control ID")
+    if not all(f"`{control_id}`" in checklist for control_id in CONTROL_IDS):
+        raise AssertionError("independent reviewer checklist missing a required security control ID")
+    if "same 33 security control IDs, including FENCE-001" not in qualification:
+        raise AssertionError("host qualification protocol must align on all 33 controls including FENCE-001")
     if not all(test_id in dossier for test_id in TEST_IDS):
         raise AssertionError("dossier missing a common host qualification test ID")
     if not all(test_id in dossier for test_id in ROOTLESS_TEST_IDS):
