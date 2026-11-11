@@ -15,17 +15,17 @@ const CheckpointCustodianRole = "VERIFICATION_CHECKPOINT_CUSTODIAN"
 // CheckpointCustodyReceipt is a custodian-signed assertion that a specific
 // signed checkpoint was accepted under a named retention policy.
 type CheckpointCustodyReceipt struct {
-	CheckpointSHA256 string       `json:"checkpoint_sha256"`
-	CustodyDomain    string       `json:"custody_domain"`
-	RetentionPolicyID string      `json:"retention_policy_id"`
+	CheckpointSHA256       string       `json:"checkpoint_sha256"`
+	CustodyDomain          string       `json:"custody_domain"`
+	RetentionPolicyID      string      `json:"retention_policy_id"`
 	RetentionPolicyVersion string `json:"retention_policy_version"`
-	RetainedAt       string       `json:"retained_at"`
-	ImmutableUntil   string       `json:"immutable_until"`
-	CustodianPrincipal string     `json:"custodian_principal"`
-	CustodianRole    string       `json:"custodian_role"`
-	CustodianKeyID   string       `json:"custodian_key_id"`
-	SignatureHex     string       `json:"signature_hex"`
-	ReceiptSHA256    string       `json:"receipt_sha256"`
+	RetainedAt             string       `json:"retained_at"`
+	ImmutableUntil         string       `json:"immutable_until"`
+	CustodianPrincipal     string     `json:"custodian_principal"`
+	CustodianRole          string       `json:"custodian_role"`
+	CustodianKeyID         string       `json:"custodian_key_id"`
+	SignatureHex           string       `json:"signature_hex"`
+	ReceiptSHA256          string       `json:"receipt_sha256"`
 }
 
 // TrustedCheckpointCustodianKey is supplied by an independently governed
@@ -84,10 +84,10 @@ func SealCheckpointCustodyReceipt(checkpoint SignedVerificationAuditCheckpoint, 
 		return CheckpointCustodyReceipt{}, fmt.Errorf("%w: invalid checkpoint custody input", ErrCorrupt)
 	}
 	receipt := CheckpointCustodyReceipt{
-		CheckpointSHA256       : VerificationAuditCheckpointDigest(checkpoint),
-		CustodyDomain          : custodyDomain, RetentionPolicyID: policyID, RetentionPolicyVersion: policyVersion,
-		RetainedAt             : retainedAt, ImmutableUntil: immutableUntil,
-		CustodianPrincipal     : principal, CustodianRole: CheckpointCustodianRole, CustodianKeyID: keyID,
+		CheckpointSHA256:       VerificationAuditCheckpointDigest(checkpoint),
+		CustodyDomain:          custodyDomain, RetentionPolicyID: policyID, RetentionPolicyVersion: policyVersion,
+		RetainedAt:             retainedAt, ImmutableUntil: immutableUntil,
+		CustodianPrincipal:     principal, CustodianRole: CheckpointCustodianRole, CustodianKeyID: keyID,
 	}
 	message, err := custodyReceiptSigningBytes(receipt)
 	if err != nil {
