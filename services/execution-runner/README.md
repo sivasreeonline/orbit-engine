@@ -108,3 +108,12 @@ The filesystem source confines operations to an explicitly configured `os.Root`,
 The verification report distinguishes the signed review decision from `ManifestDeclaresReady`. The latter is only the manifest's declared readiness after structural validation. Neither field proves that evidence is truthful, that a provider enforces retention, that backups are durable, that reviewer independence is genuine, or that the supplied clock and trust keys are authoritative.
 
 Trust keys and verification time are injected by the caller. This package does not distribute trust roots, authenticate time, retrieve evidence from a provider, qualify an adapter, or authorize deployment. The verifier must not be used as a production custody approval gate without those independent controls.
+
+
+## Reusable custody adapter conformance tests
+
+`internal/journal/conformance` provides `RunCheckpointCustodyStoreConformance` for adapter-specific Go tests. Supply a factory that returns a fresh isolated `journal.CheckpointCustodyStore` for each subtest; register adapter cleanup with `t.Cleanup`.
+
+The harness checks atomic rejection of a checkpoint/receipt mismatch, successful pair round-trip, compare-and-store under concurrent successor writers, stale-fork rejection, and ledger/epoch namespace isolation. It is test support only and must not be imported by production code.
+
+The harness does not prove process-crash or power-loss durability, provider-enforced retention, backup/restore behavior, FENCE-001 host-incarnation fencing, or organizational independence. Those remain adapter- and provider-specific qualification obligations.
