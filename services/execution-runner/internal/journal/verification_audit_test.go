@@ -87,6 +87,7 @@ func TestSealVerificationAuditRecordRejectsInvalidTimestamp(t *testing.T) {
 // memoryVerificationLedger models compare-and-append semantics for contract
 // tests only; it does not establish durable or immutable storage behavior.
 type memoryVerificationLedger struct{ records []VerificationAuditRecord }
+
 func (m *memoryVerificationLedger) ReadHead() (VerificationAuditHead, error) {
 	if len(m.records) == 0 {
 		return VerificationAuditHead{}, nil
@@ -94,6 +95,7 @@ func (m *memoryVerificationLedger) ReadHead() (VerificationAuditHead, error) {
 	last := m.records[len(m.records)-1]
 	return VerificationAuditHead{Sequence: last.Sequence, RecordSHA256: last.RecordSHA256}, nil
 }
+
 func (m *memoryVerificationLedger) Append(record VerificationAuditRecord, expected VerificationAuditHead) error {
 	head, _ := m.ReadHead()
 	if head != expected {
@@ -108,6 +110,7 @@ func (m *memoryVerificationLedger) Append(record VerificationAuditRecord, expect
 	m.records = append(m.records, record)
 	return nil
 }
+
 func TestVerificationAuditLedgerRejectsStaleAppendHead(t *testing.T) {
 	t.Parallel()
 	ledger := &memoryVerificationLedger{}
