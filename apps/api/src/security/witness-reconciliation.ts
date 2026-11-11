@@ -74,7 +74,19 @@ export async function anchorCheckpoint(
   const priorOperation = await adapter.readByOperation(scope, checkpoint.operationId, checkpoint.phase);
   if (priorOperation) {
     await verifyRecord(priorOperation, checkpoint, expectedWitnessId, verifier);
-    return { status: "ALREADY_ANCHORED", record: priorOperation };
+
+    // An operation-index hit proves historical existence, not that the
+    // operation is still the current high-water. Never acknowledge a stale
+    // operation as the active anchor after a later checkpoint has appeared.
+    const latest = await adapter.readLatest(scope);
+    if (!latest) {
+      throw new WitnessConflictError(
+        "operation receipt exists but the witness high-water checkpoint is missing",
+      );
+    }
+    await verifyRecord(latest, checkpoint, expectedWitnessId, verifier);
+
+    return { status: "ALREADY_ANCHORED", record: latest };
   }
 
   const current = await adapter.readLatest(scope);
