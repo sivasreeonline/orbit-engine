@@ -1,0 +1,61 @@
+{
+  "profile": "sky-high-fence-witness-v1",
+  "vectorId": "FENCE-WITNESS-V1-001",
+  "purpose": "Deterministic test-only checkpoint digest and Ed25519 receipt signature vector",
+  "testOnly": true,
+  "warning": "The private seed and consistency token in this file are public test fixtures. They MUST NEVER be used as production credentials or accepted by a production trust policy.",
+  "algorithm": {
+    "canonicalization": "RFC8785-JCS",
+    "digest": "SHA-256",
+    "signature": "Ed25519",
+    "signatureInputPrefixUtf8": "SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\\u0000"
+  },
+  "testKey": {
+    "privateSeedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+    "publicKeyBase64Url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+    "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9"
+  },
+  "checkpointBody": {
+    "profile": "sky-high-fence-witness-v1",
+    "schemaVersion": 1,
+    "authorityId": "authority-vector-01",
+    "hostId": "host-vector-01",
+    "generation": 1,
+    "phase": "ISSUED",
+    "operationId": "operation-vector-01",
+    "previousCheckpointDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "authorityStateDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "responseDigest": "2222222222222222222222222222222222222222222222222222222222222222",
+    "epoch": 1,
+    "recordVersion": 1
+  },
+  "checkpointCanonicalUtf8": "{\"authorityId\":\"authority-vector-01\",\"authorityStateDigest\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"epoch\":1,\"generation\":1,\"hostId\":\"host-vector-01\",\"operationId\":\"operation-vector-01\",\"phase\":\"ISSUED\",\"previousCheckpointDigest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"profile\":\"sky-high-fence-witness-v1\",\"recordVersion\":1,\"responseDigest\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"schemaVersion\":1}",
+  "checkpointDigest": "05ad1de59f9c76354739640a0012eaaa45a2432dab7f656a5f9f444ac0019832",
+  "receiptBody": {
+    "profile": "sky-high-fence-witness-v1",
+    "schemaVersion": 1,
+    "witnessId": "witness-vector-01",
+    "authorityId": "authority-vector-01",
+    "hostId": "host-vector-01",
+    "generation": 1,
+    "operationId": "operation-vector-01",
+    "checkpointDigest": "05ad1de59f9c76354739640a0012eaaa45a2432dab7f656a5f9f444ac0019832",
+    "previousCheckpointDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+    "committedAt": "2026-01-02T03:04:05Z",
+    "consistencyToken": "test-only-token-generation-1"
+  },
+  "receiptCanonicalUtf8": "{\"authorityId\":\"authority-vector-01\",\"checkpointDigest\":\"05ad1de59f9c76354739640a0012eaaa45a2432dab7f656a5f9f444ac0019832\",\"committedAt\":\"2026-01-02T03:04:05Z\",\"consistencyToken\":\"test-only-token-generation-1\",\"generation\":1,\"hostId\":\"host-vector-01\",\"keyId\":\"21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9\",\"operationId\":\"operation-vector-01\",\"previousCheckpointDigest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"profile\":\"sky-high-fence-witness-v1\",\"schemaVersion\":1,\"witnessId\":\"witness-vector-01\"}",
+  "signatureBase64Url": "dovaVFLJJ0-wdsquBQMb5qFYaWTTskb7dCXs3Nq_GHx00SD68fISBMoVbe_I3ql_74ltie_fPsNgrVInH-9FDw",
+  "expectedVerification": true,
+  "requiredNegativeMutations": [
+    "Change responseDigest without recomputing checkpointDigest; reject.",
+    "Change operationId in receipt only; reject.",
+    "Change phase in checkpoint body and recompute its digest while retaining the receipt signature; reject.",
+    "Change witnessId in receipt body; reject.",
+    "Change keyId to an unknown key; reject before signature acceptance.",
+    "Verify the signature with a different public key; reject.",
+    "Append a byte to the signature input; reject.",
+    "Use this public test key under a production trust policy; reject because the key is not enrolled."
+  ]
+}
