@@ -159,3 +159,26 @@ func TestCheckpointCustodyQualificationRejectsWindowsDrivePath(t *testing.T) {
 		t.Fatalf("Windows drive path error = %v, want ErrCorrupt", err)
 	}
 }
+
+func TestCheckpointCustodyQualificationRejectsReusedWitnessEvidence(t *testing.T) {
+	t.Parallel()
+	manifest := custodyQualificationFixture()
+	for i := range manifest.Scenarios {
+		if manifest.Scenarios[i].ScenarioID == "CUSTODY-011" {
+			manifest.Scenarios[i].IndependentWitnessEvidence[0] = manifest.Scenarios[i].Evidence[0]
+			break
+		}
+	}
+	if err := ValidateCheckpointCustodyQualificationManifest(manifest); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("reused witness error = %v, want ErrCorrupt", err)
+	}
+}
+
+func TestCheckpointCustodyQualificationRejectsReusedReviewAttestation(t *testing.T) {
+	t.Parallel()
+	manifest := custodyQualificationFixture()
+	manifest.Review.Attestation = manifest.Scenarios[0].Evidence[0]
+	if err := ValidateCheckpointCustodyQualificationManifest(manifest); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("reused review evidence error = %v, want ErrCorrupt", err)
+	}
+}
