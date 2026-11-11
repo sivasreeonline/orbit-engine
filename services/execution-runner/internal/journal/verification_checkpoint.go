@@ -29,31 +29,31 @@ type VerificationAuditCheckpointPayload struct {
 // the canonical payload. The private key is never part of this contract.
 type SignedVerificationAuditCheckpoint struct {
 	Payload          VerificationAuditCheckpointPayload `json:"payload"`
-	SignerPrincipal  string                              `json:"signer_principal"`
-	SignerRole       string                              `json:"signer_role"`
-	SignerKeyID      string                              `json:"signer_key_id"`
-	SignatureHex     string                              `json:"signature_hex"`
-	CheckpointSHA256 string                              `json:"checkpoint_sha256"`
+	SignerPrincipal  string `json:"signer_principal"`
+	SignerRole       string `json:"signer_role"`
+	SignerKeyID      string `json:"signer_key_id"`
+	SignatureHex     string `json:"signature_hex"`
+	CheckpointSHA256 string `json:"checkpoint_sha256"`
 }
 
 // TrustedCheckpointSigningKey is supplied by an independently governed trust
 // policy. Revocation is immediate at/after RevokedAt; expiry is evaluated at
 // signing time so historical signatures remain verifiable after key expiry.
 type TrustedCheckpointSigningKey struct {
-	KeyID       string
-	Principal   string
-	Role        string
-	PublicKey   ed25519.PublicKey
-	NotBefore   time.Time
-	NotAfter    time.Time
-	RevokedAt   *time.Time
+	KeyID     string
+	Principal string
+	Role      string
+	PublicKey ed25519.PublicKey
+	NotBefore time.Time
+	NotAfter  time.Time
+	RevokedAt *time.Time
 }
 
 type VerificationCheckpointTrustPolicy struct {
-	PolicyVersion          string
-	TrustedKeys            []TrustedCheckpointSigningKey
-	RequireDistinctSigner  bool
-	MaxCheckpointAge       time.Duration
+	PolicyVersion         string
+	TrustedKeys           []TrustedCheckpointSigningKey
+	RequireDistinctSigner bool
+	MaxCheckpointAge      time.Duration
 }
 
 func checkpointPayloadBytes(payload VerificationAuditCheckpointPayload) ([]byte, error) {
