@@ -31,34 +31,42 @@ func (s FilesystemCheckpointCustodyEvidenceSource) ReadEvidence(relativePath str
 	if err := validateCustodyRelativePath(relativePath); err != nil {
 		return nil, err
 	}
-	root, err := filepath.Abs(s.Root)
+	rootPath, err := filepath.Abs(s.Root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve evidence root: %w", err)
 	}
-	candidate := filepath.Join(root, filepath.FromSlash(relativePath))
-	rel, err := filepath.Rel(root, candidate)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return nil, fmt.Errorf("%w: evidence path escapes bundle root", ErrCorrupt)
+	// os.Root confines every operation to the configured bundle even if a
+	// directory entry is concurrently replaced by a symlink.
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("open evidence root: %w", err)
 	}
-	current := root
-	parts := strings.Split(filepath.FromSlash(relativePath), string(filepath.Separator))
-	for _, part := range parts {
-		current = filepath.Join(current, part)
-		info, statErr := os.Lstat(current)
+	defer root.Close()
+
+	current := ""
+	parts := strings.Split(relativePath, "/")
+	for i, part := range parts {
+		if current == "" {
+			current = part
+		} else {
+			current = filepath.Join(current, part)
+		}
+		info, statErr := root.Lstat(current)
 		if statErr != nil {
 			return nil, fmt.Errorf("inspect evidence path %q: %w", relativePath, statErr)
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("%w: evidence path contains a symlink", ErrCorrupt)
 		}
-		if current != candidate && !info.IsDir() {
+		if i < len(parts)-1 && !info.IsDir() {
 			return nil, fmt.Errorf("%w: evidence path parent is not a directory", ErrCorrupt)
 		}
-		if current == candidate && !info.Mode().IsRegular() {
+		if i == len(parts)-1 && !info.Mode().IsRegular() {
 			return nil, fmt.Errorf("%w: evidence is not a regular file", ErrCorrupt)
 		}
 	}
-	file, err := os.Open(candidate)
+
+	file, err := root.Open(filepath.FromSlash(relativePath))
 	if err != nil {
 		return nil, fmt.Errorf("open evidence %q: %w", relativePath, err)
 	}
