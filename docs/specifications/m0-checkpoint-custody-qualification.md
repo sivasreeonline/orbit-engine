@@ -54,3 +54,8 @@ No provider or adapter is selected. No durable storage adapter, cloud account ac
 
 
 The detached witness envelope is defined by [the witness attestation JSON Schema](../schemas/m0-checkpoint-custody-witness-attestation.schema.json). Its digest list must be unique, lowercase, and lexicographically sorted; the Go verifier enforces exact equality with the verified witness evidence references. JSON Schema alone does not verify the Ed25519 signature or external key validity/revocation.
+
+
+### Cryptographic profile boundary
+
+The Ed25519 signatures in schema 1.1 are limited to local custody evidence review and witness attribution. They are not host-epoch authority signatures, provider-fence attestations, Phase A authorization signatures, or a system-wide production cryptographic profile. Their keys are supplied by an offline verifier policy and are not provisioned by this repository. The M0 production signing profile, root custody, trusted-time source, and external anti-rollback witness remain unselected and independently gated.
