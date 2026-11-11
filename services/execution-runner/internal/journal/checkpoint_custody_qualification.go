@@ -47,33 +47,33 @@ type CheckpointCustodyEvidenceReference struct {
 }
 
 type CheckpointCustodyScenarioEvidence struct {
-	ScenarioID string
-	Status     EvidenceStatus
-	RunID      string
-	Command    string
-	StartedAt  string
+	ScenarioID  string
+	Status      EvidenceStatus
+	RunID       string
+	Command     string
+	StartedAt   string
 	CompletedAt string
-	Evidence   []CheckpointCustodyEvidenceReference
+	Evidence    []CheckpointCustodyEvidenceReference
 }
 
 type CheckpointCustodyAdapterIdentity struct {
-	Provider       string
-	Product        string
+	Provider        string
+	Product         string
 	APIOrSDKVersion string
-	AccountScope   string
-	Region         string
-	StorageClass   string
-	RetentionMode  string
+	AccountScope    string
+	Region          string
+	StorageClass    string
+	RetentionMode   string
 }
 
 type CheckpointCustodyEnvironment struct {
-	OS                    string
-	Kernel                string
-	Architecture          string
-	Endpoint              string
-	EncryptionAtRest      string
-	Versioning            string
-	Replication           string
+	OS                     string
+	Kernel                 string
+	Architecture           string
+	Endpoint               string
+	EncryptionAtRest       string
+	Versioning             string
+	Replication            string
 	RetentionConfiguration string
 }
 
@@ -85,12 +85,12 @@ type CheckpointCustodyReview struct {
 }
 
 type CheckpointCustodyQualificationManifest struct {
-	SchemaVersion string
+	SchemaVersion   string
 	QualificationID string
-	Adapter        CheckpointCustodyAdapterIdentity
-	Environment    CheckpointCustodyEnvironment
-	Scenarios      []CheckpointCustodyScenarioEvidence
-	Review         CheckpointCustodyReview
+	Adapter         CheckpointCustodyAdapterIdentity
+	Environment     CheckpointCustodyEnvironment
+	Scenarios       []CheckpointCustodyScenarioEvidence
+	Review          CheckpointCustodyReview
 }
 
 func validateCustodyEvidenceReference(reference CheckpointCustodyEvidenceReference) error {
