@@ -68,7 +68,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 			SchemaVersion: "1.0", QualificationID: manifest.QualificationID,
 			ScenarioID: scenario.ScenarioID, RunID: scenario.RunID,
 			WitnessPrincipal: witnessPrincipal, WitnessRole: CheckpointCustodyWitnessRole,
-			WitnessKeyID: witnessKeyID, ObservedAt: scenario.CompletedAt,
+			WitnessKeyID: witnessKeyID, ObservedAt: "2026-11-11T10:59:00Z",
 			Decision: "ATTESTED", EvidenceSHA256: evidenceDigests,
 		}
 		witnessPayloadBytes, err := json.Marshal(witnessPayload)
