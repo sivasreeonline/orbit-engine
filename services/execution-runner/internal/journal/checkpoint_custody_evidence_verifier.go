@@ -292,6 +292,7 @@ func VerifyCheckpointCustodyEvidence(
 		reviewerKey.Principal != signatureEnvelope.Reviewer ||
 		reviewerKey.Role != CheckpointCustodyReviewerRole ||
 		len(reviewerKey.PublicKey) != ed25519.PublicKeySize ||
+		reviewerKey.NotBefore.IsZero() || reviewerKey.NotAfter.IsZero() ||
 		reviewedAt.Before(reviewerKey.NotBefore) || reviewedAt.After(reviewerKey.NotAfter) {
 		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: reviewer key is not trusted or outside its validity period", ErrCorrupt)
 	}
