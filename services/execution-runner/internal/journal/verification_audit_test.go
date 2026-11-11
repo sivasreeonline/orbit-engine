@@ -3,7 +3,6 @@ package journal
 import (
 	"errors"
 	"testing"
-	"time"
 )
 
 func auditFixture(id string, ready bool) VerificationAuditRecord {
@@ -49,15 +48,16 @@ func TestVerificationAuditChainRejectsReordering(t *testing.T) {
 	}
 }
 
-func TestVerificationAuditChainRejectsTruncationOnlyWithCheckpoint(t *testing.T) {
+func TestVerificationAuditChainRejectsTruncationAgainstTrustedCheckpoint(t *testing.T) {
 	t.Parallel()
 	first, _ := SealVerificationAuditRecord(auditFixture("record-1", true), VerificationAuditHead{})
 	second, _ := SealVerificationAuditRecord(auditFixture("record-2", true), VerificationAuditHead{Sequence:1, RecordSHA256:first.RecordSHA256})
-	if err := ValidateVerificationAuditChain([]VerificationAuditRecord{first}); err != nil {
-		t.Fatalf("prefix itself is internally valid: %v", err)
+	expected := VerificationAuditHead{Sequence:second.Sequence, RecordSHA256:second.RecordSHA256}
+	if err := ValidateVerificationAuditChainAgainstHead([]VerificationAuditRecord{first}, expected); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("truncated chain error = %v, want ErrCorrupt", err)
 	}
-	if second.Sequence != 2 || second.PreviousSHA256 != first.RecordSHA256 {
-		t.Fatal("fixture must represent a second externally checkpointed record")
+	if err := ValidateVerificationAuditChainAgainstHead([]VerificationAuditRecord{first, second}, expected); err != nil {
+		t.Fatalf("complete chain rejected: %v", err)
 	}
 }
 
