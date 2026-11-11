@@ -11,7 +11,9 @@ CREATE TABLE m0_fence_authority_it.host_authority (
     epoch bigint NOT NULL CHECK (epoch >= 0),
     provider_instance_id text NOT NULL,
     record_version bigint NOT NULL CHECK (record_version > 0),
-    pending_operation_id text
+    pending_operation_id text,
+    authority_status text NOT NULL DEFAULT 'ACTIVE'
+        CHECK (authority_status IN ('ACTIVE', 'REVOKED', 'QUARANTINED'))
 );
 
 CREATE TABLE m0_fence_authority_it.issuances (
@@ -65,6 +67,24 @@ CREATE TABLE m0_fence_authority_it.checkpoint_intents (
 
 -- This table is intentionally a same-database TEST DOUBLE. It is not an
 -- independent witness and must never be described as anti-rollback proof.
+CREATE TABLE m0_fence_authority_it.acceptance_events (
+    host_id text NOT NULL,
+    operation_id text NOT NULL,
+    target_instance_id text NOT NULL,
+    accepted_epoch bigint NOT NULL,
+    response_digest text NOT NULL,
+    PRIMARY KEY (host_id, operation_id),
+    FOREIGN KEY (host_id, operation_id)
+        REFERENCES m0_fence_authority_it.issuances(host_id, operation_id)
+);
+
+CREATE TABLE m0_fence_authority_it.revocation_events (
+    host_id text NOT NULL REFERENCES m0_fence_authority_it.host_authority(host_id),
+    revocation_id text NOT NULL,
+    reason text NOT NULL,
+    PRIMARY KEY (host_id, revocation_id)
+);
+
 CREATE TABLE m0_fence_authority_it.simulated_witness_receipts (
     host_id text NOT NULL,
     generation bigint NOT NULL,
@@ -96,6 +116,14 @@ FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
 
 CREATE TRIGGER checkpoint_intent_immutable
 BEFORE UPDATE OR DELETE ON m0_fence_authority_it.checkpoint_intents
+FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
+
+CREATE TRIGGER acceptance_event_immutable
+BEFORE UPDATE OR DELETE ON m0_fence_authority_it.acceptance_events
+FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
+
+CREATE TRIGGER revocation_event_immutable
+BEFORE UPDATE OR DELETE ON m0_fence_authority_it.revocation_events
 FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
 
 CREATE FUNCTION m0_fence_authority_it.issue(
@@ -144,6 +172,11 @@ BEGIN
                 USING ERRCODE = '23505';
         END IF;
         RETURN operation_row.response_bytes;
+    END IF;
+
+    IF authority_row.authority_status <> 'ACTIVE' THEN
+        RAISE EXCEPTION 'authority is not active'
+            USING ERRCODE = '55000';
     END IF;
 
     IF authority_row.record_version <> p_expected_version THEN
@@ -233,9 +266,117 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION m0_fence_authority_it.accept_exact_response(
+    p_host_id text,
+    p_operation_id text,
+    p_response_bytes bytea,
+    p_target_instance_id text,
+    p_epoch bigint
+) RETURNS text LANGUAGE plpgsql AS $
+DECLARE
+    authority_row m0_fence_authority_it.host_authority%ROWTYPE;
+    issuance_row m0_fence_authority_it.issuances%ROWTYPE;
+    prior_acceptance m0_fence_authority_it.acceptance_events%ROWTYPE;
+BEGIN
+    SELECT * INTO authority_row
+      FROM m0_fence_authority_it.host_authority
+     WHERE host_id = p_host_id
+     FOR UPDATE;
+    IF NOT FOUND OR authority_row.authority_status <> 'ACTIVE' THEN
+        RAISE EXCEPTION 'revoked or unavailable authority cannot accept'
+            USING ERRCODE = '55000';
+    END IF;
+
+    SELECT * INTO issuance_row
+      FROM m0_fence_authority_it.issuances
+     WHERE host_id = p_host_id AND operation_id = p_operation_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'issuance does not exist' USING ERRCODE = '55000';
+    END IF;
+
+    SELECT * INTO prior_acceptance
+      FROM m0_fence_authority_it.acceptance_events
+     WHERE host_id = p_host_id AND operation_id = p_operation_id;
+    IF FOUND THEN
+        IF prior_acceptance.response_digest = issuance_row.response_digest
+           AND prior_acceptance.target_instance_id = p_target_instance_id
+           AND prior_acceptance.accepted_epoch = p_epoch
+           AND issuance_row.response_bytes = p_response_bytes THEN
+            RETURN 'EXISTING';
+        END IF;
+        RAISE EXCEPTION 'acceptance identity rebound' USING ERRCODE = '23505';
+    END IF;
+
+    IF authority_row.pending_operation_id <> p_operation_id
+       OR issuance_row.target_instance_id <> p_target_instance_id
+       OR issuance_row.issued_epoch <> p_epoch
+       OR issuance_row.response_bytes <> p_response_bytes THEN
+        RAISE EXCEPTION 'acceptance does not match exact pending response/instance/epoch'
+            USING ERRCODE = '55000';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM m0_fence_authority_it.checkpoint_intents intent
+          JOIN m0_fence_authority_it.simulated_witness_receipts receipt
+            ON receipt.host_id = intent.host_id
+           AND receipt.generation = intent.generation
+           AND receipt.operation_id = intent.operation_id
+           AND receipt.authority_state_digest = intent.authority_state_digest
+         WHERE intent.host_id = p_host_id
+           AND intent.operation_id = p_operation_id
+    ) THEN
+        RAISE EXCEPTION 'exact test checkpoint receipt required before acceptance'
+            USING ERRCODE = '55000';
+    END IF;
+
+    INSERT INTO m0_fence_authority_it.acceptance_events (
+        host_id, operation_id, target_instance_id, accepted_epoch, response_digest
+    ) VALUES (
+        p_host_id, p_operation_id, p_target_instance_id, p_epoch,
+        issuance_row.response_digest
+    );
+
+    UPDATE m0_fence_authority_it.host_authority
+       SET pending_operation_id = NULL,
+           record_version = record_version + 1
+     WHERE host_id = p_host_id;
+    RETURN 'ACCEPTED';
+END;
+$;
+
+CREATE FUNCTION m0_fence_authority_it.revoke_host(
+    p_host_id text, p_revocation_id text, p_reason text
+) RETURNS text LANGUAGE plpgsql AS $
+DECLARE
+    authority_row m0_fence_authority_it.host_authority%ROWTYPE;
+BEGIN
+    SELECT * INTO authority_row
+      FROM m0_fence_authority_it.host_authority
+     WHERE host_id = p_host_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'unknown host' USING ERRCODE = '23503';
+    END IF;
+
+    IF authority_row.authority_status = 'REVOKED' THEN
+        RETURN 'ALREADY_REVOKED';
+    END IF;
+
+    UPDATE m0_fence_authority_it.host_authority
+       SET authority_status = 'REVOKED',
+           record_version = record_version + 1
+     WHERE host_id = p_host_id;
+    INSERT INTO m0_fence_authority_it.revocation_events (
+        host_id, revocation_id, reason
+    ) VALUES (p_host_id, p_revocation_id, p_reason);
+    RETURN 'REVOKED';
+END;
+$;
+
 CREATE FUNCTION m0_fence_authority_it.publish_if_test_receipt_matches(
     p_host_id text, p_operation_id text
-) RETURNS bytea LANGUAGE plpgsql AS $$
+) RETURNS bytea LANGUAGE plpgsql AS $
 DECLARE
     intent_row m0_fence_authority_it.checkpoint_intents%ROWTYPE;
     response_value bytea;
@@ -271,7 +412,8 @@ INSERT INTO m0_fence_authority_it.host_authority (
     host_id, epoch, provider_instance_id, record_version
 ) VALUES
     ('host-test-01', 5, 'vm-predecessor', 1),
-    ('host-rollback-test', 5, 'vm-rollback-predecessor', 1);
+    ('host-rollback-test', 5, 'vm-rollback-predecessor', 1),
+    ('host-revoke-first', 5, 'vm-revoke-predecessor', 1);
 
 -- First committed issuance. The response is stored as exact BYTEA.
 DO $$
@@ -348,6 +490,78 @@ BEGIN
     END IF;
 END;
 $$;
+
+-- Acceptance and revocation serialize on the same host row. The first host
+-- accepts first and is then revoked; the acceptance remains historical, but
+-- the host is terminally revoked. The second host is revoked first, so the
+-- pending response cannot be accepted.
+DO $
+DECLARE intent_row m0_fence_authority_it.checkpoint_intents%ROWTYPE;
+        response_value bytea;
+        result_value text;
+BEGIN
+    SELECT response_bytes INTO response_value
+      FROM m0_fence_authority_it.issuances
+     WHERE host_id = 'host-test-01' AND operation_id = 'op-001';
+
+    result_value := m0_fence_authority_it.accept_exact_response(
+        'host-test-01', 'op-001', response_value, 'vm-successor', 6
+    );
+    IF result_value <> 'ACCEPTED' THEN
+        RAISE EXCEPTION 'expected first acceptance, got %', result_value;
+    END IF;
+
+    result_value := m0_fence_authority_it.accept_exact_response(
+        'host-test-01', 'op-001', response_value, 'vm-successor', 6
+    );
+    IF result_value <> 'EXISTING' THEN
+        RAISE EXCEPTION 'exact acceptance retry was not idempotent';
+    END IF;
+
+    PERFORM m0_fence_authority_it.revoke_host(
+        'host-test-01', 'revocation-after-accept', 'test accept-first ordering'
+    );
+
+    IF (SELECT authority_status FROM m0_fence_authority_it.host_authority
+         WHERE host_id = 'host-test-01') <> 'REVOKED'
+       OR NOT EXISTS (SELECT 1 FROM m0_fence_authority_it.acceptance_events
+                       WHERE host_id = 'host-test-01' AND operation_id = 'op-001') THEN
+        RAISE EXCEPTION 'accept-first then revoke ordering lost terminal history';
+    END IF;
+
+    PERFORM m0_fence_authority_it.issue(
+        'host-revoke-first', 'op-revoke-first', 'nonce-revoke-first',
+        'request-revoke-first', 1, 'vm-revoke-successor'
+    );
+
+    SELECT * INTO intent_row FROM m0_fence_authority_it.checkpoint_intents
+     WHERE host_id = 'host-revoke-first' AND operation_id = 'op-revoke-first';
+    INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
+        host_id, generation, operation_id, authority_state_digest
+    ) VALUES (
+        intent_row.host_id, intent_row.generation, intent_row.operation_id,
+        intent_row.authority_state_digest
+    );
+
+    PERFORM m0_fence_authority_it.revoke_host(
+        'host-revoke-first', 'revocation-before-accept', 'test revoke-first ordering'
+    );
+
+    SELECT response_bytes INTO response_value
+      FROM m0_fence_authority_it.issuances
+     WHERE host_id = 'host-revoke-first' AND operation_id = 'op-revoke-first';
+
+    BEGIN
+        PERFORM m0_fence_authority_it.accept_exact_response(
+            'host-revoke-first', 'op-revoke-first', response_value,
+            'vm-revoke-successor', 6
+        );
+        RAISE EXCEPTION 'acceptance after revocation unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+END;
+$;
 
 -- A transaction that aborts before COMMIT leaves no epoch, issuance, replay
 -- index or checkpoint intent behind.
