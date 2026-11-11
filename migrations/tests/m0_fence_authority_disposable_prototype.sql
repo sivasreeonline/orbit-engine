@@ -269,7 +269,9 @@ $$;
 
 INSERT INTO m0_fence_authority_it.host_authority (
     host_id, epoch, provider_instance_id, record_version
-) VALUES ('host-test-01', 5, 'vm-predecessor', 1);
+) VALUES
+    ('host-test-01', 5, 'vm-predecessor', 1),
+    ('host-rollback-test', 5, 'vm-rollback-predecessor', 1);
 
 -- First committed issuance. The response is stored as exact BYTEA.
 DO $$
@@ -351,19 +353,19 @@ $$;
 -- index or checkpoint intent behind.
 BEGIN;
 SELECT m0_fence_authority_it.issue(
-    'host-test-01', 'op-002', 'nonce-digest-002', 'request-digest-002', 2, 'vm-successor-2'
+    'host-rollback-test', 'op-002', 'nonce-digest-002', 'request-digest-002', 1, 'vm-successor-2'
 );
 ROLLBACK;
 
 DO $$
 BEGIN
-    IF (SELECT epoch FROM m0_fence_authority_it.host_authority WHERE host_id = 'host-test-01') <> 6
+    IF (SELECT epoch FROM m0_fence_authority_it.host_authority WHERE host_id = 'host-rollback-test') <> 5
        OR EXISTS (SELECT 1 FROM m0_fence_authority_it.issuances
-                   WHERE host_id = 'host-test-01' AND operation_id = 'op-002')
+                   WHERE host_id = 'host-rollback-test' AND operation_id = 'op-002')
        OR EXISTS (SELECT 1 FROM m0_fence_authority_it.nonce_index
-                   WHERE host_id = 'host-test-01' AND nonce_digest = 'nonce-digest-002')
+                   WHERE host_id = 'host-rollback-test' AND nonce_digest = 'nonce-digest-002')
        OR EXISTS (SELECT 1 FROM m0_fence_authority_it.checkpoint_intents
-                   WHERE host_id = 'host-test-01' AND operation_id = 'op-002') THEN
+                   WHERE host_id = 'host-rollback-test' AND operation_id = 'op-002') THEN
         RAISE EXCEPTION 'pre-commit rollback left partial authority state';
     END IF;
 END;
