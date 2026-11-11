@@ -41,8 +41,8 @@ func custodyQualificationFixture() CheckpointCustodyQualificationManifest {
 		}
 		if scenario.RequiresIndependentWitness {
 			result.IndependentWitnessEvidence = []CheckpointCustodyEvidenceReference{{
-				Path: "evidence/witness-" + scenario.ID + ".json",
-				SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+				Path:      "evidence/witness-" + scenario.ID + ".json",
+				SHA256:    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 				MediaType: "application/json",
 			}}
 		}
