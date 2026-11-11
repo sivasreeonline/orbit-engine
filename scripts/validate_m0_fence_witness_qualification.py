@@ -135,20 +135,32 @@ def main() -> None:
     expect_rejected("production approval flag", approval_attempt, validator)
 
     same_reviewer = copy.deepcopy(record)
+    same_reviewer["provider"] = {
+        "name": "synthetic-provider", "account": "fixture-account",
+        "region": "fixture-region", "service": "fixture-witness",
+        "contractReference": "fixture-only"
+    }
+    same_reviewer["adapter"] = {
+        "repository": "https://example.invalid/adapter", "commit": "1" * 40,
+        "version": "fixture-only", "configurationDigest": "2" * 64
+    }
     same_reviewer["tests"][0]["status"] = "PASS"
     same_reviewer["tests"][0]["evidence"] = [{
         "objectRef": "evidence://synthetic/1", "objectVersion": "v1",
         "sha256": "a" * 64, "byteCount": 1, "acquiredAt": "2026-01-01T00:00:00Z",
         "acquisitionMethod": "synthetic negative fixture", "collectorIdentity": "reviewer-1",
-        "independentVerifierIdentity": "reviewer-1", "providerScope": "synthetic",
+        "independentVerifierIdentity": "reviewer-1",
+        "providerScope": "synthetic-provider|fixture-account|fixture-region|fixture-witness|" + "1" * 40,
         "redaction": "NONE"
     }]
-    expect_rejected("same collector and independent verifier", same_reviewer, validator)
+    reviewer_errors = semantic_errors(same_reviewer)
+    if not any("collector and independent verifier must differ" in error for error in reviewer_errors):
+        raise AssertionError("same collector/verifier identity was not specifically rejected")
 
     print("FENCE-001 external witness qualification record: PASS")
     print(f"Mandatory test inventory: {len(EXPECTED_IDS)} unique controls")
     print("Blank record: NOT_STARTED; provider/adapter unselected; all tests NOT_RUN")
-    print("Negative gate cases: missing/duplicate test, PASS without evidence, production approval")
+    print("Negative gate cases: missing/duplicate test, PASS without evidence, same reviewer, production approval")
     print("Scope: record/schema validation only; no provider qualification or production authorization")
 
 
