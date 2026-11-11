@@ -101,6 +101,19 @@ The checkpoint binds the authority-state digest and high-water marks; it cannot 
 
 ISSUED/ANCHORED is not ACCEPTED. Delivery or client acknowledgement does not prove durable guest acceptance. Admission remains denied until the separate host-readiness contract verifies exact-instance durable acceptance and all other controls.
 
+## 3.1 Acceptance is a second lifecycle checkpoint
+
+Acceptance must not be treated as a flag folded into the original issuance checkpoint. It is a new authority transition with its own immutable event and checkpoint intent:
+
+1. Verify the exact retained response bytes, response digest, target instance, issued epoch, pending operation and the already-anchored issuance checkpoint.
+2. In one durable authority transaction, append the immutable acceptance event and update the host aggregate to reflect that acceptance.
+3. Compute the post-acceptance authority-state digest and append a new acceptance checkpoint intent. Its generation must follow the latest issuance or acceptance checkpoint, and its predecessor link must identify the preceding checkpoint.
+4. Commit the acceptance event and intent atomically. Until the new checkpoint is acknowledged by the independent witness, the transition is **checkpoint-pending**; a local acceptance row alone is not sufficient to declare the lifecycle transition fully anchored.
+5. On retry after a lost acknowledgement, resolve the same operation and exact acceptance identity. Return the existing acceptance only after the exact acceptance checkpoint receipt is verified; otherwise continue reconciliation of the same intent. Never append a second acceptance or allocate another generation for the retry.
+6. Do not permit a later successor issuance while the latest acceptance checkpoint remains unacknowledged. Revocation remains a separately serialized terminal transition and must preserve the accepted history.
+
+The disposable PostgreSQL fixture now has a separate acceptance-checkpoint intent/receipt pair and an acceptance wrapper that models this ordering. Its receipt table remains in the same disposable database and is only a test double. The fixture does not prove independent witness durability, cryptographic guest readback, or production admission. A future implementation must place acceptance and issuance checkpoints in one unified append-only chain with an independently administered witness and independently verified predecessor digest.
+
 ## 4. Crash-point and recovery matrix
 
 | Crash or uncertainty point | Durable facts that may exist | Required recovery |
