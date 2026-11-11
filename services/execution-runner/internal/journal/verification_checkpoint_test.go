@@ -90,10 +90,8 @@ func TestSignedVerificationAuditCheckpointAcceptsHistoricalSignatureAfterExpiry(
 	checkpoint := checkpointFixture(t, "custodian-a", "key-a", privateKey, 10, "", "2026-11-11T10:00:00Z")
 	policy := checkpointPolicy(publicKey, "custodian-a", "key-a")
 	policy.TrustedKeys[0].NotAfter = time.Date(2026, 11, 11, 10, 0, 30, 0, time.UTC)
-	if err := ValidateSignedVerificationAuditCheckpoint(checkpoint, nil, policy, time.Date(2026, 12, 1, 10, 1, 0, 0, time.UTC)); !errors.Is(err, ErrCorrupt) {
-		// Expiry is evaluated at signing time, but this fixture is also stale
-		// under no max-age policy; it should therefore remain valid.
-		t.Fatalf("historical signature rejected: %v", err)
+	if err := ValidateSignedVerificationAuditCheckpoint(checkpoint, nil, policy, time.Date(2026, 12, 1, 10, 1, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("historical signature rejected after key expiry: %v", err)
 	}
 }
 
