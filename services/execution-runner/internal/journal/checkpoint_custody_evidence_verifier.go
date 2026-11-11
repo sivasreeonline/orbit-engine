@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
