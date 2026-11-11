@@ -758,12 +758,11 @@ INSERT INTO m0_fence_authority_it.host_authority (
     ('host-lost-ack', 20, 'vm-lost-ack-predecessor', 1),
     ('host-uncommitted-crash', 30, 'vm-crash-predecessor', 1),
     ('host-operation-index-corrupt', 40, 'vm-operation-index-predecessor', 1),
-    ('host-response-corrupt', 50, 'vm-response-predecessor', 1);
+    ('host-response-corrupt', 50, 'vm-response-predecessor', 1),
+    ('host-role-app', 70, 'vm-role-predecessor', 1);
 
 -- Separate application and operator roles: callers receive function-only
 -- capabilities, never direct authority-table privileges.
-DROP OWNED BY m0_fence_authority_app;
-DROP OWNED BY m0_fence_authority_operator;
 DROP ROLE IF EXISTS m0_fence_authority_app;
 DROP ROLE IF EXISTS m0_fence_authority_operator;
 CREATE ROLE m0_fence_authority_app NOLOGIN;
@@ -812,6 +811,57 @@ BEGIN
     END IF;
 END;
 $roles$;
+
+-- Exercise the application role through SECURITY DEFINER entrypoints.
+SET ROLE m0_fence_authority_app;
+SELECT m0_fence_authority_it.issue(
+    'host-role-app', 'op-role-app', 'nonce-role-app',
+    'request-role-app', 1, 'vm-role-successor'
+);
+RESET ROLE;
+
+INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
+    host_id, generation, operation_id, authority_state_digest, checkpoint_digest
+)
+SELECT host_id, generation, operation_id, authority_state_digest, checkpoint_digest
+  FROM m0_fence_authority_it.checkpoint_intents
+ WHERE host_id = 'host-role-app';
+
+SET ROLE m0_fence_authority_app;
+SELECT m0_fence_authority_it.publish_if_test_receipt_matches(
+    'host-role-app', 'op-role-app'
+);
+RESET ROLE;
+
+SELECT encode(response_bytes, 'hex') AS role_response_hex
+  FROM m0_fence_authority_it.issuances
+ WHERE host_id = 'host-role-app' AND operation_id = 'op-role-app' \gset
+SET ROLE m0_fence_authority_app;
+SELECT m0_fence_authority_it.accept_and_checkpoint(
+    'host-role-app', 'op-role-app', decode(:'role_response_hex', 'hex'),
+    'vm-role-successor', 71
+);
+RESET ROLE;
+
+INSERT INTO m0_fence_authority_it.acceptance_checkpoint_receipts (
+    host_id, generation, operation_id, checkpoint_digest
+)
+SELECT host_id, generation, operation_id, checkpoint_digest
+  FROM m0_fence_authority_it.acceptance_checkpoint_intents
+ WHERE host_id = 'host-role-app';
+
+SET ROLE m0_fence_authority_app;
+SELECT m0_fence_authority_it.accept_and_checkpoint(
+    'host-role-app', 'op-role-app', decode(:'role_response_hex', 'hex'),
+    'vm-role-successor', 71
+);
+RESET ROLE;
+
+SET ROLE m0_fence_authority_operator;
+SELECT m0_fence_authority_it.revoke_host(
+    'host-role-app', 'role-revocation', 'operator role boundary test'
+);
+RESET ROLE;
 
 -- First committed issuance. The response is stored as exact BYTEA.
 DO $$
@@ -1447,3 +1497,5 @@ END;
 $$;
 
 DROP SCHEMA m0_fence_authority_it CASCADE;
+DROP ROLE m0_fence_authority_app;
+DROP ROLE m0_fence_authority_operator;
