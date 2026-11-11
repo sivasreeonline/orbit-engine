@@ -641,6 +641,42 @@ BEGIN
 END;
 $$;
 
+-- Even if a privileged test fixture bypasses the immutable-index trigger,
+-- the anchored aggregate digest must detect replay-index loss before publish.
+INSERT INTO m0_fence_authority_it.host_authority (
+    host_id, epoch, provider_instance_id, record_version
+) VALUES ('host-index-corrupt', 5, 'vm-index-predecessor', 1);
+
+SELECT m0_fence_authority_it.issue(
+    'host-index-corrupt', 'op-index-corrupt', 'nonce-index-corrupt',
+    'request-index-corrupt', 1, 'vm-index-successor'
+);
+
+INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
+    host_id, generation, operation_id, authority_state_digest
+)
+SELECT host_id, generation, operation_id, authority_state_digest
+  FROM m0_fence_authority_it.checkpoint_intents
+ WHERE host_id = 'host-index-corrupt' AND operation_id = 'op-index-corrupt';
+
+ALTER TABLE m0_fence_authority_it.nonce_index DISABLE TRIGGER nonce_index_immutable;
+DELETE FROM m0_fence_authority_it.nonce_index
+ WHERE host_id = 'host-index-corrupt' AND nonce_digest = 'nonce-index-corrupt';
+ALTER TABLE m0_fence_authority_it.nonce_index ENABLE TRIGGER nonce_index_immutable;
+
+DO $
+BEGIN
+    BEGIN
+        PERFORM m0_fence_authority_it.publish_if_test_receipt_matches(
+            'host-index-corrupt', 'op-index-corrupt'
+        );
+        RAISE EXCEPTION 'publication with corrupted replay index unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+END;
+$;
+
 -- A transaction that aborts before COMMIT leaves no epoch, issuance, replay
 -- index or checkpoint intent behind.
 BEGIN;
