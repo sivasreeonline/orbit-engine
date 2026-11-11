@@ -157,8 +157,8 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		tamperedManifest := manifest
 		tamperedManifest.Review.Attestation.SHA256 = custodyEvidenceDigest(encoded)
 		if _, err := VerifyCheckpointCustodyEvidence(tamperedManifest, tamperedEvidence, CheckpointCustodyEvidenceVerifierTrust{
-			ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-			Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+			ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+			Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 			MaxEvidenceAge: 24 * time.Hour,
 		}); err == nil {
 			t.Fatalf("malformed signature envelope was accepted: %q", malformed)
