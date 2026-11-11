@@ -272,7 +272,7 @@ CREATE FUNCTION m0_fence_authority_it.accept_exact_response(
     p_response_bytes bytea,
     p_target_instance_id text,
     p_epoch bigint
-) RETURNS text LANGUAGE plpgsql AS $
+) RETURNS text LANGUAGE plpgsql AS $$
 DECLARE
     authority_row m0_fence_authority_it.host_authority%ROWTYPE;
     issuance_row m0_fence_authority_it.issuances%ROWTYPE;
@@ -343,11 +343,11 @@ BEGIN
      WHERE host_id = p_host_id;
     RETURN 'ACCEPTED';
 END;
-$;
+$$;
 
 CREATE FUNCTION m0_fence_authority_it.revoke_host(
     p_host_id text, p_revocation_id text, p_reason text
-) RETURNS text LANGUAGE plpgsql AS $
+) RETURNS text LANGUAGE plpgsql AS $$
 DECLARE
     authority_row m0_fence_authority_it.host_authority%ROWTYPE;
 BEGIN
@@ -372,11 +372,11 @@ BEGIN
     ) VALUES (p_host_id, p_revocation_id, p_reason);
     RETURN 'REVOKED';
 END;
-$;
+$$;
 
 CREATE FUNCTION m0_fence_authority_it.publish_if_test_receipt_matches(
     p_host_id text, p_operation_id text
-) RETURNS bytea LANGUAGE plpgsql AS $
+) RETURNS bytea LANGUAGE plpgsql AS $$
 DECLARE
     intent_row m0_fence_authority_it.checkpoint_intents%ROWTYPE;
     response_value bytea;
@@ -561,7 +561,7 @@ BEGIN
         NULL;
     END;
 END;
-$;
+$$;
 
 -- A transaction that aborts before COMMIT leaves no epoch, issuance, replay
 -- index or checkpoint intent behind.
