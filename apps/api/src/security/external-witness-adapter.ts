@@ -97,7 +97,8 @@ export function assertReceiptMatchesCheckpoint(
 ): void {
   const { checkpoint, receipt } = record;
   const committedAtIsUtc =
-    /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$/.test(receipt.committedAt)
+    receipt.committedAt.includes("T")
+    && receipt.committedAt.endsWith("Z")
     && Number.isFinite(Date.parse(receipt.committedAt));
 
   if (
