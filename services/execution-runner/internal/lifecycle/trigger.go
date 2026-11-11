@@ -17,9 +17,9 @@ const (
 )
 
 var (
-	ErrInvalidTrigger = errors.New("invalid termination trigger")
-	ErrBootIdentity   = errors.New("trigger boot identity mismatch")
-	ErrClockRollback  = errors.New("trigger BOOTTIME moved backwards")
+	ErrInvalidTrigger       = errors.New("invalid termination trigger")
+	ErrBootIdentity         = errors.New("trigger boot identity mismatch")
+	ErrClockRollback        = errors.New("trigger BOOTTIME moved backwards")
 	ErrTriggerNotApplicable = errors.New("termination trigger is not applicable to the current lifecycle state")
 )
 
@@ -46,13 +46,13 @@ type TriggerRecord struct {
 // A production host boundary must persist the returned record and request
 // termination immediately after accepting the primary trigger.
 type TriggerArbiter struct {
-	mu                 sync.Mutex
-	bootID             string
-	lastObserved       time.Duration
-	hasObserved        bool
-	nextSequence       uint64
-	primary            *TriggerRecord
-	finalizationBegun  bool
+	mu                sync.Mutex
+	bootID            string
+	lastObserved      time.Duration
+	hasObserved       bool
+	nextSequence      uint64
+	primary           *TriggerRecord
+	finalizationBegun bool
 }
 
 func NewTriggerArbiter(bootID string) (*TriggerArbiter, error) {
@@ -83,7 +83,8 @@ func (arbiter *TriggerArbiter) Capture(state State, trigger Trigger) (TriggerRec
 	if trigger.BootID != arbiter.bootID {
 		return TriggerRecord{}, ErrBootIdentity
 	}
-	if !arbiter.finalizationBegun {
+	finalizationBegun := arbiter.finalizationBegun
+	if !finalizationBegun {
 		switch state {
 		case StateCreating, StateStarting, StateRunning:
 		case StateTerminating:
@@ -91,13 +92,16 @@ func (arbiter *TriggerArbiter) Capture(state State, trigger Trigger) (TriggerRec
 				return TriggerRecord{}, ErrTriggerNotApplicable
 			}
 		case StateFinalizing:
-			arbiter.finalizationBegun = true
+			finalizationBegun = true
 		default:
 			return TriggerRecord{}, ErrTriggerNotApplicable
 		}
 	}
 	if arbiter.hasObserved && trigger.ObservedBootTime < arbiter.lastObserved {
 		return TriggerRecord{}, ErrClockRollback
+	}
+	if finalizationBegun {
+		arbiter.finalizationBegun = true
 	}
 
 	arbiter.nextSequence++
@@ -110,7 +114,7 @@ func (arbiter *TriggerArbiter) Capture(state State, trigger Trigger) (TriggerRec
 		Disposition: TriggerSecondary,
 	}
 	switch {
-	case arbiter.finalizationBegun || state == StateFinalizing:
+	case finalizationBegun:
 		record.Disposition = TriggerLate
 	case arbiter.primary == nil:
 		record.Disposition = TriggerPrimary
