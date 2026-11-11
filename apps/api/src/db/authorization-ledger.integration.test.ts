@@ -405,6 +405,13 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
       connectionTimeoutMillis: 5_000,
       application_name: "orbit-authorization-commit-ack-fault-test",
     });
+    let expectedDisconnectError: Error | undefined;
+    // The proxy intentionally resets this client after the server-side commit.
+    // Consume and assert pg's connection-level error event so Vitest does not
+    // classify the expected fault as an unhandled exception.
+    writer.on("error", (error: Error) => {
+      expectedDisconnectError = error;
+    });
 
     try {
       await writer.connect();
@@ -432,6 +439,9 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
       await writer.end().catch(() => undefined);
       await proxy.close();
     }
+
+    expect(expectedDisconnectError).toBeDefined();
+    expect(expectedDisconnectError?.message).toMatch(/terminated unexpectedly|connection terminated/i);
 
     const persisted = await setup.query(
       "SELECT s.consumed_runs, (SELECT count(*)::int FROM authorization_run_claims WHERE authorization_id = $1) AS claims, (SELECT count(*)::int FROM authorization_run_events WHERE authorization_id = $1) AS events FROM authorization_state s WHERE s.authorization_id = $1",
