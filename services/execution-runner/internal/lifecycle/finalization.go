@@ -46,6 +46,7 @@ type FinalizationSnapshot struct {
 	TriggerWatermark     uint64
 	DurableTriggerSequences []uint64
 	PrimaryTriggerID     string
+	PrimaryTriggerSequence uint64
 	Output               OutputSnapshot
 	Cleanup              FinalizationBranch
 	Evidence             FinalizationBranch
@@ -84,7 +85,7 @@ func ValidateTerminalCommit(snapshot FinalizationSnapshot, classification Termin
 			return fmt.Errorf("%w: trigger sequence at index %d is %d, want %d", ErrFinalizationNotReady, index, sequence, expected)
 		}
 	}
-	if snapshot.TriggerWatermark > 0 && snapshot.PrimaryTriggerID == "" {
+	if snapshot.TriggerWatermark > 0 && (snapshot.PrimaryTriggerID == "" || snapshot.PrimaryTriggerSequence != 1) {
 		return fmt.Errorf("%w: sealed trigger stream has no primary trigger", ErrInvalidFinalization)
 	}
 	if !snapshot.Output.Finalized {
@@ -92,6 +93,7 @@ func ValidateTerminalCommit(snapshot FinalizationSnapshot, classification Termin
 	}
 	if snapshot.Output.StdoutRetained > snapshot.Output.StdoutObserved ||
 		snapshot.Output.StderrRetained > snapshot.Output.StderrObserved ||
+		snapshot.Output.StdoutRetained > ^uint64(0)-snapshot.Output.StderrRetained ||
 		snapshot.Output.CombinedRetained != snapshot.Output.StdoutRetained+snapshot.Output.StderrRetained {
 		return fmt.Errorf("%w: output accounting invariants are violated", ErrInvalidFinalization)
 	}
