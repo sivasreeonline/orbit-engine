@@ -225,8 +225,8 @@ def self_test() -> None:
                                    expected_version=2, target="vm-race",
                                    predecessor_epoch=6, fence="a"),
            "second concurrent successor must not issue while first is pending")
-    expect(Denied, lambda: request(authority, operation="op-no-fence", nonce="k",
-                                   request="l", expected_version=2, target="vm-no-fence",
+    expect(Denied, lambda: request(authority, operation="op-no-fence", nonce="b",
+                                   request="c", expected_version=2, target="vm-no-fence",
                                    predecessor_epoch=6, fence="d", confirmed=False),
            "unconfirmed fence must deny issuance")
 
@@ -238,8 +238,8 @@ def self_test() -> None:
     assert authority.accept(response, "vm-next", 6) == "ACCEPTED"
     assert authority.accept(response, "vm-next", 6) == "ALREADY_ACCEPTED"
 
-    expect(Conflict, lambda: request(authority, operation="op-stale", nonce="n",
-                                     request="o", expected_version=2, target="vm-next-2",
+    expect(Conflict, lambda: request(authority, operation="op-stale", nonce="e",
+                                     request="f", expected_version=2, target="vm-next-2",
                                      predecessor_epoch=6, fence="1"),
            "stale CAS version must conflict after acceptance")
     second = request(authority, operation="op-2", nonce="2", request="3",
@@ -252,8 +252,8 @@ def self_test() -> None:
     authority.restore(old_snapshot)
     expect(Denied, authority.verify_anchor,
            "restored stale authority snapshot must fail external anchor check")
-    expect(Denied, lambda: request(authority, operation="op-rollback", nonce="t",
-                                   request="u", expected_version=1, target="vm-rollback",
+    expect(Denied, lambda: request(authority, operation="op-rollback", nonce="5",
+                                   request="6", expected_version=1, target="vm-rollback",
                                    predecessor_epoch=5, fence="7"),
            "stale authority snapshot must not issue a successor")
 
