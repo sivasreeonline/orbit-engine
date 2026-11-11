@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/idempotency"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/lifecycle"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/operations"
 )
@@ -243,6 +244,8 @@ type Transaction interface {
 	CompareAndSwapBranch(command BranchCASCommand) (lifecycle.FinalizationBranch, error)
 	CommitTerminal(command TerminalCommitCommand) error
 	InsertOperation(record operations.Record) error
+	ClaimIdempotencyKey(record idempotency.Record) (idempotency.Disposition, idempotency.Record, error)
+	PruneIdempotencyResponse(command idempotency.PruneResponseCommand) (idempotency.Record, error)
 	CompareAndSwapOperation(command operations.TransitionCommand) (operations.Record, error)
 }
 
@@ -255,6 +258,7 @@ type Store interface {
 	ReadAttempt(ctx context.Context, attemptID string) (AttemptRecord, error)
 	ReadOperation(ctx context.Context, operationID string) (operations.Record, error)
 	ListNonTerminalOperations(ctx context.Context, attemptID string) ([]operations.Record, error)
+	ReadIdempotencyKey(ctx context.Context, scope idempotency.Scope, keyDigest string) (idempotency.Record, error)
 }
 
 func validSHA256(value string) bool {
