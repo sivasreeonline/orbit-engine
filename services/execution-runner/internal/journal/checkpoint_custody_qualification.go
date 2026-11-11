@@ -137,6 +137,8 @@ func ValidateCheckpointCustodyQualificationManifest(manifest CheckpointCustodyQu
 	for _, scenario := range checkpointCustodyScenarios {
 		expected[scenario.ID] = scenario
 	}
+	allEvidencePaths := make(map[string]struct{})
+	allEvidenceDigests := make(map[string]struct{})
 	for _, result := range manifest.Scenarios {
 		scenario, ok := expected[result.ScenarioID]
 		if !ok {
@@ -169,6 +171,8 @@ func ValidateCheckpointCustodyQualificationManifest(manifest CheckpointCustodyQu
 			if err := validateCustodyEvidenceReference(reference); err != nil {
 				return err
 			}
+			allEvidencePaths[reference.Path] = struct{}{}
+			allEvidenceDigests[reference.SHA256] = struct{}{}
 		}
 		if scenario.RequiresIndependentWitness && len(result.IndependentWitnessEvidence) == 0 {
 			return fmt.Errorf("%w: custody scenario %s requires independent witness evidence", ErrCorrupt, result.ScenarioID)
@@ -177,6 +181,14 @@ func ValidateCheckpointCustodyQualificationManifest(manifest CheckpointCustodyQu
 			if err := validateCustodyEvidenceReference(reference); err != nil {
 				return err
 			}
+			if _, duplicate := allEvidencePaths[reference.Path]; duplicate {
+				return fmt.Errorf("%w: independent witness evidence must use a distinct path", ErrCorrupt)
+			}
+			if _, duplicate := allEvidenceDigests[reference.SHA256]; duplicate {
+				return fmt.Errorf("%w: independent witness evidence must have a distinct digest", ErrCorrupt)
+			}
+			allEvidencePaths[reference.Path] = struct{}{}
+			allEvidenceDigests[reference.SHA256] = struct{}{}
 		}
 	}
 	if manifest.Review.Status != "APPROVED" && manifest.Review.Status != "PENDING" && manifest.Review.Status != "REJECTED" {
@@ -190,6 +202,12 @@ func ValidateCheckpointCustodyQualificationManifest(manifest CheckpointCustodyQu
 	}
 	if err := validateCustodyEvidenceReference(manifest.Review.Attestation); err != nil {
 		return err
+	}
+	if _, duplicate := allEvidencePaths[manifest.Review.Attestation.Path]; duplicate {
+		return fmt.Errorf("%w: review attestation must be a distinct evidence artifact", ErrCorrupt)
+	}
+	if _, duplicate := allEvidenceDigests[manifest.Review.Attestation.SHA256]; duplicate {
+		return fmt.Errorf("%w: review attestation digest must be distinct", ErrCorrupt)
 	}
 	return nil
 }
