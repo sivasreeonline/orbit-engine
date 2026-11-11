@@ -50,7 +50,7 @@ Provider identity must come from the control plane or authorized operator invent
 
 ## 4. Existing preflight: what it does and does not prove
 
-The script `services/execution-runner/scripts/m0-host-preflight.sh` is read-only. It currently checks Ubuntu 24.04, x86_64, a Linux kernel minimum, unified cgroup v2 presence, containerd 2.3.x, a local `containerd config dump` containing the v3 config and runsc handler, runsc/shim binary presence, and containerd socket owner/mode.
+The script `services/execution-runner/scripts/m0-host-preflight.sh` is read-only. It checks Ubuntu 24.04, x86_64, a Linux kernel minimum, unified cgroup v2 presence, containerd 2.3.x, a local `containerd config dump` containing the v3 config and runsc handler, the resolved `runsc` and containerd-shim binaries, and the adjacent `gvisor-bin/` sidecar inventory. Runtime executables and sidecars are checked for the expected owner (default `root`, overridable only through the explicit `M0_RUNTIME_OWNER` inspection setting), executable status and absence of group/world write permission; SHA-256 digests are emitted for the binary inventory. The sidecar directory must be a real non-symlink directory, owned by the expected runtime owner and not group/world writable; symlink entries are rejected. The containerd socket owner and mode are also checked. These checks establish only local installation-integrity signals, not provenance authenticity or runtime compatibility.
 
 That script does **not** prove the live daemon loaded the same configuration/import graph, runtime shim behavior, systrap activation, effective UID/capability isolation, cgroup enforcement, network denial, filesystem boundary, output behavior, watchdog independence, journal durability, backup/restore, or cleanup. A preflight pass is therefore only a baseline inspection result.
 
@@ -73,7 +73,7 @@ Decision outcomes are rootful candidate, rootless candidate, reject both, or def
 
 ## 6. Host, runtime and boundary test catalogue
 
-Every test below is required for `host-candidate-qualified`. Runtime-starting and destructive tests remain blocked until their separate disposable-host authorizations exist.
+Every test in the common catalogue below is required for either candidate. Candidate B (`rootless-containerd-userns`) must additionally pass all four rootless-only tests in the next table; Candidate A must mark that additional gate `not-applicable` and contain no rootless-only results. Runtime-starting and destructive tests remain blocked until their separate disposable-host authorizations exist.
 
 | Test ID | Test | Required verification | Evidence type |
 |---|---|---|---|
@@ -91,10 +91,23 @@ Every test below is required for `host-candidate-qualified`. Runtime-starting an
 | OUT-001 | Output, pipe and inherited-descriptor containment | Concurrent drains, atomic accounting, bounded staging, inherited-pipe and evidence-outage tests | host-runtime / fault-injection |
 | WDG-001 | Per-attempt cleanup controller independence | Immediate termination at first trigger, independent resource absence, journal/evidence outage behavior | fault-injection / host-runtime |
 | WDG-002 | Supervisor liveness/recovery watchdog fencing | Pause/deadlock/crash; exact service stop, kernel lock release before replacement, generation reconciliation | fault-injection / host-configuration |
-| WDG-003 | Outer VM safety boundary and hard stop | Out-of-VM CPU/memory/PID/disk/wall cutoff and independent stop/rebuild path | watchdog-control-plane / operator-record |
-| CLK-001 | CLOCK_BOOTTIME suspend-aware elapsed clock | Exact audited clock API includes suspend; trigger anchor and restart re-arm verified | host-runtime / fault-injection |
-| CLK-002 | Reboot, NTP uncertainty and snapshot/restore | Boot identity/time uncertainty/rollback/reboot/restore fail closed and quarantine on ambiguity | fault-injection / host-runtime |
+| WDG-003 | Outer VM safety boundary and hard stop | Out-of-VM CPU/memory/PID/disk/wall cutoff using an independently operated control-plane/hypervisor time source; demonstrate the hard cutoff and stop/rebuild path still work when guest wall and monotonic clocks are stepped, frozen, unavailable, or rolled back | watchdog-control-plane / operator-record / fault-injection |
+| CLK-001 | In-VM CLOCK_BOOTTIME suspend-aware elapsed clock | Exact audited guest clock API includes suspend; in-VM trigger anchor and supervisor-restart re-arm verified; no outer-watchdog authority is derived from this guest clock | host-runtime / fault-injection |
+| CLK-002 | Guest reboot, NTP uncertainty and snapshot/restore | Boot identity/time uncertainty/rollback/reboot/restore fail closed and quarantine on ambiguity; restore/clone additionally requires a fresh external host-incarnation epoch and prior-instance fencing; guest clock evidence is not accepted as the outer VM cutoff clock | fault-injection / host-runtime / watchdog-control-plane |
 | EVID-001 | Evidence object read-back and independent integrity | Immutable version/root/size/hash/redaction and independent verifier read-back | host-runtime / fault-injection |
+
+### Rootless-only candidate qualification tests
+
+These four additional tests are mandatory only when `scope.target_architecture` is `rootless-containerd-userns`. They are not replaced by the common RUN-001, CG-001, NET-001 or AUTH-001 tests because they exercise the exact RootlessKit/user-namespace integration points. For a rootful candidate, `rootless_userns_compatibility` must be `not-applicable` and `candidate_specific_test_results` must be empty.
+
+| Test ID | Test | Required verification | Evidence type |
+|---|---|---|---|
+| RLS-001 | Rootless containerd + runsc shim + caller-userns integration | Pin exact containerd 2.3.x, `containerd-shim-runsc-v1`, runsc and systrap builds; use caller-configured user namespaces via the selected rootless containerd path; prove create/start/status/cancel/delete and restart reconciliation; independently observe systrap and reject fallback | host-runtime / fault-injection |
+| RLS-002 | Rootless UID/GID mapping and helper provenance | Verify non-overlapping `/etc/subuid` and `/etc/subgid` ranges, multi-UID mappings, exact `newuidmap`/`newgidmap` binaries/hashes/owners/modes, RootlessKit identity/version/state/socket and AppArmor policy; prove the helper chain cannot control unrelated host users/resources | host-configuration / supply-chain / fault-injection |
+| RLS-003 | Rootless cgroup v2 delegation including CPU | Verify the actual user service's delegated `cpu`, `memory` and `pids` controllers, systemd delegation chain and effective cgroup files; under load prove CPU, memory and PID ceilings are enforced by the exact containerd/runsc stack, not merely configured | host-runtime / fault-injection |
+| RLS-004 | Rootless network namespace and host abstract-socket isolation | Prove the actual RootlessKit/userns network namespace and selected Netstack/TAP/user-mode path; demonstrate host abstract Unix sockets are not exposed; verify IPv4/IPv6/DNS/direct-IP/loopback/metadata denial and pre-uplink outer boundary | network-observation / host-configuration / fault-injection |
+
+The machine-readable record adds `gates.rootless_userns_compatibility` and `candidate_specific_test_results`. A rootless host can be `candidate-qualified` only when `RLS-001` through `RLS-004` are each passed with independently verified, test-specific evidence and that additional gate is `passed`. A design note, successful common test, or upstream documentation citation cannot mark any of these tests passed.
 
 ## 6. Journal backend qualification
 
@@ -125,14 +138,14 @@ Each test runs on a newly identified disposable volume or resettable test image.
 | JRN-005 | BUSY and lock-contention bounded behavior | Inject SQLITE_BUSY and lock contention; bounded policy, no unbounded retry, lock bypass or duplicate side effect. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
 | JRN-006 | IOERR and failed synchronization | Inject SQLITE_IOERR/failed fsync or sync; uncertain commit reconciled by immutable operation identity; no success acknowledgement. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
 | JRN-007 | Corruption and invalid database rejection | Inject malformed header, corruption and SQLITE_NOTADB; host quarantines; no automatic recreate/repair/resume. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
-| JRN-008 | Interrupted schema migration | Interrupt each migration boundary; restart observes complete old or new schema, never a mixed schema; unknown schema fails closed. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-008 | Interrupted schema migration and host_meta migration-ledger integrity | Verify the append-only migration event ledger remains inside the existing nine-record logical inventory (`host_meta`), then interrupt every durable boundary: before/after PREPARED, during transactional DDL, after staged verification, during atomic shadow promotion, and after promotion before PROMOTED. Accept only the complete old artifact or the exact verified target artifact with matching migration digest/identity. Mixed schema, duplicate event, missing backup/staging evidence, unexpected active artifact, unknown/newer revision or ledger mismatch quarantines; no admission during recovery. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
 | JRN-009 | SIGSTOP and exclusive kernel-lock fencing | Pause a supervisor while holding lock; replacement cannot issue containerd or journal mutations until old process exits and lock is released. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | fault-injection / host-configuration |
 | JRN-010 | Crash after create/start before observed-result commit | Crash after external side effect and before durable observed result; inspect/reconcile deterministic resource; no blind create/start retry. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | fault-injection / host-runtime |
-| JRN-011 | Independent finalization branches and terminal CAS | Crash after cleanup/evidence branch dispositions and before/after terminal CAS; branch generations fenced and one immutable terminal result. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | fault-injection / journal-durability |
-| JRN-012 | Consistent backup during journal activity | Create a reviewed consistent backup during concurrent journal activity; source remains safe; backup byte integrity and manifest verified. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
-| JRN-013 | Isolated restore with non-terminal attempts | Restore onto isolated disposable host; reconcile attempts against actual resources before readiness; no duplicate launch or adoption of unknown resources. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-011 | Trigger sealing, evidence publication, output finalization, independent branches and terminal CAS | Race cancellation/deadline/output/policy triggers against terminal sealing; crash before/after the durable seal and output snapshot, after either branch disposition, and before/after terminal CAS. Inject crashes after evidence staging, immutable object publication, exact-version readback, journal-reference commit, manifest publication, and manifest readback/verification; recover idempotently by attempt identity and digest. Verify that no evidence reference precedes durable exact-version verification, the final manifest is create-only/durable/read-back verified, every manifest reference resolves to the exact immutable object, and terminal CAS is blocked until evidence and cleanup dispositions are independently verified. Verify database guards reject watermark rewrites and post-finalization output mutation; trigger sequences through the watermark are contiguous and durable; output counters are monotonic, retained bytes do not exceed observed bytes, combined retained bytes equal stdout plus stderr retained bytes, and the finalized snapshot is write-once; branches are generation-fenced and post-seal incidents append-only. | No unverified reference, missing manifest, trigger/output rewrite, success after a success-disqualifying breach, or duplicate terminal result; uncertainty quarantines host | fault-injection / journal-durability / evidence-store |
+| JRN-012 | Consistent backup, provenance and restore staging | During concurrent journal/rollback activity, use Online Backup API or reviewed quiesced snapshot; verify closed connection, durable destination, byte count, digest, authenticated manifest, independent read-back/integrity and restore into isolated staging. Never copy only a live main file or overwrite active journal. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | journal-durability / fault-injection |
+| JRN-013 | Isolated restore, anti-rollback epoch and prior-instance fencing | Restore/clone a journal containing non-terminal attempts and an intentionally rolled-back supervisor generation; require a fresh externally anchored `host_incarnation_epoch`, prove every prior VM incarnation/clone is stopped or fenced, reject reused/stale epochs, verify nonce/request binding and predecessor-set completeness, and bind the authority ID/key version, epoch evidence reference/digest, nonce digest, predecessor-set digest, fence method, verified-at timestamp and fence evidence reference/digest to independently verified `watchdog-control-plane` evidence before readiness. Race concurrent restore/clone issuance and attempt predecessor resume after replacement admission; old incarnations must be unable to reach compute, storage writes or privileged control paths. A guest-journal generation, stop request or database lease alone must not authorize work; no duplicate launch or adoption of unknown resources. | No false acknowledgement, no concurrent old/new privileged supervisor, no duplicate launch or unsafe adoption; uncertainty quarantines host | journal-durability / fault-injection / watchdog-control-plane / operator-record |
 | JRN-014 | Journal ownership, permissions and writer exclusivity | Verify root-owned paths, restrictive modes, one supervisor writer, lock FD non-inheritance and no alternate maintenance writer. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | host-configuration / fault-injection |
-| JRN-015 | Journal quota, low-watermark and retention behavior | Test max DB size, free-space low-watermark, retention boundaries and no pruning of active/unresolved attempts; fail closed on capacity exhaustion. | No false acknowledgement, duplicate operation, unsafe resume or unverified success; uncertainty quarantines host | filesystem-storage / fault-injection |
+| JRN-015 | Journal quota, protected cleanup reserve and retention behavior | Exhaust the journal file-size ceiling and filesystem low-watermark; prove the cleanup/containment reserve is not allocatable to journal, evidence, logs or backup growth and remains usable for worst-case cleanup/reconciliation/quarantine; inject backup-target exhaustion; exercise retention dry-run and boundaries; prove no active, non-terminal, idempotency-required, migration/backup-provenance, audit-required or unresolved quarantine records are pruned; preserve trigger history required to verify sealed watermarks; preserve evidence references and immutable evidence objects while retained records reference them; reject object deletion without a reviewed reference scan and retention authorization; test same-key/same-digest retry, changed-digest conflict, lost-response recovery and key reuse after response pruning. No emergency VACUUM/ad-hoc deletion occurs. Stop admission at the approved threshold and quarantine at hard exhaustion while independent cleanup/outer containment remain operable without journal writes. | No false acknowledgement, no reserve consumption, no unsafe pruning or unverified success; uncertainty quarantines host | filesystem-storage / fault-injection / watchdog-control-plane |
 
 ### 6.4 Storage durability acceptance
 
@@ -154,15 +167,49 @@ Three watchdogs are independent review subjects:
 2. **Supervisor liveness/recovery watchdog:** detects process death/pause/deadlock, fail-stops the exact named supervisor, waits for kernel lock release, starts one replacement generation and requires reconciliation before admission. It must not become a second containerd writer or generic root command broker.
 3. **Outer VM safety watchdog:** lives outside the tested VM failure domain and enforces CPU/memory/PID/disk/wall cutoff plus isolate/stop/rebuild. It is containment only. If it fires, the sample fails and the VM is quarantined/destroyed; it is never successful cleanup evidence.
 
+The common `WDG-002` host qualification test is not passed by a generic supervisor restart demonstration. It is passed only when all seven independently evidenced subtests below pass on the exact host, boot, supervisor/watchdog build, service-manager configuration and candidate profile. These subtest IDs refine WDG-002; they do not add or replace top-level qualification test IDs.
+
+| Subtest | Fault injection | Required pass evidence / fail-closed behavior |
+|---|---|---|
+| WD-001 | Pause/deadlock the watchdog process and withhold its heartbeat while the supervisor is unhealthy | Independent outer-VM watchdog detects the loss and contains the VM; no in-VM fallback authority is invented |
+| WD-002 | Deny the exact service-manager StopUnit/StartUnit authorization | Recovery stops; no shell, systemctl, sudo, arbitrary helper or alternate root-broker path is attempted; admission remains stopped and outer containment is available |
+| WD-003 | Substitute the supervisor unit file/drop-ins, executable, configured UID/GID, boot identity or service-manager instance | Digest/identity mismatch blocks every stop/start action; admission stops and mismatch evidence is retained |
+| WD-004 | Alter the expected cgroup path or supervisor cgroup membership | No replacement is started until exact complete-cgroup identity and old-process termination can be independently proven |
+| WD-005 | Enable or inject an automatic systemd restart race against watchdog-directed recovery | Pinned restart policy prevents dual replacement ownership; exactly one recovery authority may start a replacement |
+| WD-006 | Cause the service manager to acknowledge stop before the supervisor exits or releases its kernel lock | Replacement remains blocked until independent process-exit and kernel-lock-release evidence exists |
+| WD-007 | Stop, crash or make the watchdog unit unavailable while supervisor recovery is required | No alternate privileged path; admission remains stopped and the outer-VM watchdog is the only containment fallback |
+
+Each subtest must capture the exact injected boundary, service-manager result, unit/executable/cgroup identity, supervisor process/cgroup observations, lock inode and release observation, generation transitions, admission state and immutable evidence references. A missing or ambiguous observation is a failed WDG-002 result, not a waived subtest.
+Each WD-001–WD-007 record must include at least one independently retrieved and verified evidence object classified as `fault-injection`, bound to the exact host/boot/build/profile under test. Host-configuration, host-runtime, watchdog-control-plane and operator records may supplement that object but cannot replace proof of the injected fault and observed response.
+
 Network proof is independent of the guest's reported state. Outer deny/blackhole for metadata link-local must be installed and evidenced before uplink. Probe only from inside the disposable sandbox after authorization; never issue a metadata request from the host or accept/store a metadata response. Prove IPv4/IPv6/DNS/direct-IP/loopback/alternate interface denial with host counters or equivalent independent observation.
 
 ## 8. Evidence and record rules
 
-The machine-readable qualification record contains one immutable host/profile identity and exactly one result for every test ID in the schema. A passed test requires a non-empty verification method and at least one independently verified evidence reference. Evidence includes immutable object/source reference, exact version, SHA-256, byte count, evidence root, acquisition timestamp/tool/version, redaction result, independent verifier identity and verification note.
+The machine-readable qualification record contains one immutable host/profile identity and exactly one result for every test ID in the schema. A passed test requires a non-empty verification method and at least one independently verified evidence reference. Every evidence reference records the accountable `acquired_by_id` principal as well as the immutable object/source reference, exact version, SHA-256, byte count, evidence root, acquisition timestamp/tool/version, redaction result, independent verifier identity and verification note. `acquired_by_id` must identify the human or service principal that actually acquired/uploaded the object; it cannot be omitted or replaced with the acquisition tool name.
+
+**Mandatory evidence re-verification procedure (not a metadata-only check):**
+
+1. The evidence verifier obtains the object through an independently authorized, read-only path using the recorded `evidence_root_id`, `reference_id` and exact immutable `object_version`. A mutable alias, latest-version lookup, uploader-provided local copy or unversioned URL is insufficient.
+2. The verifier records the resolved immutable object identity and confirms that it belongs to the declared evidence root and expected evidence type. If the storage system exposes retention lock, object-lock or version-retention metadata, verify and record the effective retention state and expiry.
+3. Download the exact object bytes to a controlled verification workspace. Recompute SHA-256 over the complete byte stream and count the exact bytes; compare both values with the record. Do not trust a provider ETag as a SHA-256 unless the provider explicitly documents that exact semantic for the selected upload mode.
+4. Verify any detached signature or attestation against the expected signer identity and pinned trust material; record the verification command/tool version, signer identity, trust-root identity and result. A signature reference string or schema-valid record is not signature verification.
+5. Inspect redaction and provenance, confirm that the evidence actually supports the named test and reviewed host/boot/profile/commit, then record the verifier's independent result and sanitized note. A mismatch, missing version, inaccessible object, unverifiable signature, digest/size mismatch or ambiguous provenance means `verification_status=failed` or the test remains blocked—not passed.
+6. The evidence verifier must be a third role, distinct from both the host owner/acquirer and the independent security reviewer. The same person may not acquire/own the host, verify the evidence and independently review the security decision. The validator enforces that the recorded evidence acquirer, independent verifier, host owner and security reviewer are distinct for every passed common and rootless test.
+7. Preserve the verified object version and sanitized verification output in the evidence ledger. Reverification is required if the object is replaced, retention/version identity changes, the host/profile baseline changes, or the reviewed commit changes.
+
+**Report-wide immutable evidence ledger:**
+
+- Across common findings, rootless findings and watchdog subtests, each `reference_id` defines exactly one immutable evidence-ledger entry. Repeating that same reference ID is permitted only when every occurrence carries identical metadata; a conflicting digest, size, object version, evidence root, acquisition identity/time/tool, evidence type, redaction result or verification result invalidates the report.
+- Within one report, an exact `(evidence_root_id, object_version)` pair may map to only one `reference_id`. A different reference ID for the same immutable object version is prohibited. A single canonical reference may be attached to multiple findings where the same object genuinely supports them.
+- Every attached evidence record, including supplementary evidence on a passed finding and evidence attached to failed/blocked/deferred findings, must preserve accountable acquirer identity and, when marked verified, a distinct independent verifier. Host owner and security reviewer may not acquire or independently verify any evidence object. The verifier/acquirer role rules do not imply that unverified evidence can satisfy a passed finding.
+- The epoch-authority and predecessor-fence evidence references are members of this same report-wide ledger; the host identity fields must resolve to the unique canonical entries and their digests must match.
+
+The machine validator checks the record's metadata and role separation, including the explicit acquisition principal; it cannot fetch external evidence objects, recompute their bytes, validate storage retention or cryptographically verify signatures. Those are mandatory human/operator verification steps and must not be represented as CI-proven.
 
 Do not store raw `/proc` cmdline/environment, credentials, private URLs, student code, hidden tests, source archives or metadata responses. Host tests require host/runtime/storage/network/watchdog evidence; design documents, CI and synthetic schema tests are never sufficient to pass them.
 
-Review decisions require distinct host owner and independent reviewer identities, independence/conflict disclosure, reviewed commit and exact host/profile digests, signed/auditable record, expiry and re-review triggers.
+Review decisions require distinct host owner and independent reviewer identities, independence/conflict disclosure, reviewed commit and exact host/profile digests, signed/auditable record, expiry and re-review triggers. The evidence verifier is a separate third role as specified above.
 
 ## 9. Qualification gate computation
 
@@ -176,8 +223,9 @@ Review decisions require distinct host owner and independent reviewer identities
 | Journal durability | JRN-001 through JRN-009 and JRN-012 through JRN-015 |
 | Integrated lifecycle | JRN-010 and JRN-011 |
 | Evidence integrity | EVID-001 |
+| Rootless compatibility (Candidate B only) | RLS-001 through RLS-004; Candidate A must mark not-applicable |
 
-`host-candidate-qualified` requires all catalogue tests passed, all gates passed, an exact selected host/runtime/storage/journal identity, a completed independent review with no unresolved high/critical findings, and verifiable evidence for each test. The record itself always keeps Phase A, Phase B, student and production authorization false.
+`host-candidate-qualified` requires all common catalogue tests passed, all applicable gates passed, an exact selected host/runtime/storage/journal identity, a completed independent review with no unresolved high/critical findings, and verifiable evidence for each test. Candidate B additionally requires all four RLS tests and its rootless compatibility gate; Candidate A must have no RLS results and mark the gate not-applicable. The record itself always keeps Phase A, Phase B, student and production authorization false.
 
 ## 10. Stop, fail and quarantine conditions
 
@@ -199,6 +247,21 @@ On stop: reject new work, continue best-effort independent termination when appl
 - Privileged supervisor/journal implementation remains blocked by ADR-0019 and the independent review gates.
 - No sandbox launch, arbitrary command, student source, student endpoint or general queue consumer is authorized by passing this qualification protocol.
 
+
+## Authorization lifecycle qualification
+
+The mandatory authorization lifecycle and recovery requirements are defined in `docs/specifications/m0-authorization-lifecycle-and-recovery-contract.md`. This contract supplements, and does not replace, JRN-013 (external epoch/restore fencing) or JRN-015 (replay/idempotency retention). Independent review must verify the authority state machine, fence-before-issue order, authenticated response binding, durable guest readback before readiness, terminal revocation, replay tombstones, bounded run claims and all ten C-01 through C-10 deterministic concurrency cases.
+
+A schema-valid Phase A manifest is only an immutable signed decision payload. It is not proof that the authorization is currently valid, unrevoked, unconsumed, within budget, accepted by the exact host/epoch, or cryptographically authentic. Those properties require the external authorization ledger, trusted time, pinned signer/key verification, provider fence evidence, and durable acceptance/readback. Until those mechanisms and their independent host evidence exist, Phase A remains unauthorized and the host remains ineligible for admission.
+
+
+## Authorization lifecycle qualification
+
+The mandatory authorization lifecycle and recovery requirements are defined in `docs/specifications/m0-authorization-lifecycle-and-recovery-contract.md`. This contract supplements, and does not replace, JRN-013 (external epoch/restore fencing) or JRN-015 (replay/idempotency retention). Independent review must verify the authority state machine, fence-before-issue order, authenticated response binding, durable guest readback before readiness, terminal revocation, replay tombstones, bounded run claims and all ten C-01 through C-10 deterministic concurrency cases.
+
+A schema-valid Phase A manifest is only an immutable signed decision payload. It is not proof that the authorization is currently valid, unrevoked, unconsumed, within budget, accepted by the exact host/epoch, or cryptographically authentic. Those properties require the external authorization ledger, trusted time, pinned signer/key verification, provider fence evidence, and durable acceptance/readback. Until those mechanisms and their independent host evidence exist, Phase A remains unauthorized and the host remains ineligible for admission.
+
+
 ## 12. References
 
 - `docs/specifications/m0-host-preflight-and-proof-runbook.md`
@@ -209,3 +272,66 @@ On stop: reject new work, continue best-effort independent termination when appl
 - `docs/security/m0-independent-security-review-record.schema.json`
 - SQLite PRAGMA documentation: https://www.sqlite.org/pragma.html
 - SQLite Online Backup API: https://www.sqlite.org/backup.html
+
+## ADR-0019 candidate decision linkage
+
+`docs/adr/ADR-0019-decision-dossier.md` defines the candidate-specific configuration and evidence rules. Candidate A and Candidate B must each use the same 33 security control IDs, including FENCE-001, and 33 common host qualification tests. Candidate B must additionally pass RLS-001 through RLS-004; these tests are mandatory only for rootless containerd/userns and are not-applicable to Candidate A. A host qualification report is candidate-, host-, commit- and profile-specific; it cannot be transferred between rootful and rootless deployments.
+
+The machine-readable ADR decision record is `docs/schemas/m0-adr-0019-decision-record.template.json`. Its blank state is pending and grants no implementation, Phase A, Phase B, student or production authorization.
+
+
+## Upstream compatibility evidence
+
+`docs/adr/ADR-0019-upstream-compatibility-evidence.md` records the public upstream component facts and outstanding exact-stack compatibility gates. Its source URLs are mutable branch heads; a signed candidate decision requires exact source commit/tag and archived content digest. Do not mark any host qualification test passed from this ledger alone.
+
+## Rootless host profile identity record
+
+For Candidate B, `host_identity.rootless_profile` is a required structured object, not a free-form note. `host_identity.rootless_profile_digest` must equal its `profile_sha256`. The record captures:
+
+- Non-root daemon UID/GID and a digest of the daemon identity/group membership evidence.
+- Explicit `caller-configured-userns` mode; subordinate UID and GID mapping digests and range counts. Preserve sanitized mapping evidence in the reviewer evidence store; do not put unrelated host-user details or secrets in the repository.
+- Exact RootlessKit version and SHA-256, `newuidmap` and `newgidmap` SHA-256, plus a helper inventory digest covering ownership, mode, package provenance and permitted privilege bits.
+- AppArmor profile digest, RootlessKit state-directory policy digest and daemon socket policy digest.
+- Network backend and network-namespace profile digest, including abstract-socket isolation policy.
+- Systemd delegation profile digest and the effective delegated controller set. It must include `cpu`, `memory` and `pids`; a configured unit or a generic cgroup-v2 mount is insufficient.
+- Rootless profile SHA-256 covering the normalized, redacted profile record. The checksum is defined as SHA-256 over UTF-8 bytes of compact JSON with recursively sorted object keys, separators `(",", ":")` without whitespace, ASCII escaping enabled, non-finite numbers forbidden, and array order preserved. The `profile_sha256` property is excluded from its own hash input. The profile schema restricts values to strings, bounded integers and arrays, so this serialization is deterministic.
+
+The ADR candidate configuration and signed qualification report must carry the same `rootless_profile` object byte-for-byte after canonical serialization.
+
+The verifier recomputes this digest; comparing two caller-supplied digest strings is insufficient. A stale digest after any profile-field change fails qualification. Its `profile_sha256` must match `host_identity.rootless_profile_digest`, candidate `configuration.rootless_profile_digest` and qualification `rootless_profile_digest`. Separately, the overall `host_profile_digest` must match the candidate `configuration.profile_digest`. These are distinct digests with distinct scopes. Any change to daemon UID/GID, mapping, helper binary, AppArmor policy, network backend, socket/state policy, systemd delegation or controller set invalidates the report and requires requalification.
+
+For Candidate A, `rootless_profile` and `rootless_profile_digest` must both be `null`; rootful records cannot claim rootless evidence.
+
+
+## Authorization ledger storage qualification
+
+Review `docs/specifications/m0-authorization-ledger-data-model.md` with the lifecycle contract. Neon is the application-side ledger; external host epoch issuance and provider fencing remain separate authorities. The ledger schema and procedures are not approved for deployment until role separation, serializable transaction behavior, immutable R2 version/retention, anti-rollback witness recovery and deterministic concurrency/crash tests are independently demonstrated.
+
+## Immutable upstream source baseline
+
+The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-source-manifest.json`; the exact manifest SHA-256 must be embedded in any completed ADR-0019 decision record. A reviewer must check all eight source pins and their recorded signature-verification status. The branch-head URLs are discovery references only; the manifest points to immutable commit URLs and records Git blob SHA-1 plus content SHA-256.
+
+## Cryptographic trust and key lifecycle qualification
+
+The trust hierarchy, canonical signed payload, key custody/rotation/revocation, trust-bundle freshness, anti-rollback witness, independent verification and deterministic crypto test-vector requirements are defined in docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md. Host qualification must verify the exact authority key ID/version, algorithm/profile, trust-bundle generation/digest, revocation freshness, signed response context and independent verifier report. A signature reference or passing synthetic validator is not cryptographic proof. No production key, signer, verifier or host admission is authorized by this protocol.
+
+## Cryptographic schema qualification evidence
+
+The proposed envelope, trust-bundle, key-metadata and verification-report schemas are under docs/schemas/m0-crypto-*. The structural validator and fixture catalog must pass CI, but those results are not runtime cryptographic proof. Any actual host qualification must attach exact immutable signed objects and a separately produced independent verification report; schema-valid placeholder fixtures cannot satisfy host evidence.
+
+
+## Cryptographic payload schema references
+
+The typed signed-envelope payload families and their structural validator are defined in the cryptographic trust contract:
+- `docs/schemas/m0-host-epoch-response-payload.schema.json`
+- `docs/schemas/m0-provider-fence-attestation-payload.schema.json`
+- `docs/schemas/m0-phase-a-authorization-payload.schema.json`
+- `docs/schemas/m0-key-revocation-payload.schema.json`
+- `scripts/validate_m0_crypto_contract.py`
+
+These schemas bind exact identities, epochs, immutable evidence references/digests, the 33-control independent review including `FENCE-001`, and explicit denial of Phase B/student/production execution in the Phase A payload. They validate shape and declared cross-field rules only; they do not authenticate a signature, independently verify provider fencing, or prove external evidence.
+
+
+### Authorization scope and principal separation clarification
+
+The message payload named `phase-a-authorization` is restricted to `M0_CLEANUP_CALIBRATION_ONLY`; it is not a general host-qualification, full-M0-proof, Phase B, student, or production grant. Its payload explicitly binds five distinct principals: host owner, evidence acquirer, fence verifier, independent security reviewer, and authorization signer. The structural validator rejects role collisions. This supplements, and does not replace, the role/evidence checks in the independent security-review record and cleanup-calibration authorization contract.

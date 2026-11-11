@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "M0 Host Epoch Response Payload",
+  "description": "Proposed contract schema only. It validates structure and binding metadata; it does not authenticate signatures, verify external provider operations, or authorize execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "host_enrollment_id",
+    "provider_id",
+    "provider_account_id",
+    "provider_region",
+    "provider_instance_id",
+    "incarnation_epoch",
+    "operation_id",
+    "response_id",
+    "request_nonce_sha256",
+    "request_sha256",
+    "predecessor_set_sha256",
+    "fence_attestation_ref",
+    "fence_attestation_sha256",
+    "authority_observed_at",
+    "authority_record_version"
+  ],
+  "properties": {
+    "host_enrollment_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "provider_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "provider_account_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "provider_region": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "provider_instance_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "incarnation_epoch": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854776000
+    },
+    "operation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "response_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "request_nonce_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "request_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "predecessor_set_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "fence_attestation_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"
+    },
+    "fence_attestation_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "authority_observed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "authority_record_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    }
+  }
+}

@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "M0 Phase A Authorization Payload",
+  "description": "Proposed contract schema only. It validates structure and binding metadata; it does not authenticate signatures, verify external provider operations, or authorize execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authorization_id",
+    "authorization_scope",
+    "environment",
+    "host_enrollment_id",
+    "provider_id",
+    "provider_instance_id",
+    "incarnation_epoch",
+    "host_epoch_receipt_ref",
+    "host_epoch_receipt_sha256",
+    "host_acceptance_ref",
+    "host_acceptance_sha256",
+    "fence_verification_report_ref",
+    "fence_verification_report_sha256",
+    "host_qualification_record_ref",
+    "host_qualification_record_sha256",
+    "security_review_record_ref",
+    "security_review_record_sha256",
+    "security_review_control_count",
+    "fence_001_result",
+    "authorization_manifest_sha256",
+    "max_run_count",
+    "not_before",
+    "expires_at",
+    "phase_b_authorized",
+    "student_execution_authorized",
+    "production_execution_authorized",
+    "cleanup_calibration_authorized",
+    "full_m0_proof_authorized",
+    "host_owner_principal_id",
+    "evidence_acquirer_principal_id",
+    "fence_verifier_principal_id",
+    "independent_security_reviewer_principal_id",
+    "authorization_signer_principal_id",
+    "reviewer_role",
+    "independence_attested"
+  ],
+  "properties": {
+    "authorization_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "authorization_scope": {
+      "const": "M0_CLEANUP_CALIBRATION_ONLY"
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "staging"
+      ]
+    },
+    "host_enrollment_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "provider_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "provider_instance_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "incarnation_epoch": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854776000
+    },
+    "host_epoch_receipt_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"
+    },
+    "host_epoch_receipt_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "host_acceptance_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"
+    },
+    "host_acceptance_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "fence_verification_report_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"
+    },
+    "fence_verification_report_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "host_qualification_record_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"
+    },
+    "host_qualification_record_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "security_review_record_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"
+    },
+    "security_review_record_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "security_review_control_count": {
+      "const": 33
+    },
+    "fence_001_result": {
+      "const": "pass"
+    },
+    "authorization_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "max_run_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "not_before": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "phase_b_authorized": {
+      "const": false
+    },
+    "student_execution_authorized": {
+      "const": false
+    },
+    "production_execution_authorized": {
+      "const": false
+    },
+    "cleanup_calibration_authorized": {
+      "const": true
+    },
+    "full_m0_proof_authorized": {
+      "const": false
+    },
+    "host_owner_principal_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "evidence_acquirer_principal_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "fence_verifier_principal_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "independent_security_reviewer_principal_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "authorization_signer_principal_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "reviewer_role": {
+      "const": "independent-security-reviewer"
+    },
+    "independence_attested": {
+      "const": true
+    }
+  }
+}

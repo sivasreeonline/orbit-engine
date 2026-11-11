@@ -73,6 +73,7 @@ If an assumption cannot be demonstrated, record it as an open risk, not as a con
 | Containerd daemon restart or outage | Stop new launches and reconcile all non-terminal attempts after daemon recovery | Daemon identity/version checks and post-recovery inventory prove no duplicate or orphan resource | Not implemented |
 | Crash between journal writes and containerd side effects | Persist intent before side effect; deterministic resource identity; reconcile before retry; compare-and-set terminal state | Fault injection at every lifecycle transition, durable journal inspection, containerd/process/cgroup inventory | Design contract added; not implemented |
 | Cleanup acknowledgement race | Cleanup independent of client connection; verify process/task/shim/cgroup/namespace/mount/network/scratch absence before terminal success | Post-ack host inventory and cancellation/exit/timeout race tests | Design contract added; not implemented |
+| Snapshot rollback / cloned host split-brain | External authority atomically advances a monotonic host-incarnation epoch only after provider-enforced fencing of every predecessor; restore remains quarantined until authenticated epoch/fence evidence is durably accepted | Complete predecessor/clone enumeration, authority key pin and nonce binding, provider-enforced compute/storage/control-path isolation, fence-before-issue chronology, concurrent restore/rollback fault injection | Design contract added; authority/provider not selected or implemented |
 | Evidence tampering / incomplete evidence | SHA-256 manifest, access controls, independent reviewer, incomplete status on missing evidence | Manifest validation, hash verification, reviewer signoff | Schema exists; actual evidence absent |
 | Dependency/runtime supply-chain compromise | Lockfiles, CI audit, pinned actions/runtime artifacts, provenance verification | CI reports, SBOM/provenance, patch process | Partial; runtime provenance not yet demonstrated |
 
@@ -95,6 +96,7 @@ The reviewer must explicitly answer each item:
 13. Can a runner identity spoof or bypass Unix peer-credential checks, socket-path ownership checks, per-attempt authorization, or request framing limits?
 14. Can a supervisor crash at every journal/containerd boundary cause duplicate launch, lost ownership, false terminal success, or orphaned resources?
 15. Is the supervisor's effective privilege set genuinely minimal, and does its systemd hardening preserve only the required containerd operations?
+16. Can every restored, cloned, rolled-back or replacement VM prove a unique fresh externally anchored epoch, complete predecessor enumeration, authenticated issuance and provider-enforced fencing of every predecessor before the new instance can enable admission or privileged work?
 
 Every answer must cite evidence or remain marked unresolved.
 
@@ -108,6 +110,7 @@ Reject the proof design or stop testing if any of the following occurs:
 - Any resource limit that is best-effort, unbounded, or not independently measured.
 - Any surviving process/task, mount, namespace, or scratch resource after terminal acknowledgement.
 - Any duplicate terminal result or scoring of an infrastructure failure as a student verdict.
+- Any missing, ambiguous or merely requested predecessor-instance fence; no restored/cloned host may be admitted using guest-journal generation or heartbeat as a substitute for provider-enforced fencing.
 - Any evidence containing secrets, student source, hidden test content, or unredacted daemon environment/command lines.
 - Any missing, inconsistent, or unverifiable evidence for a required fixture.
 - Any unreviewed change to the host baseline, runtime, fixture image, supervisor API, or security profile.
@@ -153,15 +156,61 @@ The independent reviewer must verify and record:
 8. The measurements exercise the same cleanup controller, journal, and host-side absence verifier proposed for M0. Any mock, bypass, or alternate cleanup path invalidates the measurements.
 9. The first-trigger monotonic timestamp and boot identity are captured before or at termination; repeated triggers and restarts cannot reset the clock; evidence-store and journal failures cannot delay termination.
 10. Cleanup and evidence dispositions are independently supervised and persisted. Any uncertain cleanup, unowned resource, failed outer guard, network uncertainty, clock ambiguity, or evidence leak stops the campaign and quarantines the VM.
+11. The exact host incarnation is bound to a fresh externally anchored epoch and complete predecessor-fence evidence. Verify authority ID/key version, issuance nonce digest, predecessor-set digest, provider fence method/time/evidence digest, exact host qualification record reference/digest, the signed independent security-review record reference/digest with `FENCE-001` recorded as `pass`, and a separate independent verifier report. The provider fence must be effective before epoch issuance; evidence acquisition and independent verification must follow the fence event and precede independent review and authorization; the accepted epoch must be durably recorded before supervisor generation allocation or admission.
 
 ### Calibration decision and Phase B separation
 
-The Phase A decision must be recorded as one of: not authorized, authorized with explicit constraints, or rejected. It must include the reviewer, date, scope, host/build digests, scenario allowlist, outer safety cutoff, maximum run count, stop conditions, evidence destination, and expiry. Authorization is invalidated by a change to the host image, kernel, runtime, journal, supervisor, watchdog, fixture digest, network boundary, or material configuration. The authorization manifest must conform to docs/schemas/m0-cleanup-calibration-authorization.schema.json. Its signature reference and evidence hashes must be independently resolved and verified; passing JSON Schema validation does not authenticate the reviewer or prove the host controls.
+The Phase A decision must be recorded as one of: not authorized, authorized with explicit constraints, or rejected. It must include the reviewer, date, scope, host/build digests, scenario allowlist, outer safety cutoff, maximum run count, stop conditions, evidence destination, and expiry. Authorization is invalidated by a change to the host image, kernel, runtime, journal, supervisor, watchdog, fixture digest, network boundary, or material configuration. The authorization manifest must conform to version 1.1.0 of docs/schemas/m0-cleanup-calibration-authorization.schema.json and bind the exact host incarnation/epoch, authority/key version, nonce, complete predecessor set, provider-fence evidence, independent verifier report, and host-qualification record digest. Its signature reference and evidence hashes must be independently resolved and verified; passing JSON Schema validation does not authenticate the reviewer or prove the host controls.
 
 Phase A results must include raw sanitized trigger-to-verified-cleanup measurements, phase breakdown, outliers, host envelope, uncertainty sources, and the rationale for any candidate engineering margin. Percentiles are descriptive; a p95 or p99 is not a hard deadline. Any sample terminated by the outer VM cutoff or lacking independent absence verification is failed/unverified and cannot support the candidate maximum.
 
 Phase B approval is a separate reviewer decision. It requires approval of the candidate numeric cleanup deadline, evidence/terminal-finalization reserve, original 10-minute admission rule, clock/reboot semantics, watchdog independence, exact resource-profile revision, and Phase A raw evidence. Only then may the full 35-fixture adversarial campaign begin. Neither decision authorizes student or production execution.
 
-## 9. Current decision
+## 10. Authorization lifecycle qualification
+
+The external authority and Phase A authorization ledger requirements are specified in `docs/specifications/m0-authorization-lifecycle-and-recovery-contract.md`. A signed manifest is immutable input, not authoritative mutable status. The review must cover nonce/request replay, monotonic epochs, provider-fence-before-issue chronology, durable accept-before-admission, terminal revocation, replay tombstones, atomic run-budget claims, crash recovery and deterministic concurrent restore/revocation interleavings. A synthetic contract check is not proof that these services are implemented or safe.
+
+## 11. Authorization ledger review
+
+The proposed data model and transaction design are in `docs/specifications/m0-authorization-ledger-data-model.md`. Independent review must inspect the immutable receipt mirror, exact host/epoch acceptance binding, append-only authorization events, terminal tombstones, atomic run-budget claims, role separation, R2 version/retention verification and external anti-rollback witness. Do not approve a production migration until all prerequisites in that design are independently evidenced. Neon must not be represented as the provider fencing or epoch-issuance authority.
+
+## 12. Current decision
 
 **Independent review: pending.** The controlled checklist and machine-readable decision template are available, but no reviewer signoff is recorded. No cloud host has been selected or provisioned. No sandbox workload has been launched. No executor activation is authorized. Passing CI is not a security review or approval.
+
+
+## ADR-0019 candidate decision
+
+Use `docs/adr/ADR-0019-decision-dossier.md` and `docs/schemas/m0-adr-0019-decision-record.schema.json` for the rootful-versus-rootless candidate decision. The reviewer must assess both candidates against the same 33 controls and 33 host qualification tests. A candidate selection requires its own complete host qualification report and independent sign-off; evidence cannot be borrowed from the other candidate.
+
+The review remains pending. The dossier and its synthetic CI examples are not security approval or host proof.
+
+
+## Upstream candidate compatibility evidence
+
+Review `docs/adr/ADR-0019-upstream-compatibility-evidence.md` alongside the independent 33-control checklist. The rootless review must explicitly address `newuidmap`/`newgidmap`, subordinate-ID mappings, RootlessKit state/network namespaces, systemd CPU-controller delegation and exact gVisor shim compatibility. Documentary sources do not constitute host proof.
+
+
+## Immutable upstream source baseline
+
+The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-source-manifest.json`; the exact manifest SHA-256 must be embedded in any completed ADR-0019 decision record. A reviewer must check the eight source pins and recorded signature-verification status. The branch-head URLs are discovery references only; the manifest points to immutable commit URLs and records Git blob SHA-1 plus content SHA-256.
+
+## Cryptographic trust and key lifecycle review
+
+Independent review must assess docs/specifications/m0-cryptographic-trust-and-key-lifecycle.md, including trust-root isolation, signer/verifier principal separation, algorithm and canonicalization selection, domain separation, key custody and compromise response, trust-bundle anti-rollback, revocation freshness, trusted-time uncertainty, immutable evidence references and cross-language negative test vectors. The review must not treat a valid signature as proof that provider fencing occurred. No algorithm or key custody provider is approved until compatibility and independent review are complete.
+
+## Cryptographic schema and fixture review
+
+Review docs/schemas/m0-crypto-signed-envelope.schema.json, m0-crypto-trust-bundle.schema.json, m0-crypto-key-metadata.schema.json, m0-crypto-verification-report.schema.json and m0-crypto-verification-fixture-catalog.json together with scripts/validate_m0_crypto_contract.py. Confirm the schemas do not imply algorithm approval, private-key storage, signature verification or provider-fence proof. Algorithm-specific known-answer vectors remain a later gate after independent profile/library selection.
+
+
+## Cryptographic payload schema references
+
+The typed signed-envelope payload families and their structural validator are defined in the cryptographic trust contract:
+- `docs/schemas/m0-host-epoch-response-payload.schema.json`
+- `docs/schemas/m0-provider-fence-attestation-payload.schema.json`
+- `docs/schemas/m0-phase-a-authorization-payload.schema.json`
+- `docs/schemas/m0-key-revocation-payload.schema.json`
+- `scripts/validate_m0_crypto_contract.py`
+
+These schemas bind exact identities, epochs, immutable evidence references/digests, the 33-control independent review including `FENCE-001`, and explicit denial of Phase B/student/production execution in the Phase A payload. They validate shape and declared cross-field rules only; they do not authenticate a signature, independently verify provider fencing, or prove external evidence.

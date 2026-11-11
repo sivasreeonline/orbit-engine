@@ -26,7 +26,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "1.0.0"
+      "const": "1.1.0"
     },
     "authorization_id": {
       "type": "string",
@@ -65,7 +65,21 @@
         "runtime_handler",
         "platform",
         "supervisor_build_sha256",
-        "watchdog_build_sha256"
+        "watchdog_build_sha256",
+        "host_instance_id",
+        "host_incarnation_epoch",
+        "host_incarnation_authority_id",
+        "host_incarnation_authority_key_version",
+        "host_incarnation_epoch_evidence_ref",
+        "host_incarnation_epoch_evidence_digest",
+        "host_incarnation_issuance_nonce_digest",
+        "predecessor_incarnation_set_digest",
+        "prior_incarnation_fence_evidence_ref",
+        "provider_fence_method",
+        "provider_fence_verified_at",
+        "provider_fence_evidence_digest",
+        "host_qualification_record_ref",
+        "host_qualification_record_digest"
       ],
       "properties": {
         "provider": {
@@ -125,6 +139,62 @@
           "pattern": "^[a-f0-9]{64}$"
         },
         "watchdog_build_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "host_instance_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_incarnation_epoch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_incarnation_authority_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_incarnation_authority_key_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_incarnation_epoch_evidence_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_incarnation_epoch_evidence_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "host_incarnation_issuance_nonce_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "predecessor_incarnation_set_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "prior_incarnation_fence_evidence_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_fence_method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_fence_verified_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provider_fence_evidence_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "host_qualification_record_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_qualification_record_digest": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         }
@@ -468,7 +538,13 @@
         "destination",
         "redaction_policy_id",
         "immutable_storage_required",
-        "sanitized_only"
+        "sanitized_only",
+        "host_fencing_verifier_id",
+        "host_fencing_verification_report_ref",
+        "host_fencing_verification_report_digest",
+        "host_fencing_acquired_by_id",
+        "host_fencing_evidence_acquired_at",
+        "host_fencing_verification_completed_at"
       ],
       "properties": {
         "destination": {
@@ -484,6 +560,30 @@
         },
         "sanitized_only": {
           "const": true
+        },
+        "host_fencing_verifier_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_fencing_verification_report_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_fencing_verification_report_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "host_fencing_acquired_by_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host_fencing_evidence_acquired_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "host_fencing_verification_completed_at": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },
@@ -497,7 +597,11 @@
         "independence_attested",
         "reviewed_at",
         "authorization_digest_sha256",
-        "signature_reference"
+        "signature_reference",
+        "independent_security_review_record_ref",
+        "independent_security_review_record_digest",
+        "fence_control_id",
+        "fence_control_result"
       ],
       "properties": {
         "host_owner_id": {
@@ -525,6 +629,20 @@
         "signature_reference": {
           "type": "string",
           "minLength": 1
+        },
+        "independent_security_review_record_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "independent_security_review_record_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "fence_control_id": {
+          "const": "FENCE-001"
+        },
+        "fence_control_result": {
+          "const": "pass"
         }
       }
     },

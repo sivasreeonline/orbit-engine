@@ -82,6 +82,17 @@ func TestDecodeExecutionRequestRejectsDuplicateObjectKeys(t *testing.T) {
 	if !errors.Is(err, ErrInvalidJSON) {
 		t.Fatalf("nested duplicate error = %v, want ErrInvalidJSON", err)
 	}
+
+	escapedDuplicate := bytes.Replace(
+		body,
+		[]byte(`"protocolVersion":"v1"`),
+		[]byte(`"protocolVersion":"v1","protocol\u0056ersion":"v1"`),
+		1,
+	)
+	_, err = DecodeExecutionRequest(bytes.NewReader(escapedDuplicate))
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("escaped-equivalent duplicate error = %v, want ErrInvalidJSON", err)
+	}
 }
 
 func TestDecodeExecutionRequestRejectsNonCanonicalFieldCasing(t *testing.T) {
@@ -146,6 +157,20 @@ func TestDecodeExecutionRequestRejectsCaseFoldedAliasPairs(t *testing.T) {
 				t.Fatalf("error = %v, want ErrInvalidJSON", err)
 			}
 		})
+	}
+}
+
+func TestDecodeExecutionRequestRejectsInvalidUTF8(t *testing.T) {
+	t.Parallel()
+
+	body := bytes.Replace(
+		validRequestJSON(t),
+		[]byte(`"java"`),
+		[]byte{'"', 'j', 'a', 0xff, 'v', 'a', '"'},
+		1,
+	)
+	if _, err := DecodeExecutionRequest(bytes.NewReader(body)); !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("error = %v, want ErrInvalidJSON for invalid UTF-8", err)
 	}
 }
 

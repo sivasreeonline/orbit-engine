@@ -9,6 +9,9 @@ import (
 
 var ErrInvalidRequest = errors.New("invalid execution request")
 
+// Validate checks protocol shape and basic field bounds only. It does not
+// authorize the request or establish that runtime/resource values match a
+// server-owned profile; callers must perform those checks at the trusted boundary.
 func (request ExecutionRequest) Validate() error {
 	if request.ProtocolVersion != "v1" {
 		return fieldError("protocolVersion", "must be v1")
@@ -35,13 +38,13 @@ func (request ExecutionRequest) Validate() error {
 	if request.Language != LanguageJava && request.Language != LanguagePython {
 		return fieldError("language", "must be java or python")
 	}
-	if !isBoundedToken(request.RuntimeVersion, 1, 32) {
-		return fieldError("runtimeVersion", "must contain 1 to 32 non-whitespace characters")
+	if !isRuntimeVersionToken(request.RuntimeVersion) {
+		return fieldError("runtimeVersion", "must contain 1 to 32 ASCII letters, digits, dots, hyphens, underscores or plus signs")
 	}
 
 	digest, err := hex.DecodeString(request.SourceSHA256)
-	if err != nil || len(digest) != 32 {
-		return fieldError("sourceSha256", "must be a 64-character hexadecimal SHA-256 digest")
+	if err != nil || len(digest) != 32 || request.SourceSHA256 != strings.ToLower(request.SourceSHA256) {
+		return fieldError("sourceSha256", "must be a 64-character lowercase hexadecimal SHA-256 digest")
 	}
 
 	if request.Limits.CPUQuotaMillis <= 0 {
@@ -61,6 +64,21 @@ func (request ExecutionRequest) Validate() error {
 	}
 
 	return nil
+}
+
+func isRuntimeVersionToken(value string) bool {
+	if len(value) < 1 || len(value) > 32 {
+		return false
+	}
+	for _, character := range value {
+		if !(character >= 'a' && character <= 'z') &&
+			!(character >= 'A' && character <= 'Z') &&
+			!(character >= '0' && character <= '9') &&
+			character != '.' && character != '-' && character != '_' && character != '+' {
+			return false
+		}
+	}
+	return true
 }
 
 func validateOpaqueID(field string, value string) error {

@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.2.0",
   "record_id": null,
   "record_status": "not-started",
   "qualification_status": "not-qualified",
@@ -17,6 +17,8 @@
     "region": null,
     "vm_shape": null,
     "host_instance_id": null,
+    "host_incarnation_epoch": null,
+    "prior_incarnation_fence_evidence_ref": null,
     "boot_id": null,
     "image_digest": null,
     "os_release": null,
@@ -36,7 +38,18 @@
     "resource_profile_digest": null,
     "supervisor_digest": null,
     "watchdog_digest": null,
-    "test_harness_digest": null
+    "test_harness_digest": null,
+    "rootless_profile": null,
+    "rootless_profile_digest": null,
+    "host_incarnation_authority_id": null,
+    "host_incarnation_authority_key_version": null,
+    "host_incarnation_epoch_evidence_ref": null,
+    "host_incarnation_issuance_nonce_digest": null,
+    "predecessor_incarnation_set_digest": null,
+    "provider_fence_method": null,
+    "provider_fence_verified_at": null,
+    "provider_fence_evidence_digest": null,
+    "host_incarnation_epoch_evidence_digest": null
   },
   "journal_profile": {
     "backend_candidate": "not-selected",
@@ -64,7 +77,8 @@
     "clock_recovery": "not-run",
     "journal_durability": "not-run",
     "integrated_lifecycle": "not-run",
-    "evidence_integrity": "not-run"
+    "evidence_integrity": "not-run",
+    "rootless_userns_compatibility": "not-run"
   },
   "test_results": [
     {
@@ -205,7 +219,58 @@
       "finding_summary": "",
       "severity": "unassigned",
       "remediation_owner": "",
-      "evidence_refs": []
+      "evidence_refs": [],
+      "watchdog_subtests": {
+        "WD-001": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-002": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-003": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-004": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-005": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-006": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        },
+        "WD-007": {
+          "result": "not-run",
+          "verification_method": "",
+          "finding_summary": "",
+          "severity": "unassigned",
+          "evidence_refs": []
+        }
+      }
     },
     {
       "test_id": "WDG-003",
@@ -419,5 +484,6 @@
   "phase_a_authorized": false,
   "phase_b_authorized": false,
   "student_execution_authorized": false,
-  "production_execution_authorized": false
+  "production_execution_authorized": false,
+  "candidate_specific_test_results": []
 }

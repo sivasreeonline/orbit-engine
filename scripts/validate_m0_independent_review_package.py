@@ -4,7 +4,7 @@
 This does not perform a security review, verify signatures, or authorize execution.
 """
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
@@ -25,7 +25,7 @@ EXPECTED_CLASSES = {
     "RUNTIME-002": "host", "OCI-001": "host", "NET-001": "host",
     "NET-002": "host", "CGROUP-001": "host", "FS-001": "host",
     "OUTPUT-001": "host", "LIFE-001": "mixed", "LIFE-002": "host",
-    "LIFE-003": "host", "CLOCK-001": "host", "CLOCK-002": "host",
+    "LIFE-003": "host", "CLOCK-001": "host", "CLOCK-002": "host", "FENCE-001": "host",
     "JOURNAL-001": "host", "JOURNAL-002": "host", "JOURNAL-003": "host",
     "WATCH-001": "host", "WATCH-002": "host", "WATCH-003": "host",
     "EVID-001": "mixed", "EVID-002": "host", "SUPPLY-001": "mixed",
@@ -51,6 +51,7 @@ HOST_EVIDENCE_BY_CONTROL = {
     "LIFE-003": {"host-runtime", "fault-injection"},
     "CLOCK-001": {"host-runtime", "fault-injection"},
     "CLOCK-002": {"host-runtime", "fault-injection"},
+    "FENCE-001": {"host-configuration", "fault-injection", "operator-record"},
     "JOURNAL-001": {"host-configuration", "fault-injection"},
     "JOURNAL-002": {"host-configuration", "fault-injection"},
     "JOURNAL-003": {"host-configuration", "fault-injection"},
@@ -90,6 +91,18 @@ def custom_errors(record):
             if ref.get("verification_status") == "verified":
                 if not ref.get("independent_verifier_id") or not ref.get("verifier_note", "").strip():
                     errors.append(f"{control_id}: verified evidence requires independent verifier identity and note")
+                elif ref.get("independent_verifier_id") in {
+                    record.get("participants", {}).get("reviewer_id"),
+                    record.get("participants", {}).get("host_owner_id"),
+                }:
+                    errors.append(f"{control_id}: evidence verifier must be distinct from reviewer and host owner")
+            participants = record.get("participants", {})
+            if ref.get("acquired_by_id") in {
+                participants.get("reviewer_id"),
+                participants.get("host_owner_id"),
+                ref.get("independent_verifier_id")
+            }:
+                errors.append(f"{control_id}: evidence acquirer must be distinct from verifier, reviewer and host owner")
 
         if finding.get("result") == "pass":
             if not refs or not finding.get("verification_method", "").strip():
@@ -136,7 +149,7 @@ def custom_errors(record):
             errors.append("implementation recommendation has unresolved high/critical finding")
 
     if decisions.get("phase_a_recommendation") == "eligible-for-separate-calibration-authorization":
-        required = {"NET-001", "NET-002", "JOURNAL-001", "CLOCK-001", "CLOCK-002", "WATCH-001", "WATCH-002", "WATCH-003"}
+        required = {"NET-001", "NET-002", "JOURNAL-001", "CLOCK-001", "CLOCK-002", "FENCE-001", "WATCH-001", "WATCH-002", "WATCH-003"}
         by_id = {f.get("control_id"): f for f in findings}
         if review_status != "completed" or any(by_id.get(cid, {}).get("result") != "pass" for cid in required):
             errors.append("Phase A eligibility requires completed review and passing required host controls")
@@ -172,6 +185,8 @@ def custom_errors(record):
             expires = datetime.fromisoformat(record["expires_at"].replace("Z", "+00:00"))
             if expires <= reviewed:
                 errors.append("review expiry must be later than review date")
+            if expires <= datetime.now(timezone.utc):
+                errors.append("review has expired at validation time")
     except (ValueError, TypeError):
         errors.append("review dates must be parseable")
 
@@ -191,10 +206,17 @@ def main():
     adr = ADR_PATH.read_text(encoding="utf-8")
 
     Draft202012Validator.check_schema(schema)
+    if schema["properties"]["schema_version"].get("const") != "1.1.0" or template.get("schema_version") != "1.1.0":
+        raise AssertionError("33-control independent review package must use schema/template version 1.1.0")
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     errors = validate(validator, template)
     if errors:
         raise AssertionError("blank template invalid: " + "; ".join(errors))
+    if template["scope"]["reviewed_commit_sha"] is not None:
+        raise AssertionError("blank review template must not pin a stale commit baseline")
+    required_documents = ["docs/schemas/m0-adr-0019-decision-record.schema.json","docs/schemas/m0-adr-0019-decision-record.template.json","scripts/validate_m0_adr_0019_decision.py","docs/schemas/ADR-0019-upstream-source-manifest.schema.json","scripts/validate_m0_upstream_source_manifest.py","docs/schemas/m0-host-qualification-record.schema.json","docs/schemas/m0-host-qualification-record.template.json","scripts/validate_m0_host_qualification.py","docs/security/m0-independent-security-review-record.schema.json","scripts/validate_m0_independent_review_package.py","docs/adr/ADR-0019-decision-dossier.md","docs/adr/ADR-0019-upstream-compatibility-evidence.md","docs/adr/ADR-0019-upstream-source-manifest.json","docs/specifications/m0-host-and-journal-qualification-protocol.md"]
+    if not set(required_documents).issubset(set(template["scope"]["documents"])):
+        raise AssertionError("review template must include the current ADR-0019 dossier, upstream ledger/manifest and host qualification protocol")
     if template["review_status"] != "not-reviewed" or template["decisions"]["review_decision"] != "not-reviewed":
         raise AssertionError("blank template must remain not-reviewed")
     if any(template[key] is not False for key in AUTHORIZATION_FLAGS):
@@ -202,6 +224,8 @@ def main():
 
     template_findings = {item["control_id"]: item for item in template["control_findings"]}
     schema_ids = set(schema["$defs"]["controlFinding"]["properties"]["control_id"]["enum"])
+    if schema["properties"]["control_findings"].get("minItems") != len(EXPECTED_CONTROL_IDS) or schema["properties"]["control_findings"].get("maxItems") != len(EXPECTED_CONTROL_IDS):
+        raise AssertionError("review schema control_findings cardinality must equal the canonical control-ID count")
     if schema_ids != set(EXPECTED_CONTROL_IDS) or set(template_findings) != set(EXPECTED_CONTROL_IDS):
         raise AssertionError("schema/template control IDs diverge")
     for control_id, expected_class in EXPECTED_CLASSES.items():
@@ -215,19 +239,50 @@ def main():
         raise AssertionError("ADR-0019 does not link the independent review checklist")
     if "Independent review: pending." not in packet:
         raise AssertionError("security packet must retain pending review status")
+    if "Snapshot rollback / cloned host split-brain" not in packet or "FENCE-001" not in checklist:
+        raise AssertionError("security review package must explicitly cover external host-incarnation fencing")
+    if "complete predecessor enumeration" not in packet or "provider-enforced fencing of every predecessor" not in packet:
+        raise AssertionError("security review packet must require fence-before-epoch review and predecessor completeness")
+    if "33 controls" not in packet or "33-control checklist" not in checklist:
+        raise AssertionError("security review packet/checklist control count must remain 33")
     print("PASS  blank template validates and remains not-reviewed/non-authorizing")
-    print("PASS  schema, template, 32-control checklist and evidence classes are synchronized")
+    print("PASS  schema, template, 33-control checklist and evidence classes are synchronized")
     print("PASS  ADR and security packet link the independent review package")
 
     cases = []
+    old_schema_version = deepcopy(template); old_schema_version["schema_version"] = "1.0.0"; cases.append(("stale 32-control review schema version", old_schema_version))
     case = deepcopy(template); case["control_findings"].pop(); cases.append(("missing control", case))
     case = deepcopy(template); case["control_findings"][-1]["control_id"] = case["control_findings"][0]["control_id"]; cases.append(("duplicate control ID", case))
     case = deepcopy(template); case["control_findings"][0]["result"] = "approved"; cases.append(("unsupported status", case))
     case = deepcopy(template); case["control_findings"][0]["result"] = "pass"; cases.append(("pass without evidence", case))
     case = deepcopy(template); case["participants"] = {"reviewer_id":"same","host_owner_id":"same","reviewer_independence_attested":True,"independence_basis":"synthetic","conflict_disclosure":"none"}; cases.append(("same reviewer and host owner", case))
     case = deepcopy(template); case["control_findings"][2]["evidence_class"] = "design"; cases.append(("host control mislabeled as design", case))
-    case = deepcopy(template); case["control_findings"][2]["result"] = "pass"; case["control_findings"][2]["verification_method"] = "synthetic"; case["control_findings"][2]["reviewer_finding"] = "synthetic"; case["control_findings"][2]["severity"] = "none"; case["control_findings"][2]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"reviewer","verifier_note":"synthetic"}]; cases.append(("host pass supported only by design document", case))
-    case = deepcopy(template); case["control_findings"][0]["result"] = "pass"; case["control_findings"][0]["verification_method"] = "synthetic"; case["control_findings"][0]["reviewer_finding"] = "synthetic"; case["control_findings"][0]["severity"] = "none"; case["control_findings"][0]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":None,"verifier_note":""}]; cases.append(("verified evidence without independent verifier", case))
+    case = deepcopy(template); case["control_findings"][2]["result"] = "pass"; case["control_findings"][2]["verification_method"] = "synthetic"; case["control_findings"][2]["reviewer_finding"] = "synthetic"; case["control_findings"][2]["severity"] = "none"; case["control_findings"][2]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"reviewer","verifier_note":"synthetic"}]; cases.append(("host pass supported only by design document", case))
+    case = deepcopy(template); case["control_findings"][0]["result"] = "pass"; case["control_findings"][0]["verification_method"] = "synthetic"; case["control_findings"][0]["reviewer_finding"] = "synthetic"; case["control_findings"][0]["severity"] = "none"; case["control_findings"][0]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":None,"verifier_note":""}]; cases.append(("verified evidence without independent verifier", case))
+    evidence_ref = {
+        "reference_id":"synthetic-evidence", "object_version":"v1", "sha256":"a"*64,
+        "byte_count":1, "evidence_root_id":"synthetic-root",
+        "acquired_by_id":"host-owner", "acquired_at":"2026-11-10T00:00:00Z",
+        "acquisition_tool":"validator", "evidence_type":"host-configuration",
+        "redaction_status":"non-sensitive", "verification_status":"verified",
+        "independent_verifier_id":"independent-verifier", "verifier_note":"synthetic"
+    }
+    for actor, label in [("host-owner", "host owner"), ("reviewer", "reviewer")]:
+        case = deepcopy(template)
+        case["participants"] = {"reviewer_id":"reviewer", "host_owner_id":"host-owner", "reviewer_independence_attested":True, "independence_basis":"synthetic", "conflict_disclosure":"none"}
+        finding = case["control_findings"][2]
+        finding.update(result="pass", verification_method="synthetic", reviewer_finding="synthetic", severity="none", evidence_refs=[dict(evidence_ref, acquired_by_id="evidence-acquirer", independent_verifier_id=actor)])
+        cases.append((f"evidence verified by {label}", case))
+
+    for actor, label in [("host-owner", "host owner"), ("reviewer", "reviewer"), ("independent-verifier", "evidence verifier")]:
+        case = deepcopy(template)
+        case["participants"] = {"reviewer_id":"reviewer", "host_owner_id":"host-owner",
+            "reviewer_independence_attested":True, "independence_basis":"synthetic", "conflict_disclosure":"none"}
+        finding = case["control_findings"][2]
+        finding.update(result="pass", verification_method="synthetic", reviewer_finding="synthetic",
+            severity="none", evidence_refs=[dict(evidence_ref, acquired_by_id=actor)])
+        cases.append((f"evidence acquired by {label}", case))
+
     for key, label in [
         ("privileged_implementation_authorized", "privileged implementation"),
         ("phase_a_authorized", "Phase A"), ("phase_b_authorized", "Phase B"),
@@ -236,23 +291,29 @@ def main():
     ]:
         case = deepcopy(template); case[key] = True; cases.append((label + " authorization", case))
     case = deepcopy(template); case["review_status"] = "completed"; case["reviewed_at"] = "2026-11-10T00:00:00Z"; case["expires_at"] = "2026-11-09T00:00:00Z"; cases.append(("expired review", case))
+    case = deepcopy(template); case["review_status"] = "completed"; case["reviewed_at"] = "2020-01-01T00:00:00Z"; case["expires_at"] = "2021-01-01T00:00:00Z"; cases.append(("stale but chronologically ordered review", case))
     case = deepcopy(template); case["review_status"] = "completed"; cases.append(("completed review without assigned UUID", case))
+    case = deepcopy(template); case["review_status"] = "completed"; case["scope"]["reviewed_commit_sha"] = None; cases.append(("completed review without pinned commit", case))
 
     for label, record in cases:
         if not validate(validator, record):
             raise AssertionError(f"unsafe record accepted: {label}")
         print(f"PASS  rejects {label}")
 
+    synthetic_now = datetime.now(timezone.utc)
+    synthetic_reviewed_at = (synthetic_now - timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    synthetic_expires_at = (synthetic_now + timedelta(days=30)).isoformat(timespec="seconds").replace("+00:00", "Z")
     complete = deepcopy(template)
     complete["review_status"] = "completed"
+    complete["scope"]["reviewed_commit_sha"] = "a" * 40
     complete["review_id"] = "11111111-1111-4111-8111-111111111111"
     complete["participants"] = {
         "reviewer_id":"independent-reviewer", "host_owner_id":"host-owner",
         "reviewer_independence_attested":True, "independence_basis":"synthetic separation test",
         "conflict_disclosure":"none"
     }
-    complete["reviewed_at"] = "2026-11-10T00:00:00Z"
-    complete["expires_at"] = "2026-12-10T00:00:00Z"
+    complete["reviewed_at"] = synthetic_reviewed_at
+    complete["expires_at"] = synthetic_expires_at
     complete["signature_reference"] = "synthetic-signature-reference"
     complete["decisions"] = {
         "review_decision":"approve-architecture-candidate",
@@ -267,7 +328,7 @@ def main():
             item["evidence_refs"] = [{
                 "reference_id":"synthetic-" + item["control_id"], "object_version":"v1",
                 "sha256":"a"*64, "byte_count":1, "evidence_root_id":"synthetic",
-                "acquired_at":"2026-11-10T00:00:00Z", "acquisition_tool":"validator",
+                "acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z", "acquisition_tool":"validator",
                 "evidence_type":"design-document", "redaction_status":"non-sensitive",
                 "verification_status":"verified", "independent_verifier_id":"synthetic-verifier",
                 "verifier_note":"synthetic only"
@@ -279,6 +340,24 @@ def main():
         raise AssertionError("architecture recommendation improperly authorized execution")
     print("PASS  architecture-candidate recommendation cannot authorize implementation or execution")
     print("NOTE  synthetic contract tests only; no actual reviewer/evidence/signature")
+
+    fence_only_design_evidence = deepcopy(complete)
+    fence_finding = next(item for item in fence_only_design_evidence["control_findings"] if item["control_id"] == "FENCE-001")
+    fence_finding.update(result="pass", verification_method="synthetic", reviewer_finding="synthetic", severity="none", evidence_refs=[dict(evidence_ref, evidence_type="design-document")])
+    if not any("FENCE-001: pass requires one of the control-specific host evidence types" in error for error in validate(validator, fence_only_design_evidence)):
+        raise AssertionError("FENCE-001 accepted design-only evidence as a host control pass")
+    print("PASS  external incarnation fencing cannot pass on design-only evidence")
+
+    phase_a_without_fence = deepcopy(complete)
+    phase_a_without_fence["decisions"]["phase_a_recommendation"] = "eligible-for-separate-calibration-authorization"
+    required_phase_a = {"NET-001", "NET-002", "JOURNAL-001", "CLOCK-001", "CLOCK-002", "FENCE-001", "WATCH-001", "WATCH-002", "WATCH-003"}
+    for control_id in required_phase_a - {"FENCE-001"}:
+        finding = next(item for item in phase_a_without_fence["control_findings"] if item["control_id"] == control_id)
+        evidence_type = next(iter(HOST_EVIDENCE_BY_CONTROL[control_id]))
+        finding.update(result="pass", verification_method="synthetic", reviewer_finding="Synthetic only", severity="none", evidence_refs=[dict(evidence_ref, reference_id="synthetic-"+control_id, evidence_type=evidence_type)])
+    if not any("Phase A eligibility requires completed review and passing required host controls" in error for error in validate(validator, phase_a_without_fence)):
+        raise AssertionError("Phase A eligibility bypassed missing FENCE-001 review")
+    print("PASS  Phase A eligibility requires an independently evidenced FENCE-001 pass")
 
 if __name__ == "__main__":
     try:

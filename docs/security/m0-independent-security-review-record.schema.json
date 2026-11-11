@@ -5,6 +5,43 @@
   "description": "Evidence-bound review record; it can record recommendations but cannot itself authorize implementation, Phase A, Phase B, student or production execution.",
   "type": "object",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "review_status": {
+            "const": "not-reviewed"
+          }
+        },
+        "required": [
+          "review_status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "properties": {
+              "reviewed_commit_sha": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "scope": {
+            "properties": {
+              "reviewed_commit_sha": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{40}$"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "required": [
     "schema_version",
     "review_id",
@@ -34,6 +71,7 @@
         "sha256",
         "byte_count",
         "evidence_root_id",
+        "acquired_by_id",
         "acquired_at",
         "acquisition_tool",
         "evidence_type",
@@ -105,6 +143,11 @@
         },
         "verifier_note": {
           "type": "string"
+        },
+        "acquired_by_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Accountable human or service principal that acquired or uploaded this evidence object; must differ from its independent verifier, host owner and security reviewer."
         }
       },
       "allOf": [
@@ -170,6 +213,7 @@
             "LIFE-003",
             "CLOCK-001",
             "CLOCK-002",
+            "FENCE-001",
             "JOURNAL-001",
             "JOURNAL-002",
             "JOURNAL-003",
@@ -291,7 +335,7 @@
   },
   "properties": {
     "schema_version": {
-      "const": "1.0.0"
+      "const": "1.1.0"
     },
     "review_id": {
       "type": [
@@ -326,8 +370,11 @@
           "const": "sivasreeonline/orbit-engine"
         },
         "reviewed_commit_sha": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{40}$"
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{40})?$"
         },
         "review_scope": {
           "enum": [
@@ -409,8 +456,8 @@
     },
     "control_findings": {
       "type": "array",
-      "minItems": 32,
-      "maxItems": 32,
+      "minItems": 33,
+      "maxItems": 33,
       "items": {
         "$ref": "#/$defs/controlFinding"
       }

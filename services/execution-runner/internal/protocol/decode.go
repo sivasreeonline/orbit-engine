@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"unicode/utf8"
 )
 
 const MaxExecutionRequestBytes = 64 * 1024
@@ -61,6 +62,9 @@ func DecodeExecutionRequest(reader io.Reader) (ExecutionRequest, error) {
 	}
 	if len(body) > MaxExecutionRequestBytes {
 		return request, fmt.Errorf("%w: body exceeds limit", ErrInvalidJSON)
+	}
+	if !utf8.Valid(body) {
+		return request, fmt.Errorf("%w: body is not valid UTF-8", ErrInvalidJSON)
 	}
 
 	if err := validateCanonicalJSONKeys(body); err != nil {

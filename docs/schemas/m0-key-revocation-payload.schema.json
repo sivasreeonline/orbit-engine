@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "M0 Key Revocation Payload",
+  "description": "Proposed contract schema only. It validates structure and binding metadata; it does not authenticate signatures, verify external provider operations, or authorize execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "authority_id",
+    "key_id",
+    "key_version",
+    "purpose",
+    "environment",
+    "revocation_id",
+    "reason_code",
+    "reason",
+    "effective_at",
+    "trust_bundle_generation",
+    "affected_artifact_inventory_ref",
+    "affected_artifact_inventory_sha256",
+    "reactivation_permitted"
+  ],
+  "properties": {
+    "authority_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "key_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "key_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "purpose": {
+      "enum": [
+        "host-epoch",
+        "provider-fence",
+        "phase-a-authorization",
+        "trust-bundle",
+        "key-revocation"
+      ]
+    },
+    "environment": {
+      "enum": [
+        "test",
+        "staging",
+        "production"
+      ]
+    },
+    "revocation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}$"
+    },
+    "reason_code": {
+      "enum": [
+        "KEY_COMPROMISE",
+        "KEY_CUSTODY_FAILURE",
+        "KEY_ROTATION",
+        "POLICY_CHANGE",
+        "UNAUTHORIZED_USE",
+        "OTHER_REVIEWED"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "effective_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trust_bundle_generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "affected_artifact_inventory_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"
+    },
+    "affected_artifact_inventory_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "reactivation_permitted": {
+      "const": false
+    }
+  }
+}

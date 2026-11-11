@@ -34,7 +34,18 @@ Run as an ordinary account with permission to inspect the containerd socket:
 bash services/execution-runner/scripts/m0-host-preflight.sh
 ```
 
-The script checks OS release, architecture, kernel minimum, cgroup v2, containerd LTS version, the locally resolved configuration dump, gVisor binaries, and containerd socket ownership/permissions. The configuration check is a preliminary local-file inspection; it does not prove that the running daemon loaded that exact configuration or that the configured handler is operational.
+The script checks OS release, architecture, kernel minimum, cgroup v2, containerd LTS version, the locally resolved configuration dump, resolved gVisor runtime binaries, the adjacent `gvisor-bin/` directory, and containerd socket ownership/permissions. It checks runtime binary ownership (default expected owner `root`), executable status, group/world write permissions and emits SHA-256 inventory digests. Set `M0_RUNTIME_OWNER` only when the independently approved host profile specifies a different locked-down runtime-binary owner. The script does not verify the digests against a trusted upstream release manifest or package signature; that supply-chain verification remains a separate evidence requirement. The configuration check is a preliminary local-file inspection; it does not prove that the running daemon loaded that exact configuration or that the configured handler is operational.
+
+The preflight defaults to the rootful socket `/run/containerd/containerd.sock` and expected owner `root`. For a rootless candidate, supply the exact host-specific values discovered during the read-only inventory rather than assuming a conventional path or username:
+
+```bash
+M0_CONTAINERD_CONFIG="<verified-rootless-containerd-config-path>" \
+M0_CONTAINERD_SOCKET="<verified-rootless-containerd-socket-path>" \
+M0_CONTAINERD_SOCKET_OWNER="<verified-rootless-daemon-account>" \
+bash services/execution-runner/scripts/m0-host-preflight.sh
+```
+
+`M0_CONTAINERD_CONFIG` selects the local file used by `containerd config dump`; `M0_CONTAINERD_SOCKET` and `M0_CONTAINERD_SOCKET_OWNER` select the socket inspected for type, owner and write permissions; `M0_RUNTIME_OWNER` sets the expected owner for the resolved runsc, shim and sidecar binaries (default `root`). These overrides do not connect to or authenticate the daemon, prove that the running process uses that file/socket, verify package signatures/upstream release checksums, or establish caller-userns integration. Those remain separate live-host qualification requirements.
 
 A successful result means only that the host matches these baseline checks. It does not prove that runsc starts, that systrap is active, that network access is blocked, or that resource limits are enforced.
 
@@ -76,10 +87,10 @@ These checks are limited prerequisites for the calibration campaign. They are no
 
 On a disposable host only:
 
-1. Record Ubuntu image identifier, kernel build, architecture, containerd package version and provenance, runsc version and provenance, shim version, and containerd config version.
+1. Record Ubuntu image identifier, kernel build, architecture, containerd package version and provenance, runsc version and provenance, shim version, and containerd config version. For gVisor tarball installations, verify the official release `SHA256SUMS`/`SHA512SUMS` or per-artifact `.sha512` against the exact downloaded artifacts before installation, and preserve the checksum source, release identifier and verification output. For apt installations, preserve the signed repository/package metadata and exact package version/source. The local preflight SHA-256 inventory is not a substitute for this trusted provenance check. The upstream release policy states that gVisor artifacts carry checksums and requires digest verification before installation.
 2. Identify the actual running containerd daemon: record its systemd unit state, effective ExecStart arguments, process command line, and the configuration file path selected by those arguments. Resolve and record imported configuration files; do not assume that a standalone `containerd config dump` necessarily represents the daemon's effective configuration.
    - Treat systemd unit definitions, ExecStart arguments, process command lines, and imported configuration as potentially sensitive. Capture only the allowlisted fields needed to establish the daemon binary and configuration paths; redact tokens, credentials, URL user-info, environment values, and unrelated arguments before storing evidence. Never archive raw `/proc/<pid>/cmdline` or environment output.
-3. Confirm from the effective daemon configuration that the runtime handler resolves to the expected runsc binary and shim. Record binary paths, ownership, permissions, package provenance, and cryptographic hashes.
+3. Confirm from the effective daemon configuration that the runtime handler resolves to the expected runsc binary and shim. Record binary paths, ownership, permissions, package provenance, and cryptographic hashes. For the current multi-file gVisor distribution, also record the adjacent `gvisor-bin/` sidecar inventory (file names, ownership, modes, package provenance and SHA-256 digests); verify the sidecar directory is colocated with the resolved `runsc` binary. Do not rely on the legacy `runsc install` best-effort sidecar auto-download path, which upstream says was removed at the end of September 2026. See the immutable [gVisor installation guide](https://github.com/google/gvisor/blob/dcd946faca6f60a6761b62eb11b85d3ce0bbaa55/g3doc/user_guide/install.md). Directory presence is only a preflight check; the subsequent runtime smoke must prove the exact sidecars are usable.
 4. Launch only a reviewed, digest-pinned, minimal test image through the gVisor handler.
 5. Capture the runtime-reported platform and independently verify that systrap is selected.
 6. Repeat after a host reboot and after a clean service restart.
@@ -177,6 +188,8 @@ Before any supervisor implementation or host proof:
 - Exercise SQLITE_BUSY, SQLITE_FULL, SQLITE_IOERR, corrupt database/journal, interrupted migration, uncertain commit, backup and restore. Any uncertain or corrupt state quarantines the host and blocks new work.
 - Verify that cleanup remains independently operable when journal writes fail; do not let database failure block termination and resource cleanup.
 - A backup must be a consistent SQLite Online Backup API snapshot or an equivalently reviewed quiesced copy. Never copy only the live main database file and assume it contains committed WAL/journal state.
+
+For every backup artifact retained as qualification or recovery evidence, publish a separate immutable provenance manifest bound to the exact host incarnation/epoch, source database identity and schema revision, backup method/tool and version, quiescence or Online Backup API completion point, destination evidence root and immutable object version, exact byte count and SHA-256, acquisition principal/time, and independent verifier identity/result. Flush the destination durably, read back the exact immutable object version, recompute its complete-byte SHA-256 and byte count, and verify database integrity from an isolated restore staging area before treating the backup as restore evidence. Bind the provenance manifest to the backup artifact digest; do not treat a filename, mutable URL, provider ETag, journal metadata row or signature-reference string as proof of backup authenticity. Detached signatures/attestations, when present, require separate verification against pinned signer identity and trust material. A successful backup creation does not prove a successful restore, and a successful restore does not prove anti-rollback or host-incarnation fencing.
 - Do not accept work after restart until the new supervisor holds the kernel lock, advances the durable generation, validates the database/schema, and reconciles all non-terminal attempts against actual host resources.
 
 If SQLite is rejected by empirical results, stop and reopen the backend decision. Do not silently switch journal mode, synchronous setting, filesystem, remote database, or custom log implementation.

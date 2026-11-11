@@ -1,0 +1,759 @@
+{
+  "schema_version": "1.0.0",
+  "decision_record_id": null,
+  "record_status": "not-started",
+  "reviewed_commit_sha": null,
+  "review_scope": "design-only",
+  "candidate_assessments": [
+    {
+      "candidate_id": "rootful-supervisor",
+      "assessment_status": "not-assessed",
+      "configuration": {
+        "profile_id": null,
+        "profile_digest": null,
+        "runtime_integration_mode": "containerd-rootful-supervisor",
+        "runner_identity": null,
+        "host_controller_identity": null,
+        "containerd_access_principal": null,
+        "privilege_inventory_digest": null,
+        "syscall_inventory_digest": null,
+        "writable_path_inventory_digest": null,
+        "service_hardening_digest": null,
+        "socket_policy_digest": null,
+        "network_backend": null,
+        "cgroup_delegation_reference": null,
+        "user_namespace_mapping_reference": null,
+        "rootlesskit_version": null,
+        "runtime_profile_digest": null,
+        "resource_profile_digest": null,
+        "journal_profile_digest": null,
+        "supervisor_digest": null,
+        "watchdog_digest": null,
+        "test_harness_digest": null,
+        "rootless_profile": null,
+        "rootless_profile_digest": null
+      },
+      "design_findings": [
+        {
+          "control_id": "ARCH-001",
+          "evidence_class": "design",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "ARCH-002",
+          "evidence_class": "design",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "AUTH-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "AUTH-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "AUTH-003",
+          "evidence_class": "mixed",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "API-001",
+          "evidence_class": "design",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "PRIV-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "PRIV-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "RUNTIME-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "RUNTIME-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "OCI-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "NET-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "NET-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "CGROUP-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "FS-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "OUTPUT-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "LIFE-001",
+          "evidence_class": "mixed",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "LIFE-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "LIFE-003",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "CLOCK-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "CLOCK-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "FENCE-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "JOURNAL-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "JOURNAL-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "JOURNAL-003",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "WATCH-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "WATCH-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "WATCH-003",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "EVID-001",
+          "evidence_class": "mixed",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "EVID-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "SUPPLY-001",
+          "evidence_class": "mixed",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "OPS-001",
+          "evidence_class": "mixed",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "OPS-002",
+          "evidence_class": "design",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        }
+      ],
+      "qualification_report": null,
+      "assessment_rationale": "",
+      "rejection_rationale": "",
+      "residual_risks": []
+    },
+    {
+      "candidate_id": "rootless-containerd-userns",
+      "assessment_status": "not-assessed",
+      "configuration": {
+        "profile_id": null,
+        "profile_digest": null,
+        "runtime_integration_mode": "containerd-caller-configured-userns",
+        "runner_identity": null,
+        "host_controller_identity": null,
+        "containerd_access_principal": null,
+        "privilege_inventory_digest": null,
+        "syscall_inventory_digest": null,
+        "writable_path_inventory_digest": null,
+        "service_hardening_digest": null,
+        "socket_policy_digest": null,
+        "network_backend": null,
+        "cgroup_delegation_reference": null,
+        "user_namespace_mapping_reference": null,
+        "rootlesskit_version": null,
+        "runtime_profile_digest": null,
+        "resource_profile_digest": null,
+        "journal_profile_digest": null,
+        "supervisor_digest": null,
+        "watchdog_digest": null,
+        "test_harness_digest": null,
+        "rootless_profile": null,
+        "rootless_profile_digest": null
+      },
+      "design_findings": [
+        {
+          "control_id": "ARCH-001",
+          "evidence_class": "design",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "ARCH-002",
+          "evidence_class": "design",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "AUTH-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "AUTH-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "AUTH-003",
+          "evidence_class": "mixed",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "API-001",
+          "evidence_class": "design",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "PRIV-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "PRIV-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "RUNTIME-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "RUNTIME-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "OCI-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "NET-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "NET-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "CGROUP-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "FS-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "OUTPUT-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "LIFE-001",
+          "evidence_class": "mixed",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "LIFE-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "LIFE-003",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "CLOCK-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "CLOCK-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "FENCE-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "JOURNAL-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "JOURNAL-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "JOURNAL-003",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "WATCH-001",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "WATCH-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "WATCH-003",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "EVID-001",
+          "evidence_class": "mixed",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "EVID-002",
+          "evidence_class": "host",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "SUPPLY-001",
+          "evidence_class": "mixed",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "OPS-001",
+          "evidence_class": "mixed",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        },
+        {
+          "control_id": "OPS-002",
+          "evidence_class": "design",
+          "result": "not-reviewed",
+          "verification_method": "",
+          "finding": "",
+          "severity": "unassigned",
+          "remediation_owner": "",
+          "evidence_refs": []
+        }
+      ],
+      "qualification_report": null,
+      "assessment_rationale": "",
+      "rejection_rationale": "",
+      "residual_risks": []
+    }
+  ],
+  "outcome": "pending",
+  "selected_candidate": null,
+  "decision_rationale": "",
+  "participants": {
+    "reviewer_id": null,
+    "host_owner_id": null,
+    "independence_attested": false,
+    "independence_basis": "",
+    "conflict_disclosure": ""
+  },
+  "reviewed_at": null,
+  "expires_at": null,
+  "signature_reference": null,
+  "adr_status": "proposed",
+  "privileged_implementation_authorized": false,
+  "phase_a_authorized": false,
+  "phase_b_authorized": false,
+  "student_execution_authorized": false,
+  "production_execution_authorized": false,
+  "upstream_source_manifest_sha256": null
+}

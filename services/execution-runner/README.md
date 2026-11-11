@@ -8,6 +8,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - Loopback-only HTTP health endpoint: `GET /healthz`.
 - Readiness endpoint returns HTTP 503 until a sandbox executor is configured.
 - Versioned internal execution request types, strict structural validation and a bounded JSON decoder that rejects unknown fields, duplicate object keys and trailing values.
+- Protocol validation is structural only: runtime and resource fields are not authority. A future trusted boundary must authenticate and authorize each attempt, resolve immutable server-owned profiles, and reject any caller value that differs from the approved profile.
 - An executor interface with a safe unconfigured implementation.
 - Unit tests for health/readiness, request validation, strict JSON decoding and disabled execution.
 - Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
@@ -50,7 +51,7 @@ The host supervisor, durable lifecycle journal, watchdog, evidence publisher/ver
 Implementation readiness contract: `docs/specifications/m0-supervisor-journal-implementation-contract.md`. It defines the three watchdog roles, distinct generation/fencing values, journal record invariants, transaction boundaries, recovery sequence, and Linux clock requirements. It is a design contract only; the runner remains fail-closed.
 
 
-The approved direction is a separate, narrowly scoped host supervisor as the only rootful containerd caller. The runner must communicate through a strict authenticated private transport after the supervisor boundary, journal design, watchdog recovery, and security review are approved. The runner remains unprivileged; `UnconfiguredExecutor` remains fail-closed until a separately reviewed integration is authorized.
+The architecture boundary under evaluation keeps the runner unprivileged and prevents direct containerd access. ADR-0019 has not selected an implementation: Candidate A uses a narrowly scoped rootful host supervisor; Candidate B uses rootless containerd with caller-configured user namespaces. The runner-to-host execution transport and lifecycle integration must remain unimplemented until the independent review, candidate-specific host qualification, and ADR decision are complete. `UnconfiguredExecutor` remains fail-closed.
 
 Before any M0 workload is launched:
 1. Select and document the disposable Linux host, architecture, OCI runtime versions, and immutable image provenance.

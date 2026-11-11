@@ -14,6 +14,9 @@ const (
 	LanguagePython Language = "python"
 )
 
+// ResourceLimits is protocol data, not execution authority. A future trusted host
+// boundary must resolve and enforce immutable server-owned profile limits; it must
+// never apply these values directly from an untrusted caller.
 type ResourceLimits struct {
 	CPUQuotaMillis int64 `json:"cpuQuotaMillis"`
 	MemoryBytes    int64 `json:"memoryBytes"`
@@ -22,7 +25,11 @@ type ResourceLimits struct {
 	OutputBytes    int64 `json:"outputBytes"`
 }
 
-// ExecutionRequest is an internal control-plane contract.
+// ExecutionRequest is an internal control-plane message, not a public API.
+// Its runtimeVersion and limits fields are claims to validate against an approved
+// server-owned profile, never instructions to select runtime or resource policy.
+// Validate performs structural checks only; it does not authenticate the caller,
+// authorize an attempt, resolve artifacts, or approve a profile.
 // Source code and hidden test contents are not embedded in this request.
 // Artifact references must be opaque IDs resolved by an authenticated service.
 type ExecutionRequest struct {

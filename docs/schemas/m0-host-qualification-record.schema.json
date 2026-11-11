@@ -24,7 +24,8 @@
     "phase_a_authorized",
     "phase_b_authorized",
     "student_execution_authorized",
-    "production_execution_authorized"
+    "production_execution_authorized",
+    "candidate_specific_test_results"
   ],
   "$defs": {
     "evidenceReference": {
@@ -36,6 +37,7 @@
         "sha256",
         "byte_count",
         "evidence_root_id",
+        "acquired_by_id",
         "acquired_at",
         "acquisition_tool",
         "tool_version",
@@ -113,6 +115,11 @@
         },
         "verification_note": {
           "type": "string"
+        },
+        "acquired_by_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Accountable human or service principal that acquired or uploaded this evidence object; must differ from its independent verifier, host owner and security reviewer."
         }
       },
       "allOf": [
@@ -237,6 +244,168 @@
           "items": {
             "$ref": "#/$defs/evidenceReference"
           }
+        },
+        "watchdog_subtests": {
+          "$ref": "#/$defs/watchdogSubtests"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "passed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "verification_method": {
+                "minLength": 1
+              },
+              "finding_summary": {
+                "minLength": 1
+              },
+              "severity": {
+                "const": "none"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "finding_summary": {
+                "minLength": 1
+              },
+              "severity": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              },
+              "remediation_owner": {
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "test_id": {
+                "const": "WDG-002"
+              }
+            },
+            "required": [
+              "test_id"
+            ]
+          },
+          "then": {
+            "required": [
+              "watchdog_subtests"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "test_id": {
+                "not": {
+                  "const": "WDG-002"
+                }
+              }
+            },
+            "required": [
+              "test_id"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "watchdog_subtests"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "candidateSpecificTestFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "test_id",
+        "domain",
+        "result",
+        "verification_method",
+        "finding_summary",
+        "severity",
+        "remediation_owner",
+        "evidence_refs"
+      ],
+      "properties": {
+        "test_id": {
+          "enum": [
+            "RLS-001",
+            "RLS-002",
+            "RLS-003",
+            "RLS-004"
+          ]
+        },
+        "domain": {
+          "const": "rootless-compatibility"
+        },
+        "result": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "blocked",
+            "deferred"
+          ]
+        },
+        "verification_method": {
+          "type": "string"
+        },
+        "finding_summary": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "unassigned",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "remediation_owner": {
+          "type": "string"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
         }
       },
       "allOf": [
@@ -299,11 +468,315 @@
           }
         }
       ]
+    },
+    "rootlessProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "daemon_uid",
+        "daemon_gid",
+        "daemon_identity_digest",
+        "user_namespace_mode",
+        "subuid_map_digest",
+        "subgid_map_digest",
+        "subuid_range_count",
+        "subgid_range_count",
+        "rootlesskit_version",
+        "rootlesskit_sha256",
+        "newuidmap_sha256",
+        "newgidmap_sha256",
+        "helper_inventory_sha256",
+        "state_directory_policy_sha256",
+        "daemon_socket_policy_sha256",
+        "apparmor_profile_sha256",
+        "network_backend",
+        "network_namespace_profile_sha256",
+        "systemd_delegation_profile_sha256",
+        "delegated_controllers",
+        "profile_sha256"
+      ],
+      "properties": {
+        "daemon_uid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "daemon_gid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "daemon_identity_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "user_namespace_mode": {
+          "const": "caller-configured-userns"
+        },
+        "subuid_map_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "subgid_map_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "subuid_range_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "subgid_range_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rootlesskit_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rootlesskit_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "newuidmap_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "newgidmap_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "helper_inventory_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "state_directory_policy_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "daemon_socket_policy_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "apparmor_profile_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "network_backend": {
+          "type": "string",
+          "minLength": 1
+        },
+        "network_namespace_profile_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "systemd_delegation_profile_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "delegated_controllers": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 3,
+          "items": {
+            "enum": [
+              "cpu",
+              "memory",
+              "pids",
+              "cpuset",
+              "io"
+            ]
+          },
+          "allOf": [
+            {
+              "contains": {
+                "const": "cpu"
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "const": "memory"
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "const": "pids"
+              },
+              "minContains": 1
+            }
+          ]
+        },
+        "profile_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 of compact JSON serialization of this profile with the profile_sha256 property omitted, recursively sorted object keys, separators comma/colon without whitespace, UTF-8 encoding, ensure_ascii=true, and allow_nan=false. Arrays preserve order. Do not hash the profile_sha256 field itself."
+        }
+      }
+    },
+    "watchdogSubtestFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result",
+        "verification_method",
+        "finding_summary",
+        "severity",
+        "evidence_refs"
+      ],
+      "properties": {
+        "result": {
+          "enum": [
+            "not-run",
+            "passed",
+            "failed",
+            "blocked",
+            "deferred"
+          ]
+        },
+        "verification_method": {
+          "type": "string"
+        },
+        "finding_summary": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "unassigned",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceReference"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "passed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "verification_method": {
+                "minLength": 1
+              },
+              "finding_summary": {
+                "minLength": 1
+              },
+              "severity": {
+                "const": "none"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "finding_summary": {
+                "minLength": 1
+              },
+              "severity": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "enum": [
+                  "blocked",
+                  "deferred"
+                ]
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "finding_summary": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "watchdogSubtests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "WD-001",
+        "WD-002",
+        "WD-003",
+        "WD-004",
+        "WD-005",
+        "WD-006",
+        "WD-007"
+      ],
+      "properties": {
+        "WD-001": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-002": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-003": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-004": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-005": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-006": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        },
+        "WD-007": {
+          "$ref": "#/$defs/watchdogSubtestFinding"
+        }
+      }
     }
   },
   "properties": {
     "schema_version": {
-      "const": "1.0.0"
+      "const": "1.2.0"
     },
     "record_id": {
       "type": [
@@ -387,6 +860,17 @@
         "region",
         "vm_shape",
         "host_instance_id",
+        "host_incarnation_epoch",
+        "prior_incarnation_fence_evidence_ref",
+        "host_incarnation_authority_id",
+        "host_incarnation_authority_key_version",
+        "host_incarnation_epoch_evidence_ref",
+        "host_incarnation_epoch_evidence_digest",
+        "host_incarnation_issuance_nonce_digest",
+        "predecessor_incarnation_set_digest",
+        "provider_fence_method",
+        "provider_fence_verified_at",
+        "provider_fence_evidence_digest",
         "boot_id",
         "image_digest",
         "os_release",
@@ -406,7 +890,9 @@
         "resource_profile_digest",
         "supervisor_digest",
         "watchdog_digest",
-        "test_harness_digest"
+        "test_harness_digest",
+        "rootless_profile",
+        "rootless_profile_digest"
       ],
       "properties": {
         "selected": {
@@ -435,6 +921,20 @@
             "string",
             "null"
           ]
+        },
+        "host_incarnation_epoch": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "prior_incarnation_fence_evidence_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
         },
         "boot_id": {
           "type": [
@@ -560,6 +1060,86 @@
           "pattern": "^([a-f0-9]{64})?$"
         },
         "test_harness_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "rootless_profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/rootlessProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rootless_profile_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "host_incarnation_authority_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "host_incarnation_authority_key_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "host_incarnation_epoch_evidence_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "host_incarnation_issuance_nonce_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "predecessor_incarnation_set_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "provider_fence_method": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "provider_fence_verified_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "provider_fence_evidence_digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([a-f0-9]{64})?$"
+        },
+        "host_incarnation_epoch_evidence_digest": {
           "type": [
             "string",
             "null"
@@ -701,7 +1281,8 @@
         "clock_recovery",
         "journal_durability",
         "integrated_lifecycle",
-        "evidence_integrity"
+        "evidence_integrity",
+        "rootless_userns_compatibility"
       ],
       "properties": {
         "baseline_inspection": {
@@ -771,6 +1352,15 @@
         "evidence_integrity": {
           "enum": [
             "not-run",
+            "passed",
+            "failed",
+            "deferred"
+          ]
+        },
+        "rootless_userns_compatibility": {
+          "enum": [
+            "not-run",
+            "not-applicable",
             "passed",
             "failed",
             "deferred"
@@ -949,6 +1539,14 @@
     },
     "production_execution_authorized": {
       "const": false
+    },
+    "candidate_specific_test_results": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/candidateSpecificTestFinding"
+      }
     }
   }
 }

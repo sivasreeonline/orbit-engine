@@ -1,6 +1,6 @@
 # ADR-0019: M0 Host Launch Boundary
 
-- Status: Proposed; recommended for disposable M0 proof only, pending independent security review and runtime evidence.
+- Status: Proposed; Candidate A and Candidate B remain under evaluation. No launch-boundary candidate is selected; pending independent security review and candidate-specific host evidence.
 - Related: ADR-0018, `m0-runtime-proof-harness-design.md`, `m0-sandbox-security-review-packet.md`.
 
 Implementation contract for the proposed supervisor/journal/watchdog boundary: `docs/specifications/m0-supervisor-journal-implementation-contract.md`. It does not change ADR-0019's proposed status or authorize implementation.
@@ -21,13 +21,14 @@ A rootless alternative is attractive because it can reduce the host privilege ex
 
 Therefore, rootless containerd with caller-configured user namespaces remains a candidate for an explicit compatibility experiment, but it is not assumed to satisfy M0 requirements.
 
-## Proposed decision
+## Candidates under evaluation
 
-For the initial M0 proof, use a dedicated, narrowly scoped host supervisor as the only caller of rootful containerd. Keep the Go runner unprivileged and deny it direct access to the containerd socket.
+- **Candidate A:** a dedicated, narrowly scoped host supervisor is the only application principal permitted to call rootful containerd; the Go runner remains unprivileged and has no direct containerd socket access.
+- **Candidate B:** rootless containerd with caller-configured user namespaces, subject to the exact compatibility and isolation proof requirements below.
 
-This is a proposed proof boundary, not permission to implement or provision it before the gates below are met.
+Neither candidate is selected. The same control set and evidence standard apply to both. The decision may select exactly one candidate, reject both, or defer; this proposal is not permission to implement or provision either candidate before all review and qualification gates are met.
 
-### Host supervisor requirements
+### Candidate A — rootful host supervisor requirements
 
 1. Run as a dedicated host service on the disposable proof VM. It is the only application principal permitted to access the root-owned containerd socket.
 2. Expose only a private Unix-domain socket. Authenticate the caller using socket filesystem permissions and peer credentials; allow only the designated runner identity.
@@ -45,15 +46,16 @@ This is a proposed proof boundary, not permission to implement or provision it b
 13. Bound request size, framing, concurrency, and operation duration; reject malformed UTF-8/JSON, duplicate keys, unknown fields, trailing data, and unexpected file descriptors.
 14. Keep the runner outside the containerd socket access group. Only the dedicated supervisor identity may access containerd; no generic containerd proxy or command API is permitted.
 15. Treat rootful containerd access as host-level authority. Record the exact supervisor capability set, systemd hardening, writable paths, syscall surface, and residual privilege risk; if privilege cannot be sufficiently constrained, revisit the rootless alternative.
-16. Persist operation intent before side effects and observed state after them. Enforce durable unique idempotency/attempt keys and compare-and-set terminal transitions. The active-to-terminating or natural-exit-to-finalizing arbitration is one durable transaction; the first accepted trigger fixes the primary cause, later triggers are retained as secondary causes, and late cancellation cannot rewrite finalization/terminal state. Repeated cancel/watchdog signals converge on one idempotent termination/cleanup operation.
+16. Persist operation intent before ordinary side effects and observed state afterward. Enforce durable unique idempotency/attempt keys and compare-and-set terminal transitions. A single host-owned trigger arbiter serializes competing observations. On the first termination trigger, capture its boot ID, BOOTTIME timestamp, sequence and authenticated source, then request workload termination immediately; persist the trigger and `TERMINATING` transition concurrently without delaying termination. Persistence failure means continue cleanup, stop admission and quarantine. Natural exit remains provisional and is ordered by the same arbiter; terminal compare-and-set waits for both durable finalization branches and reconciliation of all triggers. The first accepted trigger fixes the primary cause, later triggers are retained as secondary causes, and late cancellation cannot rewrite finalization/terminal state. Repeated cancel/watchdog signals converge on one idempotent termination/cleanup operation.
 17. Derive the immutable 10-minute end-to-end deadline from the control plane's persisted API intake timestamp, including queue wait/retries/restarts; derive the 60-second sandbox wall deadline from host-observed start. Re-arm original deadlines after restart; never reset or extend them. Caller/runner timestamps are not authoritative.
 18. On restart, reconcile by deterministic supervisor-owned sandbox identity against containerd tasks, shim processes, cgroups, namespaces, mounts, network state, and scratch. Never blindly repeat create or adopt unknown resources.
 19. Cleanup runs independently of client connections. Terminal success requires verified absence of every workload resource; uncertainty means infrastructure failure and host quarantine.
 20. Define and independently approve a finite cleanup deadline in the versioned proof profile before the Phase B full M0 adversarial stress campaign. Phase A calibration may run only under its separate written authorization, fixed synthetic scenario allowlist, verified outer-VM resource/network boundary, and independent VM hard-stop control. The outer safety cutoff is not a cleanup deadline and cannot be recorded as successful cleanup.
-21. Persist attempt, idempotency, operation, trigger, and independent finalization-branch records with unique keys, immutable request digests, state versions, and monotonically increasing generations. Claim the idempotency key, logical attempt, generation, and first operation intent in one durable transaction. Same key/digest returns the recorded operation; changed digest or reused logical attempt is a conflict.
+21. Persist attempt, idempotency, operation, trigger, and independent finalization-branch records with unique keys, immutable request digests and state versions. Keep `supervisor_generation`, `attempt_generation`, `operation_sequence`, `trigger_sequence`, and `branch_generation` distinct. Claim the idempotency key, logical attempt, initial attempt generation, operation sequence, operation ID, and first operation intent in one durable transaction while recording the current supervisor generation. Same key/digest returns the recorded operation; changed digest or reused logical attempt is a conflict.
 22. Treat containerd and the journal as separate failure domains: persist intent before side effects, inspect actual resources after uncertain outcomes, and reconcile before retry. Do not claim cross-system exactly-once execution. Never blindly repeat create/start after a crash.
-23. Hold one exclusive host-wide process lock for the full lifetime of privileged containerd access. A replacement supervisor may act only after the old process has exited and released the kernel lock; it must acquire a new durable generation before accepting work. A stale supervisor fail-stops before further side effects. Prove the lock and generation fencing under pause, crash, and restart fault injection.
-24. Acknowledge an operation only after its journal state and bounded response descriptor are durable. A lost response followed by the same idempotency key/digest returns the recorded result without repeating the side effect. Terminal results are immutable; finalization branch updates are generation-fenced compare-and-set operations.
+23. The independent recovery watchdog may stop/start only the preconfigured supervisor unit through narrowly scoped service-manager authorization. Pin unit-file/drop-in and executable digests, UID/GID, cgroup identity and boot identity; prohibit shell/systemctl command execution, arbitrary unit names, unit-property mutation, and generic root/containerd authority. Verify complete cgroup exit and kernel-lock release before replacement; test kill mode, stop escalation, timeout and restart policy. Hold one exclusive host-wide kernel process lock for the full lifetime of the selected supervisor's candidate-approved containerd access. For Candidate A, this covers all rootful containerd access; for Candidate B, it covers the dedicated non-root supervisor's rootless daemon access. A replacement supervisor may act only after the old process has exited and released the kernel lock; it then allocates a new durable `supervisor_generation` and reclaims non-terminal attempts by compare-and-set increment of their `attempt_generation` before accepting work. A database lease or generation integer alone cannot fence a paused process from containerd. Before each candidate-approved side effect, verify lock ownership and both current generations; a stale supervisor fail-stops. Prove the lock and generation fencing under pause, crash, and restart fault injection.
+24. Acknowledge an operation only after its journal state and bounded response descriptor are durable. A lost response followed by the same idempotency key/digest returns the recorded result without repeating the side effect. Terminal results are immutable; cleanup/evidence branch updates are compare-and-set operations fenced by the current `supervisor_generation`, `attempt_generation`, `branch_generation`, and expected branch state version.
+25. Terminal commit is one journal transaction: the host arbiter seals a trigger watermark after final output-drain/quiescence; every accepted trigger through that watermark must be durable; the attempt state/version and current supervisor/attempt generations must match; both branch generations/state versions and dispositions must be current; no unresolved operation or quarantine condition may remain. Insert the unique terminal result and transition the attempt atomically. Database constraints/guards must reject a second terminal insert and all terminal-row updates/deletes. A lost acknowledgement returns the stored row; post-seal incidents use append-only incident/adjudication records and never mutate the result.
 
 ### Explicitly prohibited
 
@@ -64,9 +66,9 @@ This is a proposed proof boundary, not permission to implement or provision it b
 - Allowing guest-controlled image pulls, registries, network destinations, host paths, devices, or resource ceilings.
 - Treating gVisor as a substitute for host isolation, patching, or a separate security review.
 
-## Alternative: rootless containerd experiment
+## Candidate B — rootless containerd experiment
 
-Before the proposed rootful supervisor is accepted, the M0 design review should consider a disposable-host experiment using rootless containerd plus the gVisor caller-configured user-namespace path.
+Candidate B is eligible only through a disposable-host experiment using rootless containerd plus the gVisor caller-configured user-namespace path. It is evaluated against the same security controls and host qualification evidence as Candidate A.
 
 It is eligible only if the exact pinned versions demonstrate all of the following:
 - containerd and runsc lifecycle works through the actual containerd shim, including create/start/stop/delete.
@@ -90,7 +92,7 @@ If any criterion is unsupported or cannot be proven, record the rootless path as
 | Network isolation | Host firewall/network namespace policy must be proven | Rootless network namespace/RootlessKit behavior adds another layer to prove |
 | gVisor lifecycle compatibility | Expected containerd integration path; exact versions still need proof | Must prove caller-configured userns + containerd shim path; do not infer from CLI rootless mode |
 | Operational complexity | Dedicated privileged service and API hardening | User namespaces, subordinate IDs, RootlessKit, cgroup delegation and networking |
-| M0 disposition | Recommended candidate, not yet approved | Alternative proof candidate; not yet tested |
+| M0 disposition | Candidate A; not selected or qualified | Candidate B; not selected or qualified |
 
 ## Cleanup calibration authorization boundary
 
@@ -112,7 +114,7 @@ Complete `docs/security/m0-independent-security-review-checklist.md` and the mac
 
 The reviewer must compare the rootful supervisor against rootless containerd with caller-configured user namespaces using the same stable controls and evidence standards. The `runsc --rootless` CLI mode is separate and must not be represented as equivalent.
 
-An architecture recommendation does not authorize privileged implementation. Implementation, Phase A, Phase B, student execution and production execution remain separate gates; the review-record schema keeps all actual authorization flags false.
+An architecture decision does not authorize privileged implementation. Implementation, Phase A, Phase B, student execution and production execution remain separate gates; the review-record schema keeps all actual authorization flags false.
 
 ## Required gates before accepting this ADR
 
@@ -125,8 +127,8 @@ An architecture recommendation does not authorize privileged implementation. Imp
 ## Consequences
 
 - The runner remains unprivileged and `UnconfiguredExecutor` remains the only executor implementation.
-- The rootful supervisor is only a proposed M0 proof candidate; its privileged attack surface is an explicit review item.
-- Rootless containerd is not discarded categorically; it must prove the exact required controls before it can replace the proposed candidate.
+- Neither Candidate A nor Candidate B is selected. Candidate A's privileged attack surface and Candidate B's user-namespace, helper, cgroup-delegation and network boundaries remain explicit independent review items.
+- Candidate B is not discarded categorically; it must prove the exact required controls to be eligible for selection.
 - No cloud provider, region, VM size, or spend is selected or authorized.
 - No implementation, workload launch, or student execution is authorized until independent review and evidence gates pass.
 
@@ -136,3 +138,22 @@ An architecture recommendation does not authorize privileged implementation. Imp
 - [containerd rootless setup and cgroup v2 requirements](https://github.com/containerd/containerd/blob/main/docs/rootless.md)
 - [gVisor containerd quick start](https://gvisor.dev/docs/user_guide/containerd/quick_start/)
 - [gVisor platform guide](https://gvisor.dev/docs/user_guide/platforms/)
+
+
+## Architecture decision closure dossier
+
+The candidate definitions, same-control comparison, evidence rules, permitted outcomes and no-go triggers are controlled in `docs/adr/ADR-0019-decision-dossier.md`. Use `docs/schemas/m0-adr-0019-decision-record.schema.json` and its blank template for the independent decision.
+
+ADR-0019 remains **Proposed** until a real independent reviewer completes the comparison and the selected candidate has its own exact-host qualification record. The rootless candidate means rootless containerd with caller-configured user namespaces; it does not mean the separate `runsc --rootless` CLI mode.
+
+An accepted M0 proof boundary does not authorize privileged implementation. The decision schema keeps implementation, Phase A, Phase B, student and production authorization flags false.
+
+
+## Upstream compatibility evidence
+
+The current upstream compatibility review is recorded in `docs/adr/ADR-0019-upstream-compatibility-evidence.md`. It is documentary evidence only; ADR-0019 remains Proposed and neither candidate is qualified or selected. Any completed review must pin the exact upstream source revisions/content digests before relying on branch-head documentation.
+
+
+## Immutable upstream source baseline
+
+The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-source-manifest.json`; the exact manifest SHA-256 must be embedded in any completed ADR-0019 decision record. A reviewer must check the seven source pins and recorded signature-verification status. The branch-head URLs are discovery references only; the manifest points to immutable commit URLs and records Git blob SHA-1 plus content SHA-256.

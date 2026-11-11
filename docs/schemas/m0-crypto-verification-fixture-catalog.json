@@ -1,0 +1,259 @@
+{
+  "catalog_version": "0.1.0",
+  "status": "contract-fixtures-only",
+  "description": "Structural and contract-semantic fixture catalog. Fixtures contain no production keys or fabricated cryptographic PASS results. Algorithm-specific known-answer vectors remain gated until an approved profile and library exist.",
+  "cryptographic_profile_selected": false,
+  "positive_cases": [
+    {
+      "id": "CRYPTO-P-001",
+      "case": "envelope-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-002",
+      "case": "trust-bundle-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-003",
+      "case": "key-metadata-valid-active",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-004",
+      "case": "verification-report-valid-audit-only",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-005",
+      "case": "host-epoch-response-payload-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-006",
+      "case": "provider-fence-attestation-payload-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-007",
+      "case": "cleanup-calibration-authorization-payload-shape-valid-with-distinct-principals",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-008",
+      "case": "key-revocation-payload-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-P-009",
+      "case": "typed-trust-bundle-envelope-shape-valid",
+      "expected": "STRUCTURE_ACCEPT",
+      "cryptography_executed": false
+    }
+  ],
+  "negative_cases": [
+    "CRYPTO-N-001-unknown-message-type",
+    "CRYPTO-N-002-domain-message-type-mismatch",
+    "CRYPTO-N-003-unknown-algorithm",
+    "CRYPTO-N-004-malformed-signature-base64",
+    "CRYPTO-N-005-invalid-payload-digest",
+    "CRYPTO-N-006-expiry-before-issuance",
+    "CRYPTO-N-007-duplicate-envelope-field",
+    "CRYPTO-N-008-noncanonical-payload-bytes",
+    "CRYPTO-N-009-key-purpose-mismatch",
+    "CRYPTO-N-010-revoked-key-admission",
+    "CRYPTO-N-011-trust-bundle-generation-rollback",
+    "CRYPTO-N-012-missing-antirollback-witness",
+    "CRYPTO-N-013-evidence-version-digest-mismatch",
+    "CRYPTO-N-014-cross-environment-key",
+    "CRYPTO-N-015-cross-protocol-signature-reuse",
+    "CRYPTO-N-016-replayed-nonce-or-epoch",
+    "CRYPTO-N-017-unknown-revocation-freshness",
+    "CRYPTO-N-018-valid-signature-with-unverified-provider-fence",
+    "CRYPTO-N-019-private-key-field-in-public-metadata",
+    "CRYPTO-N-020-accept-decision-with-failed-check"
+  ],
+  "required_negative_case_count": 20,
+  "known_answer_vectors": {
+    "status": "blocked-pending-profile-selection",
+    "required_after_approval": [
+      "canonical-payload-bytes",
+      "public-key",
+      "signature",
+      "expected-digest",
+      "expected-verification-result",
+      "reason-code",
+      "implementation-and-library-version"
+    ]
+  },
+  "safety_invariants": {
+    "private_key_material_in_fixtures": false,
+    "production_keys_in_fixtures": false,
+    "signature_verification_claimed": false,
+    "execution_authorization": false
+  },
+  "negative_case_coverage": [
+    {
+      "id": "CRYPTO-N-001-unknown-message-type",
+      "outcome": "EXECUTED_SCHEMA_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-002-domain-message-type-mismatch",
+      "outcome": "EXECUTED_SCHEMA_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-003-unknown-algorithm",
+      "outcome": "EXECUTED_SCHEMA_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-004-malformed-signature-base64",
+      "outcome": "EXECUTED_SCHEMA_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-005-invalid-payload-digest",
+      "outcome": "EXECUTED_SCHEMA_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-006-expiry-before-issuance",
+      "outcome": "EXECUTED_SEMANTIC_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-007-duplicate-envelope-field",
+      "outcome": "EXECUTED_PARSER_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-008-noncanonical-payload-bytes",
+      "outcome": "BLOCKED_PROFILE_NOT_SELECTED",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-009-key-purpose-mismatch",
+      "outcome": "EXECUTED_POLICY_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-010-revoked-key-admission",
+      "outcome": "EXECUTED_POLICY_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-011-trust-bundle-generation-rollback",
+      "outcome": "EXECUTED_MONOTONICITY_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-012-missing-antirollback-witness",
+      "outcome": "EXECUTED_SCHEMA_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-013-evidence-version-digest-mismatch",
+      "outcome": "EXECUTED_BINDING_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-014-cross-environment-key",
+      "outcome": "EXECUTED_POLICY_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-015-cross-protocol-signature-reuse",
+      "outcome": "EXECUTED_DOMAIN_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-016-replayed-nonce-or-epoch",
+      "outcome": "EXECUTED_REPLAY_DETECTION_FIXTURE",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-017-unknown-revocation-freshness",
+      "outcome": "EXECUTED_FAIL_CLOSED",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-018-valid-signature-with-unverified-provider-fence",
+      "outcome": "EXECUTED_FAIL_CLOSED",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-019-private-key-field-in-public-metadata",
+      "outcome": "EXECUTED_SCHEMA_REJECTION",
+      "cryptography_executed": false
+    },
+    {
+      "id": "CRYPTO-N-020-accept-decision-with-failed-check",
+      "outcome": "EXECUTED_SCHEMA_REJECTION",
+      "cryptography_executed": false
+    }
+  ],
+  "required_positive_case_count": 9,
+  "key_lifecycle_transition_cases": [
+    {
+      "id": "KEY-LC-001",
+      "transition": "NONE -> GENERATED",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-002",
+      "transition": "GENERATED -> PENDING",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-003",
+      "transition": "PENDING -> ACTIVE",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-004",
+      "transition": "ACTIVE -> DEPRECATED_VERIFY_ONLY",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-005",
+      "transition": "ACTIVE -> REVOKED",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-006",
+      "transition": "DEPRECATED_VERIFY_ONLY -> REVOKED",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-007",
+      "transition": "REVOKED -> DESTROYED",
+      "expected": "ACCEPT"
+    },
+    {
+      "id": "KEY-LC-008",
+      "transition": "REVOKED -> ACTIVE",
+      "expected": "REJECT"
+    },
+    {
+      "id": "KEY-LC-009",
+      "transition": "ACTIVE -> GENERATED",
+      "expected": "REJECT"
+    },
+    {
+      "id": "KEY-LC-010",
+      "transition": "PENDING -> DESTROYED",
+      "expected": "REJECT"
+    }
+  ],
+  "required_key_lifecycle_transition_case_count": 10
+}

@@ -1,0 +1,341 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-crypto-trust-bundle.schema.json",
+  "title": "M0 Cryptographic Trust Bundle (Proposal)",
+  "description": "Public trust metadata only; no private key material. Bundle authentication and anti-rollback checks are external verifier responsibilities.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "generation",
+    "environment",
+    "root_id",
+    "root_key_version",
+    "authority_id",
+    "purpose_allowlist",
+    "protocol_allowlist",
+    "keys",
+    "revocations",
+    "issued_at",
+    "expires_at",
+    "previous_bundle_sha256",
+    "bundle_sha256",
+    "signature_envelope_ref",
+    "signature_envelope_sha256",
+    "anti_rollback_witness_ref",
+    "anti_rollback_witness_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "bundle_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "environment": {
+      "enum": [
+        "development",
+        "test",
+        "production"
+      ]
+    },
+    "root_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "root_key_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authority_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "purpose_allowlist": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "host-epoch",
+          "provider-fence",
+          "phase-a-authorization",
+          "trust-bundle",
+          "key-revocation"
+        ]
+      }
+    },
+    "protocol_allowlist": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "keys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key_id",
+          "key_version",
+          "algorithm",
+          "public_key_format",
+          "public_key",
+          "purpose",
+          "status",
+          "valid_from",
+          "valid_until",
+          "public_key_fingerprint_sha256"
+        ],
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "algorithm": {
+            "enum": [
+              "Ed25519-candidate",
+              "ECDSA-P256-SHA256-candidate"
+            ]
+          },
+          "public_key_format": {
+            "enum": [
+              "raw-ed25519-candidate",
+              "spki-der-candidate"
+            ]
+          },
+          "public_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "purpose": {
+            "enum": [
+              "host-epoch",
+              "provider-fence",
+              "phase-a-authorization",
+              "trust-bundle",
+              "key-revocation"
+            ]
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "ACTIVE",
+              "DEPRECATED_VERIFY_ONLY",
+              "REVOKED",
+              "DESTROYED"
+            ]
+          },
+          "valid_from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "public_key_fingerprint_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "revocation_reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "REVOKED"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "required": [
+                "revoked_at",
+                "revocation_reason"
+              ],
+              "properties": {
+                "revoked_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "PENDING",
+                    "ACTIVE",
+                    "DEPRECATED_VERIFY_ONLY"
+                  ]
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "revoked_at"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "minItems": 1
+    },
+    "revocations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key_id",
+          "key_version",
+          "effective_at",
+          "reason_code",
+          "revocation_statement_ref",
+          "revocation_statement_sha256"
+        ],
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effective_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason_code": {
+            "enum": [
+              "KEY_COMPROMISE",
+              "KEY_CUSTODY_FAILURE",
+              "KEY_ROTATION",
+              "POLICY_CHANGE",
+              "UNAUTHORIZED_USE",
+              "OTHER_REVIEWED"
+            ]
+          },
+          "revocation_statement_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "revocation_statement_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "previous_bundle_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "bundle_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "signature_envelope_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature_envelope_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "anti_rollback_witness_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "anti_rollback_witness_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "generation": {
+            "const": 1
+          }
+        },
+        "required": [
+          "generation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "previous_bundle_sha256": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "generation": {
+            "minimum": 2
+          }
+        },
+        "required": [
+          "generation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "previous_bundle_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    }
+  ]
+}

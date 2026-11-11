@@ -69,7 +69,7 @@ Stop the campaign immediately and quarantine the VM if the external safety cutof
 - On supervisor restart within the same boot, re-arm from the original monotonic trigger timestamp; never start a fresh interval.
 - Across host reboot, the prior boot's monotonic clock cannot be compared with the new boot's clock. Persist the original trigger wall timestamp and boot ID, require a trusted synchronized host clock with recorded synchronization/uncertainty evidence, and conservatively calculate remaining budget. If clock trust, time ordering, or remaining budget cannot be established, treat the cleanup deadline as expired, quarantine, and continue best-effort independent cleanup. Never grant a new full cleanup interval after reboot.
 - Suspend/resume, clock steps, NTP loss, VM snapshot/restore, and clock rollback must be included in qualification. A host restored from snapshot must not reuse a stale supervisor generation or extend a deadline.
-- The external watchdog must enforce termination/cleanup even if the supervisor is paused, deadlocked, or unable to write the journal. The watchdog's clock and control path must be independent enough to avoid sharing the failure being tested.
+- The in-VM cleanup controller and supervisor-liveness watchdog use the qualified suspend-aware guest clock. The outer VM safety watchdog must enforce the VM cutoff and stop/rebuild path using an independently operated control-plane/hypervisor time source; it must not trust guest wall-clock or monotonic-clock values. Its clock and control path must remain independent when the guest is paused, deadlocked, rebooting, or unable to write the journal.
 
 ### Measurement protocol
 

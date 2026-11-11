@@ -74,6 +74,12 @@ func TestExecutionRequestValidateRejectsInvalidFields(t *testing.T) {
 			},
 		},
 		{
+			name: "non-canonical uppercase source digest",
+			mutate: func(request *ExecutionRequest) {
+				request.SourceSHA256 = strings.Repeat("A", 64)
+			},
+		},
+		{
 			name: "missing memory limit",
 			mutate: func(request *ExecutionRequest) {
 				request.Limits.MemoryBytes = 0
@@ -100,6 +106,28 @@ func TestExecutionRequestValidateRejectsInvalidFields(t *testing.T) {
 				t.Fatalf("error = %v, want ErrInvalidRequest", err)
 			}
 		})
+	}
+}
+
+func TestExecutionRequestValidateRejectsInvalidRuntimeVersionTokens(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"25\x00", "25/unsafe", "25 beta", "版本25"} {
+		request := validRequest()
+		request.RuntimeVersion = value
+		if err := request.Validate(); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("runtimeVersion %q: error = %v, want ErrInvalidRequest", value, err)
+		}
+	}
+}
+
+func TestExecutionRequestValidateAcceptsRuntimeVersionBuildMetadata(t *testing.T) {
+	t.Parallel()
+
+	request := validRequest()
+	request.RuntimeVersion = "temurin-25.0.1+8"
+	if err := request.Validate(); err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
 	}
 }
 

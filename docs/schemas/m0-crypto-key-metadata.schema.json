@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-crypto-key-metadata.schema.json",
+  "title": "M0 Cryptographic Key Metadata (Proposal)",
+  "description": "Public metadata only. Private key bytes, seeds, recovery shares and credentials are prohibited.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "authority_id",
+    "key_id",
+    "key_version",
+    "algorithm",
+    "purpose",
+    "environment",
+    "state",
+    "public_key_fingerprint_sha256",
+    "created_at",
+    "valid_from",
+    "valid_until",
+    "trust_bundle_generation",
+    "custody_reference",
+    "private_material_present"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "authority_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "key_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "algorithm": {
+      "enum": [
+        "Ed25519-candidate",
+        "ECDSA-P256-SHA256-candidate"
+      ]
+    },
+    "purpose": {
+      "enum": [
+        "host-epoch",
+        "provider-fence",
+        "phase-a-authorization",
+        "trust-bundle",
+        "key-revocation"
+      ]
+    },
+    "environment": {
+      "enum": [
+        "development",
+        "test",
+        "production"
+      ]
+    },
+    "state": {
+      "enum": [
+        "GENERATED",
+        "PENDING",
+        "ACTIVE",
+        "DEPRECATED_VERIFY_ONLY",
+        "REVOKED",
+        "DESTROYED"
+      ]
+    },
+    "public_key_fingerprint_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "valid_from": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "valid_until": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "revoked_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "revocation_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trust_bundle_generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "custody_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "private_material_present": {
+      "const": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "REVOKED"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "required": [
+          "revoked_at",
+          "revocation_reason"
+        ],
+        "properties": {
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revocation_reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}

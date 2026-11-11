@@ -25,6 +25,48 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+expected_runtime_owner="${M0_RUNTIME_OWNER:-root}"
+
+inspect_runtime_binary() {
+  local path="$1"
+  local label="$2"
+  local owner mode digest
+
+  if [[ ! -f "$path" || -L "$path" ]]; then
+    fail "$label is not a regular non-symlink file: $path"
+    return
+  fi
+
+  owner="$(stat -c '%U' "$path")"
+  mode="$(stat -c '%a' "$path")"
+  info "$label path=$path owner=$owner mode=$mode"
+
+  if [[ "$owner" == "$expected_runtime_owner" ]]; then
+    pass "$label owner matches expected runtime owner $expected_runtime_owner"
+  else
+    fail "$label owner mismatch; expected $expected_runtime_owner, detected $owner"
+  fi
+
+  if (( (8#$mode & 0022) == 0 )); then
+    pass "$label is not group/world writable"
+  else
+    fail "$label is group/world writable"
+  fi
+
+  if [[ -x "$path" ]]; then
+    pass "$label is executable"
+  else
+    fail "$label is not executable"
+  fi
+
+  if command_exists sha256sum; then
+    digest="$(sha256sum -- "$path" | awk '{print $1}')"
+    info "$label sha256=$digest"
+  else
+    fail 'sha256sum is required for runtime binary integrity inventory'
+  fi
+}
+
 printf '%s\n' 'Sky High M0 host preflight (read-only)'
 printf '%s\n' '======================================'
 
@@ -76,7 +118,18 @@ if command_exists containerd; then
     fail 'Expected containerd 2.3.x LTS'
   fi
 
-  if config_dump="$(containerd config dump 2>/dev/null)"; then
+  if [[ -n "${M0_CONTAINERD_CONFIG:-}" ]]; then
+    if config_dump="$(containerd --config "$M0_CONTAINERD_CONFIG" config dump 2>/dev/null)"; then
+      config_dump_status=0
+    else
+      config_dump_status=1
+    fi
+  elif config_dump="$(containerd config dump 2>/dev/null)"; then
+    config_dump_status=0
+  else
+    config_dump_status=1
+  fi
+  if (( config_dump_status == 0 )); then
     if grep -Eq '^version[[:space:]]*=[[:space:]]*3([[:space:]]|$)' <<<"$config_dump"; then
       pass 'containerd configuration uses version 3'
     else
@@ -95,6 +148,7 @@ else
 fi
 
 if command_exists runsc; then
+  runsc_command="$(command -v runsc)"
   runsc_output="$(runsc --version 2>&1)"
   IFS= read -r runsc_version <<<"$runsc_output"
   info "$runsc_version"
@@ -103,25 +157,86 @@ if command_exists runsc; then
   else
     fail 'gVisor runsc returned an empty version'
   fi
+
+  if command_exists readlink; then
+    if runsc_path="$(readlink -f "$runsc_command" 2>/dev/null)" && [[ -n "$runsc_path" ]]; then
+      inspect_runtime_binary "$runsc_path" 'gVisor runsc'
+
+      # Since the 2026-07 multi-file release transition, runsc requires its
+      # adjacent gvisor-bin/ sidecar binaries. Do not rely on legacy
+      # best-effort auto-download behavior.
+      sidecar_dir="$(dirname "$runsc_path")/gvisor-bin"
+      if [[ -d "$sidecar_dir" && ! -L "$sidecar_dir" ]]; then
+        sidecar_owner="$(stat -c '%U' "$sidecar_dir")"
+        sidecar_mode="$(stat -c '%a' "$sidecar_dir")"
+        info "gVisor sidecar directory=$sidecar_dir owner=$sidecar_owner mode=$sidecar_mode"
+        if [[ "$sidecar_owner" == "$expected_runtime_owner" ]]; then
+          pass 'gVisor sidecar directory owner matches expected runtime owner'
+        else
+          fail "gVisor sidecar directory owner mismatch; expected $expected_runtime_owner, detected $sidecar_owner"
+        fi
+        if (( (8#$sidecar_mode & 0022) == 0 )); then
+          pass 'gVisor sidecar directory is not group/world writable'
+        else
+          fail 'gVisor sidecar directory is group/world writable'
+        fi
+
+        if [[ -n "$(find "$sidecar_dir" -mindepth 1 -maxdepth 1 ! -type f -print -quit)" ]]; then
+          fail 'gVisor sidecar directory contains a non-regular entry (symlink, directory or special file)'
+        else
+          pass 'gVisor sidecar directory contains only regular files'
+        fi
+
+        mapfile -d '' -t sidecar_files < <(find "$sidecar_dir" -mindepth 1 -maxdepth 1 -type f -print0)
+        mapfile -d '' -t sidecar_binaries < <(find "$sidecar_dir" -mindepth 1 -maxdepth 1 -type f -perm /111 -print0)
+        if (( ${#sidecar_files[@]} > 0 && ${#sidecar_files[@]} == ${#sidecar_binaries[@]} )); then
+          pass "gVisor sidecar directory contains ${#sidecar_binaries[@]} regular executable file(s)"
+          for sidecar in "${sidecar_binaries[@]}"; do
+            inspect_runtime_binary "$sidecar" "gVisor sidecar $(basename "$sidecar")"
+          done
+        elif (( ${#sidecar_files[@]} == 0 )); then
+          fail 'gVisor gvisor-bin directory contains no sidecar files'
+        else
+          fail 'gVisor sidecar directory contains a non-executable regular file'
+        fi
+      else
+        fail "gVisor sidecar directory is missing, not a directory, or is a symlink: $sidecar_dir"
+      fi
+    else
+      fail 'Could not resolve the installed runsc binary path'
+    fi
+  else
+    fail 'readlink is required to resolve the installed runsc binary path'
+  fi
 else
   fail 'gVisor runsc binary is not installed or not on PATH'
 fi
 
 if command_exists containerd-shim-runsc-v1; then
-  pass 'containerd-shim-runsc-v1 is installed'
+  if command_exists readlink; then
+    shim_command="$(command -v containerd-shim-runsc-v1)"
+    if shim_path="$(readlink -f "$shim_command" 2>/dev/null)" && [[ -n "$shim_path" ]]; then
+      inspect_runtime_binary "$shim_path" 'gVisor containerd shim'
+    else
+      fail 'Could not resolve the installed containerd-shim-runsc-v1 path'
+    fi
+  else
+    fail 'readlink is required to resolve the containerd shim binary path'
+  fi
 else
   fail 'containerd-shim-runsc-v1 is not installed or not on PATH'
 fi
 
-socket="/run/containerd/containerd.sock"
+socket="${M0_CONTAINERD_SOCKET:-/run/containerd/containerd.sock}"
+expected_socket_owner="${M0_CONTAINERD_SOCKET_OWNER:-root}"
 if [[ -S "$socket" ]]; then
   socket_owner="$(stat -c '%U' "$socket")"
   socket_mode="$(stat -c '%a' "$socket")"
-  info "containerd socket owner=$socket_owner mode=$socket_mode"
-  if [[ "$socket_owner" == "root" ]]; then
-    pass 'containerd socket is root-owned'
+  info "containerd socket=$socket owner=$socket_owner mode=$socket_mode"
+  if [[ "$socket_owner" == "$expected_socket_owner" ]]; then
+    pass "containerd socket owner matches expected principal $expected_socket_owner"
   else
-    fail 'containerd socket must be root-owned'
+    fail "containerd socket owner mismatch; expected $expected_socket_owner, detected $socket_owner"
   fi
   if (( (8#$socket_mode & 0022) == 0 )); then
     pass 'containerd socket is not group/world writable'

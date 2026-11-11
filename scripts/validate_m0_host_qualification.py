@@ -5,7 +5,8 @@ This does not inspect/provision a host, run destructive tests, verify real evide
 or authorize Phase A, Phase B, student or production execution.
 """
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -24,11 +25,38 @@ CHECKLIST_PATH = ROOT / "docs/security/m0-independent-security-review-checklist.
 TESTS = [{"id":"HST-001","domain":"host-baseline","evidenceTypes":["host-configuration"]},{"id":"HST-002","domain":"host-baseline","evidenceTypes":["host-configuration"]},{"id":"HST-003","domain":"host-baseline","evidenceTypes":["filesystem-storage"]},{"id":"HST-004","domain":"host-baseline","evidenceTypes":["host-configuration"]},{"id":"HST-005","domain":"host-baseline","evidenceTypes":["supply-chain"]},{"id":"AUTH-001","domain":"runtime","evidenceTypes":["host-configuration","fault-injection"]},{"id":"RUN-001","domain":"runtime","evidenceTypes":["host-runtime","fault-injection"]},{"id":"CG-001","domain":"runtime","evidenceTypes":["host-runtime","fault-injection"]},{"id":"NET-001","domain":"network","evidenceTypes":["network-observation","host-configuration"]},{"id":"NET-002","domain":"network","evidenceTypes":["network-observation","host-configuration"]},{"id":"FS-001","domain":"runtime","evidenceTypes":["host-runtime","fault-injection"]},{"id":"OUT-001","domain":"runtime","evidenceTypes":["host-runtime","fault-injection"]},{"id":"WDG-001","domain":"watchdog","evidenceTypes":["fault-injection","host-runtime"]},{"id":"WDG-002","domain":"watchdog","evidenceTypes":["fault-injection","host-configuration"]},{"id":"WDG-003","domain":"watchdog","evidenceTypes":["watchdog-control-plane","operator-record"]},{"id":"CLK-001","domain":"clock","evidenceTypes":["host-runtime","fault-injection"]},{"id":"CLK-002","domain":"clock","evidenceTypes":["fault-injection","host-runtime"]},{"id":"JRN-001","domain":"journal","evidenceTypes":["journal-durability","host-configuration"]},{"id":"JRN-002","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-003","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-004","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-005","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-006","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-007","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-008","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-009","domain":"journal","evidenceTypes":["fault-injection","host-configuration"]},{"id":"JRN-010","domain":"integrated-lifecycle","evidenceTypes":["fault-injection","host-runtime"]},{"id":"JRN-011","domain":"integrated-lifecycle","evidenceTypes":["fault-injection","journal-durability"]},{"id":"JRN-012","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-013","domain":"journal","evidenceTypes":["journal-durability","fault-injection"]},{"id":"JRN-014","domain":"journal","evidenceTypes":["host-configuration","fault-injection"]},{"id":"JRN-015","domain":"journal","evidenceTypes":["filesystem-storage","fault-injection"]},{"id":"EVID-001","domain":"evidence","evidenceTypes":["host-runtime","fault-injection"]}]
 TEST_IDS = [test["id"] for test in TESTS]
 TEST_BY_ID = {test["id"]: test for test in TESTS}
+ROOTLESS_TESTS = [
+    {"id":"RLS-001","evidenceTypes":["host-runtime","fault-injection"]},
+    {"id":"RLS-002","evidenceTypes":["host-configuration","supply-chain","fault-injection"]},
+    {"id":"RLS-003","evidenceTypes":["host-runtime","fault-injection"]},
+    {"id":"RLS-004","evidenceTypes":["network-observation","host-configuration","fault-injection"]},
+]
+ROOTLESS_TEST_IDS = {test["id"] for test in ROOTLESS_TESTS}
+ROOTLESS_TEST_BY_ID = {test["id"]: test for test in ROOTLESS_TESTS}
+
+def canonical_rootless_profile_sha256(profile):
+    """Hash the profile without its self-referential profile_sha256 field.
+
+    Canonical bytes are compact sorted-key JSON, UTF-8, ASCII-escaped, and
+    reject non-finite numbers. The profile schema intentionally uses only
+    strings, bounded integers and arrays, so this serialization is stable.
+    """
+    unsigned_profile = {key: value for key, value in profile.items() if key != "profile_sha256"}
+    canonical = json.dumps(
+        unsigned_profile,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
 AUTH_FLAGS = ["phase_a_authorized", "phase_b_authorized", "student_execution_authorized", "production_execution_authorized"]
 BASELINE_IDS = {"HST-001", "HST-002", "HST-003", "HST-004", "HST-005"}
 RUNTIME_IDS = {"AUTH-001", "RUN-001", "CG-001", "FS-001", "OUT-001"}
 NETWORK_IDS = {"NET-001", "NET-002"}
 WATCHDOG_IDS = {"WDG-001", "WDG-002", "WDG-003"}
+WATCHDOG_SCENARIO_IDS = {f"WD-{i:03d}" for i in range(1, 8)}
 OUTER_IDS = {"WDG-003"}
 CLOCK_IDS = {"CLK-001", "CLK-002"}
 JOURNAL_IDS = {f"JRN-{i:03d}" for i in range(1, 10)} | {f"JRN-{i:03d}" for i in range(12, 16)}
@@ -36,6 +64,7 @@ INTEGRATED_IDS = {"JRN-010", "JRN-011"}
 EVIDENCE_IDS = {"EVID-001"}
 
 def errors_for(record, schema_validator):
+    review = record.get("review", {})
     errors = [error.message for error in schema_validator.iter_errors(record)]
     results = record.get("test_results", [])
     ids = [item.get("test_id") for item in results]
@@ -44,6 +73,18 @@ def errors_for(record, schema_validator):
     if set(ids) != set(TEST_IDS):
         errors.append("every required qualification test ID must appear exactly once")
     by_id = {item.get("test_id"): item for item in results}
+
+    rootless_results = record.get("candidate_specific_test_results", [])
+    rootless_ids = [item.get("test_id") for item in rootless_results]
+    if len(rootless_ids) != len(set(rootless_ids)):
+        errors.append("duplicate rootless candidate-specific test IDs are prohibited")
+    target_architecture = record.get("scope", {}).get("target_architecture")
+    if target_architecture == "rootless-containerd-userns" and set(rootless_ids) != ROOTLESS_TEST_IDS:
+        errors.append("rootless candidate requires all four candidate-specific qualification tests exactly once")
+    if target_architecture == "rootful-supervisor" and rootless_results:
+        errors.append("rootful candidate must not claim rootless-only qualification tests")
+    if target_architecture == "not-selected" and rootless_results:
+        errors.append("unselected architecture cannot contain candidate-specific test results")
 
     for test_id, finding in by_id.items():
         expected = TEST_BY_ID.get(test_id)
@@ -57,14 +98,110 @@ def errors_for(record, schema_validator):
                 errors.append(f"{test_id}: passed requires method and evidence")
             if any(ref.get("verification_status") != "verified" or not ref.get("independent_verifier_id") for ref in refs):
                 errors.append(f"{test_id}: passed requires independently verified evidence")
+            review_roles = {review.get("reviewer_id"), review.get("host_owner_id")} - {None, ""}
+            if any(ref.get("independent_verifier_id") in review_roles for ref in refs):
+                errors.append(f"{test_id}: evidence verifier must be independent of reviewer and host owner")
+            if any(ref.get("acquired_by_id") in review_roles or
+                   ref.get("acquired_by_id") == ref.get("independent_verifier_id") for ref in refs):
+                errors.append(f"{test_id}: evidence acquirer must be distinct from verifier, reviewer and host owner")
             allowed = set(expected["evidenceTypes"])
             if not any(ref.get("evidence_type") in allowed for ref in refs):
                 errors.append(f"{test_id}: passed requires a test-specific evidence type")
         if finding.get("result") == "failed":
             if finding.get("severity") in {"unassigned", "none"} or not finding.get("finding_summary", "").strip():
                 errors.append(f"{test_id}: failed requires severity and finding")
+
+        if test_id == "WDG-002" and finding.get("result") == "passed":
+            subtests = finding.get("watchdog_subtests", {})
+            if set(subtests) != WATCHDOG_SCENARIO_IDS:
+                errors.append("WDG-002: passed requires all seven watchdog subtests exactly once")
+            for scenario_id, subtest in subtests.items():
+                refs = subtest.get("evidence_refs", [])
+                if subtest.get("result") != "passed" or not subtest.get("verification_method", "").strip() or not refs:
+                    errors.append(f"WDG-002/{scenario_id}: passed watchdog gate requires passed subtest, method and evidence")
+                if any(ref.get("verification_status") != "verified" or not ref.get("independent_verifier_id") for ref in refs):
+                    errors.append(f"WDG-002/{scenario_id}: subtest evidence must be independently verified")
+                if any(ref.get("independent_verifier_id") in review_roles for ref in refs):
+                    errors.append(f"WDG-002/{scenario_id}: verifier must be independent of reviewer and host owner")
+                if any(ref.get("acquired_by_id") in review_roles or ref.get("acquired_by_id") == ref.get("independent_verifier_id") for ref in refs):
+                    errors.append(f"WDG-002/{scenario_id}: acquirer must be distinct from verifier, reviewer and host owner")
+                if any(ref.get("evidence_type") not in {"fault-injection","host-runtime","host-configuration","watchdog-control-plane","operator-record"} for ref in refs):
+                    errors.append(f"WDG-002/{scenario_id}: unsupported watchdog subtest evidence type")
+                if not any(ref.get("evidence_type") == "fault-injection" for ref in refs):
+                    errors.append(f"WDG-002/{scenario_id}: every watchdog subtest requires independently verified fault-injection evidence")
         if finding.get("result") in {"blocked", "deferred"} and not finding.get("finding_summary", "").strip():
             errors.append(f"{test_id}: blocked/deferred requires a reason")
+
+    for finding in rootless_results:
+        test_id = finding.get("test_id")
+        expected = ROOTLESS_TEST_BY_ID.get(test_id)
+        if not expected:
+            continue
+        if finding.get("domain") != "rootless-compatibility":
+            errors.append(f"{test_id}: rootless test domain mismatch")
+        refs = finding.get("evidence_refs", [])
+        if finding.get("result") == "passed":
+            if not finding.get("verification_method", "").strip() or not refs:
+                errors.append(f"{test_id}: passed rootless test requires method and evidence")
+            if any(ref.get("verification_status") != "verified" or not ref.get("independent_verifier_id") for ref in refs):
+                errors.append(f"{test_id}: passed rootless test requires independently verified evidence")
+            review_roles = {review.get("reviewer_id"), review.get("host_owner_id")} - {None, ""}
+            if any(ref.get("independent_verifier_id") in review_roles for ref in refs):
+                errors.append(f"{test_id}: rootless evidence verifier must be independent of reviewer and host owner")
+            if any(ref.get("acquired_by_id") in review_roles or
+                   ref.get("acquired_by_id") == ref.get("independent_verifier_id") for ref in refs):
+                errors.append(f"{test_id}: rootless evidence acquirer must be distinct from verifier, reviewer and host owner")
+            if not any(ref.get("evidence_type") in set(expected["evidenceTypes"]) for ref in refs):
+                errors.append(f"{test_id}: passed rootless test requires a test-specific evidence type")
+        if finding.get("result") == "failed":
+            if finding.get("severity") in {"unassigned", "none"} or not finding.get("finding_summary", "").strip():
+                errors.append(f"{test_id}: failed rootless test requires severity and finding")
+        if finding.get("result") in {"blocked", "deferred"} and not finding.get("finding_summary", "").strip():
+            errors.append(f"{test_id}: blocked/deferred rootless test requires a reason")
+
+    # Treat all evidence references in the report as one ledger. References are
+    # immutable ledger entries: a reference ID is defined once, and one exact
+    # object version may not be represented by competing reference IDs.
+    # The same reference ID may be attached to multiple findings, but every
+    # occurrence must carry byte-for-byte equivalent metadata.
+    review_roles = {review.get("reviewer_id"), review.get("host_owner_id")} - {None, ""}
+    all_evidence_occurrences = []
+    for finding in results + rootless_results:
+        for evidence in finding.get("evidence_refs", []):
+            all_evidence_occurrences.append((finding.get("test_id"), evidence))
+        for scenario_id, subtest in finding.get("watchdog_subtests", {}).items():
+            for evidence in subtest.get("evidence_refs", []):
+                all_evidence_occurrences.append((f'{finding.get("test_id")}/{scenario_id}', evidence))
+
+    evidence_by_reference = {}
+    evidence_by_object_version = {}
+    for owner, evidence in all_evidence_occurrences:
+        reference_id = evidence.get("reference_id")
+        object_key = (evidence.get("evidence_root_id"), evidence.get("object_version"))
+        if reference_id:
+            evidence_by_reference.setdefault(reference_id, []).append((owner, evidence))
+        if all(object_key):
+            evidence_by_object_version.setdefault(object_key, []).append((owner, evidence))
+        if evidence.get("verification_status") == "verified":
+            if not evidence.get("independent_verifier_id"):
+                errors.append(f"{owner}: verified evidence requires an independent verifier identity")
+            elif evidence.get("independent_verifier_id") in review_roles:
+                errors.append(f"{owner}: evidence verifier must be independent of reviewer and host owner")
+            if not evidence.get("acquired_by_id"):
+                errors.append(f"{owner}: evidence requires an accountable acquisition principal")
+            elif evidence.get("acquired_by_id") in review_roles or evidence.get("acquired_by_id") == evidence.get("independent_verifier_id"):
+                errors.append(f"{owner}: evidence acquirer must be distinct from verifier, reviewer and host owner")
+
+    for reference_id, occurrences in evidence_by_reference.items():
+        canonical = occurrences[0][1]
+        if any(evidence != canonical for _, evidence in occurrences[1:]):
+            errors.append(f"evidence reference {reference_id!r} has conflicting immutable metadata across findings")
+    for object_key, occurrences in evidence_by_object_version.items():
+        reference_ids = {evidence.get("reference_id") for _, evidence in occurrences}
+        if len(reference_ids) > 1:
+            errors.append(
+                f"immutable evidence object version {object_key!r} is represented by multiple reference IDs"
+            )
 
     gates = record.get("gates", {})
     if gates.get("baseline_inspection") == "passed":
@@ -93,6 +230,42 @@ def errors_for(record, schema_validator):
         errors.append("integrated lifecycle gate requires JRN-010 and JRN-011")
     if gates.get("evidence_integrity") == "passed" and not EVIDENCE_IDS.issubset({i for i, f in by_id.items() if f.get("result") == "passed"}):
         errors.append("evidence gate requires EVID-001")
+    rootless_gate = gates.get("rootless_userns_compatibility")
+    rootless_passed_ids = {f.get("test_id") for f in rootless_results if f.get("result") == "passed"}
+    host_profile = record.get("host_identity", {})
+    rootless_profile = host_profile.get("rootless_profile")
+    rootless_profile_digest = host_profile.get("rootless_profile_digest")
+    if target_architecture == "rootless-containerd-userns":
+        if not isinstance(rootless_profile, dict):
+            errors.append("rootless candidate requires a complete rootless host profile object")
+        else:
+            if rootless_profile.get("daemon_uid", 0) == 0 or rootless_profile.get("daemon_gid", 0) == 0:
+                errors.append("rootless daemon must use non-root UID and GID")
+            if rootless_profile.get("user_namespace_mode") != "caller-configured-userns":
+                errors.append("rootless host profile must use caller-configured user namespaces")
+            controllers = set(rootless_profile.get("delegated_controllers", []))
+            if not {"cpu", "memory", "pids"}.issubset(controllers):
+                errors.append("rootless profile must explicitly delegate cpu, memory and pids controllers")
+            computed_profile_digest = canonical_rootless_profile_sha256(rootless_profile)
+            if rootless_profile.get("profile_sha256") != computed_profile_digest:
+                errors.append("rootless profile content does not match its canonical SHA-256")
+            if rootless_profile_digest != computed_profile_digest:
+                errors.append("rootless profile digest does not match canonical profile content")
+    elif target_architecture == "rootful-supervisor":
+        if rootless_profile is not None or rootless_profile_digest is not None:
+            errors.append("rootful candidate must not carry a rootless host profile")
+    elif rootless_profile is not None or rootless_profile_digest is not None:
+        errors.append("unselected architecture must not carry a rootless host profile")
+    if target_architecture == "rootless-containerd-userns":
+        if rootless_gate == "passed" and rootless_passed_ids != ROOTLESS_TEST_IDS:
+            errors.append("rootless userns compatibility gate requires RLS-001 through RLS-004 to pass")
+        if rootless_gate == "not-applicable":
+            errors.append("rootless candidate cannot mark its compatibility gate not-applicable")
+    elif target_architecture == "rootful-supervisor":
+        if rootless_gate != "not-applicable":
+            errors.append("rootful candidate must mark rootless userns compatibility not-applicable")
+    elif rootless_gate not in {"not-run", None}:
+        errors.append("unselected architecture must leave rootless compatibility not-run")
 
     if record.get("qualification_status") == "candidate-qualified":
         passed_ids = {i for i, f in by_id.items() if f.get("result") == "passed"}
@@ -103,17 +276,94 @@ def errors_for(record, schema_validator):
             "watchdog_boundary", "clock_recovery", "journal_durability", "integrated_lifecycle", "evidence_integrity"
         ]):
             errors.append("candidate-qualified requires every qualification sub-gate to pass")
+        if target_architecture == "rootless-containerd-userns":
+            if gates.get("rootless_userns_compatibility") != "passed" or rootless_passed_ids != ROOTLESS_TEST_IDS:
+                errors.append("rootless candidate-qualified requires all four rootless-specific tests and compatibility gate to pass")
+        elif target_architecture == "rootful-supervisor":
+            if gates.get("rootless_userns_compatibility") != "not-applicable" or rootless_results:
+                errors.append("rootful candidate-qualified cannot claim rootless-specific tests")
+        else:
+            errors.append("candidate-qualified requires rootful or rootless architecture identity")
         host = record.get("host_identity", {})
         baseline_sha = record.get("scope", {}).get("reviewed_commit_sha")
         if not isinstance(baseline_sha, str) or len(baseline_sha) != 40:
             errors.append("candidate-qualified requires an exact 40-character reviewed commit SHA")
-        required_host = ["provider", "region", "vm_shape", "host_instance_id", "boot_id", "image_digest",
+        required_host = ["provider", "region", "vm_shape", "host_instance_id", "host_incarnation_epoch", "prior_incarnation_fence_evidence_ref", "host_incarnation_authority_id", "host_incarnation_authority_key_version", "host_incarnation_epoch_evidence_ref", "host_incarnation_epoch_evidence_digest", "host_incarnation_issuance_nonce_digest", "predecessor_incarnation_set_digest", "provider_fence_method", "provider_fence_verified_at", "provider_fence_evidence_digest", "boot_id", "image_digest",
             "os_release", "kernel_release", "architecture", "filesystem_type", "storage_device_identity",
             "storage_class", "containerd_version", "containerd_config_digest", "runsc_version", "shim_version",
             "host_profile_digest", "runtime_profile_digest", "resource_profile_digest", "supervisor_digest",
             "watchdog_digest", "test_harness_digest"]
         if not host.get("selected") or any(not host.get(field) for field in required_host):
             errors.append("candidate-qualified requires exact selected host/runtime/storage identity")
+        review_context = record.get("review", {})
+        all_evidence_refs = []
+        for finding in results + rootless_results:
+            all_evidence_refs.extend(finding.get("evidence_refs", []))
+            for subtest in finding.get("watchdog_subtests", {}).values():
+                all_evidence_refs.extend(subtest.get("evidence_refs", []))
+        evidence_by_id = {}
+        for evidence in all_evidence_refs:
+            evidence_by_id.setdefault(evidence.get("reference_id"), []).append(evidence)
+        required_epoch_evidence = [
+            ("host_incarnation_epoch_evidence_ref", "host_incarnation_epoch_evidence_digest"),
+            ("prior_incarnation_fence_evidence_ref", "provider_fence_evidence_digest")
+        ]
+        for reference_field, digest_field in required_epoch_evidence:
+            reference_id = host.get(reference_field)
+            matches = evidence_by_id.get(reference_id, []) if reference_id else []
+            if len(matches) != 1:
+                errors.append(f"candidate-qualified requires exactly one evidence record for {reference_field}")
+                continue
+            evidence = matches[0]
+            try:
+                acquired_raw = evidence.get("acquired_at")
+                reviewed_raw = review_context.get("reviewed_at")
+                if not acquired_raw or not reviewed_raw:
+                    errors.append(f"{reference_field} requires evidence acquisition and independent review timestamps")
+                else:
+                    acquired_at = datetime.fromisoformat(acquired_raw.replace("Z", "+00:00"))
+                    reviewed_at = datetime.fromisoformat(reviewed_raw.replace("Z", "+00:00"))
+                    if acquired_at.tzinfo is None or reviewed_at.tzinfo is None:
+                        errors.append(f"{reference_field} acquisition and review timestamps must include explicit timezone offsets")
+                    elif acquired_at > reviewed_at:
+                        errors.append(f"{reference_field} evidence must be acquired before independent host qualification review")
+            except (ValueError, TypeError):
+                errors.append(f"{reference_field} acquisition and review timestamps must be valid timezone-aware datetimes")
+            if evidence.get("evidence_type") != "watchdog-control-plane" or evidence.get("verification_status") != "verified":
+                errors.append(f"{reference_field} must resolve to independently verified watchdog-control-plane evidence")
+            if evidence.get("sha256") != host.get(digest_field):
+                errors.append(f"{reference_field} digest must match its immutable evidence record")
+            if evidence.get("independent_verifier_id") in {review_context.get("host_owner_id"), review_context.get("reviewer_id")}:
+                errors.append(f"{reference_field} must be verified by a principal independent of host owner and security reviewer")
+            if evidence.get("acquired_by_id") in {review_context.get("host_owner_id"), review_context.get("reviewer_id"), evidence.get("independent_verifier_id")}:
+                errors.append(f"{reference_field} evidence acquirer must be distinct from host owner, reviewer and verifier")
+        # The provider fence must exist before independent review, and its
+        # evidence acquisition cannot predate the claimed fence verification.
+        # This is a chronology check only; it does not authenticate the provider.
+        fence_evidence_matches = evidence_by_id.get(host.get("prior_incarnation_fence_evidence_ref"), [])
+        try:
+            fence_verified_raw = host.get("provider_fence_verified_at")
+            review_verified_raw = review_context.get("reviewed_at")
+            if not fence_verified_raw or not review_verified_raw:
+                errors.append("provider fence verification and independent review timestamps are required")
+            else:
+                fence_verified_at = datetime.fromisoformat(fence_verified_raw.replace("Z", "+00:00"))
+                review_verified_at = datetime.fromisoformat(review_verified_raw.replace("Z", "+00:00"))
+                if fence_verified_at.tzinfo is None or review_verified_at.tzinfo is None:
+                    errors.append("provider fence and review timestamps must include explicit timezone offsets")
+                elif fence_verified_at > review_verified_at:
+                    errors.append("provider fence must be verified before independent host qualification review")
+            if len(fence_evidence_matches) == 1:
+                acquired_raw = fence_evidence_matches[0].get("acquired_at")
+                if acquired_raw and fence_verified_raw:
+                    evidence_acquired_at = datetime.fromisoformat(acquired_raw.replace("Z", "+00:00"))
+                    fence_verified_at = datetime.fromisoformat(fence_verified_raw.replace("Z", "+00:00"))
+                    if evidence_acquired_at.tzinfo is None or fence_verified_at.tzinfo is None:
+                        errors.append("provider fence evidence and verification timestamps must include explicit timezone offsets")
+                    elif evidence_acquired_at < fence_verified_at:
+                        errors.append("provider fence evidence acquisition cannot predate the claimed fence verification")
+        except (ValueError, TypeError):
+            errors.append("provider fence verification, evidence acquisition and review timestamps must be valid timezone-aware datetimes")
         scope = record.get("scope", {})
         if not scope.get("host_provisioning_authorization_ref") or scope.get("target_architecture") == "not-selected":
             errors.append("candidate-qualified requires a separately authorized host and selected architecture")
@@ -151,6 +401,15 @@ def errors_for(record, schema_validator):
                 expires_at = datetime.fromisoformat(expiry_date.replace("Z", "+00:00"))
                 if expires_at <= reviewed_at:
                     errors.append("independent review is expired at issuance")
+                if expires_at <= datetime.now(timezone.utc):
+                    errors.append("independent review has expired at validation time")
+            if record.get("reviewed_at") and record.get("expires_at"):
+                qualification_reviewed_at = datetime.fromisoformat(record["reviewed_at"].replace("Z", "+00:00"))
+                qualification_expires_at = datetime.fromisoformat(record["expires_at"].replace("Z", "+00:00"))
+                if qualification_expires_at <= qualification_reviewed_at:
+                    errors.append("qualification expiry must be later than qualification review date")
+                if qualification_expires_at <= datetime.now(timezone.utc):
+                    errors.append("qualification record has expired at validation time")
         except (ValueError, TypeError):
             errors.append("candidate-qualified requires valid review dates")
         if not record.get("qualification_rationale", "").strip():
@@ -158,8 +417,11 @@ def errors_for(record, schema_validator):
         unresolved = [risk for risk in record.get("residual_risks", []) if risk.get("severity") in {"high", "critical"} and risk.get("status") != "closed"]
         if unresolved:
             errors.append("candidate-qualified cannot retain unresolved high/critical risks")
-    if record.get("qualification_status") == "failed" and not any(f.get("result") == "failed" for f in results):
-        errors.append("failed qualification requires at least one failed test")
+    if record.get("qualification_status") == "failed" and not (
+        any(f.get("result") == "failed" for f in results) or
+        any(f.get("result") == "failed" for f in rootless_results)
+    ):
+        errors.append("failed qualification requires at least one failed common or candidate-specific test")
     if record.get("record_status") == "not-started":
         if record.get("qualification_status") != "not-qualified":
             errors.append("not-started record must remain not-qualified")
@@ -167,6 +429,8 @@ def errors_for(record, schema_validator):
             errors.append("not-started record cannot have a selected host or executed test")
         if any(value != "not-run" for value in gates.values()):
             errors.append("not-started record cannot have a passed/failed qualification gate")
+        if rootless_results:
+            errors.append("not-started record cannot contain candidate-specific tests")
         if record.get("scope", {}).get("target_architecture") != "not-selected":
             errors.append("not-started record must have no selected architecture")
         if record.get("journal_profile", {}).get("backend_candidate") != "not-selected":
@@ -193,6 +457,8 @@ def main():
     resource = RESOURCE_PATH.read_text(encoding="utf-8")
     checklist = CHECKLIST_PATH.read_text(encoding="utf-8")
 
+    if template.get("schema_version") != schema.get("properties", {}).get("schema_version", {}).get("const"):
+        raise AssertionError("qualification schema and blank template versions must match")
     Draft202012Validator.check_schema(schema)
     schema_validator = Draft202012Validator(schema, format_checker=FormatChecker())
     errors = errors_for(template, schema_validator)
@@ -209,25 +475,68 @@ def main():
     template_ids = {item["test_id"] for item in template["test_results"]}
     if schema_ids != set(TEST_IDS) or template_ids != set(TEST_IDS):
         raise AssertionError("schema/template/test inventory IDs diverge")
+    rootless_schema_ids = set(schema["$defs"]["candidateSpecificTestFinding"]["properties"]["test_id"]["enum"])
+    if rootless_schema_ids != ROOTLESS_TEST_IDS or template["candidate_specific_test_results"] != []:
+        raise AssertionError("rootless-specific schema/template test inventory diverges")
     for test in TESTS:
         if f"| {test['id']} |" not in protocol:
-            raise AssertionError(f"protocol missing test ID {test['id']}")
+            raise AssertionError(f"protocol missing common test ID {test['id']}")
+    for scenario_id in WATCHDOG_SCENARIO_IDS:
+        row_marker = f"| {scenario_id} |"
+        if protocol.count(row_marker) != 1:
+            raise AssertionError(f"protocol must contain exactly one qualification-table row for watchdog subtest {scenario_id}")
+    for test in ROOTLESS_TESTS:
+        if f"| {test['id']} |" not in protocol:
+            raise AssertionError(f"protocol missing rootless-only test ID {test['id']}")
+        if test["id"] not in checklist:
+            raise AssertionError(f"independent security checklist missing rootless-only test ID {test['id']}")
     if "m0-host-and-journal-qualification-protocol.md" not in journal_doc or "m0-host-and-journal-qualification-protocol.md" not in runbook:
         raise AssertionError("journal evaluation and host runbook must link qualification protocol")
+    for setting in ["M0_CONTAINERD_CONFIG", "M0_CONTAINERD_SOCKET", "M0_CONTAINERD_SOCKET_OWNER"]:
+        if setting not in runbook:
+            raise AssertionError(f"host runbook must document candidate-specific preflight setting {setting}")
     if "m0-host-and-journal-qualification-protocol.md" not in resource or "m0-host-and-journal-qualification-protocol.md" not in checklist:
         raise AssertionError("resource profile and independent security checklist must link qualification protocol")
+    if "all seven `WD-001` through `WD-007`" not in checklist:
+        raise AssertionError("independent security checklist must require all seven watchdog subtests")
+    if "all eight source pins" not in protocol or "seven source pins" in protocol:
+        raise AssertionError("qualification protocol must remain aligned with the eight-source immutable manifest")
     print("PASS  blank qualification record remains not-started and not-qualified")
-    print(f"PASS  schema, template and {len(TESTS)}-test protocol catalogue are synchronized")
+    print(f"PASS  schema, template and {len(TESTS)} common qualification tests are synchronized")
+    print(f"PASS  rootless candidate schema and {len(ROOTLESS_TESTS)} rootless-only tests are synchronized")
     print("PASS  runbook, journal evaluation, resource profile and security checklist cross-reference protocol")
+    if "report-wide immutable evidence ledger" not in protocol.lower():
+        raise AssertionError("qualification protocol must define report-wide evidence-ledger identity rules")
+    if "repeating that same reference id" not in protocol.lower() or "different reference id for the same immutable object version" not in protocol.lower():
+        raise AssertionError("qualification protocol must define evidence reference reuse and object-version uniqueness")
+    if "immutable provenance manifest" not in runbook.lower() or "backup artifact digest" not in runbook.lower():
+        raise AssertionError("host runbook must define backup provenance and artifact digest requirements")
+    jrn011 = next((line for line in protocol.splitlines() if line.startswith("| JRN-011 |")), "")
+    for phrase in ("evidence staging", "immutable object publication", "exact-version readback", "journal-reference commit", "manifest readback/verification", "terminal CAS is blocked until evidence and cleanup dispositions are independently verified"):
+        if phrase.casefold() not in jrn011.casefold():
+            raise AssertionError(f"JRN-011 must cover evidence publication crash ordering: {phrase}")
 
     cases = []
     case = deepcopy(template); case["test_results"].pop(); cases.append(("missing test",case))
     case = deepcopy(template); case["test_results"][-1]["test_id"] = case["test_results"][0]["test_id"]; cases.append(("duplicate test ID",case))
     case = deepcopy(template); case["test_results"][0]["result"] = "passed"; cases.append(("pass without evidence",case))
-    case = deepcopy(template); case["test_results"][0]["result"] = "passed"; case["test_results"][0]["verification_method"] = "synthetic"; case["test_results"][0]["finding_summary"] = "synthetic"; case["test_results"][0]["severity"] = "none"; case["test_results"][0]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"host-runtime","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic only"}]; cases.append(("passed test with wrong evidence type",case))
+    case = deepcopy(template); case["test_results"][0]["result"] = "passed"; case["test_results"][0]["verification_method"] = "synthetic"; case["test_results"][0]["finding_summary"] = "synthetic"; case["test_results"][0]["severity"] = "none"; case["test_results"][0]["evidence_refs"] = [{"reference_id":"x","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"host-runtime","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic only"}]; cases.append(("passed test with wrong evidence type",case))
+    case = deepcopy(template); wdg = next(item for item in case["test_results"] if item["test_id"] == "WDG-002"); wdg.update(result="passed",verification_method="synthetic",finding_summary="synthetic",severity="none",evidence_refs=[{"reference_id":"synthetic-wdg","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"fault-injection","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic"}]); cases.append(("WDG-002 pass with unrun subtests",case))
+    case = deepcopy(template); wdg = next(item for item in case["test_results"] if item["test_id"] == "WDG-002"); wdg.update(result="passed",verification_method="synthetic",finding_summary="synthetic",severity="none",evidence_refs=[{"reference_id":"synthetic-wdg","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"fault-injection","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic"}]);
+    for subtest in wdg["watchdog_subtests"].values(): subtest.update(result="passed",verification_method="synthetic",finding_summary="synthetic",severity="none",evidence_refs=[{"reference_id":"synthetic-subtest","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"operator-record","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-verifier","verification_note":"synthetic"}]); cases.append(("WDG-002 subtest without fault-injection evidence",case))
     case = deepcopy(template); case["gates"]["journal_durability"] = "passed"; cases.append(("journal gate without all journal tests",case))
     case = deepcopy(template); case["gates"]["network_boundary"] = "passed"; cases.append(("network gate without both network tests",case))
     case = deepcopy(template); case["qualification_status"] = "candidate-qualified"; cases.append(("qualification without full gates/host identity",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["gates"]["rootless_userns_compatibility"] = "passed"; cases.append(("rootless gate without four passing tests",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["candidate_specific_test_results"] = [{"test_id":"RLS-001","domain":"rootless-compatibility","result":"passed","verification_method":"synthetic","finding_summary":"synthetic","severity":"none","remediation_owner":"","evidence_refs":[]}]; cases.append(("partial rootless-specific test inventory",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootful-supervisor"; case["gates"]["rootless_userns_compatibility"] = "passed"; cases.append(("rootful record claiming rootless compatibility",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["candidate_specific_test_results"] = [{"test_id":"RLS-001","domain":"rootless-compatibility","result":"passed","verification_method":"synthetic","finding_summary":"synthetic","severity":"none","remediation_owner":"","evidence_refs":[{"reference_id":"synthetic","object_version":"v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"validator","tool_version":"1","evidence_type":"design-document","redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic","verification_note":"synthetic"}]}]; cases.append(("rootless test with wrong evidence type",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; cases.append(("rootless host profile missing",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootful-supervisor"; case["host_identity"]["rootless_profile"] = {"daemon_uid":1000}; cases.append(("rootful record carrying rootless profile",case))
+    profile={"daemon_uid":1000,"daemon_gid":1000,"daemon_identity_digest":"a"*64,"user_namespace_mode":"caller-configured-userns","subuid_map_digest":"b"*64,"subgid_map_digest":"c"*64,"subuid_range_count":1,"subgid_range_count":1,"rootlesskit_version":"synthetic-rootlesskit","rootlesskit_sha256":"d"*64,"newuidmap_sha256":"e"*64,"newgidmap_sha256":"f"*64,"helper_inventory_sha256":"1"*64,"state_directory_policy_sha256":"2"*64,"daemon_socket_policy_sha256":"3"*64,"apparmor_profile_sha256":"4"*64,"network_backend":"synthetic-slirp","network_namespace_profile_sha256":"5"*64,"systemd_delegation_profile_sha256":"6"*64,"delegated_controllers":["cpu","memory","pids"],"profile_sha256":"7"*64}
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["host_identity"]["rootless_profile"] = deepcopy(profile); case["host_identity"]["rootless_profile_digest"]="7"*64; case["host_identity"]["rootless_profile"]["daemon_uid"]=0; cases.append(("rootless daemon using UID zero",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["host_identity"]["rootless_profile"] = deepcopy(profile); case["host_identity"]["rootless_profile_digest"]="7"*64; case["host_identity"]["rootless_profile"]["delegated_controllers"]=["memory","pids"]; cases.append(("rootless profile missing CPU delegation",case))
+    case = deepcopy(template); case["scope"]["target_architecture"] = "rootless-containerd-userns"; case["host_identity"]["rootless_profile"] = deepcopy(profile); case["host_identity"]["rootless_profile_digest"]="8"*64; cases.append(("rootless profile digest mismatch",case))
     case = deepcopy(template); case["phase_a_authorized"] = True; cases.append(("Phase A authorization",case))
     case = deepcopy(template); case["phase_b_authorized"] = True; cases.append(("Phase B authorization",case))
     case = deepcopy(template); case["student_execution_authorized"] = True; cases.append(("student execution authorization",case))
@@ -237,7 +546,30 @@ def main():
             raise AssertionError(f"unsafe qualification record accepted: {label}")
         print(f"PASS  rejects {label}")
 
+    # Report-wide evidence identity and principal rules apply before any candidate
+    # qualification decision; incomplete/deferred records cannot bypass the ledger.
+    partial_with_evidence = deepcopy(template)
+    partial_with_evidence["record_status"] = "in-progress"
+    partial_with_evidence["qualification_status"] = "deferred"
+    base_ref = {"reference_id":"synthetic-partial-evidence","object_version":"partial-v1","sha256":"a"*64,"byte_count":1,"evidence_root_id":"synthetic-partial-root","acquired_by_id":"synthetic-acquirer","acquired_at":"2026-11-10T00:00:00Z","acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":"host-configuration","redaction_status":"non-sensitive","verification_status":"unverified","independent_verifier_id":None,"verification_note":"Synthetic deferred record only."}
+    partial_with_evidence["test_results"][0]["evidence_refs"] = [deepcopy(base_ref)]
+    conflicting_ref = deepcopy(base_ref)
+    conflicting_ref["reference_id"] = "synthetic-partial-evidence-duplicate"
+    conflicting_ref["object_version"] = base_ref["object_version"]
+    partial_with_evidence["test_results"][1]["evidence_refs"] = [conflicting_ref]
+    if not any("represented by multiple reference IDs" in error for error in errors_for(partial_with_evidence,schema_validator)):
+        raise AssertionError("deferred qualification accepted competing reference IDs for one immutable object version")
+    conflicting_metadata = deepcopy(partial_with_evidence)
+    conflicting_metadata["test_results"][1]["evidence_refs"][0]["reference_id"] = base_ref["reference_id"]
+    conflicting_metadata["test_results"][1]["evidence_refs"][0]["sha256"] = "b"*64
+    if not any("conflicting immutable metadata" in error for error in errors_for(conflicting_metadata,schema_validator)):
+        raise AssertionError("deferred qualification accepted conflicting metadata for one reference ID")
+    print("PASS  enforces report-wide evidence identity rules for in-progress/deferred records")
+
     # Positive synthetic record: demonstrates structural acceptance only.
+    synthetic_now = datetime.now(timezone.utc)
+    synthetic_reviewed_at = (synthetic_now - timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    synthetic_expires_at = (synthetic_now + timedelta(days=30)).isoformat(timespec="seconds").replace("+00:00", "Z")
     complete = deepcopy(template)
     complete["record_status"] = "completed"
     complete["qualification_status"] = "candidate-qualified"
@@ -248,7 +580,12 @@ def main():
     })
     complete["host_identity"].update({
         "selected":True,"provider":"synthetic-provider","region":"synthetic-region","vm_shape":"synthetic-shape",
-        "host_instance_id":"synthetic-host-instance","boot_id":"synthetic-boot-id","image_digest":"c"*64,
+        "host_instance_id":"synthetic-host-instance","host_incarnation_epoch":"synthetic-host-epoch",
+        "prior_incarnation_fence_evidence_ref":"synthetic-prior-incarnation-fence-evidence",
+        "host_incarnation_authority_id":"synthetic-authority","host_incarnation_authority_key_version":"synthetic-key-v1",
+        "host_incarnation_epoch_evidence_ref":"synthetic-epoch-evidence","host_incarnation_issuance_nonce_digest":"a"*64,
+        "predecessor_incarnation_set_digest":"b"*64,"provider_fence_method":"synthetic-provider-hard-stop",
+        "provider_fence_verified_at":"2026-11-10T00:00:00Z","provider_fence_evidence_digest":"c"*64,"boot_id":"synthetic-boot-id","image_digest":"c"*64,
         "os_release":"synthetic-os","kernel_release":"synthetic-kernel","architecture":"x86_64",
         "filesystem_type":"synthetic-fs","mount_options":["synthetic-option"],"storage_device_identity":"synthetic-device",
         "storage_class":"synthetic-storage","cgroup_mode":"unified-v2","containerd_version":"synthetic-containerd",
@@ -266,31 +603,251 @@ def main():
     })
     for gate in complete["gates"]:
         complete["gates"][gate] = "passed"
+    complete["gates"]["rootless_userns_compatibility"] = "not-applicable"
     evidence_types = {test["id"]:test["evidenceTypes"][0] for test in TESTS}
     for finding in complete["test_results"]:
         finding.update(result="passed",verification_method="synthetic test",finding_summary="Synthetic positive case only",severity="none")
+        if finding["test_id"] == "WDG-002":
+            finding["watchdog_subtests"] = {}
+            for scenario_id in sorted(WATCHDOG_SCENARIO_IDS):
+                finding["watchdog_subtests"][scenario_id] = {
+                    "result":"passed","verification_method":"synthetic subtest",
+                    "finding_summary":"Synthetic only","severity":"none",
+                    "evidence_refs":[{
+                        "reference_id":"synthetic-"+scenario_id,"object_version":"object-"+scenario_id,"sha256":"a"*64,"byte_count":1,
+                        "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
+                        "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":"fault-injection",
+                        "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-reviewer",
+                        "verification_note":"Synthetic only; not a real host measurement."
+                    }]
+                }
         finding["evidence_refs"] = [{
-            "reference_id":"synthetic-"+finding["test_id"],"object_version":"v1","sha256":"a"*64,"byte_count":1,
-            "evidence_root_id":"synthetic-root","acquired_at":"2026-11-10T00:00:00Z",
+            "reference_id":"synthetic-"+finding["test_id"],"object_version":"object-"+finding["test_id"],"sha256":"a"*64,"byte_count":1,
+            "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
             "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":evidence_types[finding["test_id"]],
             "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-reviewer",
             "verification_note":"Synthetic only; not a real host measurement."
         }]
+    jrn013 = next(item for item in complete["test_results"] if item["test_id"] == "JRN-013")
+    epoch_proof = {
+        "reference_id":"synthetic-JRN-013-epoch-proof","object_version":"object-epoch-proof","sha256":"d"*64,"byte_count":1,
+        "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
+        "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":"watchdog-control-plane",
+        "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-control-plane-verifier",
+        "verification_note":"Synthetic only; not a real authority response."
+    }
+    fence_proof = {
+        "reference_id":"synthetic-JRN-013-fence-proof","object_version":"object-fence-proof","sha256":"e"*64,"byte_count":1,
+        "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
+        "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":"watchdog-control-plane",
+        "redaction_status":"non-sensitive","verification_status":"verified","independent_verifier_id":"synthetic-control-plane-verifier",
+        "verification_note":"Synthetic only; not a real provider fence."
+    }
+    jrn013["evidence_refs"].extend([epoch_proof, fence_proof])
+    complete["host_identity"]["host_incarnation_epoch_evidence_ref"] = epoch_proof["reference_id"]
+    complete["host_identity"]["host_incarnation_epoch_evidence_digest"] = epoch_proof["sha256"]
+    complete["host_identity"]["prior_incarnation_fence_evidence_ref"] = fence_proof["reference_id"]
+    complete["host_identity"]["provider_fence_evidence_digest"] = fence_proof["sha256"]
     complete["review"].update({
         "status":"completed","reviewer_id":"synthetic-independent-reviewer","host_owner_id":"synthetic-host-owner",
         "independence_attested":True,"independence_basis":"synthetic identity separation",
         "conflict_disclosure":"synthetic none","decision":"accept-host-candidate",
-        "reviewed_commit_sha":complete["scope"]["reviewed_commit_sha"],"reviewed_at":"2026-11-10T00:00:00Z",
-        "expires_at":"2026-12-10T00:00:00Z","signature_reference":"synthetic-signature"
+        "reviewed_commit_sha":complete["scope"]["reviewed_commit_sha"],"reviewed_at":synthetic_reviewed_at,
+        "expires_at":synthetic_expires_at,"signature_reference":"synthetic-signature"
     })
-    complete["reviewed_at"]="2026-11-10T00:00:00Z"
-    complete["expires_at"]="2026-12-10T00:00:00Z"
+    complete["reviewed_at"]=synthetic_reviewed_at
+    complete["expires_at"]=synthetic_expires_at
     complete["signature_reference"]="synthetic-signature"
     complete["qualification_rationale"]="Synthetic positive test case only; no real host qualification is asserted."
     if errors_for(complete,schema_validator):
         raise AssertionError("synthetic fully-qualified record failed: " + "; ".join(errors_for(complete,schema_validator)))
+
+    duplicate_object_version = deepcopy(complete)
+    first_evidence = duplicate_object_version["test_results"][0]["evidence_refs"][0]
+    second_evidence = duplicate_object_version["test_results"][1]["evidence_refs"][0]
+    second_evidence["evidence_root_id"] = first_evidence["evidence_root_id"]
+    second_evidence["object_version"] = first_evidence["object_version"]
+    second_evidence["reference_id"] = "synthetic-distinct-reference-same-object"
+    duplicate_errors = errors_for(duplicate_object_version, schema_validator)
+    if not any("represented by multiple reference IDs" in error for error in duplicate_errors):
+        raise AssertionError("duplicate evidence object version under a second reference ID was accepted")
+
+    conflicting_reference = deepcopy(complete)
+    first_evidence = conflicting_reference["test_results"][0]["evidence_refs"][0]
+    conflicting_reference["test_results"][1]["evidence_refs"].append(deepcopy(first_evidence))
+    conflicting_reference["test_results"][1]["evidence_refs"][-1]["sha256"] = "f" * 64
+    conflicting_errors = errors_for(conflicting_reference, schema_validator)
+    if not any("conflicting immutable metadata" in error for error in conflicting_errors):
+        raise AssertionError("one evidence reference with conflicting metadata was accepted")
+
+    reused_reference = deepcopy(complete)
+    reused_reference["test_results"][1]["evidence_refs"] = deepcopy(reused_reference["test_results"][0]["evidence_refs"])
+    if errors_for(reused_reference, schema_validator):
+        raise AssertionError("the same immutable evidence reference could not be safely reused by another finding")
+
+    unverified_auxiliary = deepcopy(complete)
+    unverified_auxiliary["test_results"][0]["evidence_refs"].append({
+        **deepcopy(unverified_auxiliary["test_results"][0]["evidence_refs"][0]),
+        "reference_id": "synthetic-unverified-auxiliary",
+        "object_version": "unverified-version",
+        "verification_status": "unverified",
+        "independent_verifier_id": None,
+        "verification_note": ""
+    })
+    if not any("passed requires independently verified evidence" in error for error in errors_for(unverified_auxiliary, schema_validator)):
+        raise AssertionError("unverified supplementary evidence on a passed finding was accepted")
+    unverified_auxiliary["test_results"][0]["evidence_refs"][-1]["verification_status"] = "verified"
+    unverified_auxiliary["test_results"][0]["evidence_refs"][-1]["independent_verifier_id"] = "synthetic-third-party-verifier"
+    unverified_auxiliary["test_results"][0]["evidence_refs"][-1]["verification_note"] = "Synthetic independently verified supplementary object."
+    unverified_auxiliary["test_results"][0]["evidence_refs"][-1]["acquired_by_id"] = unverified_auxiliary["review"]["host_owner_id"]
+    if not any("evidence acquirer must be distinct" in error for error in errors_for(unverified_auxiliary, schema_validator)):
+        raise AssertionError("host owner acquisition of supplementary evidence was accepted")
+    print("PASS  enforces report-wide immutable evidence reference/object-version identity and principal separation")
+    auxiliary_role_conflict = deepcopy(complete)
+    auxiliary = deepcopy(auxiliary_role_conflict["test_results"][0]["evidence_refs"][0])
+    auxiliary.update(reference_id="synthetic-auxiliary-role-conflict", object_version="object-auxiliary-role-conflict")
+    auxiliary["acquired_by_id"] = auxiliary_role_conflict["review"]["reviewer_id"]
+    auxiliary_role_conflict["test_results"][0]["evidence_refs"].append(auxiliary)
+    if not any("evidence acquirer must be distinct" in error for error in errors_for(auxiliary_role_conflict, schema_validator)):
+        raise AssertionError("independent reviewer was accepted as acquirer of supplementary evidence")
+
+    auxiliary_verifier_conflict = deepcopy(complete)
+    auxiliary = deepcopy(auxiliary_verifier_conflict["test_results"][0]["evidence_refs"][0])
+    auxiliary.update(reference_id="synthetic-auxiliary-verifier-conflict", object_version="object-auxiliary-verifier-conflict")
+    auxiliary["independent_verifier_id"] = auxiliary_verifier_conflict["review"]["host_owner_id"]
+    auxiliary_verifier_conflict["test_results"][0]["evidence_refs"].append(auxiliary)
+    if not any("evidence verifier must be independent" in error for error in errors_for(auxiliary_verifier_conflict, schema_validator)):
+        raise AssertionError("host owner was accepted as verifier of supplementary evidence")
+
+    missing_epoch = deepcopy(complete)
+    missing_epoch["host_identity"]["host_incarnation_epoch"] = None
+    if not any("exact selected host/runtime/storage identity" in error for error in errors_for(missing_epoch,schema_validator)):
+        raise AssertionError("candidate-qualified record accepted without external host-incarnation epoch")
+    missing_fence = deepcopy(complete)
+    missing_fence["host_identity"]["prior_incarnation_fence_evidence_ref"] = None
+    if not any("exact selected host/runtime/storage identity" in error for error in errors_for(missing_fence,schema_validator)):
+        raise AssertionError("candidate-qualified record accepted without prior-incarnation fence evidence")
+    epoch_evidence_fields = [
+        "host_incarnation_authority_id", "host_incarnation_authority_key_version",
+        "host_incarnation_epoch_evidence_ref", "host_incarnation_epoch_evidence_digest", "host_incarnation_issuance_nonce_digest",
+        "predecessor_incarnation_set_digest", "provider_fence_method",
+        "provider_fence_verified_at", "provider_fence_evidence_digest"
+    ]
+    for field in epoch_evidence_fields:
+        missing_proof = deepcopy(complete)
+        missing_proof["host_identity"][field] = None
+        if not any("exact selected host/runtime/storage identity" in error for error in errors_for(missing_proof,schema_validator)):
+            raise AssertionError(f"candidate-qualified record accepted without {field}")
+    print("PASS  requires structured epoch authority, nonce, predecessor-set and provider-fence evidence bindings")
+    mismatched_fence_digest = deepcopy(complete)
+    mismatched_fence_digest["host_identity"]["provider_fence_evidence_digest"] = "f"*64
+    if not any("digest must match its immutable evidence record" in error for error in errors_for(mismatched_fence_digest,schema_validator)):
+        raise AssertionError("candidate-qualified record accepted with a mismatched provider fence digest")
+    unverified_epoch = deepcopy(complete)
+    for finding in unverified_epoch["test_results"]:
+        for evidence in finding.get("evidence_refs", []):
+            if evidence.get("reference_id") == unverified_epoch["host_identity"]["host_incarnation_epoch_evidence_ref"]:
+                evidence["verification_status"] = "unverified"
+    if not any("independently verified watchdog-control-plane evidence" in error for error in errors_for(unverified_epoch,schema_validator)):
+        raise AssertionError("candidate-qualified record accepted with unverified epoch authority evidence")
+    duplicate_fence_ref = deepcopy(complete)
+    fence_ref = duplicate_fence_ref["host_identity"]["prior_incarnation_fence_evidence_ref"]
+    jrn013_duplicate = next(item for item in duplicate_fence_ref["test_results"] if item["test_id"] == "JRN-013")
+    jrn013_duplicate["evidence_refs"].append(deepcopy(next(item for item in jrn013_duplicate["evidence_refs"] if item["reference_id"] == fence_ref)))
+    if not any("exactly one evidence record" in error for error in errors_for(duplicate_fence_ref,schema_validator)):
+        raise AssertionError("candidate-qualified record accepted duplicate provider fence evidence references")
+    print("PASS  rejects mismatched, unverified and duplicate epoch/fence evidence")
+    future_fence = deepcopy(complete)
+    future_fence["host_identity"]["provider_fence_verified_at"] = (synthetic_now + timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    if not any("before independent host qualification review" in error for error in errors_for(future_fence, schema_validator)):
+        raise AssertionError("provider fence timestamp after independent review was accepted")
+    predated_fence_evidence = deepcopy(complete)
+    predated_fence_evidence["host_identity"]["provider_fence_verified_at"] = "2026-11-10T00:01:00Z"
+    if not any("cannot predate the claimed fence verification" in error for error in errors_for(predated_fence_evidence, schema_validator)):
+        raise AssertionError("provider fence evidence acquired before claimed verification was accepted")
+    print("PASS  rejects provider-fence chronology inconsistencies")
+    late_fence_evidence = deepcopy(complete)
+    late_fence = next(evidence for finding in late_fence_evidence["test_results"] for evidence in finding.get("evidence_refs", []) if evidence.get("reference_id") == late_fence_evidence["host_identity"]["prior_incarnation_fence_evidence_ref"])
+    late_fence["acquired_at"] = (synthetic_now + timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    if not any("evidence must be acquired before independent host qualification review" in error for error in errors_for(late_fence_evidence, schema_validator)):
+        raise AssertionError("provider fence evidence acquired after review was accepted")
+    late_epoch_evidence = deepcopy(complete)
+    late_epoch = next(evidence for finding in late_epoch_evidence["test_results"] for evidence in finding.get("evidence_refs", []) if evidence.get("reference_id") == late_epoch_evidence["host_identity"]["host_incarnation_epoch_evidence_ref"])
+    late_epoch["acquired_at"] = (synthetic_now + timedelta(minutes=1)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    if not any("evidence must be acquired before independent host qualification review" in error for error in errors_for(late_epoch_evidence, schema_validator)):
+        raise AssertionError("epoch evidence acquired after review was accepted")
+    print("PASS  rejects epoch/fence evidence acquired after independent review")
+
+    verifier_is_host_owner = deepcopy(complete)
+    verifier_is_host_owner["test_results"][0]["evidence_refs"][0]["independent_verifier_id"] = verifier_is_host_owner["review"]["host_owner_id"]
+    if not any("evidence verifier must be independent" in error for error in errors_for(verifier_is_host_owner,schema_validator)):
+        raise AssertionError("host owner was accepted as independent evidence verifier")
+    verifier_is_reviewer = deepcopy(complete)
+    verifier_is_reviewer["test_results"][0]["evidence_refs"][0]["independent_verifier_id"] = verifier_is_reviewer["review"]["reviewer_id"]
+    if not any("evidence verifier must be independent" in error for error in errors_for(verifier_is_reviewer,schema_validator)):
+        raise AssertionError("security reviewer was accepted as independent evidence verifier")
+    print("PASS  rejects evidence verification by host owner or independent security reviewer")
+
+    acquired_by_owner = deepcopy(complete)
+    acquired_by_owner["test_results"][0]["evidence_refs"][0]["acquired_by_id"] = acquired_by_owner["review"]["host_owner_id"]
+    if not any("evidence acquirer must be distinct" in error for error in errors_for(acquired_by_owner, schema_validator)):
+        raise AssertionError("host owner was accepted as evidence acquirer")
+    acquired_by_verifier = deepcopy(complete)
+    acquired_by_verifier["test_results"][0]["evidence_refs"][0]["acquired_by_id"] = acquired_by_verifier["test_results"][0]["evidence_refs"][0]["independent_verifier_id"]
+    if not any("evidence acquirer must be distinct" in error for error in errors_for(acquired_by_verifier, schema_validator)):
+        raise AssertionError("evidence verifier was accepted as evidence acquirer")
+    print("PASS  rejects evidence acquisition by host owner or evidence verifier")
+
+    expired_complete = deepcopy(complete)
+    expired_complete["review"]["expires_at"] = "2020-01-02T00:00:00Z"
+    expired_complete["expires_at"] = "2020-01-02T00:00:00Z"
+    expired_errors = errors_for(expired_complete, schema_validator)
+    if not any("expired at validation time" in error for error in expired_errors):
+        raise AssertionError("expired independent qualification/review was accepted")
+    print("PASS  rejects expired host qualification and independent review")
+
     if any(complete[flag] is not False for flag in AUTH_FLAGS):
         raise AssertionError("synthetic qualification improperly authorizes execution")
+    rootless_complete = deepcopy(complete)
+    rootless_complete["scope"]["target_architecture"] = "rootless-containerd-userns"
+    rootless_complete["gates"]["rootless_userns_compatibility"] = "passed"
+    rootless_profile = {
+        "daemon_uid":1000,"daemon_gid":1000,"daemon_identity_digest":"a"*64,
+        "user_namespace_mode":"caller-configured-userns","subuid_map_digest":"b"*64,"subgid_map_digest":"c"*64,
+        "subuid_range_count":1,"subgid_range_count":1,"rootlesskit_version":"synthetic-rootlesskit",
+        "rootlesskit_sha256":"d"*64,"newuidmap_sha256":"e"*64,"newgidmap_sha256":"f"*64,
+        "helper_inventory_sha256":"1"*64,"state_directory_policy_sha256":"2"*64,
+        "daemon_socket_policy_sha256":"3"*64,"apparmor_profile_sha256":"4"*64,
+        "network_backend":"synthetic-slirp","network_namespace_profile_sha256":"5"*64,
+        "systemd_delegation_profile_sha256":"6"*64,"delegated_controllers":["cpu","memory","pids"]
+    }
+    rootless_profile["profile_sha256"] = canonical_rootless_profile_sha256(rootless_profile)
+    rootless_complete["host_identity"]["rootless_profile"] = rootless_profile
+    rootless_complete["host_identity"]["rootless_profile_digest"] = rootless_profile["profile_sha256"]
+    rootless_types = {test["id"]: test["evidenceTypes"][0] for test in ROOTLESS_TESTS}
+    rootless_complete["candidate_specific_test_results"] = [{
+        "test_id": test["id"], "domain":"rootless-compatibility", "result":"passed",
+        "verification_method":"Synthetic rootless compatibility test",
+        "finding_summary":"Synthetic only; not a real host measurement.",
+        "severity":"none", "remediation_owner":"",
+        "evidence_refs":[{
+            "reference_id":"synthetic-"+test["id"],"object_version":"object-"+test["id"],"sha256":"b"*64,"byte_count":1,
+            "evidence_root_id":"synthetic-root","acquired_by_id":"synthetic-evidence-acquirer","acquired_at":"2026-11-10T00:00:00Z",
+            "acquisition_tool":"synthetic-validator","tool_version":"1.0","evidence_type":rootless_types[test["id"]],
+            "redaction_status":"non-sensitive","verification_status":"verified",
+            "independent_verifier_id":"synthetic-reviewer","verification_note":"Synthetic only; not a real host measurement."
+        }]
+    } for test in ROOTLESS_TESTS]
+    rootless_errors = errors_for(rootless_complete, schema_validator)
+    if rootless_errors:
+        raise AssertionError("synthetic rootless candidate-qualified record rejected: " + "; ".join(rootless_errors))
+    stale_profile = deepcopy(rootless_complete)
+    stale_profile["host_identity"]["rootless_profile"]["rootlesskit_version"] = "tampered-rootlesskit"
+    stale_errors = errors_for(stale_profile, schema_validator)
+    if not any("canonical SHA-256" in error for error in stale_errors):
+        raise AssertionError("rootless profile content changed without a digest update was accepted")
+    print("PASS  rejects rootless profile content changed without canonical digest update")
+    print("PASS  accepts rootless qualification only with all four candidate-specific tests")
     print("PASS  accepts synthetic complete qualification while all execution authorizations remain false")
     print("NOTE  synthetic contract tests only; no host selected/tested and no real evidence/signature")
 

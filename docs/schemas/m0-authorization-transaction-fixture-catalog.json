@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0.0",
+  "status": "synthetic-contract-fixtures",
+  "required_case_count": 15,
+  "cases": [
+    {
+      "id": "TX-001",
+      "description": "No transaction is opened; authorization, claim and event state remain unchanged",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-002",
+      "description": "Crash after tentative claim/event/counter writes but before commit rolls back all writes",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-003",
+      "description": "Commit succeeds but acknowledgement is lost; same run ID and digest resolve the committed claim",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-004",
+      "description": "Retry with the same run ID and request digest returns the original immutable claim",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-005",
+      "description": "Reuse run ID with a changed request digest conflicts without mutation",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-006",
+      "description": "Two contenders in either serial order compete for the final slot; exactly one succeeds",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-007",
+      "description": "Claim commits before revocation; claim remains consumed and cannot resume afterward",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-008",
+      "description": "Revocation commits before claim; new claim is rejected",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-009",
+      "description": "Stale external revocation/checkpoint generation denies consumption",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-010",
+      "description": "Mutation of an authorization event is detected by the digest-chain invariant",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-011",
+      "description": "Claim identity update and deletion are denied",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-012",
+      "description": "Terminal run outcome cannot be reopened by appending a later status",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-013",
+      "description": "Counter drift quarantines authorization without deleting claims or silently refunding budget",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-014",
+      "description": "Crash after commit before runner dispatch leaves budget consumed and resolves same claim",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    },
+    {
+      "id": "TX-015",
+      "description": "Run-event request retry is idempotent; changed digest under same request ID conflicts",
+      "expected": "PASS",
+      "execution": "scripts/validate_m0_authorization_transaction_contract.py"
+    }
+  ]
+}

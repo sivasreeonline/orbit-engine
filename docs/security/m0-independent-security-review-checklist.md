@@ -1,9 +1,9 @@
 # M0 Independent Security and Architecture Review Checklist
 
 - Status: **review package prepared; independent review not yet performed**.
-- Review baseline commit: `48fc52fc049bac8b8004fda7ac84b1a152872023`.
+- Review baseline commit: **must be pinned in the signed review record at review kickoff**. The blank template intentionally carries no commit SHA; never reuse a historical baseline for a new review.
 - Scope: M0 disposable synthetic proof only. This is not production approval.
-- Machine-readable schema: `m0-independent-security-review-record.schema.json`.
+- Machine-readable schema v1.1.0: `m0-independent-security-review-record.schema.json`.
 - Blank record: `m0-independent-security-review-record.template.json`.
 - Implementation remains blocked; `UnconfiguredExecutor` stays active.
 
@@ -71,12 +71,15 @@ Do not select a winner from this table alone. Complete the same control findings
 | LIFE-003 | Cleanup and terminal acknowledgement | Does terminal success require independent absence of all workload resources? | Post-cleanup process/task/shim/namespace/cgroup/mount/scratch/network inventory. | host |
 | CLOCK-001 | Within-boot clock | Is the selected elapsed clock suspend-aware and anchored to the earliest trigger? | Clock API, boot ID, raw samples and suspend/resume tests. | host |
 | CLOCK-002 | Reboot and clock trust | Are reboot/snapshot/NTP-loss/clock-step cases conservative and fail closed? | Host/boot identity, time-sync uncertainty, snapshot policy and fault evidence. | host |
+| FENCE-001 | External host-incarnation epoch and predecessor fencing | Before a restored/cloned/rolled-back/replacement VM is admitted, does a trusted external authority authenticate a fresh monotonic epoch only after complete predecessor enumeration and provider-enforced fencing? | Authority/key-version trust, nonce/request binding, predecessor-set completeness, provider hard-stop or equivalent compute/storage/control-path isolation evidence, fence-before-epoch chronology, concurrent restore/clone and replay/rollback fault-injection traces. | host |
 | JOURNAL-001 | Journal durability | Does exact backend/filesystem/storage preserve acknowledged commits and fail closed? | Library/source ID, effective settings, filesystem/device and power-loss/disk-full/corruption reports. | host |
 | JOURNAL-002 | Exclusive supervisor fencing | Can only one privileged supervisor access containerd, including with old process SIGSTOP-paused? | Kernel lock implementation, ownership/inode evidence, process and generation traces. | host |
 | JOURNAL-003 | Schema/migration/backup/restore | Are constraints, migrations and consistent backup/restore fail-closed? | Migration/constraint tests, backup/restore and non-terminal reconciliation reports. | host |
 | WATCH-001 | Per-attempt cleanup controller | Does termination/cleanup proceed during client, journal and evidence outages? | Trigger/termination timing, host inventory, branch dispositions and fault injection. | host |
 | WATCH-002 | Supervisor recovery watchdog | Can a paused/deadlocked supervisor be stopped/replaced without dual privileged access or clock reset? | Watchdog identity/privileges, stop path, lock release, generations and restart evidence. | host |
 | WATCH-003 | Outer VM safety watchdog | Are VM resource/wall limits and hard-stop/rebuild independent of in-VM failure domains? | Control-plane configuration, external enforcement and stop/rebuild audit. | host |
+
+`WATCH-002` is not accepted from a generic restart test: independently review and require all seven `WD-001` through `WD-007` watchdog fault-injection subtests in the host qualification protocol. Any missing, ambiguous or bypassed subtest keeps WATCH-002 unpassed.
 | EVID-001 | Evidence integrity | Are immutable object version/digest/size/provenance independently verified? | Evidence root, object version, SHA-256, byte count and independent verifier output. | mixed |
 | EVID-002 | Evidence redaction and separation | Can evidence failure leak secrets or delay cleanup? | Redaction rules, canary scan, bounded staging and evidence-outage tests. | host |
 | SUPPLY-001 | Supply chain | Are actions, Go dependencies, runtime packages, images and fixtures pinned and monitored? | Lockfiles, action pins, SBOM/provenance, vulnerability and patch/rollback reports. | mixed |
@@ -96,7 +99,11 @@ A finding is not closed merely because a change was committed or CI passed. Clos
 
 ## 6. Evidence reference requirements
 
-Each evidence reference identifies the immutable source/object and exact version, SHA-256, byte count, evidence root, acquisition timestamp/tool, redaction status, independent verification status and reviewer note. Do not include private object URLs, credentials, source code, hidden tests or raw sensitive logs.
+Each evidence reference identifies the immutable source/object and exact version, SHA-256, byte count, evidence root, accountable `acquired_by_id` principal, acquisition timestamp/tool, redaction status, independent verification status and reviewer note. `acquired_by_id` identifies who actually acquired/uploaded the object, not merely which tool performed the transfer. Do not include private object URLs, credentials, source code, hidden tests or raw sensitive logs.
+
+Evidence verification is an actual byte-level and provenance check, not acceptance of metadata fields: independently retrieve the exact immutable object version; recompute full-object SHA-256 and byte count; confirm the evidence root, retention/version identity and test/host/profile provenance; verify detached signatures/attestations against pinned signer trust material; and retain sanitized verification output. Never treat an ETag as SHA-256 without provider documentation for the exact upload mode. Missing or inaccessible objects, digest/size mismatch, invalid signatures or ambiguous provenance block the evidence.
+
+Evidence acquisition, independent verification and security review are separately attributable roles. The `acquired_by_id` principal must differ from the independent verifier, host owner and independent security reviewer; the verifier must also differ from the host owner and security reviewer. The machine validators enforce these identity-separation rules for passed evidence references; they do not retrieve objects or perform cryptographic verification.
 
 Evidence types: `design-document`, `ci-run`, `schema-test`, `host-runtime`, `host-configuration`, `fault-injection`, `supply-chain`, and `operator-record`.
 
@@ -127,3 +134,25 @@ Use `docs/specifications/m0-host-and-journal-qualification-protocol.md` and its 
 ## 10. Current state
 
 **Not reviewed.** The blank machine-readable template is intentionally non-authorizing. No reviewer, host, runtime evidence, signature or approval is pre-populated. Passing CI validates the record contract only; it is not a security review.
+
+## ADR-0019 candidate decision
+
+Add the candidate comparison in `docs/adr/ADR-0019-decision-dossier.md` to the independent review scope. Review both deployment models against the same 33-control checklist (33 control IDs) and map their evidence to the 33 host qualification tests. Use `docs/schemas/m0-adr-0019-decision-record.schema.json`; a selected candidate must have its own independently reviewed host qualification report.
+
+
+## Upstream rootless and runtime integration evidence
+
+Include `docs/adr/ADR-0019-upstream-compatibility-evidence.md` in the reviewer packet. In particular, assess RootlessKit helper binaries/subordinate IDs, namespace/socket isolation, network backend, systemd CPU delegation, exact containerd-shim + caller-userns compatibility, and source revision pinning. These are independent review items, not documentation-based passes.
+
+
+## Rootless-only qualification requirements
+
+For Candidate B, assess RLS-001 exact containerd-shim/caller-userns/systrap integration; RLS-002 subordinate UID/GID mappings and helper provenance; RLS-003 systemd CPU/memory/PID delegation; and RLS-004 RootlessKit network namespace and host abstract-socket isolation. Each requires independently verified host evidence. The shared 33-test catalogue does not replace these additional Candidate B tests. Candidate A must mark the rootless-only gate not-applicable and include no RLS test results.
+
+## Rootless host profile identity review
+
+Verify the exact structured `rootless_profile` in the host qualification record and confirm the same object/digest appears in the ADR candidate and signed qualification report. Review non-root daemon UID/GID, subordinate UID/GID map digests and range counts, RootlessKit/newuidmap/newgidmap binary hashes, helper ownership/modes/provenance, AppArmor profile, private state directory, daemon socket policy, network backend/namespace profile and systemd delegation. Confirm `cpu`, `memory` and `pids` are actually delegated and enforced. Candidate A must have null rootless profile fields.
+
+## Immutable upstream source baseline
+
+The immutable upstream source set is recorded in `docs/adr/ADR-0019-upstream-source-manifest.json`; the exact manifest SHA-256 must be embedded in any completed ADR-0019 decision record. A reviewer must check the eight source pins and recorded signature-verification status. The branch-head URLs are discovery references only; the manifest points to immutable commit URLs and records Git blob SHA-1 plus content SHA-256.

@@ -7,6 +7,7 @@ on:
       - "apps/web/**"
       - "apps/api/**"
       - "docs/**"
+      - "scripts/**"
       - ".github/workflows/**"
       - "AGENTS.md"
       - "CLAUDE.md"
@@ -16,6 +17,7 @@ on:
       - "apps/web/**"
       - "apps/api/**"
       - "docs/**"
+      - "scripts/**"
       - ".github/workflows/**"
       - "AGENTS.md"
       - "CLAUDE.md"
@@ -207,6 +209,93 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/execution-job-repository.integration.test.ts
+
+      - name: Verify authorization ledger transactions against disposable PostgreSQL schema
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/authorization-ledger.integration.test.ts
+
+      - name: Verify PostgreSQL crash recovery after committed and uncommitted writes
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          container_id="$(docker ps --filter "ancestor=postgres:17-alpine" --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+
+          transaction_pid=""
+          restart_if_needed() {
+            if [ -n "$transaction_pid" ]; then
+              kill "$transaction_pid" 2>/dev/null || true
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' "$container_id" 2>/dev/null || true)" != "true" ]; then
+              docker start "$container_id" >/dev/null 2>&1 || true
+            fi
+          }
+          trap restart_if_needed EXIT
+
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS crash_recovery_it;
+          DROP TABLE IF EXISTS crash_recovery_it.recovery_probe;
+          CREATE TABLE crash_recovery_it.recovery_probe (
+            probe_id text PRIMARY KEY,
+            payload text NOT NULL
+          );
+          CHECKPOINT;
+          INSERT INTO crash_recovery_it.recovery_probe (probe_id, payload)
+          VALUES ('committed-before-crash', 'must-survive-wal-recovery');
+          SQL
+
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 \
+            -c "BEGIN; INSERT INTO crash_recovery_it.recovery_probe VALUES ('uncommitted-before-crash', 'must-be-rolled-back'); SELECT pg_sleep(60); COMMIT;" \
+            >/tmp/orbit-pg-uncommitted-transaction.log 2>&1 &
+          transaction_pid=$!
+
+          active_transaction=0
+          for attempt in $(seq 1 30); do
+            active_transaction="$(psql -h 127.0.0.1 -U postgres -d sky_high_test -Atqc \
+              "SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND query LIKE '%pg_sleep(60)%'")"
+            if [ "$active_transaction" -ge 1 ]; then
+              break
+            fi
+            sleep 1
+          done
+          test "$active_transaction" -ge 1
+
+          docker kill --signal KILL "$container_id" >/dev/null
+          wait "$transaction_pid" 2>/dev/null || true
+          transaction_pid=""
+          docker start "$container_id" >/dev/null
+
+          ready=0
+          for attempt in $(seq 1 60); do
+            if pg_isready -h 127.0.0.1 -p 5432 -U postgres -d sky_high_test; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" -eq 1
+
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $block$
+          DECLARE committed_count integer; uncommitted_count integer;
+          BEGIN
+            SELECT count(*) INTO committed_count
+              FROM crash_recovery_it.recovery_probe
+              WHERE probe_id = 'committed-before-crash'
+                AND payload = 'must-survive-wal-recovery';
+            SELECT count(*) INTO uncommitted_count
+              FROM crash_recovery_it.recovery_probe
+              WHERE probe_id = 'uncommitted-before-crash';
+            IF committed_count <> 1 OR uncommitted_count <> 0 THEN
+              RAISE EXCEPTION 'Crash recovery mismatch: committed %, uncommitted %',
+                committed_count, uncommitted_count;
+            END IF;
+          END
+          $block$;
+          SQL
+          trap - EXIT
 
       - name: Worker deployment dry run
         run: npx wrangler deploy --dry-run

@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sivasreeonline/orbit-engine/blob/main/docs/schemas/m0-crypto-key-lifecycle-event.schema.json",
+  "title": "M0 Cryptographic Key Lifecycle Event",
+  "description": "Proposed append-only key lifecycle transition record. Structural contract only; external authority signature and custody evidence remain separate gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "authority_id",
+    "key_id",
+    "key_version",
+    "purpose",
+    "environment",
+    "prior_state",
+    "new_state",
+    "event_type",
+    "trust_bundle_generation",
+    "occurred_at",
+    "actor_principal_id",
+    "reason_code",
+    "evidence_ref",
+    "evidence_sha256",
+    "previous_event_sha256",
+    "event_sha256",
+    "reactivation_permitted"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "authority_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "key_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "key_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "purpose": {
+      "enum": [
+        "host-epoch",
+        "provider-fence",
+        "phase-a-authorization",
+        "trust-bundle",
+        "key-revocation"
+      ]
+    },
+    "environment": {
+      "enum": [
+        "development",
+        "test",
+        "staging",
+        "production"
+      ]
+    },
+    "prior_state": {
+      "enum": [
+        "NONE",
+        "GENERATED",
+        "PENDING",
+        "ACTIVE",
+        "DEPRECATED_VERIFY_ONLY",
+        "REVOKED",
+        "DESTROYED"
+      ]
+    },
+    "new_state": {
+      "enum": [
+        "GENERATED",
+        "PENDING",
+        "ACTIVE",
+        "DEPRECATED_VERIFY_ONLY",
+        "REVOKED",
+        "DESTROYED"
+      ]
+    },
+    "event_type": {
+      "enum": [
+        "KEY_GENERATED",
+        "KEY_SUBMITTED_FOR_ACTIVATION",
+        "KEY_ACTIVATED",
+        "KEY_DEPRECATED",
+        "KEY_REVOKED",
+        "KEY_DESTROYED"
+      ]
+    },
+    "trust_bundle_generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "actor_principal_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "reason_code": {
+      "enum": [
+        "INITIAL_CREATION",
+        "ROTATION",
+        "SCHEDULED_DEPRECATION",
+        "KEY_COMPROMISE",
+        "CUSTODY_FAILURE",
+        "POLICY_CHANGE",
+        "UNAUTHORIZED_USE",
+        "RETIREMENT",
+        "OTHER_REVIEWED"
+      ]
+    },
+    "evidence_ref": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "previous_event_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "event_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "reactivation_permitted": {
+      "const": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "KEY_GENERATED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "prior_state": {
+            "const": "NONE"
+          },
+          "new_state": {
+            "const": "GENERATED"
+          },
+          "reason_code": {
+            "const": "INITIAL_CREATION"
+          },
+          "previous_event_sha256": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "KEY_SUBMITTED_FOR_ACTIVATION"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "prior_state": {
+            "const": "GENERATED"
+          },
+          "new_state": {
+            "const": "PENDING"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "KEY_ACTIVATED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "prior_state": {
+            "const": "PENDING"
+          },
+          "new_state": {
+            "const": "ACTIVE"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "KEY_DEPRECATED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "prior_state": {
+            "const": "ACTIVE"
+          },
+          "new_state": {
+            "const": "DEPRECATED_VERIFY_ONLY"
+          },
+          "reason_code": {
+            "enum": [
+              "ROTATION",
+              "SCHEDULED_DEPRECATION"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "KEY_REVOKED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "prior_state": {
+            "enum": [
+              "GENERATED",
+              "PENDING",
+              "ACTIVE",
+              "DEPRECATED_VERIFY_ONLY"
+            ]
+          },
+          "new_state": {
+            "const": "REVOKED"
+          },
+          "reason_code": {
+            "enum": [
+              "KEY_COMPROMISE",
+              "CUSTODY_FAILURE",
+              "POLICY_CHANGE",
+              "UNAUTHORIZED_USE",
+              "OTHER_REVIEWED"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "KEY_DESTROYED"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "prior_state": {
+            "enum": [
+              "REVOKED",
+              "DEPRECATED_VERIFY_ONLY"
+            ]
+          },
+          "new_state": {
+            "const": "DESTROYED"
+          },
+          "reason_code": {
+            "const": "RETIREMENT"
+          }
+        }
+      }
+    }
+  ]
+}
