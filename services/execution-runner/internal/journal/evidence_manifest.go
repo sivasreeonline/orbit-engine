@@ -24,14 +24,14 @@ type EvidenceReference struct {
 }
 
 type QualificationTestEvidence struct {
-	ScenarioID  string             `json:"scenario_id"`
-	Status      EvidenceStatus     `json:"status"`
-	TestRunID   string             `json:"test_run_id"`
-	Command     string             `json:"command"`
-	StartedAt   string             `json:"started_at"`
-	CompletedAt string             `json:"completed_at"`
+	ScenarioID  string              `json:"scenario_id"`
+	Status      EvidenceStatus      `json:"status"`
+	TestRunID   string              `json:"test_run_id"`
+	Command     string              `json:"command"`
+	StartedAt   string              `json:"started_at"`
+	CompletedAt string              `json:"completed_at"`
 	Evidence    []EvidenceReference `json:"evidence"`
-	Notes       string             `json:"notes,omitempty"`
+	Notes       string              `json:"notes,omitempty"`
 }
 
 type JournalAdapterIdentity struct {
@@ -58,21 +58,21 @@ type DurabilityProfile struct {
 }
 
 type IndependentReview struct {
-	Status           string             `json:"status"`
-	ReviewerIdentity string             `json:"reviewer_identity"`
-	ReviewedAt       string             `json:"reviewed_at"`
-	Attestation      EvidenceReference  `json:"attestation"`
+	Status           string            `json:"status"`
+	ReviewerIdentity string            `json:"reviewer_identity"`
+	ReviewedAt       string            `json:"reviewed_at"`
+	Attestation      EvidenceReference `json:"attestation"`
 }
 
 type QualificationEvidenceManifest struct {
-	SchemaVersion   string                       `json:"schema_version"`
-	QualificationID string                       `json:"qualification_id"`
-	CatalogVersion  string                       `json:"catalog_version"`
-	Adapter         JournalAdapterIdentity       `json:"adapter"`
-	Environment     QualificationEnvironment     `json:"environment"`
-	Durability      DurabilityProfile            `json:"durability_profile"`
-	Tests           []QualificationTestEvidence  `json:"tests"`
-	Review          IndependentReview            `json:"independent_review"`
+	SchemaVersion   string                      `json:"schema_version"`
+	QualificationID string                      `json:"qualification_id"`
+	CatalogVersion  string                      `json:"catalog_version"`
+	Adapter         JournalAdapterIdentity      `json:"adapter"`
+	Environment     QualificationEnvironment    `json:"environment"`
+	Durability      DurabilityProfile           `json:"durability_profile"`
+	Tests           []QualificationTestEvidence `json:"tests"`
+	Review          IndependentReview           `json:"independent_review"`
 }
 
 var evidenceSHA256Pattern = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
