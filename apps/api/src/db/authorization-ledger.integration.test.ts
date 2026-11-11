@@ -497,23 +497,35 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     );
     const first = await connect(true);
     const second = await connect(true);
-    await first.query("BEGIN");
-    await second.query("BEGIN");
-    await first.query("SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE", [firstId]);
-    await second.query("SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE", [secondId]);
+    try {
+      await first.query("BEGIN");
+      await second.query("BEGIN");
+      await first.query("SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE", [firstId]);
+      await second.query("SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE", [secondId]);
 
-    const firstWaits = first.query(
-      "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
-      [secondId],
-    );
-    await new Promise((resolve) => setTimeout(resolve, 75));
-    await expect(second.query(
-      "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
-      [firstId],
-    )).rejects.toMatchObject({ code: "40P01" });
-    await second.query("ROLLBACK").catch(() => undefined);
-    await firstWaits;
-    await first.query("ROLLBACK");
+      const firstWaits = first.query(
+        "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
+        [secondId],
+      );
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      const secondWaits = second.query(
+        "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
+        [firstId],
+      );
+      const outcomes = await Promise.allSettled([firstWaits, secondWaits]);
+      const deadlockVictims = outcomes.filter(
+        (outcome) => outcome.status === "rejected" && (outcome.reason as { code?: string }).code === "40P01",
+      );
+      const survivors = outcomes.filter((outcome) => outcome.status === "fulfilled");
+      expect(deadlockVictims).toHaveLength(1);
+      expect(survivors).toHaveLength(1);
+    } finally {
+      await Promise.all([
+        first.query("ROLLBACK").catch(() => undefined),
+        second.query("ROLLBACK").catch(() => undefined),
+      ]);
+      await Promise.all([first.end().catch(() => undefined), second.end().catch(() => undefined)]);
+    }
     const rows = await setup.query(
       "SELECT count(*)::int AS count FROM authorization_state WHERE authorization_id = ANY($1::text[])",
       [[firstId, secondId]],
