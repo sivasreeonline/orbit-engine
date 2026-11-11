@@ -18,6 +18,7 @@ on:
       - "apps/web/**"
       - "apps/api/**"
       - "docs/**"
+      - "migrations/**"
       - "scripts/**"
       - ".github/workflows/**"
       - "AGENTS.md"
