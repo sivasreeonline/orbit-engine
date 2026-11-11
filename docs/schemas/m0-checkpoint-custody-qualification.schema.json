@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "qualification_id", "adapter", "environment", "scenarios", "review"],
   "properties": {
-    "schema_version": {"const": "1.0"},
+    "schema_version": {"const": "1.1"},
     "qualification_id": {"type": "string", "minLength": 1},
     "adapter": {
       "type": "object",
