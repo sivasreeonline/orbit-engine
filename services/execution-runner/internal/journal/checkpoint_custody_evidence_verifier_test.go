@@ -144,7 +144,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 	add(&manifest.Review.Attestation, manifest.Review.Attestation.Path, envelope)
-	reviewerKeys := reviewerKeys
+	reviewerKeys := map[string]TrustedCheckpointCustodyReviewerKey{reviewerKeyID: {KeyID: reviewerKeyID, Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}}
 
 	report, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
 		ReviewerKeys: reviewerKeys,
