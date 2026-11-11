@@ -199,6 +199,58 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		t.Fatal("invalid independent witness signature was accepted")
 	}
 
+
+	revokedWitnessKeys := make(map[string]TrustedCheckpointCustodyWitnessKey, len(witnessKeys))
+	for keyID, key := range witnessKeys {
+		revokedAt := time.Date(2026, 11, 11, 10, 59, 30, 0, time.UTC)
+		key.RevokedAt = &revokedAt
+		revokedWitnessKeys[keyID] = key
+	}
+	if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
+		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		WitnessKeys: revokedWitnessKeys,
+		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		MaxEvidenceAge: 24 * time.Hour,
+	}); err == nil {
+		t.Fatal("revoked independent witness key was accepted")
+	}
+
+	if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
+		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		WitnessKeys: witnessKeys,
+		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		MaxEvidenceAge: 30 * time.Second,
+	}); err == nil {
+		t.Fatal("stale independent witness attestation was accepted")
+	}
+
+	// Re-hash a malformed envelope so strict decoding is exercised before
+	// signature verification.
+	malformedWitnessEvidence := make(custodyEvidenceMemory, len(evidence))
+	for name, data := range evidence {
+		malformedWitnessEvidence[name] = append([]byte(nil), data...)
+	}
+	malformedWitnessManifest := manifest
+	for i := range malformedWitnessManifest.Scenarios {
+		scenario := &malformedWitnessManifest.Scenarios[i]
+		if scenario.IndependentWitnessAttestation.Path == "" {
+			continue
+		}
+		original := string(malformedWitnessEvidence[scenario.IndependentWitnessAttestation.Path])
+		encoded := []byte(strings.TrimSuffix(original, "}") + `, "unexpected": true}`)
+		malformedWitnessEvidence[scenario.IndependentWitnessAttestation.Path] = encoded
+		scenario.IndependentWitnessAttestation.SHA256 = custodyEvidenceDigest(encoded)
+		break
+	}
+	if _, err := VerifyCheckpointCustodyEvidence(malformedWitnessManifest, malformedWitnessEvidence, CheckpointCustodyEvidenceVerifierTrust{
+		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		WitnessKeys: witnessKeys,
+		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		MaxEvidenceAge: 24 * time.Hour,
+	}); err == nil {
+		t.Fatal("unknown witness envelope field was accepted")
+	}
+
 	// Re-hash a tampered signature envelope so this exercises signature
 	// verification rather than failing earlier on the artifact digest.
 	tamperedEvidence := make(custodyEvidenceMemory, len(evidence))
