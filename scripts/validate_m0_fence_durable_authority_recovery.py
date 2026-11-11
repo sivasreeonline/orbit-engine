@@ -153,7 +153,7 @@ class Protocol:
                 raise Conflict("idempotency identity or request digest conflict")
             if db.intent and db.anchored_generation < db.intent["generation"]:
                 self._anchor(operation_id)
-            return prior_n["response_bytes"]
+            return bytes.fromhex(prior_n["response_bytes_hex"])
         if expected_version != db.version:
             raise Conflict("authority record CAS mismatch")
         if db.pending and not db.pending["accepted"]:
@@ -175,7 +175,7 @@ class Protocol:
         db.instance_id = target
         db.version += 1
         record = {"request_digest": request_digest, "operation_id": operation_id,
-                  "response_bytes": response_bytes, "response_digest": digest(response_bytes)}
+                  "response_bytes_hex": response_bytes.hex(), "response_digest": digest(response_bytes)}
         db.pending = {"operation_id": operation_id, "target": target,
                       "epoch": db.epoch, "response_digest": digest(response_bytes),
                       "accepted": False}
@@ -201,7 +201,7 @@ class Protocol:
             raise Denied("issuance is not externally anchored")
         record = self.db.operations[operation_id]
         self.db.published = True
-        return record["response_bytes"]
+        return bytes.fromhex(record["response_bytes_hex"])
 
     def accept(self, operation_id: str, response_bytes: bytes, target: str,
                epoch: int, *, lose_witness_ack: bool = False) -> None:
@@ -212,7 +212,7 @@ class Protocol:
         if not db.published or db.anchored_generation != self.witness.generation:
             raise Denied("response has not been anchored and published")
         record = db.operations[operation_id]
-        if response_bytes != record["response_bytes"]:
+        if response_bytes != bytes.fromhex(record["response_bytes_hex"]):
             raise Denied("acceptance response bytes differ")
         if target != db.pending["target"] or epoch != db.pending["epoch"]:
             raise Denied("acceptance target or epoch mismatch")
@@ -290,7 +290,7 @@ def scenario_commit_and_lost_db_ack() -> None:
     assert p.db.epoch == 6 and p.witness.generation == 0
     response = p.issue(operation_id="op-1", nonce="n-1", request_digest="d-1",
         expected_version=1, target="vm-1")
-    assert response == p.db.operations["op-1"]["response_bytes"]
+    assert response == bytes.fromhex(p.db.operations["op-1"]["response_bytes_hex"])
     assert p.witness.generation == 1
     assert p.publish("op-1") == response
     assert p.db.epoch == 6
@@ -304,7 +304,7 @@ def scenario_witness_lost_ack_and_recovery() -> None:
     assert p.witness.generation == 1 and p.db.anchored_generation == 0
     assert p.recover() == "RECONCILED_EXACT_CHECKPOINT"
     response = p.publish("op-2")
-    assert response == p.db.operations["op-2"]["response_bytes"]
+    assert response == bytes.fromhex(p.db.operations["op-2"]["response_bytes_hex"])
 
 
 def scenario_restore_and_quarantine() -> None:
