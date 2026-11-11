@@ -344,6 +344,28 @@ EXCEPTION
 END;
 $$;
 
+CREATE FUNCTION m0_fence_authority_it.issue_then_pause(
+    p_host_id text,
+    p_operation_id text,
+    p_nonce_digest text,
+    p_request_digest text,
+    p_expected_version bigint,
+    p_target_instance_id text
+) RETURNS bytea LANGUAGE plpgsql AS $
+DECLARE
+    response_value bytea;
+BEGIN
+    response_value := m0_fence_authority_it.issue(
+        p_host_id, p_operation_id, p_nonce_digest, p_request_digest,
+        p_expected_version, p_target_instance_id
+    );
+    -- Keep the statement transaction open after its writes so the controlling
+    -- session can terminate this backend before COMMIT.
+    PERFORM pg_sleep(30);
+    RETURN response_value;
+END;
+$;
+
 CREATE FUNCTION m0_fence_authority_it.accept_exact_response(
     p_host_id text,
     p_operation_id text,
@@ -511,7 +533,8 @@ INSERT INTO m0_fence_authority_it.host_authority (
     ('host-rollback-test', 5, 'vm-rollback-predecessor', 1),
     ('host-revoke-first', 5, 'vm-revoke-predecessor', 1),
     ('host-concurrent', 10, 'vm-concurrent-predecessor', 1),
-    ('host-lost-ack', 20, 'vm-lost-ack-predecessor', 1);
+    ('host-lost-ack', 20, 'vm-lost-ack-predecessor', 1),
+    ('host-uncommitted-crash', 30, 'vm-crash-predecessor', 1);
 
 -- First committed issuance. The response is stored as exact BYTEA.
 DO $$
@@ -697,6 +720,76 @@ BEGIN
     END IF;
 END;
 $$;
+
+-- Terminate a separate PostgreSQL backend after it has written the
+-- issuance inside an open statement transaction but before that statement
+-- returns/commits. PostgreSQL recovery must expose none of those writes.
+DO $
+DECLARE
+    backend_pid integer;
+    ignored_result text;
+    query_finished boolean := false;
+BEGIN
+    PERFORM dblink_connect(
+        'fence_uncommitted_crash',
+        'dbname=' || current_database() || ' application_name=fence_authority_uncommitted_crash'
+    );
+    PERFORM dblink_send_query(
+        'fence_uncommitted_crash',
+        $remote$SELECT encode(m0_fence_authority_it.issue_then_pause(
+            'host-uncommitted-crash', 'op-uncommitted-crash',
+            'nonce-uncommitted-crash', 'request-uncommitted-crash',
+            1, 'vm-crash-successor'
+        ), 'hex')$remote$
+    );
+
+    FOR attempt IN 1..100 LOOP
+        SELECT pid INTO backend_pid
+          FROM pg_stat_activity
+         WHERE application_name = 'fence_authority_uncommitted_crash'
+           AND state = 'active'
+         LIMIT 1;
+        EXIT WHEN backend_pid IS NOT NULL;
+        PERFORM pg_sleep(0.02);
+    END LOOP;
+
+    IF backend_pid IS NULL THEN
+        RAISE EXCEPTION 'could not observe the in-flight authority backend';
+    END IF;
+
+    IF NOT pg_terminate_backend(backend_pid) THEN
+        RAISE EXCEPTION 'could not terminate the uncommitted authority backend';
+    END IF;
+
+    BEGIN
+        SELECT result INTO ignored_result
+          FROM dblink_get_result('fence_uncommitted_crash') AS result(result text);
+        query_finished := true;
+    EXCEPTION WHEN OTHERS THEN
+        -- Expected: the remote backend was terminated before statement commit.
+        query_finished := false;
+    END;
+
+    BEGIN
+        PERFORM dblink_disconnect('fence_uncommitted_crash');
+    EXCEPTION WHEN OTHERS THEN
+        NULL;
+    END;
+
+    IF (SELECT epoch FROM m0_fence_authority_it.host_authority
+         WHERE host_id = 'host-uncommitted-crash') <> 30
+       OR EXISTS (SELECT 1 FROM m0_fence_authority_it.issuances
+                   WHERE host_id = 'host-uncommitted-crash')
+       OR EXISTS (SELECT 1 FROM m0_fence_authority_it.nonce_index
+                   WHERE host_id = 'host-uncommitted-crash')
+       OR EXISTS (SELECT 1 FROM m0_fence_authority_it.operation_index
+                   WHERE host_id = 'host-uncommitted-crash')
+       OR EXISTS (SELECT 1 FROM m0_fence_authority_it.checkpoint_intents
+                   WHERE host_id = 'host-uncommitted-crash') THEN
+        RAISE EXCEPTION 'terminated uncommitted backend left partial authority state';
+    END IF;
+END;
+$;
 
 -- Acceptance and revocation serialize on the same host row. The first host
 -- accepts first and is then revoked; the acceptance remains historical, but
