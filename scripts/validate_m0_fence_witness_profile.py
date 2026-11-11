@@ -488,6 +488,75 @@ def expect_receipt_rejection(
     raise AssertionError(f"invalid receipt trust binding was accepted: {label}")
 
 
+def create_signed_test_receipt(
+    checkpoint_body: dict[str, Any],
+    trust_bundle_body: dict[str, Any],
+    signer: Ed25519PrivateKey,
+    committed_at: str,
+    consistency_token: str,
+) -> dict[str, Any]:
+    checkpoint_bytes = rfc8785.dumps(checkpoint_body)
+    checkpoint_digest = hashlib.sha256(checkpoint_bytes).hexdigest()
+    key = trust_bundle_body["keys"][0]
+    receipt_body = {
+        "profile": checkpoint_body["profile"],
+        "schemaVersion": checkpoint_body["schemaVersion"],
+        "witnessId": trust_bundle_body["witnessId"],
+        "authorityId": checkpoint_body["authorityId"],
+        "hostId": checkpoint_body["hostId"],
+        "generation": checkpoint_body["generation"],
+        "operationId": checkpoint_body["operationId"],
+        "checkpointDigest": checkpoint_digest,
+        "previousCheckpointDigest": checkpoint_body["previousCheckpointDigest"],
+        "keyId": key["keyId"],
+        "committedAt": committed_at,
+        "consistencyToken": consistency_token,
+    }
+    signature = signer.sign(RECEIPT_PREFIX + rfc8785.dumps(receipt_body))
+    return {
+        "checkpointBody": checkpoint_body,
+        "checkpointDigest": checkpoint_digest,
+        "receiptBody": receipt_body,
+        "signatureBase64Url": encode_canonical_base64url(signature),
+    }
+
+
+def detect_signed_head_equivocation(
+    verified_receipts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Detect conflicting signed heads observed for the same predecessor slot.
+
+    This is a local detector over supplied observations, not proof that a
+    provider has only one history or that all monitors saw the same heads.
+    """
+    groups: dict[tuple[str, str, str, int, str], set[str]] = {}
+    for item in verified_receipts:
+        receipt = item["receiptBody"]
+        scope = (
+            receipt["witnessId"],
+            receipt["authorityId"],
+            receipt["hostId"],
+            receipt["generation"],
+            receipt["previousCheckpointDigest"],
+        )
+        groups.setdefault(scope, set()).add(receipt["checkpointDigest"])
+
+    findings = []
+    for scope, digests in groups.items():
+        if len(digests) > 1:
+            witness_id, authority_id, host_id, generation, predecessor = scope
+            findings.append({
+                "decision": "QUARANTINE",
+                "witnessId": witness_id,
+                "authorityId": authority_id,
+                "hostId": host_id,
+                "generation": generation,
+                "previousCheckpointDigest": predecessor,
+                "conflictingCheckpointDigests": sorted(digests),
+            })
+    return findings
+
+
 def main() -> None:
     schema = strict_json_load(SCHEMA_PATH)
     Draft202012Validator.check_schema(schema)
@@ -587,6 +656,52 @@ def main() -> None:
         "unknown key",
     )
 
+    # Two distinct successors are both correctly signed by the trusted key,
+    # share one predecessor/generation/scope, and therefore prove equivocation
+    # if both are observed. A single head or exact duplicate replay is not a fork.
+    signer = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(test_seed))
+    fork_base = {
+        "profile": "sky-high-fence-witness-v1",
+        "schemaVersion": 1,
+        "authorityId": "authority-vector-01",
+        "hostId": "host-vector-01",
+        "generation": 2,
+        "phase": "ACCEPTED",
+        "operationId": "operation-vector-fork-a",
+        "previousCheckpointDigest": first_receipt["checkpointDigest"],
+        "authorityStateDigest": "3" * 64,
+        "responseDigest": "4" * 64,
+        "epoch": 1,
+        "recordVersion": 2,
+    }
+    fork_a = create_signed_test_receipt(
+        fork_base, trusted_bundle_body, signer,
+        "2026-01-02T03:06:00Z", "test-only-fork-token-a",
+    )
+    fork_b_body = {
+        **fork_base,
+        "operationId": "operation-vector-fork-b",
+        "responseDigest": "5" * 64,
+    }
+    fork_b = create_signed_test_receipt(
+        fork_b_body, trusted_bundle_body, signer,
+        "2026-01-02T03:06:01Z", "test-only-fork-token-b",
+    )
+    fork_time = datetime(2026, 1, 2, 3, 6, 2, tzinfo=timezone.utc)
+    verify_receipt_against_trusted_bundle(fork_a, trusted_bundle_body, fork_time)
+    verify_receipt_against_trusted_bundle(fork_b, trusted_bundle_body, fork_time)
+
+    require(detect_signed_head_equivocation([fork_a]) == [],
+            "a single signed head was incorrectly classified as equivocation")
+    require(detect_signed_head_equivocation([fork_a, fork_a]) == [],
+            "an exact duplicate replay was incorrectly classified as equivocation")
+    findings = detect_signed_head_equivocation([fork_a, fork_b])
+    require(len(findings) == 1, "two conflicting valid signatures did not trigger quarantine")
+    require(findings[0]["decision"] == "QUARANTINE",
+            "equivocation finding did not require quarantine")
+    require(len(findings[0]["conflictingCheckpointDigests"]) == 2,
+            "equivocation finding did not preserve both conflicting digests")
+
     duplicate_json = '{"body":{"x":1,"x":2},"signature":"x"}'
     try:
         json.loads(duplicate_json, object_pairs_hook=strict_object)
@@ -604,6 +719,7 @@ def main() -> None:
     print("- independent RFC 8785, SHA-256 and Ed25519 verification for both trust-bundle generations")
     print("- pinned-root trust-bundle digest/signature and monotonic succession checks")
     print("- receipt-to-checkpoint and trusted-key scope/validity/retirement/revocation binding")
+    print("- detection and quarantine of two validly signed conflicting successors")
     print("- negative trust-bundle root, signature, digest, generation, predecessor and scope cases")
     print("- negative schema, timestamp, signature, duplicate-key and fingerprint cases")
     print("Boundary: no provider consistency, durable storage, anti-equivocation or production trust is proven")
