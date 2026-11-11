@@ -25,7 +25,7 @@ The verifier checks:
 - Ed25519 signature and receipt digest;
 - optional principal separation from the checkpoint signer.
 
-A receipt is a signed assertion. It does not prove that a provider actually enforced immutability, that the custody domain is independent, or that the storage is available. Those claims require independent provider evidence, audit access, fault injection, legal/operational controls, and independent qualification.
+The checkpoint supplied to receipt validation must already have passed signed-checkpoint verification against its own externally governed trust policy. Receipt validation does not substitute for checkpoint-signature validation. A receipt is a signed assertion. It does not prove that a provider actually enforced immutability, that the custody domain is independent, or that the storage is available. Those claims require independent provider evidence, audit access, fault injection, legal/operational controls, and independent qualification.
 
 ## Storage contract
 
