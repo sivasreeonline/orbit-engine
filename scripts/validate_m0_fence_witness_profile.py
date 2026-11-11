@@ -26,6 +26,7 @@ import rfc8785
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "docs/schemas/m0-fence-witness-v1.schema.json"
+TRUST_VECTOR_PATH = ROOT / "docs/test-vectors/fence-witness-v1-003-trust-bundle.json"
 VECTOR_PATHS = (
     ROOT / "docs/test-vectors/fence-witness-v1-001.json",
     ROOT / "docs/test-vectors/fence-witness-v1-002-unicode.json",
@@ -247,64 +248,81 @@ def verify_trust_bundle_envelope(
 
 
 def verify_trust_bundle_schema(
-    validator: Draft202012Validator, key_material: dict[str, str]
+    validator: Draft202012Validator,
+    key_material: dict[str, str],
+    trust_vector: dict[str, Any],
 ) -> None:
-    key = {
-        "keyId": key_material["keyId"],
-        "publicKeyBase64Url": key_material["publicKeyBase64Url"],
-        "purpose": "WITNESS_RECEIPT_SIGNING",
-        "witnessId": key_material["witnessId"],
-        "authorityIds": [key_material["authorityId"]],
-        "notBefore": "2026-01-01T00:00:00Z",
-        "notAfter": "2030-01-01T00:00:00Z",
-    }
-    body = {
-        "profile": "sky-high-fence-witness-v1",
-        "schemaVersion": 1,
-        "trustDomainId": "test-trust-domain",
-        "witnessId": key_material["witnessId"],
-        "generation": 1,
-        "previousBundleDigest": ZERO_DIGEST,
-        "keys": [key],
-        "revocations": [],
-    }
+    require(trust_vector.get("testOnly") is True, "trust-bundle vector is not marked testOnly")
+    require(trust_vector.get("profile") == "sky-high-fence-witness-v1", "unexpected trust-bundle profile")
+    prefix = trust_vector["algorithm"]["trustBundleSignatureInputPrefixUtf8"].encode("utf-8")
+    require(prefix == TRUST_BUNDLE_PREFIX, "trust-bundle domain-separation prefix mismatch")
 
-    # This root is deterministic, fixture-only and never trusted by production.
-    root_signer = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
-    root_public_key = root_signer.public_key().public_bytes(
+    test_root = trust_vector["testRootKey"]
+    root_seed = bytes.fromhex(test_root["privateSeedHex"])
+    require(len(root_seed) == 32, "test root seed must be 32 bytes")
+    root_signer = Ed25519PrivateKey.from_private_bytes(root_seed)
+    root_public_key = decode_canonical_base64url(test_root["publicKeyBase64Url"])
+    require(len(root_public_key) == 32, "Ed25519 root public key must be 32 bytes")
+    derived_root_public = root_signer.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,
     )
+    require(derived_root_public == root_public_key, "test root seed does not derive the published root key")
     root_key_id = hashlib.sha256(root_public_key).hexdigest()
+    require(root_key_id == test_root["keyId"], "test root-key fingerprint mismatch")
     pinned_roots = {root_key_id: root_public_key}
 
-    envelope = sign_trust_bundle(body, root_signer)
-    errors = list(validator.iter_errors(envelope))
-    require(not errors, f"trust bundle fixture failed schema: {errors[:1]}")
+    def envelope_from_vector(name: str) -> dict[str, Any]:
+        item = trust_vector[name]
+        body_bytes = item["canonicalBodyUtf8"].encode("utf-8")
+        require(rfc8785.dumps(item["body"]) == body_bytes,
+                f"{name}: canonical bytes differ from independent RFC 8785 output")
+        require(hashlib.sha256(body_bytes).hexdigest() == item["bundleDigest"],
+                f"{name}: trust-bundle SHA-256 mismatch")
+        require(item["rootKeyId"] == root_key_id, f"{name}: unexpected root key ID")
+        signature = decode_canonical_base64url(item["rootSignatureBase64Url"])
+        require(len(signature) == 64, f"{name}: Ed25519 root signature must be 64 bytes")
+        Ed25519PublicKey.from_public_bytes(root_public_key).verify(signature, prefix + body_bytes)
+        return {
+            "body": item["body"],
+            "bundleDigest": item["bundleDigest"],
+            "rootKeyId": item["rootKeyId"],
+            "rootSignature": item["rootSignatureBase64Url"],
+        }
+
+    first = envelope_from_vector("generation1")
+    second = envelope_from_vector("generation2")
+    for label, envelope in (("generation 1", first), ("generation 2", second)):
+        errors = list(validator.iter_errors(envelope))
+        require(not errors, f"{label} trust bundle failed schema: {errors[:1]}")
+
     first_digest = verify_trust_bundle_envelope(
-        envelope, pinned_roots, expected_generation=0,
+        first, pinned_roots, expected_generation=0,
         expected_predecessor_digest=ZERO_DIGEST,
     )
-
-    successor_body = json.loads(json.dumps(body))
-    successor_body["generation"] = 2
-    successor_body["previousBundleDigest"] = first_digest
-    successor = sign_trust_bundle(successor_body, root_signer)
-    errors = list(validator.iter_errors(successor))
-    require(not errors, f"successor trust bundle failed schema: {errors[:1]}")
+    require(first_digest == trust_vector["generation1"]["bundleDigest"],
+            "generation 1 digest did not match the published vector")
     second_digest = verify_trust_bundle_envelope(
-        successor, pinned_roots, expected_generation=1,
+        second, pinned_roots, expected_generation=1,
         expected_predecessor_digest=first_digest,
     )
+    require(second_digest == trust_vector["generation2"]["bundleDigest"],
+            "generation 2 digest did not match the published vector")
     require(second_digest != first_digest, "successor trust bundle digest did not advance")
 
+    body = first["body"]
+    key = body["keys"][0]
+    require(key_material["keyId"] == key["keyId"], "trust bundle key differs from receipt vector key")
+    require(key_material["witnessId"] == body["witnessId"],
+            "trust bundle witness differs from receipt vector witness")
+
     # Reject cryptographically invalid or incorrectly chained trust updates.
-    altered_body = json.loads(json.dumps(envelope))
+    altered_body = json.loads(json.dumps(first))
     altered_body["body"]["trustDomainId"] = "attacker-substituted-domain"
     for label, candidate, generation, predecessor, roots in (
         ("altered body/digest", altered_body, 0, ZERO_DIGEST, pinned_roots),
-        ("unknown root", {**envelope, "rootKeyId": "3" * 64}, 0, ZERO_DIGEST, pinned_roots),
-        ("invalid root signature", {**envelope, "rootSignature": "A" * 86}, 0, ZERO_DIGEST, pinned_roots),
+        ("unknown root", {**first, "rootKeyId": "3" * 64}, 0, ZERO_DIGEST, pinned_roots),
+        ("invalid root signature", {**first, "rootSignature": "A" * 86}, 0, ZERO_DIGEST, pinned_roots),
         ("generation gap", sign_trust_bundle(
             {**body, "generation": 3}, root_signer
         ), 1, first_digest, pinned_roots),
@@ -349,8 +367,8 @@ def verify_trust_bundle_schema(
 
     duplicate_revocations = json.loads(json.dumps(body))
     duplicate_revocations["revocations"] = [
-        {"keyId": key_material["keyId"], "revokedAt": "2026-02-01T00:00:00Z", "reason": "test A"},
-        {"keyId": key_material["keyId"], "revokedAt": "2026-02-02T00:00:00Z", "reason": "test B"},
+        {"keyId": key["keyId"], "revokedAt": "2026-02-01T00:00:00Z", "reason": "test A"},
+        {"keyId": key["keyId"], "revokedAt": "2026-02-02T00:00:00Z", "reason": "test B"},
     ]
     try:
         validate_trust_bundle_key_semantics(duplicate_revocations)
@@ -384,7 +402,8 @@ def main() -> None:
     test_seed = vectors[0]["testKey"]["privateSeedHex"]
     key_material = verify_vector(vectors[0], validator, VECTOR_PATHS[0], test_seed)
     verify_vector(vectors[1], validator, VECTOR_PATHS[1], test_seed)
-    verify_trust_bundle_schema(validator, key_material)
+    trust_vector = strict_json_load(TRUST_VECTOR_PATH)
+    verify_trust_bundle_schema(validator, key_material, trust_vector)
 
     duplicate_json = '{"body":{"x":1,"x":2},"signature":"x"}'
     try:
@@ -396,10 +415,11 @@ def main() -> None:
 
     print("FENCE-001 witness profile conformance: PASS")
     print("- Draft 2020-12 schema self-validation and format checks")
-    print("- checkpoint, receipt and trust-bundle structural fixtures")
+    print("- checkpoint, receipt and published root-signed trust-bundle structural fixtures")
     print("- strict duplicate-member JSON parsing")
     print("- independent RFC 8785 canonical-byte reproduction for ASCII and Unicode vectors")
     print("- SHA-256 checkpoint digest and Ed25519 receipt signature verification")
+    print("- independent RFC 8785, SHA-256 and Ed25519 verification for both trust-bundle generations")
     print("- pinned-root trust-bundle digest/signature and monotonic succession checks")
     print("- negative trust-bundle root, signature, digest, generation, predecessor and scope cases")
     print("- negative schema, timestamp, signature, duplicate-key and fingerprint cases")
