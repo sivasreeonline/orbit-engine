@@ -13,7 +13,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - A pure lifecycle contract package enforcing the closed attempt-state transition table, concurrency-safe in-memory first-trigger arbitration, and backend-independent terminal-finalization preconditions.
 - A backend-neutral journal transaction port with validated attempt, trigger, operation, branch-CAS, and terminal-commit commands; no database adapter is selected or enabled.
 - A deterministic external-operation phase model with inspect-before-retry proof requirements; no containerd client or resource-inspection implementation is enabled.
-- A scoped idempotency/replay contract that binds owner/client/route, key digest, request digest, and the original attempt; no key-reuse expiry or storage adapter is enabled.
+- A scoped idempotency/replay contract with compound atomic claim-plus-attempt and terminal-result-plus-response-descriptor port operations; no key-reuse expiry or storage adapter is enabled.
 - Unit tests for health/readiness, request validation, strict JSON decoding, disabled execution, lifecycle transitions, trigger arbitration, and terminal-finalization preconditions.
 - Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
 

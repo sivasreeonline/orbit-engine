@@ -90,3 +90,15 @@ A response descriptor is metadata only: version plus canonical digest. The adapt
 The pure resolver returns REPLAY, CONFLICT, PENDING, or TOMBSTONE. PENDING is a recovery signal, not permission to dispatch a duplicate operation. A backend adapter must enforce all unique-key, transaction, and compare-and-set predicates durably; these validators alone do not provide idempotency or durability.
 
 No database schema, adapter, response-body storage, retention worker, or endpoint integration is implemented by this contract.
+
+
+## Atomic idempotency transaction boundaries
+
+The journal port exposes two compound operations rather than requiring callers to coordinate independent claim and attempt writes:
+
+- `ClaimIdempotentAttempt` accepts an `IdempotentAttemptCommand`. The adapter must atomically insert the unique scoped-key claim and its `REQUESTED` attempt, or insert neither. It must validate that claim owner, request digest, and attempt ID match the attempt record. A concurrent duplicate-key loser must read the winning claim and attempt inside a consistent transaction/snapshot and classify it as REPLAY, CONFLICT, PENDING, or TOMBSTONE. It must never return CREATED for a claim it did not insert.
+- `CommitTerminalWithIdempotency` accepts the terminal-result command and response descriptor command. The adapter must atomically verify the attempt's current terminal fences, verify the persisted scoped claim still maps to that attempt and request digest, insert the immutable terminal result, attach the response descriptor, and transition the attempt to its terminal state. Any failed predicate rolls back all effects.
+
+The adapter must treat uncertain commit acknowledgement as an unknown outcome, not as proof of rollback. The caller recovers by reading the scoped key and original attempt. If the record is absent after an authoritative read, only then may a new claim transaction be attempted; if the outcome remains uncertain, the caller must return a retryable/unknown result and must not dispatch a new attempt.
+
+The port does not prescribe a specific isolation level or database primitive. A future backend must demonstrate equivalent behavior under concurrent same-key/same-digest and same-key/different-digest races, process termination at each transaction boundary, and lost commit acknowledgements. Tests against an in-memory fake are not evidence of database isolation or durability.
