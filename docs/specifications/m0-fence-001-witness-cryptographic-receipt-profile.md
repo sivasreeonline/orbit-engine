@@ -50,6 +50,8 @@ The digest field itself is not part of `checkpointBody`; this avoids self-refere
 
 A checkpoint artifact is the exact UTF-8 JCS byte sequence. Its SHA-256 is the artifact digest. Implementations must not hash pretty-printed JSON, JSONB text output, delimiter-concatenated strings, platform-default encodings, or a parsed-and-reserialized representation that is not byte-identical to JCS.
 
+JCS does not perform Unicode normalization. Protocol strings are hashed as their exact Unicode scalar sequence after UTF-8 encoding. NFC and NFD spellings that look identical to a person are distinct inputs and produce distinct digests. Implementations must not normalize, case-fold, trim, or otherwise rewrite identifiers before digesting; enrollment and identity policy must separately define which strings are admissible. The checked-in deterministic vectors are `docs/test-vectors/fence-witness-v1-001.json` (ASCII baseline) and `docs/test-vectors/fence-witness-v1-002-unicode.json` (Unicode identity values).
+
 ## 4. Receipt signature payload
 
 The receipt body contains exactly:
