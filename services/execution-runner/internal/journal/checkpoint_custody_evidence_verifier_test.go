@@ -184,7 +184,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 			invalidReviewerKeys[keyID] = key
 		}
 		if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-			ReviewerKeys:   invalidReviewerKeys, WitnessKeys: witnessKeys,
+			ReviewerKeys: invalidReviewerKeys, WitnessKeys: witnessKeys,
 			Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC), MaxEvidenceAge: 24 * time.Hour,
 		}); err == nil {
 			t.Fatalf("%s reviewer key was accepted", name)
