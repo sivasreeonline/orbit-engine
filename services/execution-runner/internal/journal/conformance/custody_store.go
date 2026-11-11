@@ -51,7 +51,7 @@ func RunCheckpointCustodyStoreConformance(t *testing.T, newStore StoreFactory) {
 		if err != nil {
 			t.Fatalf("read stored pair: %v", err)
 		}
-		assertPair(t, gotCheckpoint, gotReceipt, checkpoint)
+		assertPair(t, gotCheckpoint, gotReceipt, checkpoint, receipt)
 	})
 
 	t.Run("compare-and-store rejects stale writers and forks", func(t *testing.T) {
@@ -121,7 +121,7 @@ func RunCheckpointCustodyStoreConformance(t *testing.T, newStore StoreFactory) {
 		if err != nil {
 			t.Fatalf("read winning head: %v", err)
 		}
-		assertPair(t, gotCheckpoint, gotReceipt, *winner)
+		assertPair(t, gotCheckpoint, gotReceipt, *winner, makeReceipt(t, *winner))
 	})
 
 	t.Run("ledger and epoch namespaces are isolated", func(t *testing.T) {
@@ -139,12 +139,12 @@ func RunCheckpointCustodyStoreConformance(t *testing.T, newStore StoreFactory) {
 		if err != nil {
 			t.Fatalf("read first ledger: %v", err)
 		}
-		assertPair(t, gotFirst, receiptFirst, first)
+		assertPair(t, gotFirst, receiptFirst, first, makeReceipt(t, first))
 		gotSecond, receiptSecond, err := store.ReadLatest(ctx, "ledger-two", "epoch-two")
 		if err != nil {
 			t.Fatalf("read second ledger: %v", err)
 		}
-		assertPair(t, gotSecond, receiptSecond, second)
+		assertPair(t, gotSecond, receiptSecond, second, makeReceipt(t, second))
 		if _, _, err := store.ReadLatest(ctx, "ledger-one", "epoch-two"); !errors.Is(err, journal.ErrNotFound) {
 			t.Fatalf("cross-epoch lookup error = %v, want ErrNotFound", err)
 		}
@@ -194,12 +194,15 @@ func makeReceipt(t *testing.T, checkpoint journal.SignedVerificationAuditCheckpo
 	return receipt
 }
 
-func assertPair(t *testing.T, checkpoint journal.SignedVerificationAuditCheckpoint, receipt journal.CheckpointCustodyReceipt, expected journal.SignedVerificationAuditCheckpoint) {
+func assertPair(t *testing.T, checkpoint journal.SignedVerificationAuditCheckpoint, receipt journal.CheckpointCustodyReceipt, expected journal.SignedVerificationAuditCheckpoint, expectedReceipt journal.CheckpointCustodyReceipt) {
 	t.Helper()
 	if journal.VerificationAuditCheckpointDigest(checkpoint) != journal.VerificationAuditCheckpointDigest(expected) {
 		t.Fatal("stored checkpoint digest does not match expected checkpoint")
 	}
 	if receipt.CheckpointSHA256 != journal.VerificationAuditCheckpointDigest(checkpoint) {
 		t.Fatal("stored receipt is not bound to the stored checkpoint")
+	}
+	if receipt.ReceiptSHA256 != expectedReceipt.ReceiptSHA256 || receipt.SignatureHex != expectedReceipt.SignatureHex {
+		t.Fatal("stored custody receipt differs from the committed receipt")
 	}
 }
