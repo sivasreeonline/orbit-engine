@@ -308,7 +308,7 @@ func VerifyCheckpointCustodyEvidence(
 		SchemaVersion: "1.0", QualificationID: manifest.QualificationID,
 		ManifestDigest: report.ManifestDigest, Reviewer: signatureEnvelope.Reviewer,
 		ReviewerKeyID: signatureEnvelope.ReviewerKeyID,
-		ReviewedAt: manifest.Review.ReviewedAt, Decision: manifest.Review.Status,
+		ReviewedAt:    manifest.Review.ReviewedAt, Decision: manifest.Review.Status,
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
