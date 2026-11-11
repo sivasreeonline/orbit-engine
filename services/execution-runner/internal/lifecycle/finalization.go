@@ -46,7 +46,7 @@ type FinalizationSnapshot struct {
 	TriggerWatermark        uint64
 	DurableTriggerSequences []uint64
 	PrimaryTriggerID        string
-	PrimaryTriggerSequence uint64
+	PrimaryTriggerSequence  uint64
 	Output                  OutputSnapshot
 	Cleanup                 FinalizationBranch
 	Evidence                FinalizationBranch
