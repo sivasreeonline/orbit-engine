@@ -42,21 +42,46 @@ def semantic_errors(record: dict[str, Any]) -> list[str]:
             errors.append(f"{test_id}: PASS requires immutable evidence")
         if item.get("status") == "NOT_RUN" and evidence:
             errors.append(f"{test_id}: NOT_RUN must not carry evidence")
+        if item.get("status") == "PASS" and (
+            record.get("provider") is None or record.get("adapter") is None
+        ):
+            errors.append(f"{test_id}: PASS requires an explicitly pinned provider and adapter")
+        provider = record.get("provider")
+        adapter = record.get("adapter")
+        expected_scope = None
+        if provider is not None and adapter is not None:
+            expected_scope = "|".join((
+                provider["name"], provider["account"], provider["region"],
+                provider["service"], adapter["commit"],
+            ))
         for entry in evidence:
             if entry.get("collectorIdentity") == entry.get("independentVerifierIdentity"):
                 errors.append(f"{test_id}: evidence collector and independent verifier must differ")
+            if expected_scope is not None and entry.get("providerScope") != expected_scope:
+                errors.append(f"{test_id}: evidence providerScope does not match the pinned provider/adapter")
 
     monitor_ids = [item.get("monitorId") for item in record.get("monitors", {}).get("identities", [])]
     if len(monitor_ids) != len(set(monitor_ids)):
         errors.append("monitor identities must be unique")
+    if record.get("qualificationStatus") == "NOT_STARTED" and any(
+        item.get("status") != "NOT_RUN" for item in tests
+    ):
+        errors.append("NOT_STARTED requires every mandatory test to remain NOT_RUN")
     if record.get("qualificationStatus") == "READY_FOR_INDEPENDENT_REVIEW":
         if any(item.get("status") != "PASS" for item in tests):
             errors.append("READY_FOR_INDEPENDENT_REVIEW requires every mandatory test to PASS")
         if record.get("provider") is None or record.get("adapter") is None:
             errors.append("READY_FOR_INDEPENDENT_REVIEW requires a pinned provider and adapter")
         monitors = record.get("monitors", {}).get("identities", [])
-        if len(monitors) < 2 or len({item.get("failureDomain") for item in monitors}) < 2:
-            errors.append("READY_FOR_INDEPENDENT_REVIEW requires at least two distinct monitor failure domains")
+        if (
+            len(monitors) < 2
+            or len({item.get("operator") for item in monitors}) < 2
+            or len({item.get("account") for item in monitors}) < 2
+            or len({item.get("failureDomain") for item in monitors}) < 2
+        ):
+            errors.append("READY_FOR_INDEPENDENT_REVIEW requires two monitors with distinct operators, accounts and failure domains")
+        if not record.get("monitors", {}).get("independenceEvidence"):
+            errors.append("READY_FOR_INDEPENDENT_REVIEW requires monitor-independence evidence")
         reviewer = record.get("independentSecurityReviewer")
         if reviewer is None:
             errors.append("READY_FOR_INDEPENDENT_REVIEW requires a named independent security reviewer")
@@ -108,6 +133,17 @@ def main() -> None:
     approval_attempt = copy.deepcopy(record)
     approval_attempt["productionApproval"] = True
     expect_rejected("production approval flag", approval_attempt, validator)
+
+    same_reviewer = copy.deepcopy(record)
+    same_reviewer["tests"][0]["status"] = "PASS"
+    same_reviewer["tests"][0]["evidence"] = [{
+        "objectRef": "evidence://synthetic/1", "objectVersion": "v1",
+        "sha256": "a" * 64, "byteCount": 1, "acquiredAt": "2026-01-01T00:00:00Z",
+        "acquisitionMethod": "synthetic negative fixture", "collectorIdentity": "reviewer-1",
+        "independentVerifierIdentity": "reviewer-1", "providerScope": "synthetic",
+        "redaction": "NONE"
+    }]
+    expect_rejected("same collector and independent verifier", same_reviewer, validator)
 
     print("FENCE-001 external witness qualification record: PASS")
     print(f"Mandatory test inventory: {len(EXPECTED_IDS)} unique controls")
