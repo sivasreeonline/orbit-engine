@@ -129,6 +129,18 @@ The checkpoint-record digest is computed over a canonical structured envelope, n
 
 The disposable PostgreSQL prototype now models this digest envelope and verifies the issuance → acceptance → next-issuance predecessor links, including rejection of a deliberately forked checkpoint digest. Its receipt remains local test data. This is not proof of witness anti-equivocation, independently retained high-water state, signatures, or provider fencing; those remain separate gates.
 
+## 3.3 Privilege-separated authority entrypoints
+
+The authority database role model must separate application transitions from operator control and must not expose direct table mutation to either role:
+
+- The application role may invoke only the guarded issuance, publication and checkpoint-aware acceptance entrypoints.
+- The operator role may invoke the separately authorized revocation entrypoint; it cannot issue epochs or accept guest state.
+- Neither role receives direct SELECT/INSERT/UPDATE/DELETE privileges on authority aggregates, immutable issuance records, replay indexes, acceptance events, checkpoint intents or witness receipts.
+- Low-level acceptance mutation and internal digest/concurrency helpers are not PUBLIC-executable.
+- Privileged entrypoints must execute with a tightly controlled owner and a fixed safe search path. Any implementation must additionally prove the owner is not an application identity, the search path cannot be shadowed, and all dynamic SQL is safe.
+
+The disposable PostgreSQL prototype now creates separate NOLOGIN application/operator roles, revokes PUBLIC function execution, grants only the intended entrypoints, checks that direct table privileges are absent, and exercises issuance/publication/acceptance as the application role plus revocation as the operator role. This is a prototype privilege test, not a production role migration or independent security review.
+
 ## 4. Crash-point and recovery matrix
 
 | Crash or uncertainty point | Durable facts that may exist | Required recovery |
