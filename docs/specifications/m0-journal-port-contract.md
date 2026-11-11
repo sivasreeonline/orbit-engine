@@ -130,3 +130,23 @@ The catalog is a specification and review aid only. It does not execute faults, 
 - Independent review of the evidence package and explicit approval of the declared durability profile.
 
 Until those conditions are met, the journal remains unconfigured for durable execution. This catalog does not authorize host deployment, privileged supervisor operation, or student workload execution.
+
+
+## Machine-readable qualification evidence manifest
+
+The schema at `docs/schemas/m0-journal-qualification-evidence.schema.json` defines the evidence package for a future journal adapter qualification. The Go model and validator live in `internal/journal/evidence_manifest.go`.
+
+A manifest binds every catalog scenario to exactly one result record and requires:
+
+- Exact adapter and driver names/versions.
+- Operating system, kernel, architecture, filesystem, mount options, and storage topology.
+- Explicit acknowledgement barrier, power-loss model, sync policy, and WAL/checkpoint policy.
+- A unique test-run identifier, exact test command, RFC 3339 start/completion timestamps, and one or more evidence references per scenario.
+- Relative evidence paths, SHA-256 digests, and media types; traversal and absolute paths are rejected.
+- An independent-review status, reviewer identity, timestamp, and attestation reference.
+
+The validator checks manifest structure and complete catalog coverage. `QualificationEvidenceReady` returns true only when every scenario is PASS and review status is APPROVED. FAIL, BLOCKED, and SKIPPED records may be structurally represented for audit, but none can satisfy readiness.
+
+**Verification boundary:** this code does not read evidence files, recompute their hashes, verify cryptographic signatures, prove reviewer independence, or authorize deployment. Those require a separate evidence-verification process and trusted identity/key policy. The schema's 25-item array bound does not itself enforce unique IDs or exact catalog membership; the Go validator performs those checks. A manifest is evidence metadata, not evidence of its own truth.
+
+No adapter or backend is selected by this work. No production qualification, host deployment, or workload execution is authorized.
