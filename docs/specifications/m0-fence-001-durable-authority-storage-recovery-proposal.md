@@ -141,6 +141,14 @@ The authority database role model must separate application transitions from ope
 
 The disposable PostgreSQL prototype now creates separate NOLOGIN application/operator roles, revokes PUBLIC function execution, grants only the intended entrypoints, checks that direct table privileges are absent, and exercises issuance/publication/acceptance as the application role plus revocation as the operator role. This is a prototype privilege test, not a production role migration or independent security review.
 
+## 3.4 Restore must compare against retained high-water state
+
+A database restore is not authoritative merely because the restored rows are internally consistent. Before writable recovery, the authority must compare the local host epoch/version/instance/pending-operation and latest checkpoint identity against an independently retained witness high-water record. If the local aggregate is older, missing, ahead, or contradictory, it remains quarantined; it must not issue a replacement epoch or accept a local snapshot as proof.
+
+The disposable PostgreSQL fixture now has a logically separate append-only high-water test table. It simulates a stale local restore by reverting the host aggregate and deleting the latest local issuance, replay indexes and checkpoint intent while retaining the high-water record. The issuance gate rejects the restored state and preserves the lower local epoch rather than minting a duplicate successor.
+
+The high-water table is still inside the same disposable PostgreSQL database. This test demonstrates the comparison contract only; it does not qualify independent storage, whole-database restore, witness availability, anti-equivocation, or forward reconstruction from a protected event log.
+
 ## 4. Crash-point and recovery matrix
 
 | Crash or uncertainty point | Durable facts that may exist | Required recovery |
