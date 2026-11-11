@@ -173,3 +173,26 @@ func TestTriggerArbiterRejectsPreCreateAndUnanchoredTermination(t *testing.T) {
 		t.Fatalf("first valid trigger = %+v, want sequence 1 PRIMARY", primary)
 	}
 }
+
+func TestTriggerArbiterRejectsPreCreateStateAfterFinalizationBegins(t *testing.T) {
+	t.Parallel()
+
+	arbiter, err := NewTriggerArbiter("boot-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := arbiter.Capture(StateRunning, newTestTrigger("primary-before-finalization", time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	arbiter.BeginFinalization()
+	if _, err := arbiter.Capture(StateQueued, newTestTrigger("invalid-late-state", 2*time.Second)); !errors.Is(err, ErrTriggerNotApplicable) {
+		t.Fatalf("pre-create state after finalization error = %v, want ErrTriggerNotApplicable", err)
+	}
+	late, err := arbiter.Capture(StateFinalizing, newTestTrigger("late-after-finalization", 3*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if late.Disposition != TriggerLate {
+		t.Fatalf("late trigger disposition = %q, want LATE", late.Disposition)
+	}
+}
