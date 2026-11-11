@@ -368,6 +368,84 @@ def scenario_wrong_acceptance_and_pending_successor() -> None:
     assert p.db.pending["accepted"]
 
 
+
+def scenario_witness_fork_generation_and_rebinding() -> None:
+    p = Protocol()
+    p.issue(operation_id="op-fork", nonce="n-fork", request_digest="d-fork",
+            expected_version=1, target="vm-fork")
+    original = copy.deepcopy(p.witness.checkpoint)
+    original_digest = p.witness.checkpoint_digest
+
+    # A forked checkpoint cannot be substituted while retaining the old digest.
+    p.witness.checkpoint["operation_id"] = "op-fork-substituted"
+    expect(Denied, p.verify, "forked witness checkpoint must fail verification")
+    p.witness.checkpoint = copy.deepcopy(original)
+    p.witness.checkpoint_digest = original_digest
+    p.verify()
+
+    # Rollback of the independent generation counter must be detected.
+    p.witness.generation -= 1
+    expect(Denied, p.verify, "witness generation rollback must fail verification")
+    p.witness.generation += 1
+    p.verify()
+
+    # A checkpoint gap and operation-ID rebinding must be rejected at the witness.
+    gap = copy.deepcopy(original)
+    gap["generation"] += 2
+    expect(Conflict, lambda: p.witness.advance(gap),
+           "witness must reject a generation gap")
+    rebound = copy.deepcopy(original)
+    rebound["state_digest"] = "f" * 64
+    expect(Conflict, lambda: p.witness.advance(rebound),
+           "witness must reject checkpoint operation-ID rebinding")
+
+
+def scenario_replay_index_and_response_corruption() -> None:
+    for index_name in ("nonces", "operations"):
+        p = Protocol()
+        p.issue(operation_id="op-corrupt-" + index_name,
+                nonce="n-corrupt-" + index_name, request_digest="d-corrupt",
+                expected_version=1, target="vm-corrupt")
+        getattr(p.db, index_name).clear()
+        expect(Denied, p.verify,
+               "independent " + index_name + " deletion must break anchored state")
+        expect(Denied, lambda: p.publish("op-corrupt-" + index_name),
+               "corrupted " + index_name + " must never publish")
+
+    p = Protocol()
+    p.issue(operation_id="op-bytes", nonce="n-bytes", request_digest="d-bytes",
+            expected_version=1, target="vm-bytes")
+    p.db.operations["op-bytes"]["response_bytes_hex"] = "00"
+    expect(Denied, p.verify, "tampered retained response bytes must break state anchor")
+    expect(Denied, lambda: p.publish("op-bytes"),
+           "tampered retained response bytes must never publish")
+
+
+def scenario_publication_crash_before_acceptance() -> None:
+    p = Protocol()
+    response = p.issue(operation_id="op-publish", nonce="n-publish",
+                       request_digest="d-publish", expected_version=1,
+                       target="vm-publish")
+    before_publication = p.db.snapshot()
+
+    # Model a crash after bytes were delivered but before guest acceptance.
+    first_delivery = p.publish("op-publish")
+    assert first_delivery == response
+    assert not p.db.pending["accepted"]
+    p.db.restore(before_publication)
+
+    # Recovery republishes the exact retained bytes; it does not issue a new epoch.
+    second_delivery = p.publish("op-publish")
+    assert second_delivery == first_delivery == response
+    assert p.db.epoch == 6
+    assert p.witness.generation == 1
+    assert not p.db.pending["accepted"]
+
+    p.accept("op-publish", second_delivery, "vm-publish", 6)
+    assert p.db.pending["accepted"]
+    assert p.db.epoch == 6
+
+
 def self_test() -> None:
     scenario_commit_and_lost_db_ack()
     print("PASS  pre-commit rollback and committed-but-unacknowledged database recovery")
