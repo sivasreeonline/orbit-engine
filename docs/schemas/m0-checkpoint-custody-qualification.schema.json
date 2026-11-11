@@ -45,7 +45,7 @@
         "allOf": [
           {
             "if": {"properties": {"scenario_id": {"enum": ["CUSTODY-011", "CUSTODY-012"]}}},
-            "then": {"required": ["independent_witness_evidence"], "properties": {"independent_witness_evidence": {"minItems": 1}}}
+            "then": {"required": ["independent_witness_evidence", "independent_witness_attestation"], "properties": {"independent_witness_evidence": {"minItems": 1}, "independent_witness_attestation": {"$ref": "#/$defs/evidence_reference"}}}
           }
         ],
         "type": "object",
@@ -66,7 +66,8 @@
           "independent_witness_evidence": {
             "type": "array",
             "items": {"$ref": "#/$defs/evidence_reference"}
-          }
+          },
+          "independent_witness_attestation": {"$ref": "#/$defs/evidence_reference"}
         }
       }
     },
