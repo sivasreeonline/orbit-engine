@@ -324,7 +324,7 @@ CREATE FUNCTION m0_fence_authority_it.concurrent_issue_attempt(
     p_request_digest text,
     p_expected_version bigint,
     p_target_instance_id text
-) RETURNS text LANGUAGE plpgsql AS $
+) RETURNS text LANGUAGE plpgsql AS $$
 BEGIN
     -- Hold the aggregate row lock long enough for the second independent
     -- session to overlap and block behind this attempt.
@@ -342,7 +342,7 @@ EXCEPTION
     WHEN SQLSTATE '40001' OR SQLSTATE '55000' THEN
         RETURN 'REJECTED';
 END;
-$;
+$$;
 
 CREATE FUNCTION m0_fence_authority_it.accept_exact_response(
     p_host_id text,
@@ -593,7 +593,7 @@ $$;
 -- The row lock serializes them: one commits and the other observes the changed
 -- version/pending successor and is rejected. Both queries are sent before
 -- either result is collected, forcing overlapping server-side execution.
-DO $
+DO $$
 DECLARE
     first_result text;
     second_result text;
@@ -605,17 +605,17 @@ BEGIN
 
     PERFORM dblink_send_query(
         'fence_race_a',
-        $SELECT m0_fence_authority_it.concurrent_issue_attempt(
+        $remote$SELECT m0_fence_authority_it.concurrent_issue_attempt(
             'host-concurrent', 'op-race-a', 'nonce-race-a',
             'request-race-a', 1, 'vm-race-a'
-        )$
+        )$remote$
     );
     PERFORM dblink_send_query(
         'fence_race_b',
-        $SELECT m0_fence_authority_it.concurrent_issue_attempt(
+        $remote$SELECT m0_fence_authority_it.concurrent_issue_attempt(
             'host-concurrent', 'op-race-b', 'nonce-race-b',
             'request-race-b', 1, 'vm-race-b'
-        )$
+        )$remote$
     );
 
     SELECT result INTO first_result
@@ -645,12 +645,12 @@ BEGIN
         RAISE EXCEPTION 'concurrent issuance created duplicate or partial authority state';
     END IF;
 END;
-$;
+$$;
 
 -- Simulate a lost client acknowledgement after the server has completed its
 -- autocommit statement. The client connection is discarded without fetching
 -- the result; a fresh retry must return the exact persisted response bytes.
-DO $
+DO $$
 DECLARE
     busy_state integer;
     retry_response bytea;
@@ -659,10 +659,10 @@ BEGIN
     PERFORM dblink_connect('fence_lost_ack', 'dbname=' || current_database());
     PERFORM dblink_send_query(
         'fence_lost_ack',
-        $SELECT encode(m0_fence_authority_it.issue(
+        $remote$SELECT encode(m0_fence_authority_it.issue(
             'host-lost-ack', 'op-lost-ack', 'nonce-lost-ack',
             'request-lost-ack', 1, 'vm-lost-ack-successor'
-        ), 'hex')$
+        ), 'hex')$remote$
     );
 
     LOOP
@@ -696,7 +696,7 @@ BEGIN
         RAISE EXCEPTION 'lost-ack retry allocated a second epoch or checkpoint';
     END IF;
 END;
-$;
+$$;
 
 -- Acceptance and revocation serialize on the same host row. The first host
 -- accepts first and is then revoked; the acceptance remains historical, but
