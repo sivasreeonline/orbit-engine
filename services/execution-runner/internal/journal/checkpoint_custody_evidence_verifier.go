@@ -109,11 +109,13 @@ type CheckpointCustodyEvidenceVerifierTrust struct {
 // CheckpointCustodyEvidenceVerificationReport is a result of reading and
 // cryptographically checking evidence bytes. It is not provider qualification.
 type CheckpointCustodyEvidenceVerificationReport struct {
-	VerifiedReferences int
-	VerifiedScenarios  []string
-	ReviewerIdentity   string
-	ManifestDigest     string
-	VerifiedAt         time.Time
+	VerifiedReferences  int
+	VerifiedScenarios   []string
+	ReviewerIdentity    string
+	ReviewDecision      string
+	ManifestDeclaresReady bool
+	ManifestDigest      string
+	VerifiedAt          time.Time
 }
 
 type custodyReviewAttestation struct {
@@ -235,6 +237,11 @@ func VerifyCheckpointCustodyEvidence(
 		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review attestation is outside the accepted age window", ErrCorrupt)
 	}
 	report.ReviewerIdentity = signatureEnvelope.Reviewer
+	report.ReviewDecision = manifest.Review.Status
+	// This is only the manifest's declared readiness. Cryptographic byte
+	// verification does not prove that provider behavior or evidence semantics
+	// satisfy the underlying custody invariants.
+	report.ManifestDeclaresReady = CheckpointCustodyQualificationReady(manifest)
 	sort.Strings(report.VerifiedScenarios)
 	return report, nil
 }
