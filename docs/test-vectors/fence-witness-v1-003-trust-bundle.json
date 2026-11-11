@@ -1,0 +1,68 @@
+{
+  "vectorId": "FENCE-WITNESS-TRUST-V1-001",
+  "testOnly": true,
+  "profile": "sky-high-fence-witness-v1",
+  "algorithm": {
+    "canonicalization": "RFC8785-JCS",
+    "digest": "SHA-256",
+    "signature": "Ed25519",
+    "trustBundleSignatureInputPrefixUtf8": "SKYHIGH-FENCE-001-WITNESS-TRUST-BUNDLE-V1\u0000"
+  },
+  "testRootKey": {
+    "privateSeedHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "publicKeyBase64Url": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "keyId": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c"
+  },
+  "generation1": {
+    "body": {
+      "profile": "sky-high-fence-witness-v1",
+      "schemaVersion": 1,
+      "trustDomainId": "test-trust-domain-vector-01",
+      "witnessId": "witness-vector-01",
+      "generation": 1,
+      "previousBundleDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "keys": [
+        {
+          "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+          "publicKeyBase64Url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+          "purpose": "WITNESS_RECEIPT_SIGNING",
+          "witnessId": "witness-vector-01",
+          "authorityIds": ["authority-vector-01"],
+          "notBefore": "2026-01-01T00:00:00Z",
+          "notAfter": "2030-01-01T00:00:00Z"
+        }
+      ],
+      "revocations": []
+    },
+    "canonicalBodyUtf8": "{\"generation\":1,\"keys\":[{\"authorityIds\":[\"authority-vector-01\"],\"keyId\":\"21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9\",\"notAfter\":\"2030-01-01T00:00:00Z\",\"notBefore\":\"2026-01-01T00:00:00Z\",\"publicKeyBase64Url\":\"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo\",\"purpose\":\"WITNESS_RECEIPT_SIGNING\",\"witnessId\":\"witness-vector-01\"}],\"previousBundleDigest\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"profile\":\"sky-high-fence-witness-v1\",\"revocations\":[],\"schemaVersion\":1,\"trustDomainId\":\"test-trust-domain-vector-01\",\"witnessId\":\"witness-vector-01\"}",
+    "bundleDigest": "a81ce868aed0e2da792c118374ab1ffe1718d49ab97fa056cc7f4ac69bf84220",
+    "rootKeyId": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+    "rootSignatureBase64Url": "YaWo3L14Fk8mRfHySCNFUeKMCpOYreaZzSmJcjbC8KLOugSyxO895EoMo7CxD-9N8xD_P-51qYgoSUorO2wdDA"
+  },
+  "generation2": {
+    "body": {
+      "profile": "sky-high-fence-witness-v1",
+      "schemaVersion": 1,
+      "trustDomainId": "test-trust-domain-vector-01",
+      "witnessId": "witness-vector-01",
+      "generation": 2,
+      "previousBundleDigest": "a81ce868aed0e2da792c118374ab1ffe1718d49ab97fa056cc7f4ac69bf84220",
+      "keys": [
+        {
+          "keyId": "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+          "publicKeyBase64Url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+          "purpose": "WITNESS_RECEIPT_SIGNING",
+          "witnessId": "witness-vector-01",
+          "authorityIds": ["authority-vector-01"],
+          "notBefore": "2026-01-01T00:00:00Z",
+          "notAfter": "2030-01-01T00:00:00Z"
+        }
+      ],
+      "revocations": []
+    },
+    "canonicalBodyUtf8": "{\"generation\":2,\"keys\":[{\"authorityIds\":[\"authority-vector-01\"],\"keyId\":\"21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9\",\"notAfter\":\"2030-01-01T00:00:00Z\",\"notBefore\":\"2026-01-01T00:00:00Z\",\"publicKeyBase64Url\":\"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo\",\"purpose\":\"WITNESS_RECEIPT_SIGNING\",\"witnessId\":\"witness-vector-01\"}],\"previousBundleDigest\":\"a81ce868aed0e2da792c118374ab1ffe1718d49ab97fa056cc7f4ac69bf84220\",\"profile\":\"sky-high-fence-witness-v1\",\"revocations\":[],\"schemaVersion\":1,\"trustDomainId\":\"test-trust-domain-vector-01\",\"witnessId\":\"witness-vector-01\"}",
+    "bundleDigest": "ed18f1a1736ea03c29323d210372c936a18c3fd077c5151d4a085dc9555dcb65",
+    "rootKeyId": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+    "rootSignatureBase64Url": "5nGJJUXS2okPIwfkCQKJdbGVFfZttlTfltXnIgRfu2oM8FyHrwzLhbMOCzBKIpoEH7MrSCRo6Ahs-NLT3IY8Bg"
+  }
+}
