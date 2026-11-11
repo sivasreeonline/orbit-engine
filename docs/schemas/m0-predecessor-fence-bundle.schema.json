@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sivasreeonline.github.io/orbit-engine/schemas/m0-predecessor-fence-bundle.schema.json",
+  "title": "M0 Complete Predecessor Enumeration and Fence Bundle",
+  "description": "Structural contract for the complete predecessor inventory and per-incarnation provider-fence attestations referenced by an authenticated host-epoch response. It does not authenticate provider claims or signatures.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "host_enrollment_id",
+    "provider_id",
+    "provider_account_id",
+    "provider_region",
+    "target_provider_instance_id",
+    "operation_id",
+    "request_nonce_sha256",
+    "request_sha256",
+    "enumeration",
+    "predecessor_set_sha256",
+    "predecessors"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "bundle_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "host_enrollment_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "provider_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "provider_account_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "provider_region": {"type": "string", "minLength": 1, "maxLength": 256},
+    "target_provider_instance_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "operation_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "request_nonce_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "request_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "enumeration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "observed_at", "source_evidence"],
+      "properties": {
+        "complete": {"const": true},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "source_evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reference_id", "object_version", "sha256", "byte_count", "evidence_root_id", "evidence_type", "acquired_by_id", "acquired_at", "independent_verifier_id", "verification_status"],
+            "properties": {
+              "reference_id": {"type": "string", "minLength": 1},
+              "object_version": {"type": "string", "minLength": 1},
+              "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+              "byte_count": {"type": "integer", "minimum": 0},
+              "evidence_root_id": {"type": "string", "minLength": 1},
+              "evidence_type": {"enum": ["watchdog-control-plane", "host-configuration", "operator-record"]},
+              "acquired_by_id": {"type": "string", "minLength": 1},
+              "acquired_at": {"type": "string", "format": "date-time"},
+              "independent_verifier_id": {"type": "string", "minLength": 1},
+              "verification_status": {"const": "verified"}
+            }
+          }
+        }
+      }
+    },
+    "predecessor_set_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "predecessors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["provider_instance_id", "incarnation_epoch", "relationship", "fence_method", "fence_state", "fence_attestation_ref", "fence_attestation_sha256"],
+        "properties": {
+          "provider_instance_id": {"type": "string", "minLength": 1, "maxLength": 256},
+          "incarnation_epoch": {"type": "integer", "minimum": 1},
+          "relationship": {"enum": ["prior-instance", "restored-clone", "snapshot-clone", "replica", "other-reviewed-predecessor"]},
+          "fence_method": {"enum": ["provider-native-generation-fence", "provider-native-lease-revocation", "provider-native-instance-termination", "provider-native-storage-detach", "provider-native-control-plane-revocation", "other-reviewed-provider-mechanism"]},
+          "fence_state": {"const": "FENCED"},
+          "fence_attestation_ref": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"},
+          "fence_attestation_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    }
+  }
+}
