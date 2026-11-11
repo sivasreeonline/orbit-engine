@@ -128,7 +128,7 @@ FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
 
 CREATE FUNCTION m0_fence_authority_it.compute_authority_state_digest(
     p_host_id text
-) RETURNS text LANGUAGE plpgsql AS $
+) RETURNS text LANGUAGE plpgsql AS $$
 DECLARE
     state_value jsonb;
 BEGIN
@@ -182,7 +182,7 @@ BEGIN
     END IF;
     RETURN encode(digest(convert_to(state_value::text, 'UTF8'), 'sha256'), 'hex');
 END;
-$;
+$$;
 
 CREATE FUNCTION m0_fence_authority_it.issue(
     p_host_id text,
@@ -675,7 +675,7 @@ BEGIN
         NULL;
     END;
 END;
-$;
+$$;
 
 -- A transaction that aborts before COMMIT leaves no epoch, issuance, replay
 -- index or checkpoint intent behind.
