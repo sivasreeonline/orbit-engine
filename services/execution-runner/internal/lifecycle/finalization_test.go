@@ -7,13 +7,13 @@ import (
 
 func validFinalizationSnapshot() FinalizationSnapshot {
 	return FinalizationSnapshot{
-		SupervisorGeneration: 4,
-		AttemptGeneration:    7,
-		TriggerStreamSealed:  true,
-		TriggerWatermark:     2,
+		SupervisorGeneration:    4,
+		AttemptGeneration:       7,
+		TriggerStreamSealed:     true,
+		TriggerWatermark:        2,
 		DurableTriggerSequences: []uint64{1, 2},
-		PrimaryTriggerID:       "trigger-1",
-		PrimaryTriggerSequence: 1,
+		PrimaryTriggerID:        "trigger-1",
+		PrimaryTriggerSequence:  1,
 		Output: OutputSnapshot{
 			Finalized:        true,
 			StdoutObserved:   120,
