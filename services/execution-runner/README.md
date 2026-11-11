@@ -86,3 +86,8 @@ The journal qualification evidence model and validator are in `internal/journal/
 ## Signed verification audit checkpoints
 
 The journal package defines externally signed Ed25519 checkpoints for audit-ledger heads. The verifier checks signer identity and role against an injected trust policy, signing-time key validity, current revocation, policy version, signature and checkpoint digest, ledger incarnation, predecessor linkage, monotonic sequence/time, and optional signer separation. See [the signed checkpoint specification](../../docs/specifications/m0-signed-verification-audit-checkpoints.md). This is a contract and in-process verifier only: no production keys, trust roots, policy distribution, durable checkpoint store, WORM retention, trusted clock, or recovery authority is provided.
+
+
+## Independent checkpoint custody
+
+The journal package defines a separately signed custody receipt and a backend-neutral compare-and-store contract for verification audit checkpoints. Custody receipts bind an exact signed checkpoint to a custody domain, retention policy/version, retained timestamp, and asserted immutability horizon. The verifier requires externally supplied custodian trust policy and can require a distinct custodian principal. See [the checkpoint custody specification](../../docs/specifications/m0-checkpoint-custody-and-retention.md). Receipts are assertions, not proof of actual provider-enforced immutability; no durable store, WORM configuration, provider integration, or external custodian qualification is implemented.
