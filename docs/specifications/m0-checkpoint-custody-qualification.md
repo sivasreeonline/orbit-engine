@@ -51,3 +51,6 @@ A real qualification must independently retrieve provider configuration and audi
 ## Explicit gates
 
 No provider or adapter is selected. No durable storage adapter, cloud account access, WORM/object-lock configuration, backup job, replication, production key, host deployment, privileged execution, Phase A/B, or student workload execution is implemented or authorized.
+
+
+The detached witness envelope is defined by [the witness attestation JSON Schema](../schemas/m0-checkpoint-custody-witness-attestation.schema.json). Its digest list must be unique, lowercase, and lexicographically sorted; the Go verifier enforces exact equality with the verified witness evidence references. JSON Schema alone does not verify the Ed25519 signature or external key validity/revocation.
