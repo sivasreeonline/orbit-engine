@@ -74,7 +74,11 @@ export interface ExternalWitnessAdapter {
   readLatest(scope: WitnessScope): Promise<WitnessRecord | null>;
 
   /** Resolve a commit whose acknowledgement may have been lost. */
-  readByOperation(scope: WitnessScope, operationId: string): Promise<WitnessRecord | null>;
+  readByOperation(
+    scope: WitnessScope,
+    operationId: string,
+    phase: CheckpointPhase,
+  ): Promise<WitnessRecord | null>;
 }
 
 export interface WitnessReceiptVerifier {
