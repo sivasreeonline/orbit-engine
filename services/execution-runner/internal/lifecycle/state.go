@@ -39,9 +39,10 @@ func ValidateTransition(from, to State) error {
 	return nil
 }
 
-// IsResourceBearing reports whether an attempt may have an external sandbox
-// resource because a durable create intent may have been dispatched.
-func IsResourceBearing(state State) bool {
+// CanEnterTerminationPath reports whether a termination trigger may move the
+// attempt into TERMINATING. The contract limits this path to states where a
+// durable create intent may already have escaped.
+func CanEnterTerminationPath(state State) bool {
 	switch state {
 	case StateCreating, StateStarting, StateRunning:
 		return true
