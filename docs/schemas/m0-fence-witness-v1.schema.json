@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://skyhigh.example/schemas/fence-witness-v1.schema.json",
+  "$id": "urn:sky-high:fence-witness:v1:schema",
   "title": "Sky High FENCE-001 witness cryptographic profile v1",
   "description": "Provider-neutral structural schemas for the proposed witness checkpoint, signed receipt, and root-signed trust bundle. Structural validation does not verify digests, signatures, key trust, consistency proofs, durability, or anti-equivocation.",
   "oneOf": [
