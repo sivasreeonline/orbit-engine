@@ -69,3 +69,20 @@ FENCE-001 remains blocked until an independently reviewed provider-specific pack
 6. independent read-back and verification of immutable evidence objects and the exact aggregate bundle digest.
 
 No synthetic fixture, schema validation, application database lease, guest journal generation, or local test adapter can substitute for provider-side evidence.
+
+
+## Epoch-response cross-binding verifier
+
+`scripts/validate_m0_fence_epoch_response_binding.py` provides a synthetic verifier for the binding between the authenticated host-epoch response payload and the exact aggregate predecessor bundle bytes. It validates both payload schemas, canonical JSON bytes, SHA-256, immutable object version and bundle reference, and exact equality for host enrollment, provider/account/region, target instance, operation ID, nonce digest, request digest and predecessor-set digest.
+
+It additionally enforces that the successor instance is not itself listed as a predecessor, the successor epoch is strictly greater than every enumerated predecessor epoch, every predecessor fence observation follows complete enumeration, and the authority response observation follows every predecessor fence observation. Time values must include an explicit UTC offset.
+
+Run:
+
+```bash
+python scripts/validate_m0_fence_epoch_response_binding.py
+```
+
+The negative fixtures cover nonce and provider-account mismatch, successor/predecessor identity collision, non-increasing epoch, premature authority response, immutable object-version/reference/digest mismatch, a fence observed after the authority response, timezone-naive timestamps, and non-canonical aggregate bytes.
+
+This verifier receives bundle bytes and a version as test inputs. It does not fetch provider objects, prove object-lock immutability, authenticate the authority response signature, authenticate per-predecessor provider attestations, or independently establish provider truth. Its synthetic pass is only a cross-field contract result.

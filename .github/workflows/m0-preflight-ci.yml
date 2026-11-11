@@ -41,6 +41,7 @@ on:
       - "docs/schemas/m0-predecessor-fence-bundle.schema.json"
       - "docs/specifications/m0-fence-001-predecessor-evidence-contract.md"
       - "scripts/validate_m0_predecessor_fence_bundle.py"
+      - "scripts/validate_m0_fence_epoch_response_binding.py"
       - "docs/schemas/m0-phase-a-authorization-payload.schema.json"
       - "docs/schemas/m0-key-revocation-payload.schema.json"
       - "docs/schemas/m0-crypto-verification-fixture-catalog.json"
@@ -115,6 +116,9 @@ jobs:
 
       - name: Validate FENCE-001 complete predecessor evidence bundle
         run: python scripts/validate_m0_predecessor_fence_bundle.py
+
+      - name: Validate FENCE-001 epoch response and bundle cross-binding
+        run: python scripts/validate_m0_fence_epoch_response_binding.py
 
       - name: Validate supervisor, journal and watchdog contract alignment
         run: python scripts/validate_m0_supervisor_journal_contract.py
