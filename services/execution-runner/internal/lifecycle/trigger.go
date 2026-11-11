@@ -83,20 +83,17 @@ func (arbiter *TriggerArbiter) Capture(state State, trigger Trigger) (TriggerRec
 	if trigger.BootID != arbiter.bootID {
 		return TriggerRecord{}, ErrBootIdentity
 	}
-	finalizationBegun := arbiter.finalizationBegun
-	if !finalizationBegun {
-		switch state {
-		case StateCreating, StateStarting, StateRunning:
-		case StateTerminating:
-			if arbiter.primary == nil {
-				return TriggerRecord{}, ErrTriggerNotApplicable
-			}
-		case StateFinalizing:
-			finalizationBegun = true
-		default:
+	switch state {
+	case StateCreating, StateStarting, StateRunning:
+	case StateTerminating:
+		if arbiter.primary == nil {
 			return TriggerRecord{}, ErrTriggerNotApplicable
 		}
+	case StateFinalizing:
+	default:
+		return TriggerRecord{}, ErrTriggerNotApplicable
 	}
+	finalizationBegun := arbiter.finalizationBegun || state == StateFinalizing
 	if arbiter.hasObserved && trigger.ObservedBootTime < arbiter.lastObserved {
 		return TriggerRecord{}, ErrClockRollback
 	}
