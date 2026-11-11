@@ -44,6 +44,7 @@ on:
       - "scripts/validate_m0_fence_epoch_response_binding.py"
       - "scripts/validate_m0_fence_authority_conformance.py"
       - "docs/specifications/m0-fence-001-authority-conformance-model.md"
+      - "docs/specifications/m0-fence-001-durable-authority-storage-recovery-proposal.md"
       - "docs/schemas/m0-phase-a-authorization-payload.schema.json"
       - "docs/schemas/m0-key-revocation-payload.schema.json"
       - "docs/schemas/m0-crypto-verification-fixture-catalog.json"
