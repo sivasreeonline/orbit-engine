@@ -13,13 +13,13 @@ func validScope() Scope {
 
 func validRecord() Record {
 	return Record{
-		Scope:                     validScope(),
-		KeyDigest:                 strings.Repeat("a", 64),
-		RequestDigest:             strings.Repeat("b", 64),
-		AttemptID:                 "attempt-1",
-		ClaimedAtUTC:              time.Date(2026, time.November, 11, 8, 0, 0, 0, time.UTC),
-		ResponseDescriptorVersion: 1,
-		ResponseDescriptorDigest:  strings.Repeat("c", 64),
+		Scope:                       validScope(),
+		KeyDigest:                   strings.Repeat("a", 64),
+		RequestDigest:               strings.Repeat("b", 64),
+		AttemptID:                   "attempt-1",
+		ClaimedAtUTC:                time.Date(2026, time.November, 11, 8, 0, 0, 0, time.UTC),
+		ResponseDescriptorVersion:   1,
+		ResponseDescriptorDigest:    strings.Repeat("c", 64),
 		ResponseDescriptorAvailable: true,
 	}
 }
