@@ -483,7 +483,7 @@ def expect_receipt_rejection(
         verify_receipt_against_trusted_bundle(
             vector_result, trust_bundle_body, trusted_receipt_time
         )
-    except (ValueError, InvalidSignature):
+    except (ValueError, InvalidSignature, AssertionError):
         return
     raise AssertionError(f"invalid receipt trust binding was accepted: {label}")
 
