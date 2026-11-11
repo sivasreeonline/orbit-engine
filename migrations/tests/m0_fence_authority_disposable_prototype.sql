@@ -316,6 +316,10 @@ BEGIN
 
     SELECT COALESCE(MAX(generation), 0) + 1,
            COALESCE(
+               (SELECT checkpoint_digest
+                  FROM m0_fence_authority_it.acceptance_checkpoint_intents
+                 WHERE host_id = p_host_id
+                 ORDER BY generation DESC LIMIT 1),
                (SELECT authority_state_digest
                   FROM m0_fence_authority_it.checkpoint_intents
                  WHERE host_id = p_host_id
@@ -323,8 +327,13 @@ BEGIN
                repeat('0', 64)
            )
       INTO next_generation, prior_checkpoint_digest
-      FROM m0_fence_authority_it.checkpoint_intents
-     WHERE host_id = p_host_id;
+      FROM (
+          SELECT generation FROM m0_fence_authority_it.checkpoint_intents
+           WHERE host_id = p_host_id
+          UNION ALL
+          SELECT generation FROM m0_fence_authority_it.acceptance_checkpoint_intents
+           WHERE host_id = p_host_id
+      ) generations;
 
     state_hash := m0_fence_authority_it.compute_authority_state_digest(p_host_id);
 
@@ -1242,6 +1251,16 @@ BEGIN
     );
     IF result_value <> 'EXISTING' THEN
         RAISE EXCEPTION 'exact acceptance retry did not resolve acknowledged checkpoint';
+    END IF;
+
+    PERFORM m0_fence_authority_it.issue(
+        'host-accept-checkpoint', 'op-after-accept', 'nonce-after-accept',
+        'request-after-accept', 3, 'vm-after-accept'
+    );
+    IF (SELECT MAX(generation)
+          FROM m0_fence_authority_it.checkpoint_intents
+         WHERE host_id = 'host-accept-checkpoint') <> 3 THEN
+        RAISE EXCEPTION 'post-acceptance issuance did not continue monotonic generation';
     END IF;
 
     BEGIN
