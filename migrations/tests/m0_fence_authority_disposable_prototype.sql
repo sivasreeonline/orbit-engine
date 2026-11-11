@@ -1,0 +1,394 @@
+\set ON_ERROR_STOP on
+
+-- Disposable PostgreSQL prototype only. This script creates and drops its own
+-- isolated schema. It is not a production migration or external witness.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DROP SCHEMA IF EXISTS m0_fence_authority_it CASCADE;
+CREATE SCHEMA m0_fence_authority_it;
+
+CREATE TABLE m0_fence_authority_it.host_authority (
+    host_id text PRIMARY KEY,
+    epoch bigint NOT NULL CHECK (epoch >= 0),
+    provider_instance_id text NOT NULL,
+    record_version bigint NOT NULL CHECK (record_version > 0),
+    pending_operation_id text
+);
+
+CREATE TABLE m0_fence_authority_it.issuances (
+    host_id text NOT NULL REFERENCES m0_fence_authority_it.host_authority(host_id),
+    operation_id text NOT NULL,
+    nonce_digest text NOT NULL,
+    request_digest text NOT NULL,
+    response_bytes bytea NOT NULL,
+    response_digest text NOT NULL,
+    issued_epoch bigint NOT NULL,
+    target_instance_id text NOT NULL,
+    PRIMARY KEY (host_id, operation_id),
+    UNIQUE (host_id, nonce_digest),
+    UNIQUE (host_id, issued_epoch)
+);
+
+CREATE TABLE m0_fence_authority_it.nonce_index (
+    host_id text NOT NULL,
+    nonce_digest text NOT NULL,
+    operation_id text NOT NULL,
+    request_digest text NOT NULL,
+    response_digest text NOT NULL,
+    PRIMARY KEY (host_id, nonce_digest),
+    FOREIGN KEY (host_id, operation_id)
+        REFERENCES m0_fence_authority_it.issuances(host_id, operation_id)
+);
+
+CREATE TABLE m0_fence_authority_it.operation_index (
+    host_id text NOT NULL,
+    operation_id text NOT NULL,
+    nonce_digest text NOT NULL,
+    request_digest text NOT NULL,
+    response_digest text NOT NULL,
+    PRIMARY KEY (host_id, operation_id),
+    FOREIGN KEY (host_id, operation_id)
+        REFERENCES m0_fence_authority_it.issuances(host_id, operation_id)
+);
+
+CREATE TABLE m0_fence_authority_it.checkpoint_intents (
+    host_id text NOT NULL,
+    generation bigint NOT NULL,
+    operation_id text NOT NULL,
+    previous_checkpoint_digest text NOT NULL,
+    authority_state_digest text NOT NULL,
+    response_digest text NOT NULL,
+    PRIMARY KEY (host_id, generation),
+    UNIQUE (host_id, operation_id),
+    FOREIGN KEY (host_id, operation_id)
+        REFERENCES m0_fence_authority_it.issuances(host_id, operation_id)
+);
+
+-- This table is intentionally a same-database TEST DOUBLE. It is not an
+-- independent witness and must never be described as anti-rollback proof.
+CREATE TABLE m0_fence_authority_it.simulated_witness_receipts (
+    host_id text NOT NULL,
+    generation bigint NOT NULL,
+    operation_id text NOT NULL,
+    authority_state_digest text NOT NULL,
+    PRIMARY KEY (host_id, generation),
+    UNIQUE (host_id, operation_id)
+);
+
+CREATE FUNCTION m0_fence_authority_it.reject_immutable_mutation()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'immutable authority evidence cannot be updated or deleted'
+        USING ERRCODE = '55000';
+END;
+$$;
+
+CREATE TRIGGER issuance_immutable
+BEFORE UPDATE OR DELETE ON m0_fence_authority_it.issuances
+FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
+
+CREATE TRIGGER nonce_index_immutable
+BEFORE UPDATE OR DELETE ON m0_fence_authority_it.nonce_index
+FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
+
+CREATE TRIGGER operation_index_immutable
+BEFORE UPDATE OR DELETE ON m0_fence_authority_it.operation_index
+FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
+
+CREATE TRIGGER checkpoint_intent_immutable
+BEFORE UPDATE OR DELETE ON m0_fence_authority_it.checkpoint_intents
+FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
+
+CREATE FUNCTION m0_fence_authority_it.issue(
+    p_host_id text,
+    p_operation_id text,
+    p_nonce_digest text,
+    p_request_digest text,
+    p_expected_version bigint,
+    p_target_instance_id text
+) RETURNS bytea LANGUAGE plpgsql AS $$
+DECLARE
+    authority_row m0_fence_authority_it.host_authority%ROWTYPE;
+    operation_row m0_fence_authority_it.issuances%ROWTYPE;
+    nonce_row m0_fence_authority_it.issuances%ROWTYPE;
+    response_value bytea;
+    response_hash text;
+    next_epoch bigint;
+    next_generation bigint;
+    prior_checkpoint_digest text;
+    state_hash text;
+BEGIN
+    SELECT * INTO authority_row
+      FROM m0_fence_authority_it.host_authority
+     WHERE host_id = p_host_id
+     FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'unknown enrolled host' USING ERRCODE = '23503';
+    END IF;
+
+    SELECT * INTO operation_row
+      FROM m0_fence_authority_it.issuances
+     WHERE host_id = p_host_id AND operation_id = p_operation_id;
+
+    SELECT * INTO nonce_row
+      FROM m0_fence_authority_it.issuances
+     WHERE host_id = p_host_id AND nonce_digest = p_nonce_digest;
+
+    IF operation_row.operation_id IS NOT NULL OR nonce_row.operation_id IS NOT NULL THEN
+        IF operation_row.operation_id IS NULL
+           OR nonce_row.operation_id IS NULL
+           OR operation_row.operation_id <> nonce_row.operation_id
+           OR operation_row.request_digest <> p_request_digest
+           OR nonce_row.request_digest <> p_request_digest THEN
+            RAISE EXCEPTION 'nonce/operation identity or request digest conflict'
+                USING ERRCODE = '23505';
+        END IF;
+        RETURN operation_row.response_bytes;
+    END IF;
+
+    IF authority_row.record_version <> p_expected_version THEN
+        RAISE EXCEPTION 'authority record compare-and-swap conflict'
+            USING ERRCODE = '40001';
+    END IF;
+
+    IF authority_row.pending_operation_id IS NOT NULL THEN
+        RAISE EXCEPTION 'one successor is already pending'
+            USING ERRCODE = '55000';
+    END IF;
+
+    IF p_target_instance_id = authority_row.provider_instance_id THEN
+        RAISE EXCEPTION 'successor must target a distinct provider instance'
+            USING ERRCODE = '22023';
+    END IF;
+
+    next_epoch := authority_row.epoch + 1;
+    response_value := convert_to(
+        jsonb_build_object(
+            'host_id', p_host_id,
+            'operation_id', p_operation_id,
+            'nonce_digest', p_nonce_digest,
+            'request_digest', p_request_digest,
+            'provider_instance_id', p_target_instance_id,
+            'incarnation_epoch', next_epoch,
+            'predecessor_max_epoch', authority_row.epoch
+        )::text,
+        'UTF8'
+    );
+    response_hash := encode(digest(response_value, 'sha256'), 'hex');
+
+    INSERT INTO m0_fence_authority_it.issuances (
+        host_id, operation_id, nonce_digest, request_digest,
+        response_bytes, response_digest, issued_epoch, target_instance_id
+    ) VALUES (
+        p_host_id, p_operation_id, p_nonce_digest, p_request_digest,
+        response_value, response_hash, next_epoch, p_target_instance_id
+    );
+
+    INSERT INTO m0_fence_authority_it.nonce_index (
+        host_id, nonce_digest, operation_id, request_digest, response_digest
+    ) VALUES (p_host_id, p_nonce_digest, p_operation_id, p_request_digest, response_hash);
+
+    INSERT INTO m0_fence_authority_it.operation_index (
+        host_id, operation_id, nonce_digest, request_digest, response_digest
+    ) VALUES (p_host_id, p_operation_id, p_nonce_digest, p_request_digest, response_hash);
+
+    UPDATE m0_fence_authority_it.host_authority
+       SET epoch = next_epoch,
+           provider_instance_id = p_target_instance_id,
+           record_version = record_version + 1,
+           pending_operation_id = p_operation_id
+     WHERE host_id = p_host_id;
+
+    SELECT COALESCE(MAX(generation), 0) + 1,
+           COALESCE(
+               (SELECT authority_state_digest
+                  FROM m0_fence_authority_it.checkpoint_intents
+                 WHERE host_id = p_host_id
+                 ORDER BY generation DESC LIMIT 1),
+               repeat('0', 64)
+           )
+      INTO next_generation, prior_checkpoint_digest
+      FROM m0_fence_authority_it.checkpoint_intents
+     WHERE host_id = p_host_id;
+
+    state_hash := encode(digest(convert_to(
+        jsonb_build_object(
+            'host_id', p_host_id,
+            'epoch', next_epoch,
+            'provider_instance_id', p_target_instance_id,
+            'record_version', authority_row.record_version + 1,
+            'operation_id', p_operation_id,
+            'response_digest', response_hash
+        )::text, 'UTF8'), 'sha256'), 'hex');
+
+    INSERT INTO m0_fence_authority_it.checkpoint_intents (
+        host_id, generation, operation_id, previous_checkpoint_digest,
+        authority_state_digest, response_digest
+    ) VALUES (
+        p_host_id, next_generation, p_operation_id, prior_checkpoint_digest,
+        state_hash, response_hash
+    );
+
+    RETURN response_value;
+END;
+$$;
+
+CREATE FUNCTION m0_fence_authority_it.publish_if_test_receipt_matches(
+    p_host_id text, p_operation_id text
+) RETURNS bytea LANGUAGE plpgsql AS $$
+DECLARE
+    intent_row m0_fence_authority_it.checkpoint_intents%ROWTYPE;
+    response_value bytea;
+BEGIN
+    SELECT * INTO intent_row
+      FROM m0_fence_authority_it.checkpoint_intents
+     WHERE host_id = p_host_id AND operation_id = p_operation_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'checkpoint intent missing' USING ERRCODE = '55000';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM m0_fence_authority_it.simulated_witness_receipts receipt
+         WHERE receipt.host_id = intent_row.host_id
+           AND receipt.generation = intent_row.generation
+           AND receipt.operation_id = intent_row.operation_id
+           AND receipt.authority_state_digest = intent_row.authority_state_digest
+    ) THEN
+        RAISE EXCEPTION 'matching test witness receipt is required before publication'
+            USING ERRCODE = '55000';
+    END IF;
+
+    SELECT response_bytes INTO response_value
+      FROM m0_fence_authority_it.issuances
+     WHERE host_id = p_host_id AND operation_id = p_operation_id;
+    RETURN response_value;
+END;
+$$;
+
+INSERT INTO m0_fence_authority_it.host_authority (
+    host_id, epoch, provider_instance_id, record_version
+) VALUES ('host-test-01', 5, 'vm-predecessor', 1);
+
+-- First committed issuance. The response is stored as exact BYTEA.
+DO $$
+DECLARE first_response bytea; retry_response bytea;
+BEGIN
+    first_response := m0_fence_authority_it.issue(
+        'host-test-01', 'op-001', 'nonce-digest-001', 'request-digest-001', 1, 'vm-successor'
+    );
+    retry_response := m0_fence_authority_it.issue(
+        'host-test-01', 'op-001', 'nonce-digest-001', 'request-digest-001', 1, 'vm-successor'
+    );
+    IF first_response <> retry_response THEN
+        RAISE EXCEPTION 'idempotent retry did not return exact original response bytes';
+    END IF;
+    IF (SELECT epoch FROM m0_fence_authority_it.host_authority WHERE host_id = 'host-test-01') <> 6 THEN
+        RAISE EXCEPTION 'idempotent retry allocated a second epoch';
+    END IF;
+    IF (SELECT count(*) FROM m0_fence_authority_it.issuances WHERE host_id = 'host-test-01') <> 1 THEN
+        RAISE EXCEPTION 'idempotent retry created a duplicate issuance';
+    END IF;
+END;
+$$;
+
+-- A nonce or operation ID cannot be rebound to different request identity.
+DO $$
+BEGIN
+    BEGIN
+        PERFORM m0_fence_authority_it.issue(
+            'host-test-01', 'op-001', 'nonce-digest-001', 'changed-request', 2, 'vm-other'
+        );
+        RAISE EXCEPTION 'changed request digest unexpectedly succeeded';
+    EXCEPTION WHEN unique_violation THEN
+        NULL;
+    END;
+
+    BEGIN
+        PERFORM m0_fence_authority_it.issue(
+            'host-test-01', 'op-other', 'nonce-digest-001', 'request-digest-001', 2, 'vm-other'
+        );
+        RAISE EXCEPTION 'nonce rebinding unexpectedly succeeded';
+    EXCEPTION WHEN unique_violation THEN
+        NULL;
+    END;
+END;
+$$;
+
+-- The issuance cannot be published until the exact checkpoint intent has a
+-- matching simulated receipt. The receipt table is not an external witness.
+DO $$
+DECLARE intent_row m0_fence_authority_it.checkpoint_intents%ROWTYPE;
+        published_bytes bytea;
+BEGIN
+    BEGIN
+        PERFORM m0_fence_authority_it.publish_if_test_receipt_matches('host-test-01', 'op-001');
+        RAISE EXCEPTION 'publication without a checkpoint receipt unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+
+    SELECT * INTO intent_row FROM m0_fence_authority_it.checkpoint_intents
+     WHERE host_id = 'host-test-01' AND operation_id = 'op-001';
+
+    INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
+        host_id, generation, operation_id, authority_state_digest
+    ) VALUES (
+        intent_row.host_id, intent_row.generation, intent_row.operation_id,
+        intent_row.authority_state_digest
+    );
+
+    published_bytes := m0_fence_authority_it.publish_if_test_receipt_matches('host-test-01', 'op-001');
+    IF published_bytes <> (SELECT response_bytes FROM m0_fence_authority_it.issuances
+                            WHERE host_id = 'host-test-01' AND operation_id = 'op-001') THEN
+        RAISE EXCEPTION 'publication did not return exact retained response bytes';
+    END IF;
+END;
+$$;
+
+-- A transaction that aborts before COMMIT leaves no epoch, issuance, replay
+-- index or checkpoint intent behind.
+BEGIN;
+SELECT m0_fence_authority_it.issue(
+    'host-test-01', 'op-002', 'nonce-digest-002', 'request-digest-002', 2, 'vm-successor-2'
+);
+ROLLBACK;
+
+DO $$
+BEGIN
+    IF (SELECT epoch FROM m0_fence_authority_it.host_authority WHERE host_id = 'host-test-01') <> 6
+       OR EXISTS (SELECT 1 FROM m0_fence_authority_it.issuances
+                   WHERE host_id = 'host-test-01' AND operation_id = 'op-002')
+       OR EXISTS (SELECT 1 FROM m0_fence_authority_it.nonce_index
+                   WHERE host_id = 'host-test-01' AND nonce_digest = 'nonce-digest-002')
+       OR EXISTS (SELECT 1 FROM m0_fence_authority_it.checkpoint_intents
+                   WHERE host_id = 'host-test-01' AND operation_id = 'op-002') THEN
+        RAISE EXCEPTION 'pre-commit rollback left partial authority state';
+    END IF;
+END;
+$$;
+
+-- Exact response and anti-replay indexes are append-only.
+DO $$
+BEGIN
+    BEGIN
+        UPDATE m0_fence_authority_it.issuances
+           SET response_bytes = convert_to('tampered', 'UTF8')
+         WHERE host_id = 'host-test-01' AND operation_id = 'op-001';
+        RAISE EXCEPTION 'issuance mutation unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+
+    BEGIN
+        DELETE FROM m0_fence_authority_it.nonce_index
+         WHERE host_id = 'host-test-01' AND nonce_digest = 'nonce-digest-001';
+        RAISE EXCEPTION 'nonce tombstone deletion unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+END;
+$$;
+
+DROP SCHEMA m0_fence_authority_it CASCADE;
