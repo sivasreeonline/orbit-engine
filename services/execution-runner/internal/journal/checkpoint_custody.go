@@ -15,37 +15,37 @@ const CheckpointCustodianRole = "VERIFICATION_CHECKPOINT_CUSTODIAN"
 // CheckpointCustodyReceipt is a custodian-signed assertion that a specific
 // signed checkpoint was accepted under a named retention policy.
 type CheckpointCustodyReceipt struct {
-	CheckpointSHA256       string       `json:"checkpoint_sha256"`
-	CustodyDomain          string       `json:"custody_domain"`
-	RetentionPolicyID      string      `json:"retention_policy_id"`
+	CheckpointSHA256 string       `json:"checkpoint_sha256"`
+	CustodyDomain string       `json:"custody_domain"`
+	RetentionPolicyID string      `json:"retention_policy_id"`
 	RetentionPolicyVersion string `json:"retention_policy_version"`
-	RetainedAt             string       `json:"retained_at"`
-	ImmutableUntil         string       `json:"immutable_until"`
-	CustodianPrincipal     string     `json:"custodian_principal"`
-	CustodianRole          string       `json:"custodian_role"`
-	CustodianKeyID         string       `json:"custodian_key_id"`
-	SignatureHex           string       `json:"signature_hex"`
-	ReceiptSHA256          string       `json:"receipt_sha256"`
+	RetainedAt string       `json:"retained_at"`
+	ImmutableUntil string       `json:"immutable_until"`
+	CustodianPrincipal string     `json:"custodian_principal"`
+	CustodianRole string       `json:"custodian_role"`
+	CustodianKeyID string       `json:"custodian_key_id"`
+	SignatureHex string       `json:"signature_hex"`
+	ReceiptSHA256 string       `json:"receipt_sha256"`
 }
 
 // TrustedCheckpointCustodianKey is supplied by an independently governed
 // custody trust policy. Private keys are never represented here.
 type TrustedCheckpointCustodianKey struct {
-	KeyID     string
+	KeyID string
 	Principal string
-	Role      string
+	Role string
 	PublicKey ed25519.PublicKey
 	NotBefore time.Time
-	NotAfter  time.Time
+	NotAfter time.Time
 	RevokedAt *time.Time
 }
 
 type CheckpointCustodyPolicy struct {
-	PolicyID                    string
-	PolicyVersion               string
-	MinimumRetention            time.Duration
+	PolicyID string
+	PolicyVersion string
+	MinimumRetention time.Duration
 	RequireIndependentCustodian bool
-	TrustedKeys                 []TrustedCheckpointCustodianKey
+	TrustedKeys []TrustedCheckpointCustodianKey
 }
 
 func custodyReceiptSigningBytes(receipt CheckpointCustodyReceipt) ([]byte, error) {
