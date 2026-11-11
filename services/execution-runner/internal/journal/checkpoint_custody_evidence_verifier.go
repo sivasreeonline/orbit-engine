@@ -217,6 +217,10 @@ func VerifyCheckpointCustodyEvidence(
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review signature envelope has trailing data", ErrCorrupt)
 	}
+	canonicalEnvelope, err := json.Marshal(signatureEnvelope)
+	if err != nil || !bytes.Equal(canonicalEnvelope, attestationBytes) {
+		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review signature envelope is not canonical JSON", ErrCorrupt)
+	}
 	if signatureEnvelope.SchemaVersion != "1.0" || signatureEnvelope.Algorithm != "Ed25519" ||
 		signatureEnvelope.Reviewer != manifest.Review.ReviewerIdentity {
 		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review signature identity or algorithm mismatch", ErrCorrupt)
