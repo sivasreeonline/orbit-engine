@@ -8,7 +8,7 @@
     "canonicalization": "RFC8785-JCS",
     "digest": "SHA-256",
     "signature": "Ed25519",
-    "signatureInputPrefixUtf8": "SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\\u0000"
+    "signatureInputPrefixUtf8": "SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\u0000"
   },
   "testKey": {
     "publicKeyBase64Url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
