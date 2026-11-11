@@ -674,6 +674,81 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     expect(independentlyVerify(reordered)).toBe(false);
   });
 
+
+  it("detects a PostgreSQL SERIALIZABLE write-skew conflict with SQLSTATE 40001", async () => {
+    const setup = await connect();
+    const firstId = randomUUID();
+    const secondId = randomUUID();
+    await setup.query(
+      "INSERT INTO authorization_state (authorization_id, run_budget, consumed_runs, state_version, revoked) VALUES ($1, 1, 0, 0, false), ($2, 1, 0, 0, false)",
+      [firstId, secondId],
+    );
+    const first = await connect(true);
+    const second = await connect(true);
+
+    try {
+      await first.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+      await second.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+      const ids = [firstId, secondId];
+      const firstSnapshot = await first.query<{ active_count: number }>(
+        "SELECT count(*)::int AS active_count FROM authorization_state WHERE authorization_id = ANY($1::text[]) AND revoked = false",
+        [ids],
+      );
+      const secondSnapshot = await second.query<{ active_count: number }>(
+        "SELECT count(*)::int AS active_count FROM authorization_state WHERE authorization_id = ANY($1::text[]) AND revoked = false",
+        [ids],
+      );
+      expect(firstSnapshot.rows[0]?.active_count).toBe(2);
+      expect(secondSnapshot.rows[0]?.active_count).toBe(2);
+
+      const updates = await Promise.allSettled([
+        first.query("UPDATE authorization_state SET revoked = true, state_version = state_version + 1 WHERE authorization_id = $1", [firstId]),
+        second.query("UPDATE authorization_state SET revoked = true, state_version = state_version + 1 WHERE authorization_id = $1", [secondId]),
+      ]);
+
+      const finish = async (
+        client: Client,
+        update: PromiseSettledResult<unknown>,
+      ): Promise<{ outcome: "COMMITTED" | "SERIALIZATION_ABORT"; code?: string }> => {
+        if (update.status === "rejected") {
+          await client.query("ROLLBACK").catch(() => undefined);
+          const error = update.reason as { code?: string };
+          if (error.code === "40001") return { outcome: "SERIALIZATION_ABORT", code: error.code };
+          throw update.reason;
+        }
+        try {
+          await client.query("COMMIT");
+          return { outcome: "COMMITTED" };
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => undefined);
+          const code = (error as { code?: string }).code;
+          if (code === "40001") return { outcome: "SERIALIZATION_ABORT", code };
+          throw error;
+        }
+      };
+
+      const outcomes = await Promise.all([
+        finish(first, updates[0]),
+        finish(second, updates[1]),
+      ]);
+      expect(outcomes.filter((value) => value.outcome === "COMMITTED")).toHaveLength(1);
+      expect(outcomes.filter((value) => value.code === "40001")).toHaveLength(1);
+    } finally {
+      await Promise.all([
+        first.query("ROLLBACK").catch(() => undefined),
+        second.query("ROLLBACK").catch(() => undefined),
+        first.end().catch(() => undefined),
+        second.end().catch(() => undefined),
+      ]);
+    }
+
+    const remaining = await setup.query(
+      "SELECT count(*)::int AS active_count FROM authorization_state WHERE authorization_id = ANY($1::text[]) AND revoked = false",
+      [[firstId, secondId]],
+    );
+    expect(remaining.rows[0]?.active_count).toBe(1);
+  });
+
   it("detects a real PostgreSQL deadlock using opposite row-lock order", async () => {
     const setup = await connect();
     const firstId = randomUUID();
