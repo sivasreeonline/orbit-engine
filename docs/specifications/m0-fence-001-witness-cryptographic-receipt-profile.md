@@ -50,6 +50,8 @@ The digest field itself is not part of `checkpointBody`; this avoids self-refere
 
 A checkpoint artifact is the exact UTF-8 JCS byte sequence. Its SHA-256 is the artifact digest. Implementations must not hash pretty-printed JSON, JSONB text output, delimiter-concatenated strings, platform-default encodings, or a parsed-and-reserialized representation that is not byte-identical to JCS.
 
+JCS does not perform Unicode normalization. Protocol strings are hashed as their exact Unicode scalar sequence after UTF-8 encoding. NFC and NFD spellings that look identical to a person are distinct inputs and produce distinct digests. Implementations must not normalize, case-fold, trim, or otherwise rewrite identifiers before digesting; enrollment and identity policy must separately define which strings are admissible. The checked-in deterministic vectors are `docs/test-vectors/fence-witness-v1-001.json` (ASCII baseline) and `docs/test-vectors/fence-witness-v1-002-unicode.json` (Unicode identity values).
+
 ## 4. Receipt signature payload
 
 The receipt body contains exactly:
@@ -105,6 +107,10 @@ The trust-bundle digest is SHA-256 over the exact JCS bundle body, excluding its
 Bootstrap requires the root public-key fingerprint to be pinned through an independently governed channel. A trust bundle must advance exactly one generation, link to the previously accepted digest, and verify under the pinned root. A restored or older bundle is rejected. The verifier must persist the highest accepted generation/digest outside the authority database's ordinary restore domain; if that protected state is unavailable or contradictory, verification is quarantined.
 
 Rotation is additive before cutover: distribute and validate the successor key in a root-signed bundle, prove the witness can sign with it, then switch receipt issuance. Retired keys may remain available for historical verification only under an explicitly reviewed policy and independently trustworthy receipt-time evidence. The receipt's self-reported `committedAt` is not trusted time by itself.
+
+The machine-readable structural contract is `docs/schemas/m0-fence-witness-v1.schema.json`. The trust-bundle body has exactly `profile`, `schemaVersion`, `trustDomainId`, `witnessId`, `generation`, `previousBundleDigest`, `keys` and `revocations`. Each signing-key record binds `keyId`, `publicKeyBase64Url`, purpose `WITNESS_RECEIPT_SIGNING`, witness identity, permitted authority IDs, `notBefore`, `notAfter` and optional `retiredAt`. Each revocation binds `keyId`, `revokedAt` and a reason.
+
+The trust-bundle digest is `lowercaseHex(SHA-256(UTF8(JCS(trustBundleBody))))`. The root signature input is the UTF-8 domain-separation prefix `SKYHIGH-FENCE-001-WITNESS-TRUST-BUNDLE-V1\0` followed by the exact UTF-8 JCS bytes of `trustBundleBody`; the envelope carries `bundleDigest`, `rootKeyId` and the base64url `rootSignature`. The root key ID is resolved only from the separately pinned root trust configuration. Structural schema validation does not enforce unique key IDs across distinct objects, key-fingerprint correctness, bundle-generation succession, digest equality, root signatures, or revocation semantics; the runtime verifier must enforce each of those invariants explicitly.
 
 Revocation is fail-closed. A key marked compromised is rejected for all receipts unless a separately approved incident procedure establishes a defensible compromise cutoff using independent trusted time and append evidence. No implementation may infer a safe cutoff from a timestamp signed by the compromised key. Revocation-bundle freshness is mandatory; stale or unavailable revocation state blocks anchoring.
 
