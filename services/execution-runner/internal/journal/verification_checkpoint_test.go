@@ -138,3 +138,77 @@ func TestSignedVerificationAuditCheckpointRequiresDistinctSigner(t *testing.T) {
 		t.Fatalf("error = %v, want ErrCorrupt", err)
 	}
 }
+
+func TestSignedVerificationAuditCheckpointRejectsSignatureAndDigestCorruption(t *testing.T) {
+	t.Parallel()
+	publicKey, privateKey := checkpointKeyPair(10)
+	policy := checkpointPolicy(publicKey, "custodian-a", "key-a")
+	verifiedAt := time.Date(2026, 11, 11, 10, 1, 0, 0, time.UTC)
+
+	badSignature := checkpointFixture(t, "custodian-a", "key-a", privateKey, 10, "", "2026-11-11T10:00:00Z")
+	badSignature.SignatureHex = "00"
+	if err := ValidateSignedVerificationAuditCheckpoint(badSignature, nil, policy, verifiedAt); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("signature error = %v, want ErrCorrupt", err)
+	}
+
+	badDigest := checkpointFixture(t, "custodian-a", "key-a", privateKey, 10, "", "2026-11-11T10:00:00Z")
+	badDigest.CheckpointSHA256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if err := ValidateSignedVerificationAuditCheckpoint(badDigest, nil, policy, verifiedAt); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("digest error = %v, want ErrCorrupt", err)
+	}
+}
+
+func TestSignedVerificationAuditCheckpointRejectsPolicyVersionAndRoleMismatch(t *testing.T) {
+	t.Parallel()
+	publicKey, privateKey := checkpointKeyPair(11)
+	policy := checkpointPolicy(publicKey, "custodian-a", "key-a")
+	verifiedAt := time.Date(2026, 11, 11, 10, 1, 0, 0, time.UTC)
+
+	wrongVersionPayload := VerificationAuditCheckpointPayload{
+		LedgerID: "ledger-a", LedgerEpoch: "epoch-1", Sequence: 10,
+		RecordSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		CreatedAt: "2026-11-11T10:00:00Z", PolicyVersion: "policy-v2",
+	}
+	wrongVersion, err := SealVerificationAuditCheckpoint(wrongVersionPayload, "custodian-a", VerificationCheckpointSignerRole, "key-a", privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSignedVerificationAuditCheckpoint(wrongVersion, nil, policy, verifiedAt); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("policy version error = %v, want ErrCorrupt", err)
+	}
+
+	wrongRole := checkpointFixture(t, "custodian-a", "key-a", privateKey, 10, "", "2026-11-11T10:00:00Z")
+	wrongRole.SignerRole = "OTHER_ROLE"
+	if err := ValidateSignedVerificationAuditCheckpoint(wrongRole, nil, policy, verifiedAt); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("role error = %v, want ErrCorrupt", err)
+	}
+}
+
+func TestSignedVerificationAuditCheckpointRejectsEpochAndTimestampRollback(t *testing.T) {
+	t.Parallel()
+	publicA, privateA := checkpointKeyPair(12)
+	publicB, privateB := checkpointKeyPair(13)
+	first := checkpointFixture(t, "custodian-a", "key-a", privateA, 10, "", "2026-11-11T10:05:00Z")
+	policy := checkpointPolicy(publicB, "custodian-b", "key-b")
+	policy.TrustedKeys = append(policy.TrustedKeys, checkpointPolicy(publicA, "custodian-a", "key-a").TrustedKeys...)
+	verifiedAt := time.Date(2026, 11, 11, 10, 7, 0, 0, time.UTC)
+
+	changedEpochPayload := VerificationAuditCheckpointPayload{
+		LedgerID: "ledger-a", LedgerEpoch: "epoch-2", Sequence: 20,
+		RecordSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		CreatedAt: "2026-11-11T10:06:00Z", PreviousCheckpointSHA256: VerificationAuditCheckpointDigest(first),
+		PolicyVersion: "policy-v1",
+	}
+	changedEpoch, err := SealVerificationAuditCheckpoint(changedEpochPayload, "custodian-b", VerificationCheckpointSignerRole, "key-b", privateB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSignedVerificationAuditCheckpoint(changedEpoch, &first, policy, verifiedAt); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("epoch error = %v, want ErrCorrupt", err)
+	}
+
+	timestampRollback := checkpointFixture(t, "custodian-b", "key-b", privateB, 20, VerificationAuditCheckpointDigest(first), "2026-11-11T10:04:00Z")
+	if err := ValidateSignedVerificationAuditCheckpoint(timestampRollback, &first, policy, verifiedAt); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("timestamp rollback error = %v, want ErrCorrupt", err)
+	}
+}
