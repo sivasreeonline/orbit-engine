@@ -7,6 +7,7 @@ on:
       - "apps/web/**"
       - "apps/api/**"
       - "docs/**"
+      - "migrations/**"
       - "scripts/**"
       - ".github/workflows/**"
       - "AGENTS.md"
@@ -17,6 +18,7 @@ on:
       - "apps/web/**"
       - "apps/api/**"
       - "docs/**"
+      - "migrations/**"
       - "scripts/**"
       - ".github/workflows/**"
       - "AGENTS.md"
@@ -106,10 +108,55 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Install PostgreSQL client
+      # The postgres:17-alpine service already contains psql and pg_isready.
+      # Execute those clients inside the service container instead of installing
+      # Ubuntu packages on the runner; CI must not depend on apt repository DNS.
+      - name: Configure PostgreSQL client wrappers
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/postgres-client-bin"
+
+          cat > "$RUNNER_TEMP/postgres-client-bin/psql" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          container_id="$(docker ps --filter "ancestor=postgres:17-alpine" --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+
+          args=()
+          input_file=""
+          while (($#)); do
+            if [[ "$1" == "-f" ]]; then
+              if (($# < 2)); then
+                echo "psql wrapper: -f requires a file path" >&2
+                exit 2
+              fi
+              input_file="$2"
+              args+=("-f" "-")
+              shift 2
+            else
+              args+=("$1")
+              shift
+            fi
+          done
+
+          if [[ -n "$input_file" ]]; then
+            test -f "$input_file"
+            cat "$input_file" | docker exec -i -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" psql "${args[@]}"
+          else
+            exec docker exec -i -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" psql "${args[@]}"
+          fi
+          SH
+
+          cat > "$RUNNER_TEMP/postgres-client-bin/pg_isready" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          container_id="$(docker ps --filter "ancestor=postgres:17-alpine" --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+          exec docker exec -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" pg_isready "$@"
+          SH
+
+          chmod +x "$RUNNER_TEMP/postgres-client-bin/psql" "$RUNNER_TEMP/postgres-client-bin/pg_isready"
+          echo "$RUNNER_TEMP/postgres-client-bin" >> "$GITHUB_PATH"
 
       - name: Apply problem catalog migration
         env:
@@ -214,6 +261,13 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/authorization-ledger.integration.test.ts
+
+      - name: Verify disposable FENCE-001 authority storage prototype
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 \
+            -f ../../migrations/tests/m0_fence_authority_disposable_prototype.sql
 
       - name: Verify PostgreSQL crash recovery after committed and uncommitted writes
         env:
