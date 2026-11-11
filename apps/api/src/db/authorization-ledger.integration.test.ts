@@ -388,6 +388,44 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
     expect(claims.rows[0]?.count).toBe(1);
   });
 
+  it("serializes concurrent delivery of the same run ID and digest", async () => {
+    const setup = await connect();
+    await seedAuthorization(setup, 2);
+    const [first, second] = await Promise.all([connect(true), connect(true)]);
+
+    const outcomes = await Promise.all([
+      claim(first, "concurrent-identical-request", "sha256:identical"),
+      claim(second, "concurrent-identical-request", "sha256:identical"),
+    ]);
+
+    expect(outcomes.filter((value) => value === "CLAIMED")).toHaveLength(1);
+    expect(outcomes.filter((value) => value === "REPLAYED")).toHaveLength(1);
+    const persisted = await setup.query(
+      "SELECT s.consumed_runs, (SELECT count(*)::int FROM authorization_run_claims WHERE authorization_id = $1) AS claims, (SELECT count(*)::int FROM authorization_run_events WHERE authorization_id = $1) AS events FROM authorization_state s WHERE s.authorization_id = $1",
+      [authId],
+    );
+    expect(persisted.rows[0]).toEqual({ consumed_runs: 1, claims: 1, events: 1 });
+  });
+
+  it("rejects concurrent reuse of one run ID with different request digests", async () => {
+    const setup = await connect();
+    await seedAuthorization(setup, 2);
+    const [first, second] = await Promise.all([connect(true), connect(true)]);
+
+    const outcomes = await Promise.all([
+      claim(first, "concurrent-conflicting-request", "sha256:payload-a"),
+      claim(second, "concurrent-conflicting-request", "sha256:payload-b"),
+    ]);
+
+    expect(outcomes.filter((value) => value === "CLAIMED")).toHaveLength(1);
+    expect(outcomes.filter((value) => value === "CONFLICT")).toHaveLength(1);
+    const persisted = await setup.query(
+      "SELECT s.consumed_runs, (SELECT count(*)::int FROM authorization_run_claims WHERE authorization_id = $1) AS claims, (SELECT count(*)::int FROM authorization_run_events WHERE authorization_id = $1) AS events FROM authorization_state s WHERE s.authorization_id = $1",
+      [authId],
+    );
+    expect(persisted.rows[0]).toEqual({ consumed_runs: 1, claims: 1, events: 1 });
+  });
+
   it("recovers a committed claim when the client loses its acknowledgement", async () => {
     const setup = await connect();
     await seedAuthorization(setup, 2);
