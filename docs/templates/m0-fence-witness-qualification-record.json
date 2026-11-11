@@ -1,0 +1,86 @@
+{
+  "profile": "sky-high-fence-witness-qualification-v1",
+  "schemaVersion": 1,
+  "recordId": null,
+  "qualificationStatus": "NOT_STARTED",
+  "provider": null,
+  "adapter": null,
+  "monitors": {
+    "identities": [],
+    "independenceEvidence": []
+  },
+  "tests": [
+    {
+      "id": "WIT-001",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-002",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-003",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-004",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-005",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-006",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-007",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-008",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-009",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-010",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-011",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-012",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-013",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WIT-014",
+      "status": "NOT_RUN",
+      "evidence": []
+    }
+  ],
+  "independentSecurityReviewer": null,
+  "productionApproval": false
+}
