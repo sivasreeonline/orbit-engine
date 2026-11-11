@@ -85,22 +85,25 @@ async function createCommitAckDroppingProxy(): Promise<{
       port: Number(target.port || 5432),
     });
     sockets.add(upstream);
-    let commitQueryForwarded = false;
-    let clientTail = Buffer.alloc(0);
     let upstreamBuffer = Buffer.alloc(0);
+    let initialSslResponseHandled = false;
     const commitTag = Buffer.from("COMMIT\\0", "utf8");
 
     clientSocket.on("data", (chunk) => {
-      const searchable = Buffer.concat([clientTail, chunk]);
-      if (searchable.includes(commitTag)) commitQueryForwarded = true;
-      clientTail = searchable.subarray(Math.max(0, searchable.length - commitTag.length + 1));
       if (!upstream.destroyed) upstream.write(chunk);
     });
 
     upstream.on("data", (chunk) => {
+      upstreamBuffer = Buffer.concat([upstreamBuffer, chunk]);
+      // If the client requested PostgreSQL SSL, the server answers with a
+      // one-byte N/S response before normal backend message framing. This
+      // test client explicitly disables SSL, but safely consume an N reply.
+      if (!initialSslResponseHandled && upstreamBuffer.length > 0) {
+        if (upstreamBuffer[0] === 0x4e) upstreamBuffer = upstreamBuffer.subarray(1);
+        initialSslResponseHandled = true;
+      }
       // Parse complete PostgreSQL backend frames so TCP segmentation cannot
       // hide the CommandComplete frame carrying the "COMMIT" command tag.
-      upstreamBuffer = Buffer.concat([upstreamBuffer, chunk]);
       while (upstreamBuffer.length >= 5) {
         const messageLength = upstreamBuffer.readInt32BE(1);
         if (messageLength < 4) {
@@ -114,8 +117,9 @@ async function createCommitAckDroppingProxy(): Promise<{
         const frame = upstreamBuffer.subarray(0, frameLength);
         upstreamBuffer = upstreamBuffer.subarray(frameLength);
 
-        if (commitQueryForwarded && frame[0] === 0x43 && frame.subarray(5).includes(commitTag)) {
-          // CommandComplete is emitted only after PostgreSQL has committed.
+        if (frame[0] === 0x43 && frame.subarray(5).includes(commitTag)) {
+          // A backend CommandComplete tagged COMMIT is the server's response
+          // after commit processing. Drop it before it reaches the client.
           resolveDropped();
           clientSocket.destroy();
           upstream.destroy();
