@@ -85,8 +85,7 @@ async function createCommitAckDroppingProxy(): Promise<{
       port: Number(target.port || 5432),
     });
     sockets.add(upstream);
-    let upstreamBuffer = Buffer.alloc(0);
-    let initialSslResponseHandled = false;
+    let upstreamTail = Buffer.alloc(0);
     const commitTag = Buffer.from("COMMIT\\0", "utf8");
 
     clientSocket.on("data", (chunk) => {
@@ -94,39 +93,18 @@ async function createCommitAckDroppingProxy(): Promise<{
     });
 
     upstream.on("data", (chunk) => {
-      upstreamBuffer = Buffer.concat([upstreamBuffer, chunk]);
-      // If the client requested PostgreSQL SSL, the server answers with a
-      // one-byte N/S response before normal backend message framing. This
-      // test client explicitly disables SSL, but safely consume an N reply.
-      if (!initialSslResponseHandled && upstreamBuffer.length > 0) {
-        if (upstreamBuffer[0] === 0x4e) upstreamBuffer = upstreamBuffer.subarray(1);
-        initialSslResponseHandled = true;
+      // PostgreSQL's successful CommandComplete response contains the
+      // NUL-terminated command tag "COMMIT". Retain a short tail so the tag
+      // is detected even when TCP splits it across packets.
+      const searchable = Buffer.concat([upstreamTail, chunk]);
+      if (searchable.includes(commitTag)) {
+        resolveDropped();
+        clientSocket.destroy();
+        upstream.destroy();
+        return;
       }
-      // Parse complete PostgreSQL backend frames so TCP segmentation cannot
-      // hide the CommandComplete frame carrying the "COMMIT" command tag.
-      while (upstreamBuffer.length >= 5) {
-        const messageLength = upstreamBuffer.readInt32BE(1);
-        if (messageLength < 4) {
-          rejectDropped(new Error("Invalid PostgreSQL backend message length"));
-          clientSocket.destroy();
-          upstream.destroy();
-          return;
-        }
-        const frameLength = 1 + messageLength;
-        if (upstreamBuffer.length < frameLength) break;
-        const frame = upstreamBuffer.subarray(0, frameLength);
-        upstreamBuffer = upstreamBuffer.subarray(frameLength);
-
-        if (frame[0] === 0x43 && frame.subarray(5).includes(commitTag)) {
-          // A backend CommandComplete tagged COMMIT is the server's response
-          // after commit processing. Drop it before it reaches the client.
-          resolveDropped();
-          clientSocket.destroy();
-          upstream.destroy();
-          return;
-        }
-        if (!clientSocket.destroyed) clientSocket.write(frame);
-      }
+      upstreamTail = searchable.subarray(Math.max(0, searchable.length - commitTag.length + 1));
+      if (!clientSocket.destroyed) clientSocket.write(chunk);
     });
 
     clientSocket.on("close", () => {
