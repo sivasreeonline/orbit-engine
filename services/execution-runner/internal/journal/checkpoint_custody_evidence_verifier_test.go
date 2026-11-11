@@ -66,20 +66,28 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		sort.Strings(evidenceDigests)
 		witnessPayload := custodyWitnessAttestation{
 			SchemaVersion: "1.0", QualificationID: manifest.QualificationID,
-			ScenarioID: scenario.ScenarioID, RunID: scenario.RunID,
-			ScenarioStatus: string(scenario.Status), Command: scenario.Command,
-			StartedAt: scenario.StartedAt, CompletedAt: scenario.CompletedAt,
-			WitnessPrincipal: witnessPrincipal, WitnessRole: CheckpointCustodyWitnessRole,
-			WitnessKeyID: witnessKeyID, ObservedAt: "2026-11-11T10:59:00Z",
-			Decision: "ATTESTED", EvidenceSHA256: evidenceDigests,
+			ScenarioID:       scenario.ScenarioID,
+			RunID:            scenario.RunID,
+			ScenarioStatus:   string(scenario.Status),
+			Command:          scenario.Command,
+			StartedAt:        scenario.StartedAt,
+			CompletedAt:      scenario.CompletedAt,
+			WitnessPrincipal: witnessPrincipal,
+			WitnessRole:      CheckpointCustodyWitnessRole,
+			WitnessKeyID:     witnessKeyID,
+			ObservedAt:       "2026-11-11T10:59:00Z",
+			Decision:         "ATTESTED",
+			EvidenceSHA256:   evidenceDigests,
 		}
 		witnessPayloadBytes, err := json.Marshal(witnessPayload)
 		if err != nil {
 			t.Fatal(err)
 		}
 		witnessEnvelope, err := json.Marshal(custodyWitnessSignatureEnvelope{
-			SchemaVersion: "1.0", Algorithm: "Ed25519", Attestation: witnessPayload,
-			Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(witnessPrivateKey, witnessPayloadBytes)),
+			SchemaVersion: "1.0",
+			Algorithm:     "Ed25519",
+			Attestation:   witnessPayload,
+			Signature:     base64.StdEncoding.EncodeToString(ed25519.Sign(witnessPrivateKey, witnessPayloadBytes)),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -87,10 +95,12 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		attestationPath := scenario.IndependentWitnessAttestation.Path
 		add(&scenario.IndependentWitnessAttestation, attestationPath, witnessEnvelope)
 		witnessKeys[witnessKeyID] = TrustedCheckpointCustodyWitnessKey{
-			KeyID: witnessKeyID, Principal: witnessPrincipal, Role: CheckpointCustodyWitnessRole,
+			KeyID:     witnessKeyID,
+			Principal: witnessPrincipal,
+			Role:      CheckpointCustodyWitnessRole,
 			PublicKey: witnessPublicKey,
 			NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-			NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+			NotAfter:  time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
 		}
 	}
 
@@ -181,9 +191,9 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		break
 	}
 	if _, err := VerifyCheckpointCustodyEvidence(tamperedWitnessManifest, witnessTamper, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-		WitnessKeys: witnessKeys,
-		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		WitnessKeys:    witnessKeys,
+		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
 	}); err == nil {
 		t.Fatal("invalid independent witness signature was accepted")
