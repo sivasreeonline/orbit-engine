@@ -268,7 +268,7 @@
           "payload": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "title": "M0 Provider Fence Attestation Payload",
-            "description": "Proposed contract schema only. It validates structure and binding metadata; it does not authenticate signatures, verify external provider operations, or authorize execution.",
+            "description": "Proposed per-predecessor contract schema only. Each payload must be referenced by exactly one predecessor entry in the aggregate m0-predecessor-fence-bundle.schema.json and bind the same operation and predecessor-set digest. It does not authenticate signatures, verify external provider operations, or authorize execution.",
             "type": "object",
             "additionalProperties": false,
             "required": [
