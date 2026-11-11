@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sky-high:fence-witness:v1:schema",
+  "title": "Sky High FENCE-001 witness cryptographic profile v1",
+  "description": "Provider-neutral structural schemas for the proposed witness checkpoint, signed receipt, and root-signed trust bundle. Structural validation does not verify digests, signatures, key trust, consistency proofs, durability, or anti-equivocation.",
+  "oneOf": [
+    { "$ref": "#/$defs/checkpointArtifact" },
+    { "$ref": "#/$defs/receiptEnvelope" },
+    { "$ref": "#/$defs/trustBundleEnvelope" }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "checkpointBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "schemaVersion",
+        "authorityId",
+        "hostId",
+        "generation",
+        "phase",
+        "operationId",
+        "previousCheckpointDigest",
+        "authorityStateDigest",
+        "responseDigest",
+        "epoch",
+        "recordVersion"
+      ],
+      "properties": {
+        "profile": { "const": "sky-high-fence-witness-v1" },
+        "schemaVersion": { "const": 1 },
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "hostId": { "$ref": "#/$defs/identifier" },
+        "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "phase": { "enum": ["ISSUED", "ACCEPTED", "REVOKED"] },
+        "operationId": { "$ref": "#/$defs/identifier" },
+        "previousCheckpointDigest": { "$ref": "#/$defs/digest" },
+        "authorityStateDigest": { "$ref": "#/$defs/digest" },
+        "responseDigest": { "$ref": "#/$defs/digest" },
+        "epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "recordVersion": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
+    "checkpointArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body", "checkpointDigest"],
+      "properties": {
+        "body": { "$ref": "#/$defs/checkpointBody" },
+        "checkpointDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "receiptBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "schemaVersion",
+        "witnessId",
+        "authorityId",
+        "hostId",
+        "generation",
+        "operationId",
+        "checkpointDigest",
+        "previousCheckpointDigest",
+        "keyId",
+        "committedAt",
+        "consistencyToken"
+      ],
+      "properties": {
+        "profile": { "const": "sky-high-fence-witness-v1" },
+        "schemaVersion": { "const": 1 },
+        "witnessId": { "$ref": "#/$defs/identifier" },
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "hostId": { "$ref": "#/$defs/identifier" },
+        "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "operationId": { "$ref": "#/$defs/identifier" },
+        "checkpointDigest": { "$ref": "#/$defs/digest" },
+        "previousCheckpointDigest": { "$ref": "#/$defs/digest" },
+        "keyId": { "$ref": "#/$defs/digest" },
+        "committedAt": { "$ref": "#/$defs/utcTimestamp" },
+        "consistencyToken": { "type": "string", "minLength": 1, "maxLength": 8192 }
+      }
+    },
+    "receiptEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body", "signature"],
+      "properties": {
+        "body": { "$ref": "#/$defs/receiptBody" },
+        "signature": {
+          "type": "string",
+          "minLength": 86,
+          "maxLength": 86,
+          "pattern": "^[A-Za-z0-9_-]{86}$"
+        }
+      }
+    },
+    "witnessSigningKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyId",
+        "publicKeyBase64Url",
+        "purpose",
+        "witnessId",
+        "authorityIds",
+        "notBefore",
+        "notAfter"
+      ],
+      "properties": {
+        "keyId": { "$ref": "#/$defs/digest" },
+        "publicKeyBase64Url": {
+          "type": "string",
+          "minLength": 43,
+          "maxLength": 43,
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "purpose": { "const": "WITNESS_RECEIPT_SIGNING" },
+        "witnessId": { "$ref": "#/$defs/identifier" },
+        "authorityIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/identifier" }
+        },
+        "notBefore": { "$ref": "#/$defs/utcTimestamp" },
+        "notAfter": { "$ref": "#/$defs/utcTimestamp" },
+        "retiredAt": { "$ref": "#/$defs/utcTimestamp" }
+      }
+    },
+    "keyRevocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyId", "revokedAt", "reason"],
+      "properties": {
+        "keyId": { "$ref": "#/$defs/digest" },
+        "revokedAt": { "$ref": "#/$defs/utcTimestamp" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+    "trustBundleBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "schemaVersion",
+        "trustDomainId",
+        "witnessId",
+        "generation",
+        "previousBundleDigest",
+        "keys",
+        "revocations"
+      ],
+      "properties": {
+        "profile": { "const": "sky-high-fence-witness-v1" },
+        "schemaVersion": { "const": 1 },
+        "trustDomainId": { "$ref": "#/$defs/identifier" },
+        "witnessId": { "$ref": "#/$defs/identifier" },
+        "generation": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "previousBundleDigest": { "$ref": "#/$defs/digest" },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/witnessSigningKey" }
+        },
+        "revocations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/keyRevocation" }
+        }
+      }
+    },
+    "trustBundleEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["body", "bundleDigest", "rootKeyId", "rootSignature"],
+      "properties": {
+        "body": { "$ref": "#/$defs/trustBundleBody" },
+        "bundleDigest": { "$ref": "#/$defs/digest" },
+        "rootKeyId": { "$ref": "#/$defs/digest" },
+        "rootSignature": {
+          "type": "string",
+          "minLength": 86,
+          "maxLength": 86,
+          "pattern": "^[A-Za-z0-9_-]{86}$"
+        }
+      }
+    }
+  }
+}
