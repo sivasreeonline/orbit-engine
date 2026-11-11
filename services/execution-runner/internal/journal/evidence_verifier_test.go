@@ -2,7 +2,7 @@ package journal
 
 import (
 	"crypto/ed25519"
-	"crypto/rand"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -29,8 +29,7 @@ func signedFixture(t *testing.T) (QualificationEvidenceManifest, memoryEvidence,
 		evidence[ref.Path] = data
 		ref.SHA256 = digestHex(data)
 	}
-	_, private, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil { t.Fatal(err) }
+	private := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x5a}, ed25519.SeedSize))
 	public := private.Public().(ed25519.PublicKey)
 	manifest.Review.Attestation = EvidenceReference{Path:"evidence/review.json", MediaType:"application/json"}
 	signingBytes, err := manifestSigningBytes(manifest)
@@ -81,6 +80,22 @@ func TestVerifyQualificationEvidenceRejectsUntrustedReviewer(t *testing.T) {
 func TestVerifyQualificationEvidenceRejectsImplementerAsReviewer(t *testing.T) {
 	manifest, evidence, policy, now := signedFixture(t)
 	policy.ImplementerIdentity = manifest.Review.ReviewerIdentity
+	if _, err := VerifyQualificationEvidence(manifest, evidence, policy, now); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("error = %v, want ErrCorrupt", err)
+	}
+}
+
+func TestVerifyQualificationEvidenceRejectsWrongReviewerRole(t *testing.T) {
+	manifest, evidence, policy, now := signedFixture(t)
+	policy.TrustedReviewerKeys[0].Role = "IMPLEMENTER"
+	if _, err := VerifyQualificationEvidence(manifest, evidence, policy, now); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("error = %v, want ErrCorrupt", err)
+	}
+}
+
+func TestVerifyQualificationEvidenceRejectsNotYetValidKey(t *testing.T) {
+	manifest, evidence, policy, now := signedFixture(t)
+	policy.TrustedReviewerKeys[0].NotBefore = now.Add(time.Minute)
 	if _, err := VerifyQualificationEvidence(manifest, evidence, policy, now); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("error = %v, want ErrCorrupt", err)
 	}
