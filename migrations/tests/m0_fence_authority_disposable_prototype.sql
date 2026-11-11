@@ -1259,7 +1259,7 @@ UPDATE m0_fence_authority_it.checkpoint_intents
  WHERE host_id = 'host-checkpoint-corrupt';
 ALTER TABLE m0_fence_authority_it.checkpoint_intents ENABLE TRIGGER checkpoint_intent_immutable;
 
-DO $
+DO $forktest$
 BEGIN
     BEGIN
         PERFORM m0_fence_authority_it.publish_if_test_receipt_matches(
@@ -1270,7 +1270,7 @@ BEGIN
         NULL;
     END;
 END;
-$;
+$forktest$;
 
 -- Acceptance acknowledgement is a separate durable lifecycle checkpoint.
 -- A lost acknowledgement is resolved by the same intent and exact receipt;
