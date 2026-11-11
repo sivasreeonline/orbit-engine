@@ -119,7 +119,30 @@ jobs:
           set -euo pipefail
           container_id="$(docker ps --filter "ancestor=postgres:17-alpine" --format '{{.ID}}' | head -n 1)"
           test -n "$container_id"
-          exec docker exec -i -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" psql "$@"
+
+          args=()
+          input_file=""
+          while (($#)); do
+            if [[ "$1" == "-f" ]]; then
+              if (($# < 2)); then
+                echo "psql wrapper: -f requires a file path" >&2
+                exit 2
+              fi
+              input_file="$2"
+              args+=("-f" "-")
+              shift 2
+            else
+              args+=("$1")
+              shift
+            fi
+          done
+
+          if [[ -n "$input_file" ]]; then
+            test -f "$input_file"
+            cat "$input_file" | docker exec -i -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" psql "${args[@]}"
+          else
+            exec docker exec -i -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" psql "${args[@]}"
+          fi
           SH
 
           cat > "$RUNNER_TEMP/postgres-client-bin/pg_isready" <<'SH'
