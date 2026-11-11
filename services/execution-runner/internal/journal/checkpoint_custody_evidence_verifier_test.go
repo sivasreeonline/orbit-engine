@@ -144,9 +144,10 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 	add(&manifest.Review.Attestation, manifest.Review.Attestation.Path, envelope)
+	reviewerKeys := reviewerKeys
 
 	report, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]TrustedCheckpointCustodyReviewerKey{reviewerKeyID: {KeyID: reviewerKeyID, Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
+		ReviewerKeys: reviewerKeys,
 		WitnessKeys:    witnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
@@ -165,6 +166,19 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	}
 	if report.ManifestDeclaresReady != CheckpointCustodyQualificationReady(manifest) {
 		t.Fatalf("manifest-declared readiness = %t, want %t", report.ManifestDeclaresReady, CheckpointCustodyQualificationReady(manifest))
+	}
+
+	for name, mutate := range map[string]func(*TrustedCheckpointCustodyReviewerKey){
+		"revoked": func(key *TrustedCheckpointCustodyReviewerKey) { revokedAt := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC); key.RevokedAt = &revokedAt },
+		"expired": func(key *TrustedCheckpointCustodyReviewerKey) { key.NotAfter = time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC) },
+		"wrong-role": func(key *TrustedCheckpointCustodyReviewerKey) { key.Role = CheckpointCustodyWitnessRole },
+	} {
+		invalidReviewerKeys := map[string]TrustedCheckpointCustodyReviewerKey{}
+		for keyID, key := range reviewerKeys { mutate(&key); invalidReviewerKeys[keyID] = key }
+		if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
+			ReviewerKeys: invalidReviewerKeys, WitnessKeys: witnessKeys,
+			Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC), MaxEvidenceAge: 24 * time.Hour,
+		}); err == nil { t.Fatalf("%s reviewer key was accepted", name) }
 	}
 
 	// Tamper a witness signature and update its artifact digest so verification
@@ -193,7 +207,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		break
 	}
 	if _, err := VerifyCheckpointCustodyEvidence(tamperedWitnessManifest, witnessTamper, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]TrustedCheckpointCustodyReviewerKey{reviewerKeyID: {KeyID: reviewerKeyID, Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
+		ReviewerKeys: reviewerKeys,
 		WitnessKeys:    witnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
@@ -208,7 +222,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		revokedWitnessKeys[keyID] = key
 	}
 	if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]TrustedCheckpointCustodyReviewerKey{reviewerKeyID: {KeyID: reviewerKeyID, Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
+		ReviewerKeys: reviewerKeys,
 		WitnessKeys:    revokedWitnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
@@ -217,7 +231,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	}
 
 	if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]TrustedCheckpointCustodyReviewerKey{reviewerKeyID: {KeyID: reviewerKeyID, Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
+		ReviewerKeys: reviewerKeys,
 		WitnessKeys:    witnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 30 * time.Second,
@@ -244,7 +258,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		break
 	}
 	if _, err := VerifyCheckpointCustodyEvidence(malformedWitnessManifest, malformedWitnessEvidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]TrustedCheckpointCustodyReviewerKey{reviewerKeyID: {KeyID: reviewerKeyID, Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
+		ReviewerKeys: reviewerKeys,
 		WitnessKeys:    witnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
@@ -271,7 +285,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	tamperedManifest := manifest
 	tamperedManifest.Review.Attestation.SHA256 = custodyEvidenceDigest(tamperedBytes)
 	if _, err := VerifyCheckpointCustodyEvidence(tamperedManifest, tamperedEvidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]TrustedCheckpointCustodyReviewerKey{reviewerKeyID: {KeyID: reviewerKeyID, Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
+		ReviewerKeys: reviewerKeys,
 		WitnessKeys:    witnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
@@ -280,7 +294,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	}
 
 	if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]TrustedCheckpointCustodyReviewerKey{reviewerKeyID: {KeyID: reviewerKeyID, Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
+		ReviewerKeys: reviewerKeys,
 		WitnessKeys:    witnessKeys,
 		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 30 * time.Minute,
@@ -302,7 +316,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 		tamperedManifest := manifest
 		tamperedManifest.Review.Attestation.SHA256 = custodyEvidenceDigest(encoded)
 		if _, err := VerifyCheckpointCustodyEvidence(tamperedManifest, tamperedEvidence, CheckpointCustodyEvidenceVerifierTrust{
-			ReviewerKeys: map[string]TrustedCheckpointCustodyReviewerKey{reviewerKeyID: {KeyID: reviewerKeyID, Principal: manifest.Review.ReviewerIdentity, Role: CheckpointCustodyReviewerRole, PublicKey: publicKey, NotBefore: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), NotAfter: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)}},
+			ReviewerKeys: reviewerKeys,
 			WitnessKeys:    witnessKeys,
 			Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 			MaxEvidenceAge: 24 * time.Hour,
