@@ -104,7 +104,7 @@ func pathCleanSlash(value string) string {
 // package does not discover trust roots, establish reviewer independence, or
 // provide trusted time.
 const (
-	CheckpointCustodyWitnessRole = "INDEPENDENT_CUSTODY_WITNESS"
+	CheckpointCustodyWitnessRole  = "INDEPENDENT_CUSTODY_WITNESS"
 	CheckpointCustodyReviewerRole = "CHECKPOINT_CUSTODY_REVIEWER"
 )
 
