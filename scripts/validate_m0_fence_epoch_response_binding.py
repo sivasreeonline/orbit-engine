@@ -120,7 +120,7 @@ def verify_binding(
 
 def bundle_bytes_ref(bundle: dict) -> str:
     """Fixture contract uses a stable URI-like aggregate reference derived from bundle ID."""
-    return "urn:orbit:m0:predecessor-fence-bundle:" + bundle["bundle_id"]
+    return "https://evidence.example/bundles/" + bundle["bundle_id"]
 
 
 def fixtures() -> tuple[dict, dict, str]:
