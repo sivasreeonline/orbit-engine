@@ -88,14 +88,14 @@ async function createCommitAckDroppingProxy(): Promise<{
     let commitQueryForwarded = false;
 
     clientSocket.on("data", (chunk) => {
-      if (chunk.includes(Buffer.from("COMMIT\\0", "utf8"))) commitQueryForwarded = true;
+      if (chunk.includes(Buffer.from("COMMIT\0", "utf8"))) commitQueryForwarded = true;
       if (!upstream.destroyed) upstream.write(chunk);
     });
 
     upstream.on("data", (chunk) => {
       // PostgreSQL CommandComplete carries the command tag "COMMIT". The
       // server emits it only after the transaction has committed.
-      if (commitQueryForwarded && chunk.includes(Buffer.from("COMMIT\\0", "utf8"))) {
+      if (commitQueryForwarded && chunk.includes(Buffer.from("COMMIT\0", "utf8"))) {
         resolveDropped();
         clientSocket.destroy();
         upstream.destroy();
