@@ -3,6 +3,7 @@
 -- Disposable PostgreSQL prototype only. This script creates and drops its own
 -- isolated schema. It is not a production migration or external witness.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS dblink;
 DROP SCHEMA IF EXISTS m0_fence_authority_it CASCADE;
 CREATE SCHEMA m0_fence_authority_it;
 
@@ -316,6 +317,33 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION m0_fence_authority_it.concurrent_issue_attempt(
+    p_host_id text,
+    p_operation_id text,
+    p_nonce_digest text,
+    p_request_digest text,
+    p_expected_version bigint,
+    p_target_instance_id text
+) RETURNS text LANGUAGE plpgsql AS $
+BEGIN
+    -- Hold the aggregate row lock long enough for the second independent
+    -- session to overlap and block behind this attempt.
+    PERFORM 1
+      FROM m0_fence_authority_it.host_authority
+     WHERE host_id = p_host_id
+     FOR UPDATE;
+    PERFORM pg_sleep(0.25);
+    PERFORM m0_fence_authority_it.issue(
+        p_host_id, p_operation_id, p_nonce_digest, p_request_digest,
+        p_expected_version, p_target_instance_id
+    );
+    RETURN 'ISSUED';
+EXCEPTION
+    WHEN SQLSTATE '40001' OR SQLSTATE '55000' THEN
+        RETURN 'REJECTED';
+END;
+$;
+
 CREATE FUNCTION m0_fence_authority_it.accept_exact_response(
     p_host_id text,
     p_operation_id text,
@@ -481,7 +509,9 @@ INSERT INTO m0_fence_authority_it.host_authority (
 ) VALUES
     ('host-test-01', 5, 'vm-predecessor', 1),
     ('host-rollback-test', 5, 'vm-rollback-predecessor', 1),
-    ('host-revoke-first', 5, 'vm-revoke-predecessor', 1);
+    ('host-revoke-first', 5, 'vm-revoke-predecessor', 1),
+    ('host-concurrent', 10, 'vm-concurrent-predecessor', 1),
+    ('host-lost-ack', 20, 'vm-lost-ack-predecessor', 1);
 
 -- First committed issuance. The response is stored as exact BYTEA.
 DO $$
@@ -558,6 +588,115 @@ BEGIN
     END IF;
 END;
 $$;
+
+-- Independent PostgreSQL sessions race to issue the same host successor.
+-- The row lock serializes them: one commits and the other observes the changed
+-- version/pending successor and is rejected. Both queries are sent before
+-- either result is collected, forcing overlapping server-side execution.
+DO $
+DECLARE
+    first_result text;
+    second_result text;
+    issued_count integer;
+    rejected_count integer;
+BEGIN
+    PERFORM dblink_connect('fence_race_a', 'dbname=' || current_database());
+    PERFORM dblink_connect('fence_race_b', 'dbname=' || current_database());
+
+    PERFORM dblink_send_query(
+        'fence_race_a',
+        $SELECT m0_fence_authority_it.concurrent_issue_attempt(
+            'host-concurrent', 'op-race-a', 'nonce-race-a',
+            'request-race-a', 1, 'vm-race-a'
+        )$
+    );
+    PERFORM dblink_send_query(
+        'fence_race_b',
+        $SELECT m0_fence_authority_it.concurrent_issue_attempt(
+            'host-concurrent', 'op-race-b', 'nonce-race-b',
+            'request-race-b', 1, 'vm-race-b'
+        )$
+    );
+
+    SELECT result INTO first_result
+      FROM dblink_get_result('fence_race_a') AS result(result text);
+    SELECT result INTO second_result
+      FROM dblink_get_result('fence_race_b') AS result(result text);
+
+    PERFORM dblink_disconnect('fence_race_a');
+    PERFORM dblink_disconnect('fence_race_b');
+
+    SELECT count(*) FILTER (WHERE outcome = 'ISSUED'),
+           count(*) FILTER (WHERE outcome = 'REJECTED')
+      INTO issued_count, rejected_count
+      FROM (VALUES (first_result), (second_result)) outcomes(outcome);
+
+    IF issued_count <> 1 OR rejected_count <> 1 THEN
+        RAISE EXCEPTION 'concurrent issuance must produce exactly one winner and one rejection; got %, %',
+            first_result, second_result;
+    END IF;
+
+    IF (SELECT epoch FROM m0_fence_authority_it.host_authority
+         WHERE host_id = 'host-concurrent') <> 11
+       OR (SELECT count(*) FROM m0_fence_authority_it.issuances
+            WHERE host_id = 'host-concurrent') <> 1
+       OR (SELECT count(*) FROM m0_fence_authority_it.checkpoint_intents
+            WHERE host_id = 'host-concurrent') <> 1 THEN
+        RAISE EXCEPTION 'concurrent issuance created duplicate or partial authority state';
+    END IF;
+END;
+$;
+
+-- Simulate a lost client acknowledgement after the server has completed its
+-- autocommit statement. The client connection is discarded without fetching
+-- the result; a fresh retry must return the exact persisted response bytes.
+DO $
+DECLARE
+    busy_state integer;
+    retry_response bytea;
+    stored_response bytea;
+BEGIN
+    PERFORM dblink_connect('fence_lost_ack', 'dbname=' || current_database());
+    PERFORM dblink_send_query(
+        'fence_lost_ack',
+        $SELECT encode(m0_fence_authority_it.issue(
+            'host-lost-ack', 'op-lost-ack', 'nonce-lost-ack',
+            'request-lost-ack', 1, 'vm-lost-ack-successor'
+        ), 'hex')$
+    );
+
+    LOOP
+        busy_state := dblink_is_busy('fence_lost_ack');
+        EXIT WHEN busy_state = 0;
+        PERFORM pg_sleep(0.01);
+    END LOOP;
+
+    -- Drop the completed connection without reading its response row.
+    PERFORM dblink_disconnect('fence_lost_ack');
+
+    SELECT response_bytes INTO stored_response
+      FROM m0_fence_authority_it.issuances
+     WHERE host_id = 'host-lost-ack' AND operation_id = 'op-lost-ack';
+
+    retry_response := m0_fence_authority_it.issue(
+        'host-lost-ack', 'op-lost-ack', 'nonce-lost-ack',
+        'request-lost-ack', 1, 'vm-lost-ack-successor'
+    );
+
+    IF stored_response IS NULL OR retry_response <> stored_response THEN
+        RAISE EXCEPTION 'lost-ack retry did not return exact committed response bytes';
+    END IF;
+
+    IF (SELECT epoch FROM m0_fence_authority_it.host_authority
+         WHERE host_id = 'host-lost-ack') <> 21
+       OR (SELECT count(*) FROM m0_fence_authority_it.issuances
+            WHERE host_id = 'host-lost-ack') <> 1
+       OR (SELECT count(*) FROM m0_fence_authority_it.checkpoint_intents
+            WHERE host_id = 'host-lost-ack') <> 1 THEN
+        RAISE EXCEPTION 'lost-ack retry allocated a second epoch or checkpoint';
+    END IF;
+END;
+$;
 
 -- Acceptance and revocation serialize on the same host row. The first host
 -- accepts first and is then revoked; the acceptance remains historical, but
