@@ -141,7 +141,7 @@ func ValidateCheckpointCustodyQualificationManifest(manifest CheckpointCustodyQu
 		}
 		seen[result.ScenarioID] = struct{}{}
 		switch result.Status {
-		case EvidenceStatusPass, EvidenceStatusFail, EvidenceStatusBlocked, EvidenceStatusSkipped:
+		case EvidencePass, EvidenceFail, EvidenceBlocked, EvidenceSkipped:
 		default:
 			return fmt.Errorf("%w: invalid custody scenario status", ErrCorrupt)
 		}
