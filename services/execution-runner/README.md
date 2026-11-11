@@ -11,7 +11,8 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - Protocol validation is structural only: runtime and resource fields are not authority. A future trusted boundary must authenticate and authorize each attempt, resolve immutable server-owned profiles, and reject any caller value that differs from the approved profile.
 - An executor interface with a safe unconfigured implementation.
 - A pure lifecycle contract package enforcing the closed attempt-state transition table, concurrency-safe in-memory first-trigger arbitration, and backend-independent terminal-finalization preconditions.
-- A backend-neutral journal transaction port with validated attempt, trigger, branch-CAS, and terminal-commit commands; no database adapter is selected or enabled.
+- A backend-neutral journal transaction port with validated attempt, trigger, operation, branch-CAS, and terminal-commit commands; no database adapter is selected or enabled.
+- A deterministic external-operation phase model with inspect-before-retry proof requirements; no containerd client or resource-inspection implementation is enabled.
 - Unit tests for health/readiness, request validation, strict JSON decoding, disabled execution, lifecycle transitions, trigger arbitration, and terminal-finalization preconditions.
 - Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
 
@@ -21,6 +22,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - The unconfigured executor always returns `ErrSandboxNotConfigured`.
 - The lifecycle package is not connected to an HTTP endpoint or executor; it does not persist triggers, authorize attempts, request termination, manage host resources, or perform an atomic terminal database transaction. Finalization validation is a precondition check only; the selected journal adapter must re-enforce all predicates in one durable transaction.
 - The journal package defines interfaces and command validation only. It has no database driver or storage implementation; no durable acknowledgement may be made until an independently qualified adapter is implemented and host-tested.
+- The operations package validates deterministic operation identity and phase/reconciliation commands only. It does not invoke containerd, inspect host resources, or authorize retries; those proofs must come from the trusted host supervisor.
 - The HTTP server refuses non-loopback bind addresses until an authenticated private transport is implemented.
 - Student source code is referenced by an opaque artifact ID and SHA-256 digest; it is not included in the runner request body.
 - The decoder caps request bodies at 64 KiB and rejects unrecognized fields, including sourceCode, hiddenTests, expectedOutput and credentials.
