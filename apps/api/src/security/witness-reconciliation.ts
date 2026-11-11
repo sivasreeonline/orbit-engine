@@ -67,6 +67,16 @@ export async function anchorCheckpoint(
   const { checkpoint, expectedGeneration, expectedCheckpointDigest, expectedWitnessId } = input;
   const scope = { authorityId: checkpoint.authorityId, hostId: checkpoint.hostId };
 
+  if (!expectedWitnessId) {
+    throw new WitnessConflictError("trusted witness identity is required");
+  }
+
+  const priorOperation = await adapter.readByOperation(scope, checkpoint.operationId, checkpoint.phase);
+  if (priorOperation) {
+    await verifyRecord(priorOperation, checkpoint, expectedWitnessId, verifier);
+    return { status: "ALREADY_ANCHORED", record: priorOperation };
+  }
+
   const current = await adapter.readLatest(scope);
   const currentGeneration = current?.checkpoint.generation ?? 0;
   const currentDigest = current?.checkpoint.checkpointDigest ?? ZERO_CHECKPOINT_DIGEST;
