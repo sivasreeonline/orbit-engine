@@ -86,7 +86,7 @@ func SealCheckpointCustodyReceipt(checkpoint SignedVerificationAuditCheckpoint, 
 	receipt := CheckpointCustodyReceipt{
 		CheckpointSHA256: VerificationAuditCheckpointDigest(checkpoint),
 		CustodyDomain:    custodyDomain, RetentionPolicyID: policyID, RetentionPolicyVersion: policyVersion,
-		RetainedAt:       retainedAt, ImmutableUntil: immutableUntil,
+		RetainedAt: retainedAt, ImmutableUntil: immutableUntil,
 		CustodianPrincipal: principal, CustodianRole: CheckpointCustodianRole, CustodianKeyID: keyID,
 	}
 	message, err := custodyReceiptSigningBytes(receipt)
