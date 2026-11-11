@@ -152,6 +152,7 @@ type custodyReviewAttestation struct {
 	QualificationID string `json:"qualification_id"`
 	ManifestDigest  string `json:"manifest_digest"`
 	Reviewer        string `json:"reviewer"`
+	ReviewerKeyID   string `json:"reviewer_key_id"`
 	ReviewedAt      string `json:"reviewed_at"`
 	Decision        string `json:"decision"`
 }
@@ -306,6 +307,7 @@ func VerifyCheckpointCustodyEvidence(
 	payload := custodyReviewAttestation{
 		SchemaVersion: "1.0", QualificationID: manifest.QualificationID,
 		ManifestDigest: report.ManifestDigest, Reviewer: signatureEnvelope.Reviewer,
+		ReviewerKeyID: signatureEnvelope.ReviewerKeyID,
 		ReviewedAt: manifest.Review.ReviewedAt, Decision: manifest.Review.Status,
 	}
 	payloadBytes, err := json.Marshal(payload)
