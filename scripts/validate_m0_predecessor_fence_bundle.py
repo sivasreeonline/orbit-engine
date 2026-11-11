@@ -87,6 +87,7 @@ def fixture() -> dict:
             "fence_state": "FENCED",
             "fence_observed_at": "2026-11-11T10:05:00Z",
             "fence_attestation_ref": "https://evidence.example/fence/vm-old-a.json",
+            "fence_attestation_object_version": "object-version-1",
             "fence_attestation_sha256": "a" * 64,
         },
         {
@@ -97,6 +98,7 @@ def fixture() -> dict:
             "fence_state": "FENCED",
             "fence_observed_at": "2026-11-11T10:06:00Z",
             "fence_attestation_ref": "https://evidence.example/fence/vm-old-b.json",
+            "fence_attestation_object_version": "object-version-2",
             "fence_attestation_sha256": "b" * 64,
         },
     ]
