@@ -407,7 +407,7 @@ def main():
             raise AssertionError("candidate security control inventory diverges")
     if not all(f"`{control_id}`" in dossier for control_id in CONTROL_IDS):
         raise AssertionError("decision dossier missing a required security control ID")
-    if not all(f"`{control_id}`" in checklist for control_id in CONTROL_IDS):
+    if not all(control_id in checklist for control_id in CONTROL_IDS):
         raise AssertionError("independent reviewer checklist missing a required security control ID")
     if "same 33 security control IDs, including FENCE-001" not in qualification:
         raise AssertionError("host qualification protocol must align on all 33 controls including FENCE-001")
