@@ -67,7 +67,10 @@ def expect_schema_rejection(validator: Draft202012Validator, value: dict[str, An
 
 
 def verify_vector(
-    vector: dict[str, Any], validator: Draft202012Validator, vector_path: Path
+    vector: dict[str, Any],
+    validator: Draft202012Validator,
+    vector_path: Path,
+    private_seed_hex: str,
 ) -> dict[str, Any]:
     require(vector.get("testOnly") is True, f"{vector_path.name}: fixture is not marked testOnly")
     require(vector.get("profile") == "sky-high-fence-witness-v1", "unexpected profile")
@@ -97,7 +100,7 @@ def verify_vector(
     require(len(public_raw) == 32, "Ed25519 public key must be 32 bytes")
     key_id = hashlib.sha256(public_raw).hexdigest()
     require(key_id == vector["testKey"]["keyId"], "test public-key fingerprint mismatch")
-    private_seed = bytes.fromhex(vector["testKey"]["privateSeedHex"])
+    private_seed = bytes.fromhex(private_seed_hex)
     require(len(private_seed) == 32, "Ed25519 private seed must be 32 bytes")
     derived_public = Ed25519PrivateKey.from_private_bytes(private_seed).public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
@@ -214,8 +217,9 @@ def main() -> None:
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
 
     vectors = [strict_json_load(path) for path in VECTOR_PATHS]
-    key_material = verify_vector(vectors[0], validator, VECTOR_PATHS[0])
-    verify_vector(vectors[1], validator, VECTOR_PATHS[1])
+    test_seed = vectors[0]["testKey"]["privateSeedHex"]
+    key_material = verify_vector(vectors[0], validator, VECTOR_PATHS[0], test_seed)
+    verify_vector(vectors[1], validator, VECTOR_PATHS[1], test_seed)
     verify_trust_bundle_schema(validator, key_material)
 
     duplicate_json = '{"body":{"x":1,"x":2},"signature":"x"}'
