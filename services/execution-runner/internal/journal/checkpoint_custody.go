@@ -41,11 +41,11 @@ type TrustedCheckpointCustodianKey struct {
 }
 
 type CheckpointCustodyPolicy struct {
-	PolicyID                  string
-	PolicyVersion             string
-	MinimumRetention          time.Duration
+	PolicyID                    string
+	PolicyVersion               string
+	MinimumRetention            time.Duration
 	RequireIndependentCustodian bool
-	TrustedKeys               []TrustedCheckpointCustodianKey
+	TrustedKeys                 []TrustedCheckpointCustodianKey
 }
 
 func custodyReceiptSigningBytes(receipt CheckpointCustodyReceipt) ([]byte, error) {
