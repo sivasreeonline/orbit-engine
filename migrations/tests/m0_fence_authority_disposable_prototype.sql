@@ -215,7 +215,7 @@ CREATE FUNCTION m0_fence_authority_it.issue(
     p_expected_version bigint,
     p_target_instance_id text
 ) RETURNS bytea LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public, m0_fence_authority_it AS $
+SET search_path = pg_catalog, public, m0_fence_authority_it AS $issue$
 DECLARE
     authority_row m0_fence_authority_it.host_authority%ROWTYPE;
     operation_row m0_fence_authority_it.issuances%ROWTYPE;
@@ -380,7 +380,7 @@ BEGIN
 
     RETURN response_value;
 END;
-$$;
+$issue$;
 
 CREATE FUNCTION m0_fence_authority_it.concurrent_issue_attempt(
     p_host_id text,
@@ -437,8 +437,7 @@ CREATE FUNCTION m0_fence_authority_it.accept_exact_response(
     p_response_bytes bytea,
     p_target_instance_id text,
     p_epoch bigint
-) RETURNS text LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public, m0_fence_authority_it AS $
+) RETURNS text LANGUAGE plpgsql AS $acceptlow$
 DECLARE
     authority_row m0_fence_authority_it.host_authority%ROWTYPE;
     issuance_row m0_fence_authority_it.issuances%ROWTYPE;
@@ -525,12 +524,12 @@ BEGIN
      WHERE host_id = p_host_id;
     RETURN 'ACCEPTED';
 END;
-$$;
+$acceptlow$;
 
 CREATE FUNCTION m0_fence_authority_it.revoke_host(
     p_host_id text, p_revocation_id text, p_reason text
 ) RETURNS text LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public, m0_fence_authority_it AS $
+SET search_path = pg_catalog, public, m0_fence_authority_it AS $revoke$
 DECLARE
     authority_row m0_fence_authority_it.host_authority%ROWTYPE;
 BEGIN
@@ -555,12 +554,12 @@ BEGIN
     ) VALUES (p_host_id, p_revocation_id, p_reason);
     RETURN 'REVOKED';
 END;
-$$;
+$revoke$;
 
 CREATE FUNCTION m0_fence_authority_it.publish_if_test_receipt_matches(
     p_host_id text, p_operation_id text
 ) RETURNS bytea LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public, m0_fence_authority_it AS $
+SET search_path = pg_catalog, public, m0_fence_authority_it AS $publish$
 DECLARE
     intent_row m0_fence_authority_it.checkpoint_intents%ROWTYPE;
     response_value bytea;
@@ -604,7 +603,7 @@ BEGIN
     END IF;
     RETURN response_value;
 END;
-$$;
+$publish$;
 
 -- Acceptance is a distinct append-only lifecycle checkpoint. Its receipt
 -- remains a same-database test double, not an independent witness.
