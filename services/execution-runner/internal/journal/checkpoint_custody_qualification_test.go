@@ -7,7 +7,7 @@ import (
 
 func custodyQualificationFixture() CheckpointCustodyQualificationManifest {
 	manifest := CheckpointCustodyQualificationManifest{
-		SchemaVersion: "1.0", QualificationID: "custody-qualification-2026-01",
+		SchemaVersion: "1.1", QualificationID: "custody-qualification-2026-01",
 		Adapter: CheckpointCustodyAdapterIdentity{
 			Provider: "test-provider", Product: "object-lock-service", APIOrSDKVersion: "v1",
 			AccountScope: "test-account", Region: "test-region", StorageClass: "immutable-object",
