@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -141,6 +142,28 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	}); err == nil {
 		t.Fatal("stale review attestation was accepted")
 	}
+	originalEnvelope := string(evidence[manifest.Review.Attestation.Path])
+	for _, malformed := range []string{
+		strings.TrimSuffix(originalEnvelope, "}") + `, "unexpected": true}`,
+		originalEnvelope + ` {}`,
+	} {
+		tamperedEvidence := make(custodyEvidenceMemory, len(evidence))
+		for name, data := range evidence {
+			tamperedEvidence[name] = append([]byte(nil), data...)
+		}
+		encoded := []byte(malformed)
+		tamperedEvidence[manifest.Review.Attestation.Path] = encoded
+		tamperedManifest := manifest
+		tamperedManifest.Review.Attestation.SHA256 = custodyEvidenceDigest(encoded)
+		if _, err := VerifyCheckpointCustodyEvidence(tamperedManifest, tamperedEvidence, CheckpointCustodyEvidenceVerifierTrust{
+			ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+			Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+			MaxEvidenceAge: 24 * time.Hour,
+		}); err == nil {
+			t.Fatalf("malformed signature envelope was accepted: %q", malformed)
+		}
+	}
+
 }
 
 func TestVerifyCheckpointCustodyEvidenceRejectsModifiedEvidence(t *testing.T) {
