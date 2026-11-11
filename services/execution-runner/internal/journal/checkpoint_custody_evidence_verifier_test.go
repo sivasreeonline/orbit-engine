@@ -66,12 +66,12 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	}
 	manifestHash := sha256.Sum256(canonical)
 	payload, err := json.Marshal(custodyReviewAttestation{
-		SchemaVersion: "1.0",
+		SchemaVersion:   "1.0",
 		QualificationID: manifest.QualificationID,
-		ManifestDigest: hex.EncodeToString(manifestHash[:]),
-		Reviewer: manifest.Review.ReviewerIdentity,
-		ReviewedAt: manifest.Review.ReviewedAt,
-		Decision: manifest.Review.Status,
+		ManifestDigest:  hex.EncodeToString(manifestHash[:]),
+		Reviewer:        manifest.Review.ReviewerIdentity,
+		ReviewedAt:      manifest.Review.ReviewedAt,
+		Decision:        manifest.Review.Status,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -79,9 +79,9 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	signature := ed25519.Sign(privateKey, payload)
 	envelope, err := json.Marshal(custodyDetachedSignature{
 		SchemaVersion: "1.0",
-		Reviewer: manifest.Review.ReviewerIdentity,
-		Algorithm: "Ed25519",
-		Signature: base64.StdEncoding.EncodeToString(signature),
+		Reviewer:      manifest.Review.ReviewerIdentity,
+		Algorithm:     "Ed25519",
+		Signature:     base64.StdEncoding.EncodeToString(signature),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -89,8 +89,8 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	add(&manifest.Review.Attestation, manifest.Review.Attestation.Path, envelope)
 
 	report, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 24 * time.Hour,
 	})
 	if err != nil {
@@ -136,8 +136,8 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	}
 
 	if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
-		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
-		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		ReviewerKeys:   map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		Now:            time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
 		MaxEvidenceAge: 30 * time.Minute,
 	}); err == nil {
 		t.Fatal("stale review attestation was accepted")
