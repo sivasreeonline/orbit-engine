@@ -146,6 +146,7 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	for _, malformed := range []string{
 		strings.TrimSuffix(originalEnvelope, "}") + `, "unexpected": true}`,
 		originalEnvelope + ` {}`,
+		strings.TrimSuffix(originalEnvelope, "}") + `, "reviewer": "reviewer-2026"}`,
 	} {
 		tamperedEvidence := make(custodyEvidenceMemory, len(evidence))
 		for name, data := range evidence {
