@@ -116,9 +116,9 @@ type TrustedCheckpointCustodyWitnessKey struct {
 }
 
 type CheckpointCustodyEvidenceVerifierTrust struct {
-	ReviewerKeys map[string]ed25519.PublicKey
-	WitnessKeys  map[string]TrustedCheckpointCustodyWitnessKey
-	Now          time.Time
+	ReviewerKeys   map[string]ed25519.PublicKey
+	WitnessKeys    map[string]TrustedCheckpointCustodyWitnessKey
+	Now            time.Time
 	MaxEvidenceAge time.Duration
 }
 
@@ -151,27 +151,27 @@ type custodyDetachedSignature struct {
 }
 
 type custodyWitnessAttestation struct {
-	SchemaVersion     string   `json:"schema_version"`
-	QualificationID   string   `json:"qualification_id"`
-	ScenarioID        string   `json:"scenario_id"`
-	RunID             string   `json:"run_id"`
-	ScenarioStatus    string   `json:"scenario_status"`
-	Command           string   `json:"command"`
-	StartedAt         string   `json:"started_at"`
-	CompletedAt       string   `json:"completed_at"`
-	WitnessPrincipal  string   `json:"witness_principal"`
-	WitnessRole       string   `json:"witness_role"`
-	WitnessKeyID      string   `json:"witness_key_id"`
-	ObservedAt        string   `json:"observed_at"`
-	Decision          string   `json:"decision"`
-	EvidenceSHA256    []string `json:"evidence_sha256"`
+	SchemaVersion    string   `json:"schema_version"`
+	QualificationID  string   `json:"qualification_id"`
+	ScenarioID       string   `json:"scenario_id"`
+	RunID            string   `json:"run_id"`
+	ScenarioStatus   string   `json:"scenario_status"`
+	Command          string   `json:"command"`
+	StartedAt        string   `json:"started_at"`
+	CompletedAt      string   `json:"completed_at"`
+	WitnessPrincipal string   `json:"witness_principal"`
+	WitnessRole      string   `json:"witness_role"`
+	WitnessKeyID     string   `json:"witness_key_id"`
+	ObservedAt       string   `json:"observed_at"`
+	Decision         string   `json:"decision"`
+	EvidenceSHA256   []string `json:"evidence_sha256"`
 }
 
 type custodyWitnessSignatureEnvelope struct {
-	SchemaVersion string `json:"schema_version"`
-	Algorithm     string `json:"algorithm"`
+	SchemaVersion string                    `json:"schema_version"`
+	Algorithm     string                    `json:"algorithm"`
 	Attestation   custodyWitnessAttestation `json:"attestation"`
-	Signature     string `json:"signature"`
+	Signature     string                    `json:"signature"`
 }
 
 func VerifyCheckpointCustodyEvidence(
