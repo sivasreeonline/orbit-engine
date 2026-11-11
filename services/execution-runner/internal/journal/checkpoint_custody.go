@@ -158,8 +158,12 @@ func ValidateCheckpointCustodyReceipt(checkpoint SignedVerificationAuditCheckpoi
 }
 
 // CheckpointCustodyStore is a backend-neutral compare-and-store contract.
-// Implementations must atomically verify the expected current checkpoint,
-// retain the checkpoint and receipt together, and reject stale/forked writes.
+// ReadLatest returns ErrNotFound when the requested ledger incarnation has no
+// checkpoint. StoreIfCurrent uses an empty expected predecessor only for the
+// first checkpoint; otherwise the value must equal the exact current digest.
+// Implementations must atomically validate and retain the matching checkpoint
+// and receipt pair, reject stale/forked writes with ErrConflict, and return nil
+// only after the adapter's documented durability boundary has been satisfied.
 type CheckpointCustodyStore interface {
 	ReadLatest(ctx context.Context, ledgerID, ledgerEpoch string) (SignedVerificationAuditCheckpoint, CheckpointCustodyReceipt, error)
 	StoreIfCurrent(ctx context.Context, checkpoint SignedVerificationAuditCheckpoint, receipt CheckpointCustodyReceipt, expectedPreviousCheckpointSHA256 string) error
