@@ -104,21 +104,21 @@ func pathCleanSlash(value string) string {
 // package does not discover trust roots, establish reviewer independence, or
 // provide trusted time.
 type CheckpointCustodyEvidenceVerifierTrust struct {
-	ReviewerKeys map[string]ed25519.PublicKey
-	Now          time.Time
+	ReviewerKeys   map[string]ed25519.PublicKey
+	Now            time.Time
 	MaxEvidenceAge time.Duration
 }
 
 // CheckpointCustodyEvidenceVerificationReport is a result of reading and
 // cryptographically checking evidence bytes. It is not provider qualification.
 type CheckpointCustodyEvidenceVerificationReport struct {
-	VerifiedReferences  int
-	VerifiedScenarios   []string
-	ReviewerIdentity    string
-	ReviewDecision      string
+	VerifiedReferences   int
+	VerifiedScenarios    []string
+	ReviewerIdentity     string
+	ReviewDecision       string
 	ManifestDeclaresReady bool
-	ManifestDigest      string
-	VerifiedAt          time.Time
+	ManifestDigest       string
+	VerifiedAt            time.Time
 }
 
 type custodyReviewAttestation struct {
