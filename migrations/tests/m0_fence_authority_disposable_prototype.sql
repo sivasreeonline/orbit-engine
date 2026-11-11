@@ -789,7 +789,7 @@ BEGIN
         RAISE EXCEPTION 'terminated uncommitted backend left partial authority state';
     END IF;
 END;
-$;
+$$;
 
 -- Acceptance and revocation serialize on the same host row. The first host
 -- accepts first and is then revoked; the acceptance remains historical, but
