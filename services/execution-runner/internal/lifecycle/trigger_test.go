@@ -27,7 +27,7 @@ func TestTriggerArbiterPreservesPrimaryAndClassifiesLaterTriggers(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	primary, err := arbiter.Capture(newTestTrigger("trigger-1", time.Second))
+	primary, err := arbiter.Capture(StateRunning, newTestTrigger("trigger-1", time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,20 +72,20 @@ func TestTriggerArbiterRejectsInvalidIdentityAndClock(t *testing.T) {
 
 	invalid := newTestTrigger("trigger-invalid", time.Second)
 	invalid.AuthenticatedSource = ""
-	if _, err := arbiter.Capture(invalid); !errors.Is(err, ErrInvalidTrigger) {
+	if _, err := arbiter.Capture(StateRunning, invalid); !errors.Is(err, ErrInvalidTrigger) {
 		t.Fatalf("missing source error = %v, want ErrInvalidTrigger", err)
 	}
 
 	wrongBoot := newTestTrigger("trigger-wrong-boot", time.Second)
 	wrongBoot.BootID = "boot-2"
-	if _, err := arbiter.Capture(wrongBoot); !errors.Is(err, ErrBootIdentity) {
+	if _, err := arbiter.Capture(StateRunning, wrongBoot); !errors.Is(err, ErrBootIdentity) {
 		t.Fatalf("wrong boot error = %v, want ErrBootIdentity", err)
 	}
 
 	if _, err := arbiter.Capture(newTestTrigger("trigger-first", 2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := arbiter.Capture(newTestTrigger("trigger-backwards", time.Second)); !errors.Is(err, ErrClockRollback) {
+	if _, err := arbiter.Capture(StateRunning, newTestTrigger("trigger-backwards", time.Second)); !errors.Is(err, ErrClockRollback) {
 		t.Fatalf("backwards clock error = %v, want ErrClockRollback", err)
 	}
 }
