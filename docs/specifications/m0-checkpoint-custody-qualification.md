@@ -55,7 +55,7 @@ No provider or adapter is selected. No durable storage adapter, cloud account ac
 
 The detached reviewer envelope also carries a reviewer key ID; the verifier requires the caller's reviewer trust record to match that ID and principal, carry the CHECKPOINT_CUSTODY_REVIEWER role, be valid at signing time, and not be revoked at verification time. The reviewer signature remains scoped to local evidence attribution.
 
-The detached witness envelope is defined by [the witness attestation JSON Schema](../schemas/m0-checkpoint-custody-witness-attestation.schema.json). Its digest list must be unique, lowercase, and lexicographically sorted; the Go verifier enforces exact equality with the verified witness evidence references. JSON Schema alone does not verify the Ed25519 signature or external key validity/revocation.
+The detached reviewer envelope is defined by [the reviewer attestation JSON Schema](../schemas/m0-checkpoint-custody-review-attestation.schema.json); it includes the reviewer key ID used to select the caller's trust record. The detached witness envelope is defined by [the witness attestation JSON Schema](../schemas/m0-checkpoint-custody-witness-attestation.schema.json). Its digest list must be unique, lowercase, and lexicographically sorted; the Go verifier enforces exact equality with the verified witness evidence references. JSON Schema alone does not verify the Ed25519 signature or external key validity/revocation.
 
 
 ### Cryptographic profile boundary
