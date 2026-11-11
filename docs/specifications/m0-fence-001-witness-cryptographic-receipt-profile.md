@@ -135,6 +135,8 @@ The verifier must also require:
 
 Ed25519 does not prevent a malicious or compromised witness from signing two conflicting successors. A signature plus a CAS API is not anti-equivocation proof. Qualification therefore additionally requires independently operated monitors or witness replicas that compare signed heads, durable signed consistency/inclusion proofs, and a documented detection and quarantine protocol. If two valid signed heads exist for the same predecessor/generation, the authority is quarantined; it must never select the locally preferred fork.
 
+The executable conformance harness constructs two distinct generation-2 checkpoint bodies for the same witness/authority/host scope and predecessor, signs both with the trusted test key, verifies both receipts through the root-authenticated trust bundle, and requires the local detector to return a `QUARANTINE` finding containing both checkpoint digests. A single observed head and an exact duplicate replay must not trigger a fork finding. This test demonstrates detection when both conflicting heads are supplied to the detector; it does not prove monitor independence, observation completeness, provider non-equivocation or durable proof availability.
+
 ## 7. Consistency-token contract
 
 The current provider-neutral TypeScript field `consistencyToken: string` is only a transport placeholder. Checking that it is non-empty is not a security check.
