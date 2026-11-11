@@ -42,6 +42,7 @@ class InMemoryWitnessContractAdapter implements ExternalWitnessAdapter {
   private readonly operations = new Map<string, WitnessRecord>();
   unavailable = false;
   loseAcknowledgementOnce = false;
+  latestOverride: WitnessRecord | null | undefined;
 
   async appendCheckpoint(input: AppendCheckpointInput): Promise<AppendCheckpointResult> {
     if (this.unavailable) throw new WitnessUnavailableError();
@@ -100,6 +101,7 @@ class InMemoryWitnessContractAdapter implements ExternalWitnessAdapter {
 
   async readLatest(requestedScope: WitnessScope): Promise<WitnessRecord | null> {
     if (this.unavailable) throw new WitnessUnavailableError();
+    if (this.latestOverride !== undefined) return this.latestOverride;
     const chain = this.records.get(this.scopeKey(requestedScope)) ?? [];
     return chain[chain.length - 1] ?? null;
   }
@@ -295,6 +297,55 @@ describe("provider-neutral external witness contract", () => {
 
     expect(result.status).toBe("ALREADY_ANCHORED");
     expect((await adapter.readLatest(scope))?.checkpoint).toEqual(first);
+  });
+
+
+  it("rejects a recovered operation record when the latest witness checkpoint differs", async () => {
+    const adapter = new InMemoryWitnessContractAdapter();
+    const first = checkpoint();
+    adapter.loseAcknowledgementOnce = true;
+
+    const latest = {
+      checkpoint: checkpoint({
+        generation: 2,
+        phase: "ACCEPTED",
+        previousCheckpointDigest: first.checkpointDigest,
+        checkpointDigest: "d".repeat(64),
+        recordVersion: 3,
+      }),
+      receipt: {
+        schemaVersion: 1 as const,
+        witnessId: "in-memory-contract-test-double",
+        authorityId: scope.authorityId,
+        hostId: scope.hostId,
+        generation: 2,
+        operationId: first.operationId,
+        checkpointDigest: "d".repeat(64),
+        previousCheckpointDigest: first.checkpointDigest,
+        keyId: "test-key",
+        signature: "test-signature",
+        committedAt: "2026-11-11T00:00:00.000Z",
+        consistencyToken: "test-generation-2",
+      },
+    };
+    adapter.latestOverride = latest;
+
+    await expect(anchorCheckpoint(adapter, { verify: async () => true }, {
+      ...inputFor(first, 0, ZERO_CHECKPOINT_DIGEST),
+      expectedWitnessId: "in-memory-contract-test-double",
+    })).rejects.toBeInstanceOf(WitnessConflictError);
+  });
+
+  it("rejects a recovered operation record when the latest witness checkpoint is missing", async () => {
+    const adapter = new InMemoryWitnessContractAdapter();
+    const first = checkpoint();
+    adapter.loseAcknowledgementOnce = true;
+    adapter.latestOverride = null;
+
+    await expect(anchorCheckpoint(adapter, { verify: async () => true }, {
+      ...inputFor(first, 0, ZERO_CHECKPOINT_DIGEST),
+      expectedWitnessId: "in-memory-contract-test-double",
+    })).rejects.toBeInstanceOf(WitnessConflictError);
   });
 
   it("fails closed when a prior receipt cannot be cryptographically verified", async () => {
