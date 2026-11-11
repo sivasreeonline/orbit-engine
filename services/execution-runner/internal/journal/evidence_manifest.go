@@ -78,7 +78,7 @@ type QualificationEvidenceManifest struct {
 var evidenceSHA256Pattern = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 
 func validateEvidenceReference(ref EvidenceReference) error {
-	if strings.TrimSpace(ref.Path) == "" || path.IsAbs(ref.Path) || strings.Contains(ref.Path, "\\\\") || strings.ContainsRune(ref.Path, 0) || path.Clean(ref.Path) != ref.Path || ref.Path == "." || strings.HasPrefix(ref.Path, "../") || ref.Path == ".." {
+	if strings.TrimSpace(ref.Path) == "" || path.IsAbs(ref.Path) || strings.Contains(ref.Path, "\\") || strings.ContainsRune(ref.Path, 0) || path.Clean(ref.Path) != ref.Path || ref.Path == "." || strings.HasPrefix(ref.Path, "../") || ref.Path == ".." {
 		return fmt.Errorf("%w: evidence path must be a clean relative path", ErrCorrupt)
 	}
 	if !evidenceSHA256Pattern.MatchString(ref.SHA256) {
