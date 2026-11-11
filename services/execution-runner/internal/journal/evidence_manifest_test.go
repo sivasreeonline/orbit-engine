@@ -10,18 +10,18 @@ func validEvidenceManifest() QualificationEvidenceManifest {
 	for _, scenario := range RequiredQualificationScenarios {
 		tests = append(tests, QualificationTestEvidence{
 			ScenarioID: scenario.ID, Status: EvidencePass, TestRunID: "run-001",
-			Command: "adapter-qualification --scenario " + scenario.ID,
+			Command:   "adapter-qualification --scenario " + scenario.ID,
 			StartedAt: "2026-11-11T08:00:00Z", CompletedAt: "2026-11-11T08:01:00Z",
 			Evidence: []EvidenceReference{{Path: "evidence/" + scenario.ID + ".json", SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", MediaType: "application/json"}},
 		})
 	}
 	return QualificationEvidenceManifest{
 		SchemaVersion: "1.0", QualificationID: "qualification-001", CatalogVersion: "m0-jq-1",
-		Adapter: JournalAdapterIdentity{Name: "candidate", Version: "1.0", Driver: "candidate-driver", DriverVersion: "1.0"},
+		Adapter:     JournalAdapterIdentity{Name: "candidate", Version: "1.0", Driver: "candidate-driver", DriverVersion: "1.0"},
 		Environment: QualificationEnvironment{OperatingSystem: "Linux", Kernel: "6.x", Architecture: "x86_64", Filesystem: "ext4", MountOptions: "defaults", StorageTopology: "test volume"},
-		Durability: DurabilityProfile{AcknowledgementBarrier: "sync completed", PowerLossModel: "declared test model", SyncPolicy: "sync on commit", WALCheckpointPolicy: "documented checkpoint policy"},
-		Tests: tests,
-		Review: IndependentReview{Status: "APPROVED", ReviewerIdentity: "independent-reviewer", ReviewedAt: "2026-11-11T09:00:00Z", Attestation: EvidenceReference{Path: "evidence/review.json", SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", MediaType: "application/json"}},
+		Durability:  DurabilityProfile{AcknowledgementBarrier: "sync completed", PowerLossModel: "declared test model", SyncPolicy: "sync on commit", WALCheckpointPolicy: "documented checkpoint policy"},
+		Tests:       tests,
+		Review:      IndependentReview{Status: "APPROVED", ReviewerIdentity: "independent-reviewer", ReviewedAt: "2026-11-11T09:00:00Z", Attestation: EvidenceReference{Path: "evidence/review.json", SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", MediaType: "application/json"}},
 	}
 }
 
