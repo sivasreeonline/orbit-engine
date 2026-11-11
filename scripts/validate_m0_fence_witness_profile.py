@@ -12,7 +12,7 @@ import base64
 import hashlib
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
@@ -156,6 +156,10 @@ def verify_vector(
         "publicKeyBase64Url": vector["testKey"]["publicKeyBase64Url"],
         "witnessId": vector["receiptBody"]["witnessId"],
         "authorityId": vector["receiptBody"]["authorityId"],
+        "checkpointBody": vector["checkpointBody"],
+        "checkpointDigest": vector["checkpointDigest"],
+        "receiptBody": vector["receiptBody"],
+        "signatureBase64Url": vector["signatureBase64Url"],
     }
 
 
@@ -251,7 +255,7 @@ def verify_trust_bundle_schema(
     validator: Draft202012Validator,
     key_material: dict[str, str],
     trust_vector: dict[str, Any],
-) -> None:
+) -> dict[str, Any]:
     require(trust_vector.get("testOnly") is True, "trust-bundle vector is not marked testOnly")
     require(trust_vector.get("profile") == "sky-high-fence-witness-v1", "unexpected trust-bundle profile")
     prefix = trust_vector["algorithm"]["trustBundleSignatureInputPrefixUtf8"].encode("utf-8")
@@ -377,6 +381,92 @@ def verify_trust_bundle_schema(
     else:
         raise AssertionError("duplicate trust-bundle revocations were accepted")
 
+    return body
+
+
+def parse_utc(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise ValueError("timestamp must be UTC")
+    return parsed
+
+
+def verify_receipt_against_trusted_bundle(
+    vector_result: dict[str, Any],
+    trust_bundle_body: dict[str, Any],
+    trusted_receipt_time: datetime,
+) -> None:
+    """Verify a receipt using only the independently root-verified trust bundle.
+
+    trusted_receipt_time is synthetic independent time evidence supplied by
+    this test harness. It is deliberately not derived from receipt.committedAt.
+    """
+    checkpoint = vector_result["checkpointBody"]
+    checkpoint_digest = vector_result["checkpointDigest"]
+    receipt = vector_result["receiptBody"]
+
+    require(receipt["profile"] == checkpoint["profile"], "receipt/checkpoint profile mismatch")
+    require(receipt["schemaVersion"] == checkpoint["schemaVersion"], "receipt/checkpoint schema version mismatch")
+    require(receipt["authorityId"] == checkpoint["authorityId"], "receipt/checkpoint authority mismatch")
+    require(receipt["hostId"] == checkpoint["hostId"], "receipt/checkpoint host mismatch")
+    require(receipt["generation"] == checkpoint["generation"], "receipt/checkpoint generation mismatch")
+    require(receipt["operationId"] == checkpoint["operationId"], "receipt/checkpoint operation mismatch")
+    require(receipt["previousCheckpointDigest"] == checkpoint["previousCheckpointDigest"],
+            "receipt/checkpoint predecessor mismatch")
+    require(receipt["checkpointDigest"] == checkpoint_digest, "receipt/checkpoint digest mismatch")
+    require(trust_bundle_body["profile"] == receipt["profile"], "trust-bundle profile mismatch")
+    require(trust_bundle_body["witnessId"] == receipt["witnessId"], "receipt witness is not trusted")
+
+    matches = [item for item in trust_bundle_body["keys"] if item["keyId"] == receipt["keyId"]]
+    if len(matches) != 1:
+        raise ValueError("receipt key ID is missing or ambiguous in trusted bundle")
+    key = matches[0]
+    if key["purpose"] != "WITNESS_RECEIPT_SIGNING":
+        raise ValueError("trusted key has the wrong purpose")
+    if key["witnessId"] != receipt["witnessId"]:
+        raise ValueError("trusted key witness scope mismatch")
+    if receipt["authorityId"] not in key["authorityIds"]:
+        raise ValueError("receipt authority is outside trusted key scope")
+
+    not_before = parse_utc(key["notBefore"])
+    not_after = parse_utc(key["notAfter"])
+    if not_before > trusted_receipt_time or trusted_receipt_time >= not_after:
+        raise ValueError("trusted receipt time is outside key validity interval")
+    if "retiredAt" in key and trusted_receipt_time >= parse_utc(key["retiredAt"]):
+        raise ValueError("trusted key was retired at receipt time")
+
+    if any(item["keyId"] == receipt["keyId"] for item in trust_bundle_body["revocations"]):
+        raise ValueError("receipt signing key is revoked")
+
+    raw_public_key = decode_canonical_base64url(key["publicKeyBase64Url"])
+    if len(raw_public_key) != 32:
+        raise ValueError("trusted Ed25519 public key must be 32 bytes")
+    if hashlib.sha256(raw_public_key).hexdigest() != key["keyId"]:
+        raise ValueError("trusted key fingerprint mismatch")
+    signature = decode_canonical_base64url(vector_result["signatureBase64Url"])
+    if len(signature) != 64:
+        raise ValueError("receipt signature must be 64 bytes")
+    receipt_bytes = rfc8785.dumps(receipt)
+    Ed25519PublicKey.from_public_bytes(raw_public_key).verify(
+        signature, RECEIPT_PREFIX + receipt_bytes
+    )
+
+
+def expect_receipt_rejection(
+    vector_result: dict[str, Any],
+    trust_bundle_body: dict[str, Any],
+    trusted_receipt_time: datetime,
+    label: str,
+) -> None:
+    try:
+        verify_receipt_against_trusted_bundle(
+            vector_result, trust_bundle_body, trusted_receipt_time
+        )
+    except (ValueError, InvalidSignature):
+        return
+    raise AssertionError(f"invalid receipt trust binding was accepted: {label}")
+
+
 def main() -> None:
     schema = strict_json_load(SCHEMA_PATH)
     Draft202012Validator.check_schema(schema)
@@ -400,10 +490,81 @@ def main() -> None:
 
     vectors = [strict_json_load(path) for path in VECTOR_PATHS]
     test_seed = vectors[0]["testKey"]["privateSeedHex"]
-    key_material = verify_vector(vectors[0], validator, VECTOR_PATHS[0], test_seed)
-    verify_vector(vectors[1], validator, VECTOR_PATHS[1], test_seed)
+    vector_results = [
+        verify_vector(vector, validator, path, test_seed)
+        for vector, path in zip(vectors, VECTOR_PATHS, strict=True)
+    ]
+    key_material = vector_results[0]
     trust_vector = strict_json_load(TRUST_VECTOR_PATH)
-    verify_trust_bundle_schema(validator, key_material, trust_vector)
+    trusted_bundle_body = verify_trust_bundle_schema(validator, key_material, trust_vector)
+
+    # Independent synthetic trusted-time evidence is supplied by the harness;
+    # receipt.committedAt is not accepted as its own trust source.
+    trusted_times = (
+        datetime(2026, 1, 2, 3, 4, 6, tzinfo=timezone.utc),
+        datetime(2026, 1, 2, 3, 5, 7, tzinfo=timezone.utc),
+    )
+    for vector_result, trusted_time in zip(vector_results, trusted_times, strict=True):
+        verify_receipt_against_trusted_bundle(
+            vector_result, trusted_bundle_body, trusted_time
+        )
+
+    first_receipt = vector_results[0]
+    second_receipt = vector_results[1]
+    expect_receipt_rejection(
+        second_receipt,
+        {**trusted_bundle_body, "keys": [
+            {**trusted_bundle_body["keys"][0], "authorityIds": ["authority-vector-01"]}
+        ]},
+        trusted_times[1],
+        "authority outside key scope",
+    )
+    expect_receipt_rejection(
+        first_receipt,
+        {**trusted_bundle_body, "witnessId": "substituted-witness"},
+        trusted_times[0],
+        "wrong witness",
+    )
+    expect_receipt_rejection(
+        first_receipt,
+        {**trusted_bundle_body, "keys": [
+            {**trusted_bundle_body["keys"][0], "notBefore": "2027-01-01T00:00:00Z"}
+        ]},
+        trusted_times[0],
+        "key not yet active",
+    )
+    expect_receipt_rejection(
+        first_receipt,
+        {**trusted_bundle_body, "keys": [
+            {**trusted_bundle_body["keys"][0], "notAfter": "2026-01-01T00:00:00Z"}
+        ]},
+        trusted_times[0],
+        "key expired",
+    )
+    expect_receipt_rejection(
+        first_receipt,
+        {**trusted_bundle_body, "keys": [
+            {**trusted_bundle_body["keys"][0], "retiredAt": "2026-01-02T03:04:04Z"}
+        ]},
+        trusted_times[0],
+        "key retired",
+    )
+    expect_receipt_rejection(
+        first_receipt,
+        {**trusted_bundle_body, "revocations": [
+            {"keyId": first_receipt["keyId"], "revokedAt": "2026-01-02T03:04:04Z", "reason": "fixture compromise"}
+        ]},
+        trusted_times[0],
+        "key revoked",
+    )
+    expect_receipt_rejection(
+        first_receipt,
+        {**trusted_bundle_body, "keys": [
+            {**trusted_bundle_body["keys"][0], "keyId": "f" * 64}
+        ]},
+        trusted_times[0],
+        "unknown key",
+    )
 
     duplicate_json = '{"body":{"x":1,"x":2},"signature":"x"}'
     try:
@@ -421,6 +582,7 @@ def main() -> None:
     print("- SHA-256 checkpoint digest and Ed25519 receipt signature verification")
     print("- independent RFC 8785, SHA-256 and Ed25519 verification for both trust-bundle generations")
     print("- pinned-root trust-bundle digest/signature and monotonic succession checks")
+    print("- receipt-to-checkpoint and trusted-key scope/validity/retirement/revocation binding")
     print("- negative trust-bundle root, signature, digest, generation, predecessor and scope cases")
     print("- negative schema, timestamp, signature, duplicate-key and fingerprint cases")
     print("Boundary: no provider consistency, durable storage, anti-equivocation or production trust is proven")
