@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sivasreeonline.github.io/orbit-engine/schemas/m0-checkpoint-custody-review-attestation.schema.json",
+  "title": "M0 Checkpoint Custody Reviewer Attestation Envelope",
+  "description": "Detached reviewer signature envelope. Signature verification and key lifecycle checks require an external trust policy.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "reviewer", "reviewer_key_id", "algorithm", "signature"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "reviewer": {"type": "string", "minLength": 1},
+    "reviewer_key_id": {"type": "string", "minLength": 1},
+    "algorithm": {"const": "Ed25519"},
+    "signature": {"type": "string", "pattern": "^[A-Za-z0-9+/]+={0,2}$"}
+  }
+}
