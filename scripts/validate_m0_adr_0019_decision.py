@@ -595,6 +595,16 @@ def main():
     errors=validate_record(complete,validator)
     if errors:
         raise AssertionError("synthetic valid selection rejected: "+"; ".join(errors))
+    fence_evidence_gap = deepcopy(complete)
+    fence_candidate = next(c for c in fence_evidence_gap["candidate_assessments"] if c["candidate_id"] == "rootful-supervisor")
+    fence_finding = next(f for f in fence_candidate["design_findings"] if f["control_id"] == "FENCE-001")
+    fence_finding["evidence_refs"] = [
+        ref for ref in fence_finding["evidence_refs"] if ref["evidence_type"] != "operator-record"
+    ]
+    fence_errors = validate_record(fence_evidence_gap, validator)
+    if not any("FENCE-001: pass requires host configuration, provider-fence fault-injection and operator-record evidence" in error for error in fence_errors):
+        raise AssertionError("FENCE-001 passed without all provider-fencing evidence categories")
+    print("PASS  rejects FENCE-001 pass without host, provider-fence fault-injection and operator evidence")
     source_mismatch = deepcopy(complete)
     source_mismatch["upstream_source_manifest_sha256"] = "f" * 64
     if not validate_record(source_mismatch, validator):
