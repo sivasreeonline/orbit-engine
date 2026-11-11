@@ -113,7 +113,7 @@ func hasWindowsCustodyDrivePrefix(value string) bool {
 }
 
 func ValidateCheckpointCustodyQualificationManifest(manifest CheckpointCustodyQualificationManifest) error {
-	if manifest.SchemaVersion != "1.0" || strings.TrimSpace(manifest.QualificationID) == "" {
+	if manifest.SchemaVersion != "1.1" || strings.TrimSpace(manifest.QualificationID) == "" {
 		return fmt.Errorf("%w: custody qualification identity is invalid", ErrCorrupt)
 	}
 	adapter := manifest.Adapter
