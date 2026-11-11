@@ -103,9 +103,22 @@ func pathCleanSlash(value string) string {
 // CheckpointCustodyEvidenceVerifierTrust is injected by the caller. This
 // package does not discover trust roots, establish reviewer independence, or
 // provide trusted time.
+const CheckpointCustodyWitnessRole = "INDEPENDENT_CUSTODY_WITNESS"
+
+type TrustedCheckpointCustodyWitnessKey struct {
+	KeyID     string
+	Principal string
+	Role      string
+	PublicKey ed25519.PublicKey
+	NotBefore time.Time
+	NotAfter  time.Time
+	RevokedAt *time.Time
+}
+
 type CheckpointCustodyEvidenceVerifierTrust struct {
-	ReviewerKeys   map[string]ed25519.PublicKey
-	Now            time.Time
+	ReviewerKeys map[string]ed25519.PublicKey
+	WitnessKeys  map[string]TrustedCheckpointCustodyWitnessKey
+	Now          time.Time
 	MaxEvidenceAge time.Duration
 }
 
@@ -134,6 +147,26 @@ type custodyDetachedSignature struct {
 	SchemaVersion string `json:"schema_version"`
 	Reviewer      string `json:"reviewer"`
 	Algorithm     string `json:"algorithm"`
+	Signature     string `json:"signature"`
+}
+
+type custodyWitnessAttestation struct {
+	SchemaVersion     string   `json:"schema_version"`
+	QualificationID   string   `json:"qualification_id"`
+	ScenarioID        string   `json:"scenario_id"`
+	RunID             string   `json:"run_id"`
+	WitnessPrincipal  string   `json:"witness_principal"`
+	WitnessRole       string   `json:"witness_role"`
+	WitnessKeyID      string   `json:"witness_key_id"`
+	ObservedAt        string   `json:"observed_at"`
+	Decision          string   `json:"decision"`
+	EvidenceSHA256    []string `json:"evidence_sha256"`
+}
+
+type custodyWitnessSignatureEnvelope struct {
+	SchemaVersion string `json:"schema_version"`
+	Algorithm     string `json:"algorithm"`
+	Attestation   custodyWitnessAttestation `json:"attestation"`
 	Signature     string `json:"signature"`
 }
 
