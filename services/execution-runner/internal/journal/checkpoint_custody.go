@@ -50,15 +50,15 @@ type CheckpointCustodyPolicy struct {
 
 func custodyReceiptSigningBytes(receipt CheckpointCustodyReceipt) ([]byte, error) {
 	return json.Marshal(struct {
-		CheckpointSHA256      string  `json:"checkpoint_sha256"`
-		CustodyDomain         string  `json:"custody_domain"`
-		RetentionPolicyID     string  `json:"retention_policy_id"`
+		CheckpointSHA256       string `json:"checkpoint_sha256"`
+		CustodyDomain          string `json:"custody_domain"`
+		RetentionPolicyID      string `json:"retention_policy_id"`
 		RetentionPolicyVersion string `json:"retention_policy_version"`
-		RetainedAt            string  `json:"retained_at"`
-		ImmutableUntil        string  `json:"immutable_until"`
-		CustodianPrincipal    string  `json:"custodian_principal"`
-		CustodianRole         string  `json:"custodian_role"`
-		CustodianKeyID        string  `json:"custodian_key_id"`
+		RetainedAt             string `json:"retained_at"`
+		ImmutableUntil         string `json:"immutable_until"`
+		CustodianPrincipal     string `json:"custodian_principal"`
+		CustodianRole          string `json:"custodian_role"`
+		CustodianKeyID         string `json:"custodian_key_id"`
 	}{
 		CheckpointSHA256: receipt.CheckpointSHA256, CustodyDomain: receipt.CustodyDomain,
 		RetentionPolicyID: receipt.RetentionPolicyID, RetentionPolicyVersion: receipt.RetentionPolicyVersion,
@@ -84,10 +84,10 @@ func SealCheckpointCustodyReceipt(checkpoint SignedVerificationAuditCheckpoint, 
 		return CheckpointCustodyReceipt{}, fmt.Errorf("%w: invalid checkpoint custody input", ErrCorrupt)
 	}
 	receipt := CheckpointCustodyReceipt{
-		CheckpointSHA256:       VerificationAuditCheckpointDigest(checkpoint),
-		CustodyDomain:          custodyDomain, RetentionPolicyID: policyID, RetentionPolicyVersion: policyVersion,
-		RetainedAt:             retainedAt, ImmutableUntil: immutableUntil,
-		CustodianPrincipal:     principal, CustodianRole: CheckpointCustodianRole, CustodianKeyID: keyID,
+		CheckpointSHA256: VerificationAuditCheckpointDigest(checkpoint),
+		CustodyDomain:    custodyDomain, RetentionPolicyID: policyID, RetentionPolicyVersion: policyVersion,
+		RetainedAt:       retainedAt, ImmutableUntil: immutableUntil,
+		CustodianPrincipal: principal, CustodianRole: CheckpointCustodianRole, CustodianKeyID: keyID,
 	}
 	message, err := custodyReceiptSigningBytes(receipt)
 	if err != nil {
