@@ -49,6 +49,24 @@ class Authority:
         self.anchor = (self.epoch, self.version, self._state_digest())
 
     def _state_digest(self) -> str:
+        nonce_index = [
+            {
+                "nonce_digest": nonce_digest,
+                "request_digest": record[0],
+                "operation_id": record[1],
+                "response_sha256": sha256(record[2]),
+            }
+            for nonce_digest, record in sorted(self.nonces.items())
+        ]
+        operation_index = [
+            {
+                "operation_id": operation_id,
+                "nonce_digest": record[0],
+                "request_digest": record[1],
+                "response_sha256": sha256(record[2]),
+            }
+            for operation_id, record in sorted(self.operations.items())
+        ]
         material = {
             "host_id": self.host_id,
             "epoch": self.epoch,
@@ -57,6 +75,9 @@ class Authority:
             "pending_response_sha256": (
                 sha256(self.pending["bytes"]) if self.pending else None
             ),
+            "pending_accepted": self.pending["accepted"] if self.pending else None,
+            "nonce_index_sha256": sha256(canonical_bytes({"entries": nonce_index})),
+            "operation_index_sha256": sha256(canonical_bytes({"entries": operation_index})),
         }
         return sha256(canonical_bytes(material))
 
@@ -249,6 +270,23 @@ def self_test() -> None:
     assert authority.accept(response, "vm-next", 6) == "ACCEPTED"
     assert authority.accept(response, "vm-next", 6) == "ALREADY_ACCEPTED"
 
+    # The external anchor must cover replay indexes and acceptance state, not
+    # only epoch/version. Simulate partial restore/corruption of either index.
+    accepted_snapshot = authority.snapshot()
+    authority.nonces.pop("a" * 64)
+    expect(Denied, authority.verify_anchor,
+           "nonce replay-index rollback must fail external anchor check")
+    authority.restore(accepted_snapshot)
+    authority.operations.pop("op-1")
+    expect(Denied, authority.verify_anchor,
+           "operation replay-index rollback must fail external anchor check")
+    authority.restore(accepted_snapshot)
+    authority.pending["accepted"] = False
+    expect(Denied, authority.verify_anchor,
+           "accepted-state rollback must fail external anchor check")
+    authority.restore(accepted_snapshot)
+    authority.verify_anchor()
+
     expect(Conflict, lambda: request(authority, operation="op-stale", nonce="e",
                                      request="f", expected_version=2, target="vm-next-2",
                                      predecessor_epoch=6, fence="1"),
@@ -312,7 +350,7 @@ def self_test() -> None:
     print("PASS  exact response/instance/epoch acceptance and idempotent acceptance")
     print("PASS  delayed historical retry cannot roll back a newer accepted epoch")
     print("PASS  two same-version contenders serialize; loser is stale after winner acceptance")
-    print("PASS  stale authority snapshot rejected by independent anti-rollback anchor")
+    print("PASS  stale authority snapshot and replay-index/acceptance rollback rejected by anti-rollback anchor")
     print("NOTE  synthetic in-memory model only; no provider, database, signature or host proof")
 
 
