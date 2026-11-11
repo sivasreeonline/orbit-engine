@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, "feat/**", "fix/**", "docs/**"]
     paths:
       - "apps/web/**"
       - "apps/api/**"
@@ -13,7 +13,7 @@ on:
       - "AGENTS.md"
       - "CLAUDE.md"
   push:
-    branches: [main, "feat/**", "fix/**"]
+    branches: [main, "feat/**", "fix/**", "docs/**"]
     paths:
       - "apps/web/**"
       - "apps/api/**"
@@ -350,6 +350,17 @@ jobs:
           $block$;
           SQL
           trap - EXIT
+
+      - name: Set up Python for FENCE-001 witness profile conformance
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned FENCE-001 conformance dependencies
+        run: python -m pip install --disable-pip-version-check "jsonschema==4.25.1" "cryptography==46.0.3"
+
+      - name: Verify FENCE-001 witness profile schema and cryptographic vectors
+        run: python ../../scripts/validate_m0_fence_witness_profile.py
 
       - name: Worker deployment dry run
         run: npx wrangler deploy --dry-run
