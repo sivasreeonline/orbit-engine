@@ -10,6 +10,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - Versioned internal execution request types, strict structural validation and a bounded JSON decoder that rejects unknown fields, duplicate object keys and trailing values.
 - Protocol validation is structural only: runtime and resource fields are not authority. A future trusted boundary must authenticate and authorize each attempt, resolve immutable server-owned profiles, and reject any caller value that differs from the approved profile.
 - An executor interface with a safe unconfigured implementation.
+- A pure lifecycle contract package enforcing the closed attempt-state transition table and concurrency-safe in-memory first-trigger arbitration.
 - Unit tests for health/readiness, request validation, strict JSON decoding and disabled execution.
 - Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
 
@@ -17,6 +18,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - No endpoint accepts source code or starts a process.
 - No Docker, containerd, gVisor or host command is invoked.
 - The unconfigured executor always returns `ErrSandboxNotConfigured`.
+- The lifecycle package is not connected to an HTTP endpoint or executor; it does not persist triggers, authorize attempts, request termination, or manage host resources.
 - The HTTP server refuses non-loopback bind addresses until an authenticated private transport is implemented.
 - Student source code is referenced by an opaque artifact ID and SHA-256 digest; it is not included in the runner request body.
 - The decoder caps request bodies at 64 KiB and rejects unrecognized fields, including sourceCode, hiddenTests, expectedOutput and credentials.
