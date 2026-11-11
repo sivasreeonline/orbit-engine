@@ -646,7 +646,7 @@ def main() -> None:
     for name in schema_names + ["m0-crypto-verification-fixture-catalog.json"]:
         check(name in contract, f"crypto contract must link {name}")
 
-    print("M0 crypto schema meta-validation: PASS (9 schemas).")
+    print(f"M0 crypto schema meta-validation: PASS ({len(schema_names)} schemas).")
     print("Typed payload, envelope, trust-bundle, key and verification-report fixtures: PASS.")
     print("Temporal, duplicate-key, purpose, revocation, anti-rollback, key lifecycle and ledger binding checks: PASS.")
     print("9 positive and 20 negative fixture dispositions verified; profile-dependent canonical-byte vector remains blocked.")
