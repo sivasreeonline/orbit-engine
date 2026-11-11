@@ -13,7 +13,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - A pure lifecycle contract package enforcing the closed attempt-state transition table, concurrency-safe in-memory first-trigger arbitration, and backend-independent terminal-finalization preconditions.
 - A backend-neutral journal transaction port with validated attempt, trigger, operation, branch-CAS, and terminal-commit commands; no database adapter is selected or enabled.
 - A deterministic external-operation phase model with inspect-before-retry proof requirements; no containerd client or resource-inspection implementation is enabled.
-- A scoped idempotency/replay contract with compound atomic claim-plus-attempt and terminal-result-plus-response-descriptor port operations; no key-reuse expiry or storage adapter is enabled.
+- A scoped idempotency/replay contract with compound atomic claim-plus-attempt and terminal-result-plus-response-descriptor port operations; no key-reuse expiry or storage adapter is enabled.\n- A backend-neutral qualification evidence verifier that recomputes evidence hashes and verifies detached Ed25519 attestations against caller-supplied reviewer trust policy; no trust root or evidence source is embedded.
 - Unit tests for health/readiness, request validation, strict JSON decoding, disabled execution, lifecycle transitions, trigger arbitration, and terminal-finalization preconditions.
 - Go vulnerability analysis is performed by govulncheck v1.9.0 in GitHub Actions.
 
@@ -22,7 +22,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - No Docker, containerd, gVisor or host command is invoked.
 - The unconfigured executor always returns `ErrSandboxNotConfigured`.
 - The lifecycle package is not connected to an HTTP endpoint or executor; it does not persist triggers, authorize attempts, request termination, manage host resources, or perform an atomic terminal database transaction. Finalization validation is a precondition check only; the selected journal adapter must re-enforce all predicates in one durable transaction.
-- The journal package defines interfaces and command validation only. It has no database driver or storage implementation; no durable acknowledgement may be made until an independently qualified adapter is implemented and host-tested.
+- The journal package defines interfaces, command validation, evidence-manifest validation, and a caller-policy-driven evidence verifier only. It has no database driver or storage implementation; no durable acknowledgement may be made until an independently qualified adapter is implemented and host-tested. The verifier does not authenticate trust-policy distribution or authorize deployment.
 - The operations package validates deterministic operation identity and phase/reconciliation commands only. It does not invoke containerd, inspect host resources, or authorize retries; those proofs must come from the trusted host supervisor.
 - The HTTP server refuses non-loopback bind addresses until an authenticated private transport is implemented.
 - Student source code is referenced by an opaque artifact ID and SHA-256 digest; it is not included in the runner request body.
@@ -80,4 +80,4 @@ The backend-neutral journal package maintains the required fault and recovery sc
 
 ## Qualification evidence manifest
 
-The journal qualification evidence model and validator are in `internal/journal/evidence_manifest.go`; the JSON Schema is `../../docs/schemas/m0-journal-qualification-evidence.schema.json`. A structurally valid manifest is not automatically qualified: all 25 scenarios must PASS and the independent review must be APPROVED. Hash verification, signature verification, reviewer-independence checks, and deployment authorization remain external gates.
+The journal qualification evidence model and validator are in `internal/journal/evidence_manifest.go`; the JSON Schema is `../../docs/schemas/m0-journal-qualification-evidence.schema.json`. A structurally valid manifest is not automatically qualified: all 25 scenarios must PASS and the independent review must be APPROVED. Hash and signature verification are implemented as an explicit verifier contract in `internal/journal/evidence_verifier.go`; trusted policy distribution, actual provider evidence retrieval, organizational reviewer-independence assurance, and deployment authorization remain external gates. See `docs/specifications/m0-journal-evidence-verification.md`.
