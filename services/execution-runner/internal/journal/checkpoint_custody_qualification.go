@@ -47,15 +47,15 @@ type CheckpointCustodyEvidenceReference struct {
 }
 
 type CheckpointCustodyScenarioEvidence struct {
-	ScenarioID                    string `json:"scenario_id"`
-	Status                        EvidenceStatus `json:"status"`
-	RunID                         string `json:"run_id"`
-	Command                       string `json:"command"`
-	StartedAt                     string `json:"started_at"`
-	CompletedAt                   string `json:"completed_at"`
+	ScenarioID                    string                               `json:"scenario_id"`
+	Status                        EvidenceStatus                       `json:"status"`
+	RunID                         string                               `json:"run_id"`
+	Command                       string                               `json:"command"`
+	StartedAt                     string                               `json:"started_at"`
+	CompletedAt                   string                               `json:"completed_at"`
 	Evidence                      []CheckpointCustodyEvidenceReference `json:"evidence"`
 	IndependentWitnessEvidence    []CheckpointCustodyEvidenceReference `json:"independent_witness_evidence,omitempty"`
-	IndependentWitnessAttestation CheckpointCustodyEvidenceReference `json:"independent_witness_attestation,omitempty"`
+	IndependentWitnessAttestation CheckpointCustodyEvidenceReference   `json:"independent_witness_attestation,omitempty"`
 }
 
 type CheckpointCustodyAdapterIdentity struct {
@@ -75,24 +75,24 @@ type CheckpointCustodyEnvironment struct {
 	Endpoint               string `json:"endpoint"`
 	EncryptionAtRest       string `json:"encryption_at_rest"`
 	Versioning             string `json:"versioning"`
-	Replication             string `json:"replication"`
+	Replication            string `json:"replication"`
 	RetentionConfiguration string `json:"retention_configuration"`
 }
 
 type CheckpointCustodyReview struct {
-	Status           string `json:"status"`
-	ReviewerIdentity string `json:"reviewer_identity"`
-	ReviewedAt       string `json:"reviewed_at"`
+	Status           string                             `json:"status"`
+	ReviewerIdentity string                             `json:"reviewer_identity"`
+	ReviewedAt       string                             `json:"reviewed_at"`
 	Attestation      CheckpointCustodyEvidenceReference `json:"attestation"`
 }
 
 type CheckpointCustodyQualificationManifest struct {
-	SchemaVersion   string `json:"schema_version"`
-	QualificationID string `json:"qualification_id"`
-	Adapter         CheckpointCustodyAdapterIdentity `json:"adapter"`
-	Environment     CheckpointCustodyEnvironment `json:"environment"`
+	SchemaVersion   string                              `json:"schema_version"`
+	QualificationID string                              `json:"qualification_id"`
+	Adapter         CheckpointCustodyAdapterIdentity    `json:"adapter"`
+	Environment     CheckpointCustodyEnvironment        `json:"environment"`
 	Scenarios       []CheckpointCustodyScenarioEvidence `json:"scenarios"`
-	Review          CheckpointCustodyReview `json:"review"`
+	Review          CheckpointCustodyReview             `json:"review"`
 }
 
 func validateCustodyEvidenceReference(reference CheckpointCustodyEvidenceReference) error {
