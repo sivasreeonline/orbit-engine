@@ -23,8 +23,10 @@ Run:
 python scripts/validate_m0_fence_authority_conformance.py
 ```
 
-The synthetic fixture exercises lost acknowledgement and exact-byte retry, nonce/request mismatch, operation-ID collision, pending-successor contention, missing fence confirmation, stale compare-and-swap, response alteration, wrong target instance, idempotent acceptance, monotonic next epoch, and restoration of a stale authority snapshot.
+The synthetic fixture exercises lost acknowledgement and exact-byte retry, nonce/request mismatch, operation-ID collision, pending-successor contention, missing fence confirmation, stale compare-and-swap, response alteration, wrong target instance, idempotent acceptance, monotonic next epoch, delayed replay of an older response after a newer epoch is accepted, two same-version issuers in both pending and post-acceptance ordering, and restoration of a stale authority snapshot.
 
 The model's `synthetic_fence_confirmed` input is an untrusted test switch, not evidence. Its in-memory anti-rollback anchor is a test double, not an external witness or independently administered checkpoint. It does not test true concurrent transactions, crash consistency, provider APIs, predecessor discovery, compute/storage/control-path isolation, signatures, key rotation, durable response delivery, or real anti-rollback storage.
+
+Acceptance-versus-revocation ordering is intentionally not duplicated in this authority model: the separate authorization transaction contract covers claim-first and revocation-first serialization (TX-007 and TX-008). The two contracts must be reviewed together; a successful authority acceptance never overrides a later authorization revocation.
 
 A passing run is limited to reference-state-machine behavior. Provider-specific qualification still requires controlled concurrency/replay/rollback tests, independently acquired provider and authority records, authenticated evidence, durable transactional storage, and independent review under the FENCE-001 and authorization lifecycle contracts.
