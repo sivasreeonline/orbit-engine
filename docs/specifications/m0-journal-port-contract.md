@@ -66,3 +66,27 @@ The `internal/operations` package defines the operation phases `INTENT_DURABLE`,
 A crash, timeout, lost response, daemon restart, or uncertain commit after dispatch moves the operation to reconciliation. The deterministic resource name is a bounded SHA-256-derived identifier over host instance, proof run, fixture, attempt, operation, request digest, and profile digest. The name is only a lookup key: reconciliation must independently inspect the resource and compare all immutable metadata and current generations.
 
 A retry from `RECONCILIATION_REQUIRED` to `DISPATCH_POSSIBLE` is accepted only with an authoritative inspection proving the exact deterministic resource identity absent, current generations, the original deadline still valid, and the attempt still authorized. An exact resource found can be recorded as `OBSERVED`; ambiguous or conflicting state is rejected and must be quarantined by the supervisor. No phase transition may leave `COMPLETED`.
+
+
+## Scoped idempotency and replay protection
+
+The `internal/idempotency` contract scopes a key by owner, client, and route. The journal stores only a canonical SHA-256 digest of the caller's key, the canonical request digest, the original attempt ID, and response-descriptor metadata; it must not store the raw idempotency key or raw response body.
+
+The journal adapter must atomically claim the unique `(owner_id, client_id, route_id, key_digest)` tuple with the original attempt identity. A duplicate claim resolves as follows:
+
+| Existing scoped key | Request digest | Resolution |
+|---|---|---|
+| No record | New request | Insert one claim and return CREATED |
+| Existing record | Same digest, descriptor available | Return REPLAY with the original attempt and descriptor |
+| Existing record | Same digest, descriptor not yet committed | Return PENDING with the original attempt; recover it, never create another |
+| Existing record | Different digest | Return CONFLICT; preserve the original claim |
+| Tombstoned record | Same digest | Return TOMBSTONE; response is unavailable and key remains reserved |
+| Tombstoned record | Different digest | Return CONFLICT; key remains reserved |
+
+A lost acknowledgement is recovered by reading the existing scoped claim. The adapter must not translate an uncertain insert/commit into a fresh attempt. The unique scoped-key constraint and attempt insertion must be one transaction, and a duplicate-key race must resolve by reading and classifying the winner.
+
+A response descriptor is metadata only: version plus canonical digest. It may identify an immutable response artifact through a separately authorized mechanism, but this contract never retains the raw response body. Pruning response data must be an exact compare-and-set against scope, key digest, request digest, descriptor version, and descriptor digest. Pruning retains the claim and records a UTC tombstone timestamp. No key-reuse horizon is approved; therefore this contract has no expiry or key-reuse transition. Tombstones must not be deleted or recycled by ordinary retention cleanup.
+
+The pure resolver returns REPLAY, CONFLICT, PENDING, or TOMBSTONE. PENDING is a recovery signal, not permission to dispatch a duplicate operation. A backend adapter must enforce all unique-key, transaction, and compare-and-set predicates durably; these validators alone do not provide idempotency or durability.
+
+No database schema, adapter, response-body storage, retention worker, or endpoint integration is implemented by this contract.
