@@ -36,8 +36,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: services/execution-runner/go.mod
-          cache: true
-          cache-dependency-path: services/execution-runner/go.sum
+          cache: false
 
       - name: Verify formatting
         run: |
