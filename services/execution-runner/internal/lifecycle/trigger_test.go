@@ -150,3 +150,26 @@ func TestTriggerArbiterConcurrentCaptureHasOnePrimaryAndOrderedSequences(t *test
 		}
 	}
 }
+
+func TestTriggerArbiterRejectsPreCreateAndUnanchoredTermination(t *testing.T) {
+	t.Parallel()
+
+	arbiter, err := NewTriggerArbiter("boot-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, state := range []State{StateRequested, StateValidating, StateQueued, StateTerminating} {
+		if _, err := arbiter.Capture(state, newTestTrigger("not-applicable-"+string(state), time.Second)); !errors.Is(err, ErrTriggerNotApplicable) {
+			t.Fatalf("Capture(%q) error = %v, want ErrTriggerNotApplicable", state, err)
+		}
+	}
+
+	primary, err := arbiter.Capture(StateCreating, newTestTrigger("valid-primary", 2*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if primary.Sequence != 1 || primary.Disposition != TriggerPrimary {
+		t.Fatalf("first valid trigger = %+v, want sequence 1 PRIMARY", primary)
+	}
+}
