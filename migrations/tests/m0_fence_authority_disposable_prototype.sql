@@ -236,7 +236,7 @@ CREATE FUNCTION m0_fence_authority_it.issue(
     p_expected_version bigint,
     p_target_instance_id text
 ) RETURNS bytea LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public, m0_fence_authority_it AS $issue$
+SET search_path = pg_catalog, m0_fence_authority_it, public AS $issue$
 DECLARE
     authority_row m0_fence_authority_it.host_authority%ROWTYPE;
     operation_row m0_fence_authority_it.issuances%ROWTYPE;
@@ -579,7 +579,7 @@ $acceptlow$;
 CREATE FUNCTION m0_fence_authority_it.revoke_host(
     p_host_id text, p_revocation_id text, p_reason text
 ) RETURNS text LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public, m0_fence_authority_it AS $revoke$
+SET search_path = pg_catalog, m0_fence_authority_it, public AS $revoke$
 DECLARE
     authority_row m0_fence_authority_it.host_authority%ROWTYPE;
 BEGIN
@@ -609,7 +609,7 @@ $revoke$;
 CREATE FUNCTION m0_fence_authority_it.publish_if_test_receipt_matches(
     p_host_id text, p_operation_id text
 ) RETURNS bytea LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public, m0_fence_authority_it AS $publish$
+SET search_path = pg_catalog, m0_fence_authority_it, public AS $publish$
 DECLARE
     intent_row m0_fence_authority_it.checkpoint_intents%ROWTYPE;
     response_value bytea;
@@ -697,7 +697,7 @@ CREATE FUNCTION m0_fence_authority_it.accept_and_checkpoint(
     p_target_instance_id text,
     p_epoch bigint
 ) RETURNS text LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public, m0_fence_authority_it AS $accept$
+SET search_path = pg_catalog, m0_fence_authority_it, public AS $accept$
 DECLARE
     accept_result text;
     event_row m0_fence_authority_it.acceptance_events%ROWTYPE;
