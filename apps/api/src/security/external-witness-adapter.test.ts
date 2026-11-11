@@ -13,7 +13,9 @@ import {
   WitnessScope,
   WitnessUnavailableError,
   ZERO_CHECKPOINT_DIGEST,
+  WitnessReceiptVerifier,
 } from "./external-witness-adapter";
+import { anchorCheckpoint } from "./witness-reconciliation";
 
 const scope: WitnessScope = { authorityId: "authority-test", hostId: "host-test" };
 
@@ -259,6 +261,81 @@ describe("provider-neutral external witness contract", () => {
     expect(outcomes.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(outcomes.filter((result) => result.status === "rejected")).toHaveLength(1);
     expect((await adapter.readLatest(scope))?.checkpoint.generation).toBe(3);
+  });
+
+  it("anchors a checkpoint and resolves an exact replay from the witness operation index", async () => {
+    const adapter = new InMemoryWitnessContractAdapter();
+    const verifier: WitnessReceiptVerifier = {
+      verify: async (record) => record.receipt.signature === "not-a-real-signature",
+    };
+    const first = checkpoint();
+    const input = {
+      ...inputFor(first, 0, ZERO_CHECKPOINT_DIGEST),
+      expectedWitnessId: "in-memory-contract-test-double",
+    };
+
+    const appended = await anchorCheckpoint(adapter, verifier, input);
+    expect(appended.status).toBe("ANCHORED");
+
+    const replay = await anchorCheckpoint(adapter, verifier, input);
+    expect(replay.status).toBe("ALREADY_ANCHORED");
+    expect(replay.record.receipt).toBe(appended.record.receipt);
+  });
+
+  it("reconciles a lost append acknowledgement without creating a second checkpoint", async () => {
+    const adapter = new InMemoryWitnessContractAdapter();
+    const verifier: WitnessReceiptVerifier = { verify: async () => true };
+    const first = checkpoint();
+    adapter.loseAcknowledgementOnce = true;
+
+    const result = await anchorCheckpoint(adapter, verifier, {
+      ...inputFor(first, 0, ZERO_CHECKPOINT_DIGEST),
+      expectedWitnessId: "in-memory-contract-test-double",
+    });
+
+    expect(result.status).toBe("ALREADY_ANCHORED");
+    expect((await adapter.readLatest(scope))?.checkpoint).toEqual(first);
+  });
+
+  it("fails closed when a prior receipt cannot be cryptographically verified", async () => {
+    const adapter = new InMemoryWitnessContractAdapter();
+    const first = checkpoint();
+    const input = {
+      ...inputFor(first, 0, ZERO_CHECKPOINT_DIGEST),
+      expectedWitnessId: "in-memory-contract-test-double",
+    };
+
+    await expect(anchorCheckpoint(adapter, { verify: async () => false }, input))
+      .rejects.toBeInstanceOf(WitnessConflictError);
+
+    const recovered = await anchorCheckpoint(
+      adapter,
+      { verify: async () => true },
+      input,
+    );
+    expect(recovered.status).toBe("ALREADY_ANCHORED");
+  });
+
+  it("rejects a new transition when the expected witness high-water is stale", async () => {
+    const adapter = new InMemoryWitnessContractAdapter();
+    const verifier: WitnessReceiptVerifier = { verify: async () => true };
+    const issued = checkpoint();
+    await anchorCheckpoint(adapter, verifier, {
+      ...inputFor(issued, 0, ZERO_CHECKPOINT_DIGEST),
+      expectedWitnessId: "in-memory-contract-test-double",
+    });
+
+    const accepted = checkpoint({
+      generation: 2,
+      phase: "ACCEPTED",
+      previousCheckpointDigest: issued.checkpointDigest,
+      checkpointDigest: "d".repeat(64),
+      recordVersion: 3,
+    });
+    await expect(anchorCheckpoint(adapter, verifier, {
+      ...inputFor(accepted, 0, ZERO_CHECKPOINT_DIGEST),
+      expectedWitnessId: "in-memory-contract-test-double",
+    })).rejects.toBeInstanceOf(WitnessConflictError);
   });
 
   it("fails closed when the witness is unavailable and treats revocation as terminal", async () => {
