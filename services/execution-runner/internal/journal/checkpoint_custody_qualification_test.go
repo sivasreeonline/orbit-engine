@@ -29,7 +29,7 @@ func custodyQualificationFixture() CheckpointCustodyQualificationManifest {
 		},
 	}
 	for _, scenario := range CheckpointCustodyQualificationCatalog() {
-		manifest.Scenarios = append(manifest.Scenarios, CheckpointCustodyScenarioEvidence{
+		result := CheckpointCustodyScenarioEvidence{
 			ScenarioID: scenario.ID, Status: EvidencePass, RunID: "run-" + scenario.ID,
 			Command:   "qualification-runner --scenario " + scenario.ID,
 			StartedAt: "2026-11-11T09:00:00Z", CompletedAt: "2026-11-11T09:01:00Z",
@@ -38,7 +38,15 @@ func custodyQualificationFixture() CheckpointCustodyQualificationManifest {
 				SHA256:    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 				MediaType: "application/json",
 			}},
-		})
+		}
+		if scenario.RequiresIndependentWitness {
+			result.IndependentWitnessEvidence = []CheckpointCustodyEvidenceReference{{
+				Path: "evidence/witness-" + scenario.ID + ".json",
+				SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+				MediaType: "application/json",
+			}}
+		}
+		manifest.Scenarios = append(manifest.Scenarios, result)
 	}
 	return manifest
 }
@@ -126,5 +134,28 @@ func TestCheckpointCustodyQualificationRequiresApprovedIndependentReview(t *test
 	}
 	if CheckpointCustodyQualificationReady(manifest) {
 		t.Fatal("pending review incorrectly marked ready")
+	}
+}
+
+func TestCheckpointCustodyQualificationRequiresIndependentWitnessEvidence(t *testing.T) {
+	t.Parallel()
+	manifest := custodyQualificationFixture()
+	for i := range manifest.Scenarios {
+		if manifest.Scenarios[i].ScenarioID == "CUSTODY-011" {
+			manifest.Scenarios[i].IndependentWitnessEvidence = nil
+			break
+		}
+	}
+	if err := ValidateCheckpointCustodyQualificationManifest(manifest); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("missing witness error = %v, want ErrCorrupt", err)
+	}
+}
+
+func TestCheckpointCustodyQualificationRejectsWindowsDrivePath(t *testing.T) {
+	t.Parallel()
+	manifest := custodyQualificationFixture()
+	manifest.Scenarios[0].Evidence[0].Path = "C:/outside/evidence.json"
+	if err := ValidateCheckpointCustodyQualificationManifest(manifest); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("Windows drive path error = %v, want ErrCorrupt", err)
 	}
 }
