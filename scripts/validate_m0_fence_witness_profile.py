@@ -188,8 +188,8 @@ def validate_trust_bundle_key_semantics(body: dict[str, Any]) -> None:
             raise ValueError("trust-bundle key validity interval is empty or reversed")
         if "retiredAt" in item:
             retired_at = datetime.fromisoformat(item["retiredAt"].replace("Z", "+00:00"))
-            if retired_at < not_before:
-                raise ValueError("trust-bundle key retirement precedes activation")
+            if retired_at < not_before or retired_at > not_after:
+                raise ValueError("trust-bundle key retirement is outside its validity interval")
 
     revocations = body["revocations"]
     revoked_ids = [item["keyId"] for item in revocations]
@@ -222,6 +222,8 @@ def verify_trust_bundle_envelope(
     pinned_roots: dict[str, bytes],
     expected_generation: int,
     expected_predecessor_digest: str,
+    expected_trust_domain_id: str,
+    expected_witness_id: str,
 ) -> str:
     body = envelope["body"]
     canonical_body = rfc8785.dumps(body)
@@ -243,6 +245,12 @@ def verify_trust_bundle_envelope(
         signature, TRUST_BUNDLE_PREFIX + canonical_body
     )
 
+    if body["profile"] != "sky-high-fence-witness-v1":
+        raise ValueError("trust-bundle profile mismatch")
+    if body["trustDomainId"] != expected_trust_domain_id:
+        raise ValueError("trust-bundle trust-domain substitution")
+    if body["witnessId"] != expected_witness_id:
+        raise ValueError("trust-bundle witness substitution")
     if body["generation"] != expected_generation + 1:
         raise ValueError("trust-bundle generation rollback or gap")
     if body["previousBundleDigest"] != expected_predecessor_digest:
@@ -303,12 +311,16 @@ def verify_trust_bundle_schema(
     first_digest = verify_trust_bundle_envelope(
         first, pinned_roots, expected_generation=0,
         expected_predecessor_digest=ZERO_DIGEST,
+        expected_trust_domain_id="test-trust-domain-vector-01",
+        expected_witness_id="witness-vector-01",
     )
     require(first_digest == trust_vector["generation1"]["bundleDigest"],
             "generation 1 digest did not match the published vector")
     second_digest = verify_trust_bundle_envelope(
         second, pinned_roots, expected_generation=1,
         expected_predecessor_digest=first_digest,
+        expected_trust_domain_id="test-trust-domain-vector-01",
+        expected_witness_id="witness-vector-01",
     )
     require(second_digest == trust_vector["generation2"]["bundleDigest"],
             "generation 2 digest did not match the published vector")
@@ -334,9 +346,18 @@ def verify_trust_bundle_schema(
             {**body, "generation": 2, "previousBundleDigest": "f" * 64},
             root_signer,
         ), 1, first_digest, pinned_roots),
+        ("trust-domain substitution", sign_trust_bundle(
+            {**body, "trustDomainId": "attacker-domain"}, root_signer
+        ), 0, ZERO_DIGEST, pinned_roots),
+        ("witness substitution", sign_trust_bundle(
+            {**body, "witnessId": "attacker-witness"}, root_signer
+        ), 0, ZERO_DIGEST, pinned_roots),
     ):
         try:
-            verify_trust_bundle_envelope(candidate, roots, generation, predecessor)
+            verify_trust_bundle_envelope(
+                candidate, roots, generation, predecessor,
+                "test-trust-domain-vector-01", "witness-vector-01"
+            )
         except (ValueError, InvalidSignature):
             pass
         else:
