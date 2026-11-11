@@ -54,6 +54,7 @@ type CheckpointCustodyScenarioEvidence struct {
 	StartedAt   string
 	CompletedAt string
 	Evidence    []CheckpointCustodyEvidenceReference
+	IndependentWitnessEvidence []CheckpointCustodyEvidenceReference
 }
 
 type CheckpointCustodyAdapterIdentity struct {
@@ -95,7 +96,7 @@ type CheckpointCustodyQualificationManifest struct {
 
 func validateCustodyEvidenceReference(reference CheckpointCustodyEvidenceReference) error {
 	if strings.TrimSpace(reference.Path) == "" || path.IsAbs(reference.Path) ||
-		strings.Contains(reference.Path, "\\") || strings.ContainsRune(reference.Path, 0) ||
+		strings.Contains(reference.Path, "\\") || hasWindowsCustodyDrivePrefix(reference.Path) || strings.ContainsRune(reference.Path, 0) ||
 		path.Clean(reference.Path) != reference.Path || reference.Path == "." ||
 		reference.Path == ".." || strings.HasPrefix(reference.Path, "../") {
 		return fmt.Errorf("%w: custody evidence path is unsafe", ErrCorrupt)
@@ -104,6 +105,10 @@ func validateCustodyEvidenceReference(reference CheckpointCustodyEvidenceReferen
 		return fmt.Errorf("%w: custody evidence digest or media type is invalid", ErrCorrupt)
 	}
 	return nil
+}
+
+func hasWindowsCustodyDrivePrefix(value string) bool {
+	return len(value) >= 2 && ((value[0] >= 'A' && value[0] <= 'Z') || (value[0] >= 'a' && value[0] <= 'z')) && value[1] == ':'
 }
 
 func ValidateCheckpointCustodyQualificationManifest(manifest CheckpointCustodyQualificationManifest) error {
@@ -128,12 +133,13 @@ func ValidateCheckpointCustodyQualificationManifest(manifest CheckpointCustodyQu
 		return fmt.Errorf("%w: custody qualification must contain exactly %d scenarios", ErrCorrupt, len(checkpointCustodyScenarios))
 	}
 	seen := make(map[string]struct{}, len(manifest.Scenarios))
-	expected := make(map[string]struct{}, len(checkpointCustodyScenarios))
+	expected := make(map[string]CheckpointCustodyScenario, len(checkpointCustodyScenarios))
 	for _, scenario := range checkpointCustodyScenarios {
-		expected[scenario.ID] = struct{}{}
+		expected[scenario.ID] = scenario
 	}
 	for _, result := range manifest.Scenarios {
-		if _, ok := expected[result.ScenarioID]; !ok {
+		scenario, ok := expected[result.ScenarioID]
+		if !ok {
 			return fmt.Errorf("%w: unknown custody scenario %q", ErrCorrupt, result.ScenarioID)
 		}
 		if _, ok := seen[result.ScenarioID]; ok {
@@ -160,6 +166,14 @@ func ValidateCheckpointCustodyQualificationManifest(manifest CheckpointCustodyQu
 			return fmt.Errorf("%w: custody scenario has no evidence", ErrCorrupt)
 		}
 		for _, reference := range result.Evidence {
+			if err := validateCustodyEvidenceReference(reference); err != nil {
+				return err
+			}
+		}
+		if scenario.RequiresIndependentWitness && len(result.IndependentWitnessEvidence) == 0 {
+			return fmt.Errorf("%w: custody scenario %s requires independent witness evidence", ErrCorrupt, result.ScenarioID)
+		}
+		for _, reference := range result.IndependentWitnessEvidence {
 			if err := validateCustodyEvidenceReference(reference); err != nil {
 				return err
 			}
