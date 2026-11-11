@@ -144,6 +144,19 @@ def verify_vector(
     }
 
 
+def validate_trust_bundle_key_semantics(body: dict[str, Any]) -> None:
+    keys = body["keys"]
+    key_ids = [item["keyId"] for item in keys]
+    if len(key_ids) != len(set(key_ids)):
+        raise ValueError("duplicate trust-bundle keyId")
+    for item in keys:
+        raw_key = decode_canonical_base64url(item["publicKeyBase64Url"])
+        if len(raw_key) != 32:
+            raise ValueError("Ed25519 public key must be 32 bytes")
+        if hashlib.sha256(raw_key).hexdigest() != item["keyId"]:
+            raise ValueError("trust-bundle keyId does not fingerprint its public key")
+
+
 def verify_trust_bundle_schema(
     validator: Draft202012Validator, key_material: dict[str, str]
 ) -> None:
@@ -174,25 +187,25 @@ def verify_trust_bundle_schema(
     }
     errors = list(validator.iter_errors(envelope))
     require(not errors, f"trust bundle fixture failed schema: {errors[:1]}")
+    validate_trust_bundle_key_semantics(body)
 
     duplicate_ids = json.loads(json.dumps(envelope))
     duplicate_ids["body"]["keys"].append(dict(key))
-    ids = [item["keyId"] for item in duplicate_ids["body"]["keys"]]
-    require(len(ids) != len(set(ids)), "duplicate-key fixture did not contain duplicate IDs")
-    require(
-        len({item["keyId"] for item in duplicate_ids["body"]["keys"]})
-        != len(duplicate_ids["body"]["keys"]),
-        "duplicate key IDs must be rejected by semantic conformance checks",
-    )
+    try:
+        validate_trust_bundle_key_semantics(duplicate_ids["body"])
+    except ValueError as error:
+        require("duplicate" in str(error), "duplicate-key rejection had an unexpected reason")
+    else:
+        raise AssertionError("duplicate trust-bundle key IDs were accepted")
 
     wrong_fingerprint = json.loads(json.dumps(envelope))
     wrong_fingerprint["body"]["keys"][0]["keyId"] = "f" * 64
-    raw_key = decode_canonical_base64url(
-        wrong_fingerprint["body"]["keys"][0]["publicKeyBase64Url"]
-    )
-    require(hashlib.sha256(raw_key).hexdigest() !=
-            wrong_fingerprint["body"]["keys"][0]["keyId"],
-            "wrong-fingerprint fixture unexpectedly matches")
+    try:
+        validate_trust_bundle_key_semantics(wrong_fingerprint["body"])
+    except ValueError as error:
+        require("fingerprint" in str(error), "fingerprint rejection had an unexpected reason")
+    else:
+        raise AssertionError("incorrect trust-bundle key fingerprint was accepted")
 
 
 def main() -> None:
