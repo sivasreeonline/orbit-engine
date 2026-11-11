@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -207,8 +208,14 @@ func VerifyCheckpointCustodyEvidence(
 	// independently configured reviewer key. JSON input itself is not signed;
 	// the signature covers the deterministic bytes below.
 	var signatureEnvelope custodyDetachedSignature
-	if err := json.Unmarshal(attestationBytes, &signatureEnvelope); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(attestationBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&signatureEnvelope); err != nil {
 		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review signature envelope is invalid", ErrCorrupt)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return CheckpointCustodyEvidenceVerificationReport{}, fmt.Errorf("%w: review signature envelope has trailing data", ErrCorrupt)
 	}
 	if signatureEnvelope.SchemaVersion != "1.0" || signatureEnvelope.Algorithm != "Ed25519" ||
 		signatureEnvelope.Reviewer != manifest.Review.ReviewerIdentity {
