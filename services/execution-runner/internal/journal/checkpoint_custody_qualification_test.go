@@ -22,20 +22,20 @@ func custodyQualificationFixture() CheckpointCustodyQualificationManifest {
 			Status: "APPROVED", ReviewerIdentity: "independent-reviewer",
 			ReviewedAt: "2026-11-11T10:00:00Z",
 			Attestation: CheckpointCustodyEvidenceReference{
-				Path: "evidence/review-attestation.json",
-				SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				Path:      "evidence/review-attestation.json",
+				SHA256:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				MediaType: "application/json",
 			},
 		},
 	}
 	for _, scenario := range CheckpointCustodyQualificationCatalog() {
 		manifest.Scenarios = append(manifest.Scenarios, CheckpointCustodyScenarioEvidence{
-			ScenarioID: scenario.ID, Status: EvidenceStatusPass, RunID: "run-"+scenario.ID,
-			Command: "qualification-runner --scenario "+scenario.ID,
+			ScenarioID: scenario.ID, Status: EvidenceStatusPass, RunID: "run-" + scenario.ID,
+			Command:   "qualification-runner --scenario " + scenario.ID,
 			StartedAt: "2026-11-11T09:00:00Z", CompletedAt: "2026-11-11T09:01:00Z",
 			Evidence: []CheckpointCustodyEvidenceReference{{
-				Path: "evidence/"+scenario.ID+".json",
-				SHA256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+				Path:      "evidence/" + scenario.ID + ".json",
+				SHA256:    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 				MediaType: "application/json",
 			}},
 		})
