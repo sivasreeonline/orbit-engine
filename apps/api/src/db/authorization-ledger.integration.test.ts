@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { connect as connectTcp, createServer, type Socket } from "node:net";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -49,6 +50,94 @@ async function appendRunEvent(
        encode(digest(convert_to(concat_ws('|', $1::text, $2::integer::text, $4::text, $5::text, $6::text, $3::text), 'UTF8'), 'sha256'), 'hex'))`,
     [authId, eventSequence, previousDigest, requestId, eventType, requestDigest],
   );
+}
+
+
+async function createCommitAckDroppingProxy(): Promise<{
+  connectionString: string;
+  dropped: Promise<void>;
+  close: () => Promise<void>;
+}> {
+  if (!databaseUrl) throw new Error("DATABASE_URL is required for the commit-ack proxy test");
+  const target = new URL(databaseUrl);
+  const sockets = new Set<Socket>();
+  let settled = false;
+  let resolveDropped!: () => void;
+  let rejectDropped!: (error: Error) => void;
+  const dropped = new Promise<void>((resolve, reject) => {
+    resolveDropped = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    rejectDropped = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+  });
+  void dropped.catch(() => undefined);
+
+  const server = createServer((clientSocket) => {
+    sockets.add(clientSocket);
+    const upstream = connectTcp({
+      host: target.hostname,
+      port: Number(target.port || 5432),
+    });
+    sockets.add(upstream);
+    let commitQueryForwarded = false;
+
+    clientSocket.on("data", (chunk) => {
+      if (chunk.includes(Buffer.from("COMMIT\\0", "utf8"))) commitQueryForwarded = true;
+      if (!upstream.destroyed) upstream.write(chunk);
+    });
+
+    upstream.on("data", (chunk) => {
+      // PostgreSQL CommandComplete carries the command tag "COMMIT". The
+      // server emits it only after the transaction has committed.
+      if (commitQueryForwarded && chunk.includes(Buffer.from("COMMIT\\0", "utf8"))) {
+        resolveDropped();
+        clientSocket.destroy();
+        upstream.destroy();
+        return;
+      }
+      if (!clientSocket.destroyed) clientSocket.write(chunk);
+    });
+
+    clientSocket.on("close", () => {
+      sockets.delete(clientSocket);
+      if (!upstream.destroyed) upstream.destroy();
+    });
+    upstream.on("close", () => sockets.delete(upstream));
+    clientSocket.on("error", (error) => rejectDropped(error));
+    upstream.on("error", (error) => {
+      rejectDropped(error);
+      clientSocket.destroy();
+    });
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw new Error("Could not obtain the commit-ack proxy listening port");
+  }
+  const proxyUrl = new URL(databaseUrl);
+  proxyUrl.hostname = "127.0.0.1";
+  proxyUrl.port = String(address.port);
+  proxyUrl.searchParams.set("sslmode", "disable");
+
+  return {
+    connectionString: proxyUrl.toString(),
+    dropped,
+    close: async () => {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
 }
 
 type ClaimResult = "CLAIMED" | "REPLAYED" | "CONFLICT" | "BUDGET_EXHAUSTED" | "REVOKED";
@@ -265,6 +354,54 @@ describe.skipIf(!databaseUrl)("Authorization ledger PostgreSQL integration (disp
       [authId],
     );
     expect(rows.rows[0]).toEqual({ claims: 1, events: 1 });
+  });
+
+
+  it("recovers a committed claim after a TCP proxy drops the COMMIT acknowledgement", async () => {
+    const setup = await connect();
+    await seedAuthorization(setup, 2);
+    const proxy = await createCommitAckDroppingProxy();
+    const writer = new Client({
+      connectionString: proxy.connectionString,
+      connectionTimeoutMillis: 5_000,
+      application_name: "orbit-authorization-commit-ack-fault-test",
+    });
+
+    try {
+      await writer.connect();
+      await writer.query(`SET search_path TO "${schemaName}", public`);
+      await writer.query(`SET ROLE "${roleName}"`);
+      await writer.query("BEGIN");
+      await writer.query(
+        "SELECT authorization_id FROM authorization_state WHERE authorization_id = $1 FOR UPDATE",
+        [authId],
+      );
+      await writer.query(
+        "INSERT INTO authorization_run_claims (authorization_id, claim_id, request_id, request_digest, claim_sequence) VALUES ($1, $2, 'tcp-lost-ack-request', 'sha256:tcp-lost-ack', 1)",
+        [authId, randomUUID()],
+      );
+      await appendRunEvent(writer, "tcp-lost-ack-request", "CLAIMED", "sha256:tcp-lost-ack");
+      await writer.query(
+        "UPDATE authorization_state SET consumed_runs = consumed_runs + 1, state_version = state_version + 1 WHERE authorization_id = $1",
+        [authId],
+      );
+
+      await expect(writer.query("COMMIT")).rejects.toBeDefined();
+      await proxy.dropped;
+    } finally {
+      await writer.end().catch(() => undefined);
+      await proxy.close();
+    }
+
+    const persisted = await setup.query(
+      "SELECT s.consumed_runs, (SELECT count(*)::int FROM authorization_run_claims WHERE authorization_id = $1) AS claims, (SELECT count(*)::int FROM authorization_run_events WHERE authorization_id = $1) AS events FROM authorization_state s WHERE s.authorization_id = $1",
+      [authId],
+    );
+    expect(persisted.rows[0]).toEqual({ consumed_runs: 1, claims: 1, events: 1 });
+
+    const retry = await connect(true);
+    expect(await claim(retry, "tcp-lost-ack-request", "sha256:tcp-lost-ack")).toBe("REPLAYED");
+    expect(await claim(retry, "tcp-lost-ack-request", "sha256:changed")).toBe("CONFLICT");
   });
 
   it("rolls back claim, event and counter together before commit", async () => {
