@@ -97,6 +97,23 @@ CREATE TABLE m0_fence_authority_it.simulated_witness_receipts (
     UNIQUE (host_id, operation_id)
 );
 
+-- Same-database test double for an independently retained witness
+-- high-water record. It is logically separate in this fixture, not an actual
+-- independent failure domain or anti-rollback service.
+CREATE TABLE m0_fence_authority_it.simulated_external_witness_high_water (
+    host_id text NOT NULL,
+    generation bigint NOT NULL,
+    operation_id text NOT NULL,
+    checkpoint_digest text NOT NULL,
+    authority_state_digest text NOT NULL,
+    epoch bigint NOT NULL,
+    record_version bigint NOT NULL,
+    provider_instance_id text NOT NULL,
+    pending_operation_id text,
+    PRIMARY KEY (host_id, generation),
+    UNIQUE (host_id, checkpoint_digest)
+);
+
 CREATE FUNCTION m0_fence_authority_it.reject_immutable_mutation()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -104,6 +121,10 @@ BEGIN
         USING ERRCODE = '55000';
 END;
 $$;
+
+CREATE TRIGGER simulated_external_witness_immutable
+BEFORE UPDATE OR DELETE ON m0_fence_authority_it.simulated_external_witness_high_water
+FOR EACH ROW EXECUTE FUNCTION m0_fence_authority_it.reject_immutable_mutation();
 
 CREATE TRIGGER issuance_immutable
 BEFORE UPDATE OR DELETE ON m0_fence_authority_it.issuances
@@ -259,6 +280,35 @@ BEGIN
 
     IF authority_row.authority_status <> 'ACTIVE' THEN
         RAISE EXCEPTION 'authority is not active'
+            USING ERRCODE = '55000';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM m0_fence_authority_it.simulated_external_witness_high_water witness
+         WHERE witness.host_id = p_host_id
+           AND witness.generation = (
+               SELECT MAX(generation)
+                 FROM m0_fence_authority_it.simulated_external_witness_high_water
+                WHERE host_id = p_host_id
+           )
+           AND (
+               authority_row.epoch <> witness.epoch
+               OR authority_row.record_version <> witness.record_version
+               OR authority_row.provider_instance_id <> witness.provider_instance_id
+               OR authority_row.pending_operation_id IS DISTINCT FROM witness.pending_operation_id
+               OR NOT EXISTS (
+                   SELECT 1 FROM m0_fence_authority_it.checkpoint_intents intent
+                    WHERE intent.host_id = witness.host_id
+                      AND intent.checkpoint_digest = witness.checkpoint_digest
+                   UNION ALL
+                   SELECT 1 FROM m0_fence_authority_it.acceptance_checkpoint_intents intent
+                    WHERE intent.host_id = witness.host_id
+                      AND intent.checkpoint_digest = witness.checkpoint_digest
+               )
+           )
+    ) THEN
+        RAISE EXCEPTION 'local authority differs from retained witness high-water checkpoint'
             USING ERRCODE = '55000';
     END IF;
 
@@ -1494,6 +1544,90 @@ BEGIN
     END;
 END;
 $$;
+
+-- Stale local authority restore against a separately retained high-water
+-- checkpoint. The witness table is still inside this disposable DB and is
+-- only a test double; it does not prove independent storage durability.
+INSERT INTO m0_fence_authority_it.host_authority (
+    host_id, epoch, provider_instance_id, record_version
+) VALUES ('host-stale-restore', 80, 'vm-restore-predecessor', 1);
+
+SELECT m0_fence_authority_it.issue(
+    'host-stale-restore', 'op-stale-restore', 'nonce-stale-restore',
+    'request-stale-restore', 1, 'vm-restore-successor'
+);
+
+INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
+    host_id, generation, operation_id, authority_state_digest, checkpoint_digest
+)
+SELECT host_id, generation, operation_id, authority_state_digest, checkpoint_digest
+  FROM m0_fence_authority_it.checkpoint_intents
+ WHERE host_id = 'host-stale-restore';
+
+INSERT INTO m0_fence_authority_it.simulated_external_witness_high_water (
+    host_id, generation, operation_id, checkpoint_digest, authority_state_digest,
+    epoch, record_version, provider_instance_id, pending_operation_id
+)
+SELECT intent.host_id, intent.generation, intent.operation_id,
+       intent.checkpoint_digest, intent.authority_state_digest,
+       authority.epoch, authority.record_version,
+       authority.provider_instance_id, authority.pending_operation_id
+  FROM m0_fence_authority_it.checkpoint_intents intent
+  JOIN m0_fence_authority_it.host_authority authority USING (host_id)
+ WHERE intent.host_id = 'host-stale-restore';
+
+-- Simulate restoring the local authority snapshot to the pre-issuance state.
+-- The retained high-water test double is deliberately not rolled back.
+ALTER TABLE m0_fence_authority_it.checkpoint_intents DISABLE TRIGGER checkpoint_intent_immutable;
+DELETE FROM m0_fence_authority_it.checkpoint_intents
+ WHERE host_id = 'host-stale-restore';
+ALTER TABLE m0_fence_authority_it.checkpoint_intents ENABLE TRIGGER checkpoint_intent_immutable;
+
+ALTER TABLE m0_fence_authority_it.nonce_index DISABLE TRIGGER nonce_index_immutable;
+DELETE FROM m0_fence_authority_it.nonce_index WHERE host_id = 'host-stale-restore';
+ALTER TABLE m0_fence_authority_it.nonce_index ENABLE TRIGGER nonce_index_immutable;
+
+ALTER TABLE m0_fence_authority_it.operation_index DISABLE TRIGGER operation_index_immutable;
+DELETE FROM m0_fence_authority_it.operation_index WHERE host_id = 'host-stale-restore';
+ALTER TABLE m0_fence_authority_it.operation_index ENABLE TRIGGER operation_index_immutable;
+
+ALTER TABLE m0_fence_authority_it.issuances DISABLE TRIGGER issuance_immutable;
+DELETE FROM m0_fence_authority_it.issuances WHERE host_id = 'host-stale-restore';
+ALTER TABLE m0_fence_authority_it.issuances ENABLE TRIGGER issuance_immutable;
+
+DELETE FROM m0_fence_authority_it.simulated_witness_receipts
+ WHERE host_id = 'host-stale-restore';
+
+UPDATE m0_fence_authority_it.host_authority
+   SET epoch = 80,
+       provider_instance_id = 'vm-restore-predecessor',
+       record_version = 1,
+       pending_operation_id = NULL
+ WHERE host_id = 'host-stale-restore';
+
+DO $restore$
+BEGIN
+    BEGIN
+        PERFORM m0_fence_authority_it.issue(
+            'host-stale-restore', 'op-after-stale-restore',
+            'nonce-after-stale-restore', 'request-after-stale-restore',
+            1, 'vm-forged-successor'
+        );
+        RAISE EXCEPTION 'issuance from stale restored authority unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+
+    IF (SELECT epoch FROM m0_fence_authority_it.host_authority
+         WHERE host_id = 'host-stale-restore') <> 80
+       OR EXISTS (SELECT 1 FROM m0_fence_authority_it.issuances
+                   WHERE host_id = 'host-stale-restore')
+       OR (SELECT epoch FROM m0_fence_authority_it.simulated_external_witness_high_water
+            WHERE host_id = 'host-stale-restore') <> 81 THEN
+        RAISE EXCEPTION 'stale restore did not remain quarantined against retained high-water';
+    END IF;
+END;
+$restore$;
 
 DROP SCHEMA m0_fence_authority_it CASCADE;
 DROP ROLE m0_fence_authority_app;
