@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sivasreeonline.github.io/orbit-engine/schemas/m0-checkpoint-custody-review-attestation-payload.schema.json",
+  "title": "M0 Checkpoint Custody Reviewer Signed Payload",
+  "description": "Canonical payload signed by the final custody reviewer. The key ID is part of the signed bytes to prevent key-ID alias substitution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "qualification_id", "manifest_digest", "reviewer", "reviewer_key_id", "reviewed_at", "decision"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "qualification_id": {"type": "string", "minLength": 1},
+    "manifest_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "reviewer": {"type": "string", "minLength": 1},
+    "reviewer_key_id": {"type": "string", "minLength": 1},
+    "reviewed_at": {"type": "string", "format": "date-time"},
+    "decision": {"type": "string", "minLength": 1}
+  }
+}
