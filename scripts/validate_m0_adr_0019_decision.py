@@ -151,6 +151,11 @@ def validate_record(record, validator):
                 if expected_class == "host":
                     add_error(errors, not any(ref.get("evidence_type") in HOST_EVIDENCE_TYPES for ref in refs),
                               f"{cid}/{control_id}: host control cannot pass on design-only evidence")
+                    if control_id == "FENCE-001":
+                        fence_types = {ref.get("evidence_type") for ref in refs}
+                        required_fence_types = {"host-configuration", "fault-injection", "operator-record"}
+                        add_error(errors, not required_fence_types.issubset(fence_types),
+                                  "FENCE-001: pass requires host configuration, provider-fence fault-injection and operator-record evidence")
                 elif expected_class == "design":
                     add_error(errors, not any(ref.get("evidence_type") in DESIGN_EVIDENCE_TYPES for ref in refs),
                               f"{cid}/{control_id}: design control requires design/architecture evidence")
@@ -443,6 +448,7 @@ def main():
     case=deepcopy(template); case["candidate_assessments"][1]["configuration"]["runtime_integration_mode"]="containerd-rootful-supervisor"; cases.append(("rootless using rootful mode",case))
     case=deepcopy(template); case["candidate_assessments"][1]["configuration"]["runtime_integration_mode"]="runsc-rootless-cli"; cases.append(("runsc CLI rootless conflation",case))
     case=deepcopy(template); case["candidate_assessments"][0]["design_findings"].pop(); cases.append(("missing security control",case))
+    case=deepcopy(template); case["candidate_assessments"][0]["design_findings"]=[f for f in case["candidate_assessments"][0]["design_findings"] if f["control_id"]!="FENCE-001"]; cases.append(("missing FENCE-001 control",case))
     case=deepcopy(template); case["candidate_assessments"][0]["design_findings"][-1]["control_id"]=case["candidate_assessments"][0]["design_findings"][0]["control_id"]; cases.append(("duplicate security control",case))
     case=deepcopy(template); case["candidate_assessments"][0]["design_findings"][0]["result"]="pass"; cases.append(("pass without evidence",case))
     case=deepcopy(template); case["candidate_assessments"][0]["assessment_status"]="host-qualified"; cases.append(("host-qualified without report",case))
@@ -488,6 +494,8 @@ def main():
         finding.update(result="pass",verification_method="Synthetic test",finding="Synthetic only",severity="none")
         types=["design-document"] if finding["evidence_class"]=="design" else (
             ["design-document","host-configuration"] if finding["evidence_class"]=="mixed" else ["host-configuration"])
+        if finding["control_id"] == "FENCE-001":
+            types = ["host-configuration", "fault-injection", "operator-record"]
         finding["evidence_refs"]=[{
             "reference_id":"synthetic-"+finding["control_id"]+"-"+et,"object_version":"v1","sha256":"2"*64,
             "byte_count":1,"evidence_root_id":"synthetic-root","evidence_type":et,
@@ -629,6 +637,8 @@ def main():
             evidence_types = ["host-configuration"]
         else:
             evidence_types = ["design-document", "host-configuration"]
+        if finding["control_id"] == "FENCE-001":
+            evidence_types = ["host-configuration", "fault-injection", "operator-record"]
         finding["evidence_refs"] = [{
             "reference_id":"synthetic-rootless-"+finding["control_id"]+"-"+evidence_type,
             "object_version":"v1", "sha256":"a"*64, "byte_count":1,
