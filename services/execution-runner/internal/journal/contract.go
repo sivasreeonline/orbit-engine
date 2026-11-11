@@ -245,6 +245,7 @@ type Transaction interface {
 	CommitTerminal(command TerminalCommitCommand) error
 	InsertOperation(record operations.Record) error
 	ClaimIdempotencyKey(record idempotency.Record) (idempotency.Disposition, idempotency.Record, error)
+	CommitIdempotencyResponse(command idempotency.CommitResponseDescriptorCommand) (idempotency.Record, error)
 	PruneIdempotencyResponse(command idempotency.PruneResponseCommand) (idempotency.Record, error)
 	CompareAndSwapOperation(command operations.TransitionCommand) (operations.Record, error)
 }
