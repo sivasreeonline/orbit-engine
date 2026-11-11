@@ -49,6 +49,14 @@ func custodyQualificationFixture() CheckpointCustodyQualificationManifest {
 				SHA256:    witnessDigest,
 				MediaType: "application/json",
 			}}
+			attestationDigest := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+			if scenario.ID == "CUSTODY-012" {
+				attestationDigest = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+			}
+			result.IndependentWitnessAttestation = CheckpointCustodyEvidenceReference{
+				Path: "evidence/witness-attestation-" + scenario.ID + ".json",
+				SHA256: attestationDigest, MediaType: "application/json",
+			}
 		}
 		manifest.Scenarios = append(manifest.Scenarios, result)
 	}
