@@ -25,8 +25,8 @@ SECURITY_PATH = ROOT / "docs/security/m0-sandbox-security-review-packet.md"
 QUALIFICATION_PATH = ROOT / "docs/specifications/m0-host-and-journal-qualification-protocol.md"
 CHECKLIST_PATH = ROOT / "docs/security/m0-independent-security-review-checklist.md"
 
-CONTROL_CLASSES = {"ARCH-001":"design","ARCH-002":"design","AUTH-001":"host","AUTH-002":"host","AUTH-003":"mixed","API-001":"design","PRIV-001":"host","PRIV-002":"host","RUNTIME-001":"host","RUNTIME-002":"host","OCI-001":"host","NET-001":"host","NET-002":"host","CGROUP-001":"host","FS-001":"host","OUTPUT-001":"host","LIFE-001":"mixed","LIFE-002":"host","LIFE-003":"host","CLOCK-001":"host","CLOCK-002":"host","JOURNAL-001":"host","JOURNAL-002":"host","JOURNAL-003":"host","WATCH-001":"host","WATCH-002":"host","WATCH-003":"host","EVID-001":"mixed","EVID-002":"host","SUPPLY-001":"mixed","OPS-001":"mixed","OPS-002":"design"}
-CONTROL_IDS = ["ARCH-001","ARCH-002","AUTH-001","AUTH-002","AUTH-003","API-001","PRIV-001","PRIV-002","RUNTIME-001","RUNTIME-002","OCI-001","NET-001","NET-002","CGROUP-001","FS-001","OUTPUT-001","LIFE-001","LIFE-002","LIFE-003","CLOCK-001","CLOCK-002","JOURNAL-001","JOURNAL-002","JOURNAL-003","WATCH-001","WATCH-002","WATCH-003","EVID-001","EVID-002","SUPPLY-001","OPS-001","OPS-002"]
+CONTROL_CLASSES = {"ARCH-001":"design","ARCH-002":"design","AUTH-001":"host","AUTH-002":"host","AUTH-003":"mixed","API-001":"design","PRIV-001":"host","PRIV-002":"host","RUNTIME-001":"host","RUNTIME-002":"host","OCI-001":"host","NET-001":"host","NET-002":"host","CGROUP-001":"host","FS-001":"host","OUTPUT-001":"host","LIFE-001":"mixed","LIFE-002":"host","LIFE-003":"host","CLOCK-001":"host","CLOCK-002":"host","FENCE-001":"host","JOURNAL-001":"host","JOURNAL-002":"host","JOURNAL-003":"host","WATCH-001":"host","WATCH-002":"host","WATCH-003":"host","EVID-001":"mixed","EVID-002":"host","SUPPLY-001":"mixed","OPS-001":"mixed","OPS-002":"design"}
+CONTROL_IDS = ["ARCH-001","ARCH-002","AUTH-001","AUTH-002","AUTH-003","API-001","PRIV-001","PRIV-002","RUNTIME-001","RUNTIME-002","OCI-001","NET-001","NET-002","CGROUP-001","FS-001","OUTPUT-001","LIFE-001","LIFE-002","LIFE-003","CLOCK-001","CLOCK-002","FENCE-001","JOURNAL-001","JOURNAL-002","JOURNAL-003","WATCH-001","WATCH-002","WATCH-003","EVID-001","EVID-002","SUPPLY-001","OPS-001","OPS-002"]
 TEST_IDS = ["HST-001","HST-002","HST-003","HST-004","HST-005","AUTH-001","RUN-001","CG-001","NET-001","NET-002","FS-001","OUT-001","WDG-001","WDG-002","WDG-003","CLK-001","CLK-002","EVID-001","JRN-001","JRN-002","JRN-003","JRN-004","JRN-005","JRN-006","JRN-007","JRN-008","JRN-009","JRN-010","JRN-011","JRN-012","JRN-013","JRN-014","JRN-015"]
 ROOTLESS_TEST_IDS = ["RLS-001", "RLS-002", "RLS-003", "RLS-004"]
 AUTH_FLAGS = ["privileged_implementation_authorized", "phase_a_authorized", "phase_b_authorized",
@@ -126,7 +126,7 @@ def validate_record(record, validator):
         findings = candidate.get("design_findings", [])
         finding_ids = [finding.get("control_id") for finding in findings]
         add_error(errors, len(finding_ids) != len(set(finding_ids)), f"{cid}: duplicate security control IDs")
-        add_error(errors, set(finding_ids) != set(CONTROL_IDS), f"{cid}: all 32 controls must appear exactly once")
+        add_error(errors, set(finding_ids) != set(CONTROL_IDS), f"{cid}: all 33 controls must appear exactly once")
         for finding in findings:
             control_id = finding.get("control_id")
             expected_class = CONTROL_CLASSES.get(control_id)
@@ -260,7 +260,7 @@ def validate_record(record, validator):
                               qualification.get("rootless_profile_digest") is not None,
                               f"{cid}: rootful qualification cannot carry rootless profile identity")
                 add_error(errors, any(f.get("result") != "pass" for f in findings),
-                          f"{cid}: host-qualified requires all 32 security controls to pass")
+                          f"{cid}: host-qualified requires all 33 security controls to pass")
                 try:
                     reviewed = datetime.fromisoformat(qualification["reviewed_at"].replace("Z", "+00:00"))
                     expires = datetime.fromisoformat(qualification["expires_at"].replace("Z", "+00:00"))
@@ -433,7 +433,7 @@ def main():
         raise AssertionError("ADR-0019 must remain proposed pending actual review")
     print("PASS  blank ADR decision record is pending, unassigned and non-authorizing")
     print("PASS  both candidate definitions use the exact allowed integration modes")
-    print("PASS  both candidates include the same 32 security controls")
+    print("PASS  both candidates include the same 33 security controls")
     print("PASS  decision dossier maps all 33 host qualification tests")
     print("PASS  ADR, security packet, qualification protocol and checklist link the dossier")
 
