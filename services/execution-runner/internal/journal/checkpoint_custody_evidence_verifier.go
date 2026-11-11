@@ -155,6 +155,10 @@ type custodyWitnessAttestation struct {
 	QualificationID   string   `json:"qualification_id"`
 	ScenarioID        string   `json:"scenario_id"`
 	RunID             string   `json:"run_id"`
+	ScenarioStatus    string   `json:"scenario_status"`
+	Command           string   `json:"command"`
+	StartedAt         string   `json:"started_at"`
+	CompletedAt       string   `json:"completed_at"`
 	WitnessPrincipal  string   `json:"witness_principal"`
 	WitnessRole       string   `json:"witness_role"`
 	WitnessKeyID      string   `json:"witness_key_id"`
@@ -325,6 +329,8 @@ func verifyCustodyWitnessAttestation(
 		attestation.SchemaVersion != "1.0" || attestation.WitnessRole != CheckpointCustodyWitnessRole ||
 		attestation.Decision != "ATTESTED" || attestation.QualificationID != manifest.QualificationID ||
 		attestation.ScenarioID != scenario.ScenarioID || attestation.RunID != scenario.RunID ||
+		attestation.ScenarioStatus != string(scenario.Status) || attestation.Command != scenario.Command ||
+		attestation.StartedAt != scenario.StartedAt || attestation.CompletedAt != scenario.CompletedAt ||
 		strings.TrimSpace(attestation.WitnessPrincipal) == "" ||
 		attestation.WitnessPrincipal == manifest.Review.ReviewerIdentity {
 		return fmt.Errorf("%w: witness attestation identity, role, or scenario binding is invalid", ErrCorrupt)
