@@ -351,7 +351,7 @@ CREATE FUNCTION m0_fence_authority_it.issue_then_pause(
     p_request_digest text,
     p_expected_version bigint,
     p_target_instance_id text
-) RETURNS bytea LANGUAGE plpgsql AS $
+) RETURNS bytea LANGUAGE plpgsql AS $$
 DECLARE
     response_value bytea;
 BEGIN
@@ -364,7 +364,7 @@ BEGIN
     PERFORM pg_sleep(30);
     RETURN response_value;
 END;
-$;
+$$;
 
 CREATE FUNCTION m0_fence_authority_it.accept_exact_response(
     p_host_id text,
@@ -724,7 +724,7 @@ $$;
 -- Terminate a separate PostgreSQL backend after it has written the
 -- issuance inside an open statement transaction but before that statement
 -- returns/commits. PostgreSQL recovery must expose none of those writes.
-DO $
+DO $$
 DECLARE
     backend_pid integer;
     ignored_result text;
