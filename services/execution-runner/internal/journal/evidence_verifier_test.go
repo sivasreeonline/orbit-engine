@@ -80,8 +80,7 @@ func TestVerifyQualificationEvidenceRejectsUntrustedReviewer(t *testing.T) {
 
 func TestVerifyQualificationEvidenceRejectsImplementerAsReviewer(t *testing.T) {
 	manifest, evidence, policy, now := signedFixture(t)
-	policy.TrustedReviewerKeys[0].Principal = policy.ImplementerIdentity
-	manifest.Review.ReviewerIdentity = policy.ImplementerIdentity
+	policy.ImplementerIdentity = manifest.Review.ReviewerIdentity
 	if _, err := VerifyQualificationEvidence(manifest, evidence, policy, now); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("error = %v, want ErrCorrupt", err)
 	}
