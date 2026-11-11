@@ -125,7 +125,7 @@ class Authority:
 
         if expected_version != self.version:
             raise Conflict("compare-and-swap record version mismatch")
-        if self.pending is not None:
+        if self.pending is not None and not self.pending["accepted"]:
             raise Denied("a successor is already issued and not durably accepted")
         if not synthetic_fence_confirmed:
             raise Denied("predecessor fence is not confirmed")
