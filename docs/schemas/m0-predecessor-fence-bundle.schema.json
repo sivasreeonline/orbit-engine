@@ -67,7 +67,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["provider_instance_id", "incarnation_epoch", "relationship", "fence_method", "fence_state", "fence_observed_at", "fence_attestation_ref", "fence_attestation_sha256"],
+        "required": ["provider_instance_id", "incarnation_epoch", "relationship", "fence_method", "fence_state", "fence_observed_at", "fence_attestation_ref", "fence_attestation_object_version", "fence_attestation_sha256"],
         "properties": {
           "provider_instance_id": {"type": "string", "minLength": 1, "maxLength": 256},
           "incarnation_epoch": {"type": "integer", "minimum": 1},
@@ -76,6 +76,7 @@
           "fence_state": {"const": "FENCED"},
           "fence_observed_at": {"type": "string", "format": "date-time"},
           "fence_attestation_ref": {"type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://.+"},
+          "fence_attestation_object_version": {"type": "string", "minLength": 1, "maxLength": 256},
           "fence_attestation_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
         }
       }
