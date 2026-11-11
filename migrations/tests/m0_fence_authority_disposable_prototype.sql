@@ -1024,10 +1024,10 @@ BEGIN
     SELECT * INTO intent_row FROM m0_fence_authority_it.checkpoint_intents
      WHERE host_id = 'host-revoke-first' AND operation_id = 'op-revoke-first';
     INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
-        host_id, generation, operation_id, authority_state_digest
+        host_id, generation, operation_id, authority_state_digest, checkpoint_digest
     ) VALUES (
         intent_row.host_id, intent_row.generation, intent_row.operation_id,
-        intent_row.authority_state_digest
+        intent_row.authority_state_digest, intent_row.checkpoint_digest
     );
 
     PERFORM m0_fence_authority_it.revoke_host(
@@ -1062,9 +1062,9 @@ SELECT m0_fence_authority_it.issue(
 );
 
 INSERT INTO m0_fence_authority_it.simulated_witness_receipts (
-    host_id, generation, operation_id, authority_state_digest
+    host_id, generation, operation_id, authority_state_digest, checkpoint_digest
 )
-SELECT host_id, generation, operation_id, authority_state_digest
+SELECT host_id, generation, operation_id, authority_state_digest, checkpoint_digest
   FROM m0_fence_authority_it.checkpoint_intents
  WHERE host_id = 'host-index-corrupt' AND operation_id = 'op-index-corrupt';
 
