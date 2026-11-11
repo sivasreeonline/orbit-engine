@@ -362,11 +362,10 @@ func verifyCustodyWitnessAttestation(
 	sort.Strings(expectedDigests)
 	actualDigests := append([]string(nil), attestation.EvidenceSHA256...)
 	for _, digest := range actualDigests {
-		if !validAuditDigest(digest) {
-			return fmt.Errorf("%w: witness evidence digest is invalid", ErrCorrupt)
+		if !validAuditDigest(digest) || digest != strings.ToLower(digest) {
+			return fmt.Errorf("%w: witness evidence digest is invalid or non-canonical", ErrCorrupt)
 		}
 	}
-	sort.Strings(actualDigests)
 	if len(actualDigests) != len(expectedDigests) {
 		return fmt.Errorf("%w: witness attestation evidence set is incomplete", ErrCorrupt)
 	}
