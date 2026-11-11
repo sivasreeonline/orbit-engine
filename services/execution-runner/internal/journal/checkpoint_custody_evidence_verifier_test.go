@@ -107,6 +107,40 @@ func TestVerifyCheckpointCustodyEvidenceAcceptsBoundSignedBundle(t *testing.T) {
 	if report.ManifestDeclaresReady != CheckpointCustodyQualificationReady(manifest) {
 		t.Fatalf("manifest-declared readiness = %t, want %t", report.ManifestDeclaresReady, CheckpointCustodyQualificationReady(manifest))
 	}
+
+	// Re-hash a tampered signature envelope so this exercises signature
+	// verification rather than failing earlier on the artifact digest.
+	tamperedEvidence := make(custodyEvidenceMemory, len(evidence))
+	for name, data := range evidence {
+		tamperedEvidence[name] = append([]byte(nil), data...)
+	}
+	var tamperedEnvelope custodyDetachedSignature
+	if err := json.Unmarshal(tamperedEvidence[manifest.Review.Attestation.Path], &tamperedEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	tamperedEnvelope.Signature = base64.StdEncoding.EncodeToString(make([]byte, ed25519.SignatureSize))
+	tamperedBytes, err := json.Marshal(tamperedEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tamperedEvidence[manifest.Review.Attestation.Path] = tamperedBytes
+	tamperedManifest := manifest
+	tamperedManifest.Review.Attestation.SHA256 = custodyEvidenceDigest(tamperedBytes)
+	if _, err := VerifyCheckpointCustodyEvidence(tamperedManifest, tamperedEvidence, CheckpointCustodyEvidenceVerifierTrust{
+		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		MaxEvidenceAge: 24 * time.Hour,
+	}); err == nil {
+		t.Fatal("invalid detached signature was accepted")
+	}
+
+	if _, err := VerifyCheckpointCustodyEvidence(manifest, evidence, CheckpointCustodyEvidenceVerifierTrust{
+		ReviewerKeys: map[string]ed25519.PublicKey{manifest.Review.ReviewerIdentity: publicKey},
+		Now: time.Date(2026, 11, 11, 11, 0, 0, 0, time.UTC),
+		MaxEvidenceAge: 30 * time.Minute,
+	}); err == nil {
+		t.Fatal("stale review attestation was accepted")
+	}
 }
 
 func TestVerifyCheckpointCustodyEvidenceRejectsModifiedEvidence(t *testing.T) {
