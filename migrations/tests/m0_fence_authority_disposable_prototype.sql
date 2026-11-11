@@ -187,6 +187,22 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION m0_fence_authority_it.checkpoint_record_digest(
+    p_host_id text,
+    p_generation bigint,
+    p_phase text,
+    p_operation_id text,
+    p_previous_digest text,
+    p_state_digest text,
+    p_response_digest text
+) RETURNS text LANGUAGE sql IMMUTABLE STRICT AS $checkpoint$
+    SELECT encode(digest(convert_to(
+        p_host_id || '|' || p_generation::text || '|' || p_phase || '|'
+        || p_operation_id || '|' || p_previous_digest || '|'
+        || p_state_digest || '|' || p_response_digest, 'UTF8'
+    ), 'sha256'), 'hex');
+$checkpoint$;
+
 CREATE FUNCTION m0_fence_authority_it.issue(
     p_host_id text,
     p_operation_id text,
@@ -273,6 +289,11 @@ BEGIN
                   AND receipt.generation = intent.generation
                   AND receipt.operation_id = intent.operation_id
                   AND receipt.checkpoint_digest = intent.checkpoint_digest
+                  AND intent.checkpoint_digest = m0_fence_authority_it.checkpoint_record_digest(
+                      intent.host_id, intent.generation, 'ACCEPTED', intent.operation_id,
+                      intent.previous_checkpoint_digest, intent.authority_state_digest,
+                      intent.response_digest
+                  )
            )
     ) THEN
         RAISE EXCEPTION 'latest acceptance checkpoint is not acknowledged'
@@ -339,10 +360,10 @@ BEGIN
       ) generations;
 
     state_hash := m0_fence_authority_it.compute_authority_state_digest(p_host_id);
-    checkpoint_hash := encode(digest(convert_to(
-        p_host_id || '|' || next_generation::text || '|ISSUED|'
-        || p_operation_id || '|' || prior_checkpoint_digest || '|'
-        || state_hash || '|' || response_hash, 'UTF8'), 'sha256'), 'hex');
+    checkpoint_hash := m0_fence_authority_it.checkpoint_record_digest(
+        p_host_id, next_generation, 'ISSUED', p_operation_id,
+        prior_checkpoint_digest, state_hash, response_hash
+    );
 
     INSERT INTO m0_fence_authority_it.checkpoint_intents (
         host_id, generation, operation_id, previous_checkpoint_digest,
@@ -473,6 +494,11 @@ BEGIN
            AND receipt.operation_id = intent.operation_id
            AND receipt.authority_state_digest = intent.authority_state_digest
            AND receipt.checkpoint_digest = intent.checkpoint_digest
+           AND intent.checkpoint_digest = m0_fence_authority_it.checkpoint_record_digest(
+               intent.host_id, intent.generation, 'ISSUED', intent.operation_id,
+               intent.previous_checkpoint_digest, intent.authority_state_digest,
+               intent.response_digest
+           )
          WHERE intent.host_id = p_host_id
            AND intent.operation_id = p_operation_id
     ) THEN
@@ -559,7 +585,12 @@ BEGIN
     IF NOT FOUND
        OR encode(digest(response_value, 'sha256'), 'hex') <> intent_row.response_digest
        OR m0_fence_authority_it.compute_authority_state_digest(p_host_id)
-            <> intent_row.authority_state_digest THEN
+            <> intent_row.authority_state_digest
+       OR intent_row.checkpoint_digest <> m0_fence_authority_it.checkpoint_record_digest(
+            intent_row.host_id, intent_row.generation, 'ISSUED', intent_row.operation_id,
+            intent_row.previous_checkpoint_digest, intent_row.authority_state_digest,
+            intent_row.response_digest
+       ) THEN
         RAISE EXCEPTION 'authority state or retained response differs from anchored intent'
             USING ERRCODE = '55000';
     END IF;
@@ -637,6 +668,11 @@ BEGIN
          AND receipt.generation = intent.generation
          AND receipt.operation_id = intent.operation_id
          AND receipt.checkpoint_digest = intent.checkpoint_digest
+          AND intent.checkpoint_digest = m0_fence_authority_it.checkpoint_record_digest(
+              intent.host_id, intent.generation, 'ACCEPTED', intent.operation_id,
+              intent.previous_checkpoint_digest, intent.authority_state_digest,
+              intent.response_digest
+          )
         WHERE intent.host_id = p_host_id
           AND intent.operation_id = p_operation_id
     ) THEN
@@ -673,10 +709,10 @@ BEGIN
                WHERE host_id = p_host_id
           ) generations;
 
-        checkpoint_hash := encode(digest(convert_to(
-            p_host_id || '|' || next_generation::text || '|ACCEPTED|'
-            || p_operation_id || '|' || previous_hash || '|' || state_hash
-            || '|' || event_row.response_digest, 'UTF8'), 'sha256'), 'hex');
+        checkpoint_hash := m0_fence_authority_it.checkpoint_record_digest(
+            p_host_id, next_generation, 'ACCEPTED', p_operation_id,
+            previous_hash, state_hash, event_row.response_digest
+        );
 
         INSERT INTO m0_fence_authority_it.acceptance_checkpoint_intents (
             host_id, generation, operation_id, previous_checkpoint_digest,
