@@ -30,13 +30,15 @@ The checkpoint supplied to receipt validation must already have passed signed-ch
 ## Storage contract
 
 `CheckpointCustodyStore` exposes `ReadLatest` and `StoreIfCurrent`. A conforming durable adapter must atomically:
-1. Read and compare the current checkpoint for the ledger ID/epoch with the caller's expected predecessor digest.
+1. Read and compare the current checkpoint for the ledger ID/epoch with the caller's expected predecessor digest. For an empty ledger incarnation, the expected predecessor is the empty string; otherwise it must equal the exact current checkpoint digest.
 2. Validate the new checkpoint's sequence, predecessor, and ledger identity against that exact current checkpoint.
 3. Persist the checkpoint and matching signed custody receipt together, or persist neither.
 4. Reject stale writes, same-sequence replays, forks, cross-epoch substitution, and receipt/checkpoint mismatch.
 5. Make successful writes durable according to an explicitly qualified retention profile before acknowledging success.
 
-A lost acknowledgement is an unknown outcome. Callers must re-read the exact ledger/epoch head and reconcile by checkpoint digest; they must not blindly issue a new sequence or create a fork.
+A missing ledger incarnation is reported as `ErrNotFound`; a stale expected predecessor, replay, or fork is reported as `ErrConflict`. A lost acknowledgement is an unknown outcome. Callers must re-read the exact ledger/epoch head and reconcile by checkpoint digest; they must not blindly issue a new sequence or create a fork.
+
+The reusable test support in `internal/journal/conformance` exercises atomic checkpoint/receipt pairing, concurrent compare-and-store, stale-fork rejection, and ledger/epoch isolation against any adapter implementing `CheckpointCustodyStore`. It is a portable contract suite, not a substitute for provider-specific crash, durability, retention, backup/restore, or FENCE-001 qualification.
 
 ## Required backend qualification
 
