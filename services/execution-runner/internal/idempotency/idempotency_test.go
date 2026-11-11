@@ -144,3 +144,22 @@ func TestPruneResponseCommandRequiresExactCASAndUTC(t *testing.T) {
 		t.Fatalf("missing descriptor version error = %v", err)
 	}
 }
+
+func TestCommitResponseDescriptorRequiresExactClaimIdentity(t *testing.T) {
+	t.Parallel()
+	command := CommitResponseDescriptorCommand{
+		Scope:                 validScope(),
+		KeyDigest:             strings.Repeat("a", 64),
+		ExpectedRequestDigest: strings.Repeat("b", 64),
+		AttemptID:             "attempt-1",
+		DescriptorVersion:     1,
+		DescriptorDigest:      strings.Repeat("c", 64),
+	}
+	if err := command.Validate(); err != nil {
+		t.Fatalf("valid response descriptor command rejected: %v", err)
+	}
+	command.DescriptorVersion = 0
+	if err := command.Validate(); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("missing descriptor version error = %v, want ErrInvalidRecord", err)
+	}
+}
