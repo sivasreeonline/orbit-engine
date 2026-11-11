@@ -8,7 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"path"
-	"time"\n\t"encoding/base64"\n\t"encoding/json"\n\t"path"\n\t"time"
+	"time"
 	"io"
 	"os"
 	"path/filepath"
