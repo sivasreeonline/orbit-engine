@@ -162,6 +162,8 @@ An append timeout is an unknown outcome, not proof of failure. Recovery must rea
 
 The API now contains provider-neutral TypeScript interfaces and a transition validator, plus an in-memory contract test double covering lifecycle linkage, exact retry after a lost acknowledgement, CAS competition, forks/gaps, terminal revocation and witness outage. These tests validate the interface contract only. There is no network adapter, provider credential, signing key, independent witness service or production integration in this change.
 
+The reconciliation coordinator in `apps/api/src/security/witness-reconciliation.ts` applies this boundary in fail-closed order: resolve an exact existing operation/phase first; read and verify the current witness high-water; validate the candidate lifecycle transition; submit compare-and-append; bind and cryptographically verify the returned receipt. If append acknowledgement is lost, it reads the same operation/phase and accepts only the exact candidate with a verified receipt. If that evidence cannot be retrieved or verified, the caller receives an unavailable/conflict result and must leave the authority transition checkpoint-pending. It never substitutes a local database receipt.
+
 ## 4. Crash-point and recovery matrix
 
 | Crash or uncertainty point | Durable facts that may exist | Required recovery |
