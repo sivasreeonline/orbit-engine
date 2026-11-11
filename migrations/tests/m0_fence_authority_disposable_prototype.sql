@@ -529,6 +529,16 @@ BEGIN
         RAISE EXCEPTION 'accept-first then revoke ordering lost terminal history';
     END IF;
 
+    BEGIN
+        PERFORM m0_fence_authority_it.issue(
+            'host-test-01', 'op-after-revoke', 'nonce-after-revoke',
+            'request-after-revoke', 4, 'vm-after-revoke'
+        );
+        RAISE EXCEPTION 'new issuance after terminal revocation unexpectedly succeeded';
+    EXCEPTION WHEN SQLSTATE '55000' THEN
+        NULL;
+    END;
+
     PERFORM m0_fence_authority_it.issue(
         'host-revoke-first', 'op-revoke-first', 'nonce-revoke-first',
         'request-revoke-first', 1, 'vm-revoke-successor'
