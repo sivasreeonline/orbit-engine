@@ -459,6 +459,12 @@ def self_test() -> None:
     print("PASS  idempotent exact-byte replay, digest conflict, nonce rebinding and witness outage")
     scenario_wrong_acceptance_and_pending_successor()
     print("PASS  wrong target rejection and single-pending-successor serialization")
+    scenario_witness_fork_generation_and_rebinding()
+    print("PASS  witness fork, generation rollback/gap and checkpoint operation rebinding rejection")
+    scenario_replay_index_and_response_corruption()
+    print("PASS  independent replay-index deletion and retained response-byte tampering rejection")
+    scenario_publication_crash_before_acceptance()
+    print("PASS  crash after response publication replays exact bytes without a second epoch or implicit acceptance")
     print("NOTE  deterministic in-memory fault model only; not PostgreSQL/provider/witness qualification")
 
 
