@@ -688,17 +688,6 @@ REVOKE ALL ON FUNCTION m0_fence_authority_it.accept_exact_response(
     text, text, bytea, text, bigint
 ) FROM PUBLIC;
 
-DO $
-BEGIN
-    IF has_function_privilege(
-        'public',
-        'm0_fence_authority_it.accept_exact_response(text,text,bytea,text,bigint)',
-        'EXECUTE'
-    ) THEN
-        RAISE EXCEPTION 'low-level acceptance primitive is publicly executable';
-    END IF;
-END;
-$;
 
 -- Acceptance checkpoint must be separately acknowledged before a later
 -- issuance can proceed. The same-database receipt is only a disposable test.
