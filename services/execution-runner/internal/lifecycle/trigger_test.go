@@ -35,7 +35,7 @@ func TestTriggerArbiterPreservesPrimaryAndClassifiesLaterTriggers(t *testing.T) 
 		t.Fatalf("first trigger = %+v, want sequence 1 PRIMARY", primary)
 	}
 
-	secondary, err := arbiter.Capture(newTestTrigger("trigger-2", 2*time.Second))
+	secondary, err := arbiter.Capture(StateTerminating, newTestTrigger("trigger-2", 2*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestTriggerArbiterPreservesPrimaryAndClassifiesLaterTriggers(t *testing.T) 
 	}
 
 	arbiter.BeginFinalization()
-	late, err := arbiter.Capture(newTestTrigger("trigger-3", 3*time.Second))
+	late, err := arbiter.Capture(StateFinalizing, newTestTrigger("trigger-3", 3*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestTriggerArbiterRejectsInvalidIdentityAndClock(t *testing.T) {
 		t.Fatalf("wrong boot error = %v, want ErrBootIdentity", err)
 	}
 
-	if _, err := arbiter.Capture(newTestTrigger("trigger-first", 2*time.Second)); err != nil {
+	if _, err := arbiter.Capture(StateRunning, newTestTrigger("trigger-first", 2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := arbiter.Capture(StateRunning, newTestTrigger("trigger-backwards", time.Second)); !errors.Is(err, ErrClockRollback) {
@@ -112,7 +112,7 @@ func TestTriggerArbiterConcurrentCaptureHasOnePrimaryAndOrderedSequences(t *test
 		go func() {
 			defer wait.Done()
 			trigger := newTestTrigger(fmt.Sprintf("trigger-%02d", index), time.Second)
-			record, captureErr := arbiter.Capture(trigger)
+			record, captureErr := arbiter.Capture(StateRunning, trigger)
 			results <- result{record: record, err: captureErr}
 		}()
 	}
