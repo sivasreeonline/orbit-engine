@@ -599,7 +599,7 @@ CREATE FUNCTION m0_fence_authority_it.accept_and_checkpoint(
     p_response_bytes bytea,
     p_target_instance_id text,
     p_epoch bigint
-) RETURNS text LANGUAGE plpgsql AS $
+) RETURNS text LANGUAGE plpgsql AS $accept$
 DECLARE
     accept_result text;
     event_row m0_fence_authority_it.acceptance_events%ROWTYPE;
@@ -680,7 +680,7 @@ BEGIN
 
     RETURN 'CHECKPOINT_PENDING';
 END;
-$;
+$accept$;
 
 -- Acceptance checkpoint must be separately acknowledged before a later
 -- issuance can proceed. The same-database receipt is only a disposable test.
