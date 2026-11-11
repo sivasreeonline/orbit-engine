@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Executable structural and cryptographic conformance checks for FENCE-001 v1 fixtures.
 
-This validates the published JSON Schema, strict JSON parsing, schema fixtures,
-key fingerprints, canonical fixture bytes, checkpoint digests and Ed25519 receipt
-signatures. It deliberately does not claim RFC 8785 implementation conformance,
+This validates the published JSON Schema, strict JSON parsing, independent RFC 8785
+canonicalization, checkpoint/trust-bundle digests, Ed25519 signatures, trust-root
+succession, and receipt-to-checkpoint/key-lifecycle binding. It does not prove
 provider consistency, durability, anti-equivocation or production trust.
 """
 from __future__ import annotations
