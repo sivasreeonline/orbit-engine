@@ -20,6 +20,7 @@ var (
 	ErrInvalidTrigger = errors.New("invalid termination trigger")
 	ErrBootIdentity   = errors.New("trigger boot identity mismatch")
 	ErrClockRollback  = errors.New("trigger BOOTTIME moved backwards")
+	ErrTriggerNotApplicable = errors.New("termination trigger is not applicable to the current lifecycle state")
 )
 
 type Trigger struct {
@@ -61,10 +62,11 @@ func NewTriggerArbiter(bootID string) (*TriggerArbiter, error) {
 	return &TriggerArbiter{bootID: bootID}, nil
 }
 
-// Capture assigns the authoritative in-process sequence under one mutex.
-// The first accepted trigger is immutable; later pre-finalization triggers
-// are secondary, and triggers observed after finalization begins are late.
-func (arbiter *TriggerArbiter) Capture(trigger Trigger) (TriggerRecord, error) {
+// Capture assigns the in-process sequence under one mutex and enforces the
+// lifecycle eligibility rule. Pre-create states cannot enter cleanup; a
+// TERMINATING state requires an existing primary trigger. FINALIZING triggers
+// are retained as late incidents and cannot rewrite the primary cause.
+func (arbiter *TriggerArbiter) Capture(state State, trigger Trigger) (TriggerRecord, error) {
 	if strings.TrimSpace(trigger.ID) == "" ||
 		strings.TrimSpace(trigger.Kind) == "" ||
 		strings.TrimSpace(trigger.AuthenticatedSource) == "" ||
@@ -81,6 +83,19 @@ func (arbiter *TriggerArbiter) Capture(trigger Trigger) (TriggerRecord, error) {
 	if trigger.BootID != arbiter.bootID {
 		return TriggerRecord{}, ErrBootIdentity
 	}
+	if !arbiter.finalizationBegun {
+		switch state {
+		case StateCreating, StateStarting, StateRunning:
+		case StateTerminating:
+			if arbiter.primary == nil {
+				return TriggerRecord{}, ErrTriggerNotApplicable
+			}
+		case StateFinalizing:
+			arbiter.finalizationBegun = true
+		default:
+			return TriggerRecord{}, ErrTriggerNotApplicable
+		}
+	}
 	if arbiter.hasObserved && trigger.ObservedBootTime < arbiter.lastObserved {
 		return TriggerRecord{}, ErrClockRollback
 	}
@@ -95,7 +110,7 @@ func (arbiter *TriggerArbiter) Capture(trigger Trigger) (TriggerRecord, error) {
 		Disposition: TriggerSecondary,
 	}
 	switch {
-	case arbiter.finalizationBegun:
+	case arbiter.finalizationBegun || state == StateFinalizing:
 		record.Disposition = TriggerLate
 	case arbiter.primary == nil:
 		record.Disposition = TriggerPrimary
