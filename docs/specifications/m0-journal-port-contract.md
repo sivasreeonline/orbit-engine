@@ -102,3 +102,31 @@ The journal port exposes two compound operations rather than requiring callers t
 The adapter must treat uncertain commit acknowledgement as an unknown outcome, not as proof of rollback. The caller recovers by reading the scoped key and original attempt. If the record is absent after an authoritative read, only then may a new claim transaction be attempted; if the outcome remains uncertain, the caller must return a retryable/unknown result and must not dispatch a new attempt.
 
 The port does not prescribe a specific isolation level or database primitive. A future backend must demonstrate equivalent behavior under concurrent same-key/same-digest and same-key/different-digest races, process termination at each transaction boundary, and lost commit acknowledgements. Tests against an in-memory fake are not evidence of database isolation or durability.
+
+
+## Backend qualification and fault-injection contract
+
+The package `internal/journal` contains a stable, backend-neutral catalog in `qualification.go`. It defines 25 acceptance scenarios across concurrency, atomicity, process crashes, acknowledgement loss, storage faults, corruption, recovery, backup/restore, and power-loss durability. Catalog validation checks stable unique IDs, category coverage, and explicit fault/invariant/evidence requirements.
+
+The catalog is a specification and review aid only. It does not execute faults, test a storage adapter, or constitute evidence that a backend has passed. A future adapter qualification package must map every scenario ID to a reproducible backend-specific test, record the exact adapter version and storage configuration, preserve raw test output, and retain before/after durable-state snapshots where required.
+
+### Mandatory acceptance principles
+
+1. **Atomicity:** claim plus initial attempt is all-or-nothing. Terminal result, response descriptor, and terminal state are all-or-nothing.
+2. **Unknown outcomes:** a lost acknowledgement is not rollback evidence. Resolve the original claim/attempt by authoritative read; never create a replacement attempt while outcome remains uncertain.
+3. **Crash recovery:** terminate the process at each listed write/commit boundary and verify that restart yields a valid pre-commit or post-commit state, never a partial logical transaction.
+4. **Storage faults:** disk-full, short-write, sync/fsync, checkpoint/WAL, and read-only failures must not be acknowledged as durable success.
+5. **Corruption:** torn writes, checksum failures, missing immutable records, and inconsistent tombstones must be surfaced distinctly. Do not fabricate absence, silently repair identity, or permit workload dispatch.
+6. **Backup and restore:** backups must represent a consistent transaction boundary. Restore qualification must prove scoped-key tombstones and reservations survive. A restored journal is not proof that predecessor hosts were fenced.
+7. **Power-loss durability:** the adapter must declare its acknowledgement barrier and supported power-loss model. Every acknowledged commit must survive the declared failure model. The profile is a qualification input, not a default assumption; no backend or durability mode is selected here.
+
+### Evidence required before an adapter can be enabled
+
+- Completed scenario-to-test mapping for every `JQ-*` identifier, with no waivers hidden as skipped tests.
+- Reproducible concurrency and fault-injection output from the actual selected backend, not an in-memory fake.
+- Exact backend/driver versions, schema/migration revision, filesystem and mount configuration, sync/WAL/checkpoint settings, and host/storage topology.
+- Raw crash/power-cut traces, recovery integrity reports, and durable-state snapshots.
+- Backup manifest, consistency proof, restore test output, and tombstone inventory comparison.
+- Independent review of the evidence package and explicit approval of the declared durability profile.
+
+Until those conditions are met, the journal remains unconfigured for durable execution. This catalog does not authorize host deployment, privileged supervisor operation, or student workload execution.
