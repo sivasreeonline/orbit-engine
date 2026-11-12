@@ -5,28 +5,41 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 var ErrInvalidRequest = errors.New("invalid execution request")
 
+const (
+	maximumRequestSourceBytes = int64(200 * 1024)
+	maximumFutureClockSkew    = 30 * time.Second
+)
+
 func (request ExecutionRequest) Validate() error {
+	return request.ValidateAt(time.Now().UTC())
+}
+
+// ValidateAt allows deterministic validation tests while preserving the same
+// expiry and clock-skew rules used by the live runner.
+func (request ExecutionRequest) ValidateAt(now time.Time) error {
 	if request.ProtocolVersion != "v1" {
 		return fieldError("protocolVersion", "must be v1")
 	}
-	if err := validateOpaqueID("executionId", request.ExecutionID); err != nil {
-		return err
-	}
-	if err := validateOpaqueID("attemptId", request.AttemptID); err != nil {
-		return err
-	}
-	if err := validateOpaqueID("problemVersionId", request.ProblemVersionID); err != nil {
-		return err
-	}
-	if err := validateOpaqueID("sourceArtifactId", request.SourceArtifactID); err != nil {
-		return err
-	}
-	if err := validateOpaqueID("testBundleId", request.TestBundleID); err != nil {
-		return err
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{"requestId", request.RequestID},
+		{"executionId", request.ExecutionID},
+		{"attemptId", request.AttemptID},
+		{"problemVersionId", request.ProblemVersionID},
+		{"sourceArtifactId", request.SourceArtifactID},
+		{"testBundleId", request.TestBundleID},
+		{"traceId", request.TraceID},
+	} {
+		if err := validateOpaqueID(field.name, field.value); err != nil {
+			return err
+		}
 	}
 
 	if request.Action != ActionRun && request.Action != ActionSubmit {
@@ -40,8 +53,29 @@ func (request ExecutionRequest) Validate() error {
 	}
 
 	digest, err := hex.DecodeString(request.SourceSHA256)
-	if err != nil || len(digest) != 32 {
-		return fieldError("sourceSha256", "must be a 64-character hexadecimal SHA-256 digest")
+	if err != nil || len(digest) != 32 || request.SourceSHA256 != strings.ToLower(request.SourceSHA256) {
+		return fieldError("sourceSha256", "must be a lowercase 64-character hexadecimal SHA-256 digest")
+	}
+	if request.SourceByteLength <= 0 || request.SourceByteLength > maximumRequestSourceBytes {
+		return fieldError("sourceByteLength", "must be positive and within the runner source-size limit")
+	}
+
+	if request.IssuedAt.IsZero() || request.ExpiresAt.IsZero() {
+		return fieldError("issuedAt/expiresAt", "must both be present")
+	}
+	_, issuedOffset := request.IssuedAt.Zone()
+	_, expiresOffset := request.ExpiresAt.Zone()
+	if issuedOffset != 0 || expiresOffset != 0 {
+		return fieldError("issuedAt/expiresAt", "must use UTC")
+	}
+	if request.IssuedAt.After(now.Add(maximumFutureClockSkew)) {
+		return fieldError("issuedAt", "is too far in the future")
+	}
+	if !request.ExpiresAt.After(request.IssuedAt) {
+		return fieldError("expiresAt", "must be later than issuedAt")
+	}
+	if !request.ExpiresAt.After(now) {
+		return fieldError("expiresAt", "request has expired")
 	}
 
 	if request.Limits.CPUQuotaMillis <= 0 {
