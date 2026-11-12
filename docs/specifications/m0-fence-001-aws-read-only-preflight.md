@@ -116,7 +116,44 @@ After the account owner supplies and approves the disposable account, Region, re
 
 **Production approval remains false. Host admission remains disabled.**
 
-## 5. AWS documentation references
+
+## 5. DynamoDB witness adapter — local-first implementation
+
+The first AWS-specific implementation is `scripts/aws_dynamodb_witness_adapter.py`. Its single-table data model uses a scope-hash partition key and distinct sort keys:
+
+- `HEAD`: current generation/digest/checkpoint/receipt high-water;
+- `GEN#<20-digit generation>`: immutable generation record;
+- `OP#<operation ID>`: immutable operation lookup record;
+- `IDEMP#<SHA-256 of idempotency key>`: durable idempotency binding and original receipt.
+
+One `TransactWriteItems` call conditionally writes the generation, operation and idempotency records and advances the head. Genesis uses a conditional head Put; successors use a conditional head Update that compares both expected generation and predecessor digest. This keeps the compare-and-append decision in DynamoDB rather than a client-side lock.
+
+The adapter performs `GetItem(ConsistentRead=true)` on the base table for the head, operation and idempotency records. It does not use a GSI or stream as an authoritative current-state read.
+
+The idempotency record is checked before submitting another transaction. This is deliberately separate from DynamoDB's native `ClientRequestToken` cache (10 minutes): a retry after that window can recover the exact receipt from the durable idempotency item without creating a second generation. The opaque receipt consistency token is an adapter correlation value persisted atomically with the transaction; it is not a cryptographic consistency proof.
+
+### Account-less integration testing
+
+AWS-published [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html) runs in CI with the pinned Docker image `amazon/dynamodb-local:3.3.2`. The test environment uses dummy local credentials and a loopback endpoint. It exercises the same `TransactWriteItems`, conditional expressions and strongly consistent `GetItem` API requests as the adapter uses, without contacting an AWS account or creating cloud resources.
+
+The generic witness conformance harness runs against a fresh local table for each fixture. Additional integration checks verify that:
+- an exact retry returns the previously persisted receipt without issuing a second transaction; and
+- eight independent SDK clients competing from one predecessor produce exactly one winner.
+
+DynamoDB Local is a development/test service. Passing these tests validates adapter/API integration and the exercised local transaction semantics only. It does not establish AWS service durability, managed-service consistency, IAM policy correctness, account separation, regional failure behavior, backup recovery or production qualification.
+
+### Live AWS mode safety boundary
+
+The adapter never creates a live table. Without a loopback endpoint, it refuses to initialize unless the operator supplies the exact live-write opt-in token plus:
+- a pinned 12-digit AWS account and assumed-role ARN prefix;
+- an existing ACTIVE witness table whose ARN matches the pinned account and Region;
+- a unique qualification run ID and an approval ID explicitly bound to that run;
+- an unexpired timezone-aware approval; and
+- explicit `environment=QUALIFICATION`, `disposable=true`, `production=false`, and `admissionEnabled=false` flags.
+
+This code path has not been used. No AWS account or credentials are available in the current development environment, so live mode remains untested and is not considered qualified.
+
+## 6. AWS documentation references
 
 - [DynamoDB TransactWriteItems API](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html) — atomic transaction limits and the 10-minute ClientRequestToken idempotency window.
 - [DynamoDB transaction behavior](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transaction-apis.html) — transaction conflict and retry guidance.
