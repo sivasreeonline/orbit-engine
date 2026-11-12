@@ -518,6 +518,7 @@ def _load_approval(config: dict[str, str]) -> None:
         "accountId": config["accountId"],
         "region": config["region"],
         "tableArn": config["tableArn"],
+        "expectedCallerArnPrefix": config["expectedCallerArnPrefix"],
         "operation": "AWS_DYNAMODB_WITNESS_ADAPTER_CONFORMANCE_WRITES",
         "preflightReportSha256": hashlib.sha256(report_raw).hexdigest(),
     }
@@ -564,6 +565,7 @@ def create_adapter() -> AWSDynamoDBWitnessAdapter:
         "region": os.getenv("FENCE_AWS_DDB_REGION", ""),
         "tableName": os.getenv("FENCE_AWS_DDB_TABLE_NAME", ""),
         "tableArn": os.getenv("FENCE_AWS_DDB_EXPECTED_TABLE_ARN", ""),
+        "expectedCallerArnPrefix": os.getenv("FENCE_AWS_DDB_EXPECTED_CALLER_ARN_PREFIX", ""),
         "runId": os.getenv("FENCE_AWS_DDB_QUALIFICATION_RUN_ID", ""),
         "preflightReport": os.getenv("FENCE_AWS_DDB_PREFLIGHT_REPORT", ""),
         "approvalFile": os.getenv("FENCE_AWS_DDB_APPROVAL_FILE", ""),
@@ -573,6 +575,12 @@ def create_adapter() -> AWSDynamoDBWitnessAdapter:
         raise SystemExit("missing AWS DynamoDB witness gate inputs: " + ", ".join(missing))
     _require(re.fullmatch(r"[0-9]{12}", required["accountId"]) is not None,
              "expected AWS account ID must contain 12 digits")
+    _require(
+        required["expectedCallerArnPrefix"].startswith(
+            f"arn:aws:sts::{required['accountId']}:assumed-role/"
+        ) and required["expectedCallerArnPrefix"].endswith("/"),
+        "expected caller ARN prefix must pin an assumed-role ARN in the approved account",
+    )
     _require(SAFE_ID.fullmatch(required["runId"]) is not None, "qualification run ID is unsafe")
     _load_approval(required)
 
@@ -589,6 +597,9 @@ def create_adapter() -> AWSDynamoDBWitnessAdapter:
     identity = session.client("sts", region_name=required["region"]).get_caller_identity()
     _require(identity.get("Account") == required["accountId"],
              "live AWS caller account differs from the approved qualification account")
+    _require(isinstance(identity.get("Arn"), str)
+             and identity["Arn"].startswith(required["expectedCallerArnPrefix"]),
+             "live AWS caller ARN differs from the approved assumed-role prefix")
 
     client = session.client("dynamodb", region_name=required["region"])
     table = client.describe_table(TableName=required["tableName"]).get("Table", {})
