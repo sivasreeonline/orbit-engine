@@ -165,7 +165,8 @@ def main() -> None:
             raise ValueError("materialized independence attestation differs from supplied attestation file")
         print(f"FENCE-001 external evidence isolation attestation: PASS ({len(actions)} bypass controls)")
         print("Dual-signed manifest: verified; provider scope, collector/verifier identities and request IDs bound")
-        print(f"Materialized manifest artifacts byte-verified: {len(body[\"artifacts\"])}")
+        artifact_count = len(body["artifacts"])
+        print(f"Materialized manifest artifacts byte-verified: {artifact_count}")
         print("Provider audit-event authenticity and account ownership still require independent review")
         return
 
