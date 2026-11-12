@@ -124,6 +124,9 @@ jobs:
       - name: Verify FENCE-001 restore and witness reconciliation reference model
         run: python ../../scripts/validate_m0_witness_restore_reconciliation_model.py
 
+      - name: Verify FENCE-001 independent monitor gossip reference model
+        run: python ../../scripts/validate_m0_independent_monitor_gossip.py
+
       - name: Configure PostgreSQL client wrappers
         run: |
           set -euo pipefail
