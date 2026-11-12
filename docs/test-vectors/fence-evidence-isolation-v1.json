@@ -73,7 +73,9 @@
       "auditEventId": "synthetic-audit-1",
       "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000001",
       "auditAcquiredByPrincipalId": "verifier-service",
-      "occurredAt": "2026-11-12T10:00:00Z"
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001"
     },
     {
       "action": "SHORTEN_RETENTION_AS_OBJECT_OWNER",
@@ -83,7 +85,9 @@
       "auditEventId": "synthetic-audit-2",
       "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000002",
       "auditAcquiredByPrincipalId": "verifier-service",
-      "occurredAt": "2026-11-12T10:00:00Z"
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001"
     },
     {
       "action": "DELETE_AS_ACCOUNT_OWNER",
@@ -93,7 +97,9 @@
       "auditEventId": "synthetic-audit-3",
       "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000003",
       "auditAcquiredByPrincipalId": "verifier-service",
-      "occurredAt": "2026-11-12T10:00:00Z"
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001"
     },
     {
       "action": "DISABLE_OBJECT_LOCK_AS_ORG_ADMIN",
@@ -103,7 +109,9 @@
       "auditEventId": "synthetic-audit-4",
       "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000004",
       "auditAcquiredByPrincipalId": "verifier-service",
-      "occurredAt": "2026-11-12T10:00:00Z"
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001"
     },
     {
       "action": "DELETE_VIA_RECOVERY_ADMIN",
@@ -113,7 +121,9 @@
       "auditEventId": "synthetic-audit-5",
       "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000005",
       "auditAcquiredByPrincipalId": "verifier-service",
-      "occurredAt": "2026-11-12T10:00:00Z"
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001"
     },
     {
       "action": "OVERWRITE_EXACT_VERSION",
@@ -123,7 +133,9 @@
       "auditEventId": "synthetic-audit-6",
       "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000006",
       "auditAcquiredByPrincipalId": "verifier-service",
-      "occurredAt": "2026-11-12T10:00:00Z"
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001"
     },
     {
       "action": "REPLACE_VERSION_MAPPING",
@@ -133,7 +145,9 @@
       "auditEventId": "synthetic-audit-7",
       "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000007",
       "auditAcquiredByPrincipalId": "verifier-service",
-      "occurredAt": "2026-11-12T10:00:00Z"
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001"
     }
   ]
 }
