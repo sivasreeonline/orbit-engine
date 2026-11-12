@@ -191,6 +191,9 @@ export function createApiHandler(dependencies: ApiDependencies) {
     const executionEventsMatch = request.method === "GET"
       ? path.match(/^\/api\/v1\/executions\/([^/]+)\/events$/)
       : null;
+    const attemptSourceMatch = request.method === "GET"
+      ? path.match(/^\/api\/v1\/attempts\/([^/]+)\/source$/)
+      : null;
 
     if (!isProblemList && !problemMatch && !attemptHistoryMatch && !executionEventsMatch && !attemptSourceMatch) {
       return errorResponse(
