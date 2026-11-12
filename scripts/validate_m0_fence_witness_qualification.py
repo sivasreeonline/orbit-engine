@@ -188,7 +188,7 @@ def run_manifest_binding_fixture_tests() -> int:
     }]
     with tempfile.TemporaryDirectory(prefix="fence-qualification-fixture-") as directory:
         artifact_root = Path(directory)
-        (artifact_root / artifact["artifactId"]).write_bytes(b"synthetic provider evidence fixture only\\n")
+        (artifact_root / artifact["artifactId"]).write_bytes(b"synthetic provider evidence fixture only\n")
         validate_record_manifest_binding(
             record, envelope, vector["trustedKeys"],
             allow_test_only=True, artifact_root=artifact_root,
