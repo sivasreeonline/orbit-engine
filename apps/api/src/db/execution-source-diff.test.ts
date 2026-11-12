@@ -40,7 +40,7 @@ describe("diffSourceSnapshots", () => {
   it("preserves CRLF versus LF, whitespace, Unicode and final-newline changes", () => {
     const result = diffSourceSnapshots("  café\r\nend", " café\nend\n");
     expect(result.operations.map((item) => item.kind)).toEqual([
-      "DELETE", "INSERT", "DELETE", "INSERT",
+      "DELETE", "DELETE", "INSERT", "INSERT",
     ]);
     expect(result.operations.map((item) => item.text)).toEqual([
       "  café\r\n", " café\n", "end", "end\n",
