@@ -1,4 +1,5 @@
 import type { ExecutionFeedback } from "../lib/execution/ExecutionAdapter";
+import AttemptTimeline from "./AttemptTimeline";
 import type { ProblemDefinition } from "../types/problem";
 
 export type OutputTab = "output" | "samples" | "history";
@@ -8,6 +9,7 @@ interface ExecutionOutputProps {
   activeTab: OutputTab;
   onTabChange: (tab: OutputTab) => void;
   feedback: ExecutionFeedback | null;
+  problemSlug: string;
 }
 
 export default function ExecutionOutput({
@@ -15,6 +17,7 @@ export default function ExecutionOutput({
   activeTab,
   onTabChange,
   feedback,
+  problemSlug,
 }: ExecutionOutputProps) {
   return (
     <section className="output-panel" aria-label="Execution output">
@@ -112,18 +115,7 @@ export default function ExecutionOutput({
           </div>
         )}
 
-        {activeTab === "history" && (
-          <div className="output-empty">
-            <span className="output-empty-icon">↗</span>
-            <div>
-              <strong>Attempt history is not connected</strong>
-              <p>
-                This preview does not persist code, runs, submissions, scores or
-                student records.
-              </p>
-            </div>
-          </div>
-        )}
+        {activeTab === "history" && <AttemptTimeline problemSlug={problemSlug} />}
       </div>
     </section>
   );
