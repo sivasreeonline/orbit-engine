@@ -76,6 +76,8 @@ def validate_attestation(document: dict[str, Any]) -> list[str]:
             raise ValueError(f"duplicate privileged bypass action: {action}")
         seen_actions.add(action)
         expected_role = ACTIONS[action]
+        if attempt["objectRef"] != target["objectRef"] or attempt["versionId"] != target["versionId"]:
+            raise ValueError(f"{action}: attempt does not target the exact retained object version")
         if attempt["actorPrincipalId"] != privileged[expected_role]:
             raise ValueError(f"{action}: attempt was not executed by the designated {expected_role} principal")
         if attempt["auditAcquiredByPrincipalId"] != verifier_id:
@@ -122,12 +124,49 @@ def run_fixture_tests() -> tuple[int, int]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--attestation", type=Path, help="provider isolation and privileged-bypass attestation JSON")
+    parser.add_argument("--manifest", type=Path, help="dual-signed evidence manifest")
+    parser.add_argument("--trusted-keys", type=Path, help="independently governed trusted-key configuration")
+    parser.add_argument("--artifact-root", type=Path, help="directory containing materialized manifest artifacts")
     args = parser.parse_args()
-    if args.attestation:
+    supplied = (args.attestation, args.manifest, args.trusted_keys, args.artifact_root)
+    if any(supplied) and not all(supplied):
+        parser.error("--attestation, --manifest, --trusted-keys and --artifact-root must be supplied together")
+    if all(supplied):
+        from validate_m0_fence_evidence_manifest import validate_manifest
+        from verify_m0_fence_evidence_artifact_bytes import verify_artifact_files
+
         document = load_json(args.attestation)
         actions = validate_attestation(document)
+        envelope = load_json(args.manifest)
+        trust = load_json(args.trusted_keys)
+        if not isinstance(trust.get("keys"), list):
+            raise SystemExit("trusted-key document must contain a keys array")
+        validate_manifest(envelope, trust["keys"], allow_test_only=False)
+        body = envelope["manifestBody"]
+        scope = body["providerScope"]
+        attested_scope = document["providerScope"]
+        for source, target_field in (("name", "name"), ("service", "service"), ("region", "region"), ("account", "storageAccountId")):
+            if scope[source] != attested_scope[target_field]:
+                raise ValueError(f"evidence manifest provider scope mismatch: {source}")
+        matches = [item for item in body["artifacts"] if item["artifactType"] == "INDEPENDENCE_ATTESTATION" and {"WIT-012", "WIT-014"}.issubset(set(item["testIds"]))]
+        if len(matches) != 1:
+            raise ValueError("manifest must contain exactly one INDEPENDENCE_ATTESTATION artifact covering WIT-012 and WIT-014")
+        artifact = matches[0]
+        if artifact["collectorIdentity"] != document["topology"]["collector"]["principalId"]:
+            raise ValueError("manifest collector identity does not match the isolation attestation")
+        if artifact["independentVerifierIdentity"] != document["topology"]["verifier"]["principalId"]:
+            raise ValueError("manifest independent verifier does not match the isolation attestation")
+        request_ids = {attempt["providerRequestId"] for attempt in document["bypassAttempts"]}
+        if not request_ids.issubset(set(artifact["providerRequestIds"])):
+            raise ValueError("manifest independence artifact does not bind every privileged bypass provider request ID")
+        verify_artifact_files(body, args.artifact_root)
+        materialized = args.artifact_root / artifact["artifactId"]
+        if materialized.read_bytes() != args.attestation.read_bytes():
+            raise ValueError("materialized independence attestation differs from supplied attestation file")
         print(f"FENCE-001 external evidence isolation attestation: PASS ({len(actions)} bypass controls)")
-        print("Scope: structure and declared topology only; independently verify provider audit records and source identities")
+        print("Dual-signed manifest: verified; provider scope, collector/verifier identities and request IDs bound")
+        print(f"Materialized manifest artifacts byte-verified: {len(body[\"artifacts\"])}")
+        print("Provider audit-event authenticity and account ownership still require independent review")
         return
 
     count, rejected = run_fixture_tests()
