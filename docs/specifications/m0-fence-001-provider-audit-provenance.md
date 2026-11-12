@@ -17,7 +17,9 @@ For every page, the harness requires:
 - A verifier result of `VERIFIED` for both provider-native authentication and authenticated transport, using the pinned trust-root ID and SHA-256 fingerprint.
 - A verifier-provided digest of the normalized event projection that the harness independently recomputes; this prevents a collector from pairing an authenticated raw page with substituted parsed event objects.
 - A supported, explicitly declared authentication method: `PROVIDER_SIGNED_AUDIT_ENVELOPE` or `AUTHENTICATED_AUDIT_API_RESPONSE`.
+- A completion marker that is an actual boolean; truthy strings such as `"false"` are rejected rather than treated as terminal pages.
 - A complete, contiguous event sequence with unique event IDs and exact correlation to every provider request ID in the PR #98 run report.
+- Every privileged-bypass attempt in the source report must explicitly have outcome `DENIED`; the audit verifier refuses a non-denied report before making audit API calls.
 - Exact actor, action, denial outcome, object reference and immutable version binding for each privileged request.
 
 The verifier factory is separate from the collector factory. It must not accept trust roots or identity claims from the provider page itself. The trusted root fingerprint and expected provider scope are supplied out of band by the qualification operator.
