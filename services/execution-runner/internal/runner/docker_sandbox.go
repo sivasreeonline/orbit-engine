@@ -24,8 +24,8 @@ var (
 )
 
 type DockerContainerState struct {
-	Status   string `json:"Status"`
-	ExitCode int    `json:"ExitCode"`
+	Status    string `json:"Status"`
+	ExitCode  int    `json:"ExitCode"`
 	OOMKilled bool  `json:"OOMKilled"`
 }
 
@@ -122,9 +122,9 @@ func (cli OSCommandDockerCLI) Remove(ctx context.Context, id string) error {
 }
 
 type DockerSandbox struct {
-	cli             DockerCLI
-	temporaryRoot   string
-	cleanupTimeout  time.Duration
+	cli            DockerCLI
+	temporaryRoot  string
+	cleanupTimeout time.Duration
 }
 
 func NewDockerSandbox(cli DockerCLI, temporaryRoot string) (*DockerSandbox, error) {
