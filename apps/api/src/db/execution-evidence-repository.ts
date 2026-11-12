@@ -383,9 +383,10 @@ export class PostgresExecutionEvidenceRepository {
     if (!this.connectionString) throw new DatabaseUnavailableError();
     validateResult(input);
 
-    const terminalState = input.infrastructureStatus === "FAILED"
-      ? "FAILED_INFRASTRUCTURE"
-      : "COMPLETED";
+    const terminalState: "FAILED_INFRASTRUCTURE" | "COMPLETED" =
+      input.infrastructureStatus === "FAILED"
+        ? "FAILED_INFRASTRUCTURE"
+        : "COMPLETED";
     const eventType: ExecutionEvidenceEventType = input.infrastructureStatus === "FAILED"
       ? "INFRASTRUCTURE_FAILED"
       : "EXECUTION_FINISHED";
