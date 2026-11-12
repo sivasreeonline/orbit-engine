@@ -19,7 +19,7 @@ import { ExecutionSourceComparisonConflictError, ExecutionSourceComparisonNotFou
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
-  "listProblemAttemptHistory" | "listExecutionEvents"
+  "listProblemAttemptHistory" | "listExecutionEvents" | "listProblemAttemptTimeline"
 >;
 
 const allowedOrigin = "https://app.skyhigh.example";
@@ -89,6 +89,9 @@ function makeHarness(options: HarnessOptions = {}) {
       : {}),
     ...(options.sourceSnapshotRepository
       ? { sourceSnapshotRepository: options.sourceSnapshotRepository }
+      : {}),
+    ...(options.sourceComparisonRepository
+      ? { sourceComparisonRepository: options.sourceComparisonRepository }
       : {}),
     allowedOrigins: allowedOrigin,
   });
@@ -450,6 +453,83 @@ describe("M1 API control plane", () => {
       error: { code: "INVALID_LIMIT", retryable: false },
     });
     expect(listProblemAttemptHistory).not.toHaveBeenCalled();
+  });
+
+  it("returns a chronological attempt timeline with safe execution events for the authenticated student", async () => {
+    const timeline = [{
+      attemptId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+      executionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      action: "RUN" as const,
+      language: "java" as const,
+      runtimeVersion: "25",
+      sourceSha256: "a".repeat(64),
+      sourceByteLength: 42,
+      createdAt: "2026-11-12T10:00:00.000Z",
+      executionState: "COMPLETED",
+      infrastructureStatus: "SUCCEEDED" as const,
+      compilationStatus: "SUCCEEDED" as const,
+      verdict: "WRONG_ANSWER" as const,
+      cleanupStatus: "SUCCEEDED" as const,
+      testsTotal: 3,
+      testsPassed: 2,
+      elapsedMs: "42",
+      peakMemoryBytes: "1024",
+      resultSha256: "b".repeat(64),
+      events: [{
+        sequenceId: "1",
+        eventId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+        eventType: "RUNNER_STARTED" as const,
+        actorKind: "RUNNER" as const,
+        phaseStatus: "STARTED" as const,
+        safeCode: null,
+        durationMs: null,
+        createdAt: "2026-11-12T10:00:00.010Z",
+      }],
+    }];
+    const listProblemAttemptTimeline = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _problemSlug: string,
+      _limit: number,
+    ) => timeline);
+    const { handler } = makeHarness({
+      evidenceRepository: {
+        listProblemAttemptHistory: vi.fn(async () => []),
+        listExecutionEvents: vi.fn(async () => []),
+        listProblemAttemptTimeline,
+      },
+    });
+
+    const response = await handler(makeRequest("/api/v1/problems/two-sum/timeline?limit=20"));
+    const body = await readJson<{ data: typeof timeline; meta: { count: number; limit: number } }>(response);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(listProblemAttemptTimeline).toHaveBeenCalledWith(
+      authenticated.principal.tenantId,
+      authenticated.principal.userId,
+      "two-sum",
+      20,
+    );
+    expect(body.meta).toEqual({ count: 1, limit: 20 });
+    expect(body.data[0]?.events[0]?.eventType).toBe("RUNNER_STARTED");
+    expect(JSON.stringify(body)).not.toContain("sourceCode");
+  });
+
+  it("rejects invalid timeline limits before querying evidence", async () => {
+    const listProblemAttemptTimeline = vi.fn(async () => []);
+    const { handler } = makeHarness({
+      evidenceRepository: {
+        listProblemAttemptHistory: vi.fn(async () => []),
+        listExecutionEvents: vi.fn(async () => []),
+        listProblemAttemptTimeline,
+      },
+    });
+
+    const response = await handler(makeRequest("/api/v1/problems/two-sum/timeline?limit=101"));
+
+    expect(response.status).toBe(400);
+    expect(listProblemAttemptTimeline).not.toHaveBeenCalled();
   });
 
   it("returns timeline events scoped to the authenticated student", async () => {
