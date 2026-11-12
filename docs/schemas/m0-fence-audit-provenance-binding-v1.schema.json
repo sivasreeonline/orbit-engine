@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skyhigh.example/schemas/m0-fence-audit-provenance-binding-v1.schema.json",
+  "title": "FENCE-001 signed audit provenance to evidence-manifest binding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bindingBody",
+    "bindingDigest",
+    "attestations"
+  ],
+  "properties": {
+    "bindingBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "schemaVersion",
+        "manifestDigest",
+        "auditReportSha256",
+        "providerIdentity",
+        "independentVerifierIdentity",
+        "artifactMappings"
+      ],
+      "properties": {
+        "profile": {
+          "const": "sky-high-fence-audit-provenance-binding-v1"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "manifestDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "auditReportSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "providerIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "accountId",
+            "region",
+            "service"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "accountId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "region": {
+              "type": "string",
+              "minLength": 1
+            },
+            "service": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "independentVerifierIdentity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifactMappings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sourceGroup",
+              "sourceArtifact",
+              "manifestArtifactId"
+            ],
+            "properties": {
+              "sourceGroup": {
+                "enum": [
+                  "pages",
+                  "authenticationEvidence",
+                  "events"
+                ]
+              },
+              "sourceArtifact": {
+                "type": "string",
+                "minLength": 1
+              },
+              "manifestArtifactId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "bindingDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "attestations": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "signerIdentity",
+          "keyId",
+          "signatureBase64Url"
+        ],
+        "properties": {
+          "role": {
+            "enum": [
+              "COLLECTOR",
+              "INDEPENDENT_VERIFIER"
+            ]
+          },
+          "signerIdentity": {
+            "type": "string",
+            "minLength": 1
+          },
+          "keyId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "signatureBase64Url": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{86}$"
+          }
+        }
+      }
+    }
+  }
+}

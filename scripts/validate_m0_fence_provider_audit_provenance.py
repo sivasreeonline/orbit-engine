@@ -254,7 +254,11 @@ def run_contract(
         raise ValueError("provider audit stream is incomplete: one or more privileged request IDs are absent")
     report = {
         "profile": "sky-high-fence-provider-audit-provenance-v1",
-        "providerIdentity": expected,
+        "testOnly": False,
+        "providerIdentity": {
+            "provider": expected["provider"], "accountId": expected["account_id"],
+            "region": expected["region"], "service": expected["service"]
+        },
         "independentVerifierPrincipalId": verifier_id,
         "pinnedTrustRoot": {"id": pinned_root_id, "sha256": pinned_root_sha256},
         "initialCursor": initial_cursor,
