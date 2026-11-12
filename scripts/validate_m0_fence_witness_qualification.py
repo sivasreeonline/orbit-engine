@@ -105,8 +105,10 @@ def validate_record_manifest_binding(
     record: dict[str, Any],
     manifest_envelope: dict[str, Any],
     trusted_keys: list[dict[str, str]],
+    *,
+    allow_test_only: bool = False,
 ) -> None:
-    digest = validate_evidence_manifest(manifest_envelope, trusted_keys, allow_test_only=False)
+    digest = validate_evidence_manifest(manifest_envelope, trusted_keys, allow_test_only=allow_test_only)
     reference = record.get("evidenceManifest")
     if reference is None:
         raise ValueError("qualification record does not reference a signed evidence manifest")
@@ -163,14 +165,15 @@ def main() -> None:
     semantic = semantic_errors(record)
     if semantic:
         raise SystemExit("blank qualification template failed semantic checks: " + "; ".join(semantic))
-    if record["qualificationStatus"] != "NOT_STARTED":
-        raise SystemExit("template must start NOT_STARTED")
-    if record["provider"] is not None or record["adapter"] is not None:
-        raise SystemExit("template must not select a provider or adapter")
-    if any(item["status"] != "NOT_RUN" or item["evidence"] for item in record["tests"]):
-        raise SystemExit("template must contain only NOT_RUN tests and no evidence")
-    if record["productionApproval"] is not False:
-        raise SystemExit("template must keep production approval false")
+    if args.record.resolve() == TEMPLATE.resolve():
+        if record["qualificationStatus"] != "NOT_STARTED":
+            raise SystemExit("template must start NOT_STARTED")
+        if record["provider"] is not None or record["adapter"] is not None:
+            raise SystemExit("template must not select a provider or adapter")
+        if any(item["status"] != "NOT_RUN" or item["evidence"] for item in record["tests"]):
+            raise SystemExit("template must contain only NOT_RUN tests and no evidence")
+        if record["productionApproval"] is not False:
+            raise SystemExit("template must keep production approval false")
 
     # Exercise important fail-closed semantic boundaries using mutations of the blank template.
     missing_test = copy.deepcopy(record)
