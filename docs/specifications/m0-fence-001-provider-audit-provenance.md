@@ -84,3 +84,10 @@ The self-test exercises a successful synthetic page and rejects wrong provider a
 - The output still requires materialization, byte verification, the dual-signed evidence manifest, and independent review.
 
 This harness does not authorize host admission, execution, production deployment, or a FENCE-001 pass.
+
+
+## Evidence output integrity
+
+The audit collector must receive a **new or empty, non-symlink directory** for every qualification run. The harness checks this before its first provider API call. A non-directory path, symbolic-link output directory or directory containing any prior file is rejected. Every raw page, authentication artifact, event and final report is created with exclusive-create semantics; an existing filename is never replaced.
+
+A failed or interrupted collection may leave partial artifacts. Preserve that directory as failed-run evidence and use a different run-specific empty directory for any separately approved retry. Do not clear or reuse the failed directory, because doing so could destroy the record of what was collected before the failure.
