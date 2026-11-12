@@ -85,10 +85,10 @@ def receive_message(
     for value in (message.message_id, message.sender_id, message.recipient_id, message.scope):
         if not isinstance(value, str) or not value.strip():
             return reject(state, Outcome.QUARANTINE, "message identity or scope is malformed")
-    if message.sender_id != expected_sender or message.recipient_id != expected_recipient:
-        return reject(state, Outcome.QUARANTINE, "message sender or recipient identity substitution detected")
     if message.sender_id == message.recipient_id:
         return reject(state, Outcome.QUARANTINE, "monitor gossip message cannot be self-addressed")
+    if message.sender_id != expected_sender or message.recipient_id != expected_recipient:
+        return reject(state, Outcome.QUARANTINE, "message sender or recipient identity substitution detected")
     if message.scope != expected_scope:
         return reject(state, Outcome.QUARANTINE, "message witness scope substitution detected")
     if type(message.sequence) is not int or message.sequence < 1:
