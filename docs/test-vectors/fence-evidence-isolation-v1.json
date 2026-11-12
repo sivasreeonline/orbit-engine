@@ -15,7 +15,8 @@
       "administrativeBoundaryId": "admin-storage",
       "deploymentControlPlaneId": "control-storage",
       "failureDomainId": "failure-storage",
-      "principalId": "storage-service"
+      "principalId": "storage-service",
+      "identityEvidenceArtifactId": "identity-storage"
     },
     "collector": {
       "accountId": "acct-collector",
@@ -23,7 +24,8 @@
       "administrativeBoundaryId": "admin-collector",
       "deploymentControlPlaneId": "control-collector",
       "failureDomainId": "failure-collector",
-      "principalId": "collector-service"
+      "principalId": "collector-service",
+      "identityEvidenceArtifactId": "identity-collector"
     },
     "verifier": {
       "accountId": "acct-verifier",
@@ -31,7 +33,8 @@
       "administrativeBoundaryId": "admin-verifier",
       "deploymentControlPlaneId": "control-verifier",
       "failureDomainId": "failure-verifier",
-      "principalId": "verifier-service"
+      "principalId": "verifier-service",
+      "identityEvidenceArtifactId": "identity-verifier"
     },
     "monitors": [
       {
@@ -40,7 +43,8 @@
         "administrativeBoundaryId": "admin-monitor-a",
         "deploymentControlPlaneId": "control-monitor-a",
         "failureDomainId": "failure-monitor-a",
-        "principalId": "monitor-a"
+        "principalId": "monitor-a",
+        "identityEvidenceArtifactId": "identity-monitor-1"
       },
       {
         "accountId": "acct-monitor-b",
@@ -48,7 +52,8 @@
         "administrativeBoundaryId": "admin-monitor-b",
         "deploymentControlPlaneId": "control-monitor-b",
         "failureDomainId": "failure-monitor-b",
-        "principalId": "monitor-b"
+        "principalId": "monitor-b",
+        "identityEvidenceArtifactId": "identity-monitor-2"
       }
     ]
   },
