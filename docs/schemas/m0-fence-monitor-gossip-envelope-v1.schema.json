@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skyhigh.example/schemas/m0-fence-monitor-gossip-envelope-v1.schema.json",
+  "title": "FENCE-001 Monitor Gossip Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "messageType",
+    "messageId",
+    "sender",
+    "recipient",
+    "senderSequence",
+    "issuedAt",
+    "expiresAt",
+    "nonce",
+    "scope",
+    "body",
+    "signature"
+  ],
+  "properties": {
+    "profile": {
+      "const": "sky-high-fence-monitor-gossip-v1"
+    },
+    "messageType": {
+      "enum": [
+        "HEAD_ADVERTISEMENT",
+        "CONSISTENCY_PROOF_REQUEST",
+        "CONSISTENCY_PROOF_RESPONSE",
+        "EQUIVOCATION_ALERT"
+      ]
+    },
+    "messageId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "sender": {
+      "$ref": "#/$defs/monitorIdentity"
+    },
+    "recipient": {
+      "$ref": "#/$defs/monitorIdentity"
+    },
+    "senderSequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 18446744073709552000
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22,86}$"
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "body": {
+      "type": "object"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    }
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "messageType": {
+              "const": "HEAD_ADVERTISEMENT"
+            },
+            "body": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "head"
+              ],
+              "properties": {
+                "head": {
+                  "$ref": "#/$defs/signedHead"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "messageType": {
+              "const": "CONSISTENCY_PROOF_REQUEST"
+            },
+            "body": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "fromHead",
+                "toHead",
+                "requestNonce"
+              ],
+              "properties": {
+                "fromHead": {
+                  "$ref": "#/$defs/headReference"
+                },
+                "toHead": {
+                  "$ref": "#/$defs/headReference"
+                },
+                "requestNonce": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{22,86}$"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "messageType": {
+              "const": "CONSISTENCY_PROOF_RESPONSE"
+            },
+            "body": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "fromHead",
+                "toHead",
+                "proofNodes",
+                "requestMessageId",
+                "requestNonce"
+              ],
+              "properties": {
+                "fromHead": {
+                  "$ref": "#/$defs/headReference"
+                },
+                "toHead": {
+                  "$ref": "#/$defs/headReference"
+                },
+                "proofNodes": {
+                  "type": "array",
+                  "maxItems": 128,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{43}$"
+                  }
+                },
+                "requestMessageId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "requestNonce": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{22,86}$"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "messageType": {
+              "const": "EQUIVOCATION_ALERT"
+            },
+            "body": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "firstHead",
+                "secondHead"
+              ],
+              "properties": {
+                "firstHead": {
+                  "$ref": "#/$defs/signedHead"
+                },
+                "secondHead": {
+                  "$ref": "#/$defs/signedHead"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "$defs": {
+    "monitorIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "monitorId",
+        "keyId"
+      ],
+      "properties": {
+        "monitorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "trustDomain",
+        "witnessId",
+        "authorityId",
+        "hostId"
+      ],
+      "properties": {
+        "trustDomain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "witnessId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hostId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "headReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "rootHash"
+      ],
+      "properties": {
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709552000
+        },
+        "rootHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "signedHead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "scope",
+        "generation",
+        "rootHash",
+        "previousRootHash",
+        "timestamp",
+        "keyId",
+        "signature"
+      ],
+      "properties": {
+        "profile": {
+          "const": "sky-high-fence-witness-merkle-v1"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709552000
+        },
+        "rootHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "previousRootHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{86}$"
+        }
+      }
+    }
+  }
+}
