@@ -26,6 +26,11 @@ export interface LocalOutboxLeaseRepository {
     workerId: string,
     leaseToken: string,
   ): Promise<boolean>;
+  markDeadLetter(
+    outboxId: string,
+    workerId: string,
+    leaseToken: string,
+  ): Promise<boolean>;
 }
 
 export interface LocalDispatchConfiguration {
@@ -84,10 +89,24 @@ export class LocalExecutionOutboxDispatcher {
       let envelope: LocalExecutionDispatchEnvelope;
       try {
         envelope = this.toEnvelope(lease);
+      } catch {
+        // A structurally invalid or unsupported event cannot become valid on
+        // retry. Dead-letter it under the active lease; never silently skip it.
+        const deadLettered = await this.outbox.markDeadLetter(
+          lease.id,
+          this.configuration.workerId,
+          lease.leaseToken,
+        );
+        if (deadLettered) rejected += 1;
+        else fenced += 1;
+        continue;
+      }
+
+      try {
         await this.sink.accept(envelope);
       } catch {
-        // Do not acknowledge. The lease will expire and the exact same
-        // durable outbox identity can be retried by this or another worker.
+        // Do not acknowledge transient sink failures. The lease expires and
+        // the same durable outbox identity can be retried by another worker.
         rejected += 1;
         continue;
       }
