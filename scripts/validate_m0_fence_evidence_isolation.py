@@ -160,6 +160,18 @@ def main() -> None:
         if len(matches) != 1:
             raise ValueError("manifest must contain exactly one INDEPENDENCE_ATTESTATION artifact covering WIT-012 and WIT-014")
         artifact = matches[0]
+        topology = document["topology"]
+        domain_entries = [("storage", topology["storage"]), ("collector", topology["collector"]), ("verifier", topology["verifier"]), ("monitor-a", topology["monitors"][0]), ("monitor-b", topology["monitors"][1])]
+        identity_artifact_ids = [entry["identityEvidenceArtifactId"] for _, entry in domain_entries]
+        if len(identity_artifact_ids) != len(set(identity_artifact_ids)):
+            raise ValueError("each operating domain must have a distinct identity evidence artifact")
+        for domain_name, domain_entry in domain_entries:
+            identity_artifacts = [item for item in body["artifacts"] if item["artifactId"] == domain_entry["identityEvidenceArtifactId"]]
+            if len(identity_artifacts) != 1 or identity_artifacts[0]["artifactType"] != "CONFIGURATION_ATTESTATION":
+                raise ValueError(f"{domain_name}: manifest must contain one CONFIGURATION_ATTESTATION for domain identity and boundary proof")
+            identity_artifact = identity_artifacts[0]
+            if identity_artifact["collectorIdentity"] != topology["collector"]["principalId"] or identity_artifact["independentVerifierIdentity"] != topology["verifier"]["principalId"]:
+                raise ValueError(f"{domain_name}: identity evidence collector/verifier does not match the isolation topology")
         if artifact["collectorIdentity"] != document["topology"]["collector"]["principalId"]:
             raise ValueError("manifest collector identity does not match the isolation attestation")
         if artifact["independentVerifierIdentity"] != document["topology"]["verifier"]["principalId"]:
