@@ -8,6 +8,7 @@ import type {
   ProblemSummary,
 } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
+import type { PostgresExecutionSourceSnapshotRepository } from "./db/execution-source-snapshot-repository";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
 
 type ExecutionEvidenceReadRepository = Pick<
@@ -57,6 +58,7 @@ interface HarnessOptions {
   auth?: AuthenticationResult;
   repository?: Partial<ProblemRepository>;
   evidenceRepository?: ExecutionEvidenceReadRepository;
+  sourceSnapshotRepository?: Pick<PostgresExecutionSourceSnapshotRepository, "getAttemptSourceSnapshot">;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -77,6 +79,9 @@ function makeHarness(options: HarnessOptions = {}) {
     repository,
     ...(options.evidenceRepository
       ? { evidenceRepository: options.evidenceRepository }
+      : {}),
+    ...(options.sourceSnapshotRepository
+      ? { sourceSnapshotRepository: options.sourceSnapshotRepository }
       : {}),
     allowedOrigins: allowedOrigin,
   });
@@ -281,6 +286,133 @@ describe("M1 API control plane", () => {
     expect(JSON.stringify(body)).not.toContain("secret-password");
     expect(body).toMatchObject({
       error: { code: "INTERNAL_ERROR", retryable: true },
+    });
+  });
+
+  it("returns an exact source snapshot only through the authenticated owner scope", async () => {
+    const attemptId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
+    const snapshot = {
+      attemptId,
+      sourceSha256: "a".repeat(64),
+      sourceByteLength: "21",
+      sourceCode: "public class Main {}",
+    };
+    const getAttemptSourceSnapshot = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _attemptId: string,
+    ) => snapshot);
+    const { handler } = makeHarness({
+      sourceSnapshotRepository: { getAttemptSourceSnapshot },
+    });
+
+    const response = await handler(makeRequest(
+      `/api/v1/attempts/${attemptId}/source`,
+    ));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await readJson(response)).toEqual({ data: snapshot });
+    expect(getAttemptSourceSnapshot).toHaveBeenCalledWith(
+      authenticated.principal.tenantId,
+      authenticated.principal.userId,
+      attemptId,
+    );
+  });
+
+  it("rejects invalid attempt identifiers before reading source evidence", async () => {
+    const getAttemptSourceSnapshot = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _attemptId: string,
+    ) => ({
+      attemptId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+      sourceSha256: "a".repeat(64),
+      sourceByteLength: "1",
+      sourceCode: "x",
+    }));
+    const { handler } = makeHarness({
+      sourceSnapshotRepository: { getAttemptSourceSnapshot },
+    });
+
+    const response = await handler(makeRequest("/api/v1/attempts/not-a-uuid/source"));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_ATTEMPT_ID", retryable: false },
+    });
+    expect(getAttemptSourceSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("does not disclose source snapshots belonging to another student", async () => {
+    const getAttemptSourceSnapshot = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _attemptId: string,
+    ): Promise<never> => {
+      throw new Error("execution_source_snapshot_not_found");
+    });
+    const { handler } = makeHarness({
+      sourceSnapshotRepository: { getAttemptSourceSnapshot },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1/source",
+    ));
+
+    expect(response.status).toBe(500);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INTERNAL_ERROR", retryable: true },
+    });
+  });
+
+  it("returns a non-disclosing 404 when the owned source snapshot does not exist", async () => {
+    const { ExecutionSourceSnapshotNotFoundError } = await import(
+      "./db/execution-source-snapshot-repository"
+    );
+    const getAttemptSourceSnapshot = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _attemptId: string,
+    ): Promise<never> => {
+      throw new ExecutionSourceSnapshotNotFoundError();
+    });
+    const { handler } = makeHarness({
+      sourceSnapshotRepository: { getAttemptSourceSnapshot },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1/source",
+    ));
+
+    expect(response.status).toBe(404);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "ATTEMPT_SOURCE_NOT_FOUND", retryable: false },
+    });
+  });
+
+  it("returns retryable unavailable while private R2 source retrieval is not configured", async () => {
+    const { ExecutionSourceSnapshotUnavailableError } = await import(
+      "./db/execution-source-snapshot-repository"
+    );
+    const getAttemptSourceSnapshot = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _attemptId: string,
+    ): Promise<never> => {
+      throw new ExecutionSourceSnapshotUnavailableError();
+    });
+    const { handler } = makeHarness({
+      sourceSnapshotRepository: { getAttemptSourceSnapshot },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1/source",
+    ));
+
+    expect(response.status).toBe(503);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "SOURCE_SNAPSHOT_UNAVAILABLE", retryable: true },
     });
   });
 
