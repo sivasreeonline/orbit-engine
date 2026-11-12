@@ -85,6 +85,7 @@ describe("PostgresExecutionEvidenceRepository", () => {
 
   it("records a terminal result in the same transaction as the fenced job completion and event", async () => {
     const fake = makeClient((text) => {
+      if (text.includes("SELECT id FROM execution_jobs")) return [{ id: executionId }];
       if (text.includes("FROM execution_result_records")) return [];
       if (text.includes("UPDATE execution_jobs")) return [{ id: executionId }];
       if (text.includes("INSERT INTO execution_result_records")) {
@@ -109,6 +110,7 @@ describe("PostgresExecutionEvidenceRepository", () => {
     expect(fake.calls.map((call) => call.text.trim().split("\n")[0])).toEqual([
       "SET statement_timeout = '5s'",
       "BEGIN",
+      "SELECT id FROM execution_jobs",
       "SELECT attempt_id, result_sha256",
       "UPDATE execution_jobs",
       "INSERT INTO execution_result_records (",
@@ -130,6 +132,7 @@ describe("PostgresExecutionEvidenceRepository", () => {
 
   it("replays an identical result without requiring the old runner lease again", async () => {
     const fake = makeClient((text) => {
+      if (text.includes("SELECT id FROM execution_jobs")) return [{ id: executionId }];
       if (text.includes("FROM execution_result_records")) {
         return [{ attempt_id: attemptId, result_sha256: resultInput.resultSha256 }];
       }
@@ -150,6 +153,7 @@ describe("PostgresExecutionEvidenceRepository", () => {
 
   it("rejects a conflicting result for an execution that is already finalized", async () => {
     const fake = makeClient((text) => {
+      if (text.includes("SELECT id FROM execution_jobs")) return [{ id: executionId }];
       if (text.includes("FROM execution_result_records")) {
         return [{ attempt_id: attemptId, result_sha256: "c".repeat(64) }];
       }
@@ -167,6 +171,7 @@ describe("PostgresExecutionEvidenceRepository", () => {
 
   it("rejects completion when the runner lease is stale or belongs to another worker", async () => {
     const fake = makeClient((text) => {
+      if (text.includes("SELECT id FROM execution_jobs")) return [{ id: executionId }];
       if (text.includes("UPDATE execution_jobs")) return [];
       return [];
     });
