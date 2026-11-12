@@ -1,0 +1,68 @@
+{
+  "manifestBody": {
+    "profile": "sky-high-fence-evidence-manifest-v1",
+    "schemaVersion": 1,
+    "manifestId": "fixture-manifest-001",
+    "createdAt": "2026-11-12T00:00:00Z",
+    "testOnly": true,
+    "providerScope": {
+      "name": "synthetic-provider",
+      "account": "fixture-account",
+      "region": "fixture-region",
+      "service": "fixture-witness"
+    },
+    "adapter": {
+      "repository": "https://example.invalid/adapter",
+      "commit": "1111111111111111111111111111111111111111",
+      "version": "fixture-1",
+      "configurationDigest": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "artifacts": [
+      {
+        "artifactId": "artifact-001",
+        "testIds": ["WIT-001"],
+        "artifactType": "RAW_PROVIDER_EXCHANGE",
+        "objectRef": "fixture://evidence/001",
+        "objectVersion": "immutable-v1",
+        "sha256": "0782cf79785a76736c964a76b9c52fe7c24de83fff65624a85043498e8d98d9f",
+        "byteCount": 41,
+        "acquiredAt": "2026-11-12T00:00:00Z",
+        "collectorIdentity": "collector-fixture",
+        "collectorKeyId": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+        "independentVerifierIdentity": "verifier-fixture",
+        "verifierKeyId": "24f6ed6acbfe1009c030d7ca567c33ca4830911498236b5561a6c82abec5de28",
+        "providerRequestIds": ["request-fixture-001"],
+        "redaction": "NONE"
+      }
+    ]
+  },
+  "manifestDigest": "e782b30e06dbb97d54e088c3df92f827f516d9bfc089900c5ea373447f34eb75",
+  "attestations": [
+    {
+      "role": "COLLECTOR",
+      "signerIdentity": "collector-fixture",
+      "keyId": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+      "signatureBase64Url": "NZPt2H_fOpuq-byGPpmpxHc2rBBY9wnzGawrkQBRS-rFTu2kS98Ed8T7f7WljGavnQw1EB4n7fhlVgRtlbS-BQ"
+    },
+    {
+      "role": "INDEPENDENT_VERIFIER",
+      "signerIdentity": "verifier-fixture",
+      "keyId": "24f6ed6acbfe1009c030d7ca567c33ca4830911498236b5561a6c82abec5de28",
+      "signatureBase64Url": "agtXCtNWhGpaByK4HCfUwVvw29N11x0XrFGognuogqY-WpZdxP6y2WGMxs2ia5CkNBt8rDuSe1JAunSaAEmKDg"
+    }
+  ],
+  "trustedKeys": [
+    {
+      "keyId": "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+      "identity": "collector-fixture",
+      "role": "COLLECTOR",
+      "publicKeyBase64Url": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg"
+    },
+    {
+      "keyId": "24f6ed6acbfe1009c030d7ca567c33ca4830911498236b5561a6c82abec5de28",
+      "identity": "verifier-fixture",
+      "role": "INDEPENDENT_VERIFIER",
+      "publicKeyBase64Url": "Kay64UG8yvCyLhqU000LxzYeUm0L_hLIl5S8kyKWbdc"
+    }
+  ]
+}
