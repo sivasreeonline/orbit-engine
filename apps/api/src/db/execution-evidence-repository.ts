@@ -157,6 +157,8 @@ export class StaleExecutionLeaseError extends Error {
 
 interface EventRow extends Record<string, unknown> {
   readonly sequence_id: string | number;
+  readonly execution_id: string;
+  readonly attempt_id: string;
   readonly event_id: string;
   readonly event_type: ExecutionEvidenceEventType;
   readonly actor_kind: EvidenceActorKind;
@@ -331,7 +333,7 @@ export class PostgresExecutionEvidenceRepository {
 
       const existing = await client.query<EventRow>(
         [
-          "SELECT sequence_id, event_id, event_type, actor_kind, phase_status,",
+          "SELECT sequence_id, event_id, execution_id, attempt_id, event_type, actor_kind, phase_status,",
           "  safe_code, duration_ms, created_at",
           "FROM execution_evidence_events WHERE event_id = $1::uuid",
         ].join("\n"),
@@ -340,6 +342,8 @@ export class PostgresExecutionEvidenceRepository {
       const prior = existing.rows[0];
       if (!prior) throw new ExecutionEvidenceNotFoundError();
       if (
+        prior.execution_id !== input.executionId ||
+        prior.attempt_id !== input.attemptId ||
         prior.event_type !== input.eventType ||
         prior.actor_kind !== input.actorKind ||
         prior.phase_status !== (input.phaseStatus ?? null) ||
