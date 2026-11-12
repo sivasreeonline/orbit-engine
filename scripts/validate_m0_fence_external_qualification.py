@@ -197,7 +197,10 @@ def self_test() -> None:
                     "independentVerifierAttestation": "independentVerifier",
                     "evidenceStoreRetention": "evidenceStoreRetention",
                 }[name]] = {
-                    **bound, "verified": True, "runId": "run-fixture-001", "accountId": "account-fixture",
+                    "evidenceArtifact": filename,
+                    "sha256": bound["sha256"],
+                    "byteCount": bound["byteCount"],
+                    "verified": True, "runId": "run-fixture-001", "accountId": "account-fixture",
                 }
         plan = {
             "profile": PROFILE, "testOnly": False, "productionApproval": False,
