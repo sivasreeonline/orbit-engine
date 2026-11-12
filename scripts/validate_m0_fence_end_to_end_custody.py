@@ -254,9 +254,9 @@ def self_test() -> None:
             }],
         }
         mappings = [
-            {"sourceGroup": "pages", "sourceArtifact": "audit-page-0001.bin", "manifestArtifactId": "audit-page-0001"},
-            {"sourceGroup": "authenticationEvidence", "sourceArtifact": "audit-auth-0001.bin", "manifestArtifactId": "audit-auth-0001"},
-            {"sourceGroup": "events", "sourceArtifact": "audit-event-0001.bin", "manifestArtifactId": "audit-event-0001"},
+            {"sourceGroup": "pages", "sourceArtifact": "audit-page-0001.bin", "manifestArtifactId": "audit-page-0001.bin"},
+            {"sourceGroup": "authenticationEvidence", "sourceArtifact": "audit-auth-0001.bin", "manifestArtifactId": "audit-auth-0001.bin"},
+            {"sourceGroup": "events", "sourceArtifact": "audit-event-0001.bin", "manifestArtifactId": "audit-event-0001.bin"},
         ]
 
         def write_json(path: Path, value: Any) -> None:
@@ -305,7 +305,7 @@ def self_test() -> None:
         run(command, "Run complete end-to-end evidence custody reconciliation")
 
         # Prove the orchestrator fails at both custody layers, not just preflight.
-        audit_event_path = artifact_root / "audit-event-0001"
+        audit_event_path = artifact_root / "audit-event-0001.bin"
         audit_event_path.write_bytes(event_bytes + b"tamper")
         rejected_audit = subprocess.run(
             command, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
