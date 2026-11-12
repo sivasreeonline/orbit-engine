@@ -57,7 +57,7 @@ def verify_artifact_files(body: dict[str, Any], artifact_root: Path) -> int:
 
 
 def run_fixture_tests() -> tuple[int, int]:
-    vector = load_json(ROOT / "docs/test-vectors/m0-fence-evidence-manifest-v1.json")
+    vector = load_json(ROOT / "docs/test-vectors/fence-evidence-manifest-v1.json")
     body = vector["manifestBody"]
     with tempfile.TemporaryDirectory(prefix="fence-evidence-") as directory:
         root = Path(directory)
@@ -108,7 +108,7 @@ def main() -> None:
         print("Remote immutability and provider-origin claims remain separate qualification evidence")
         return
 
-    vector = load_json(ROOT / "docs/test-vectors/m0-fence-evidence-manifest-v1.json")
+    vector = load_json(ROOT / "docs/test-vectors/fence-evidence-manifest-v1.json")
     verified, rejected = run_fixture_tests()
     print("FENCE-001 evidence artifact byte verifier: PASS")
     print(f"Fixture artifacts byte-verified: {verified}")
