@@ -42,10 +42,10 @@ Before implementation, choose and test explicit limits for source bytes, line co
 ## Implemented in this slice
 
 - A deterministic line-token diff engine with a bounded LCS matrix.
-- Default per-source byte limit of 128 KiB, line limit of 4,000 and matrix-cell budget of 4,000,000.
+- Default per-source byte limit of 128 KiB, enforced in SQL before source bytea is materialized; line limit of 4,000 and matrix-cell budget of 4,000,000.
 - A single owner-scoped SQL read that loads both attempts and snapshots together.
 - Eligibility checks for problem ID, immutable problem-version ID, language and runtime version.
-- SHA-256, byte-length and strict UTF-8 verification for both source snapshots.
+- Tenant/actor predicates on both attempt rows and both snapshot rows, attempt-to-snapshot digest linkage, and SHA-256, byte-length and strict UTF-8 verification for both source snapshots.
 - An authenticated API route that returns attempt metadata and structured diff operations, not the full source snapshot envelope.
 - Non-disclosing 404 for missing/out-of-scope attempts, 409 for incompatible attempts, 503 for unavailable storage and 413 for comparison resource limits.
 - Unit tests for diff behavior, owner predicates, eligibility, integrity and route behavior.
