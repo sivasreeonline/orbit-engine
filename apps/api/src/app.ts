@@ -1,6 +1,12 @@
 import type { Authenticator, ProblemRepository } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+import {
+  ExecutionSourceSnapshotIntegrityError,
+  ExecutionSourceSnapshotNotFoundError,
+  ExecutionSourceSnapshotUnavailableError,
+  type PostgresExecutionSourceSnapshotRepository,
+} from "./db/execution-source-snapshot-repository";
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
@@ -8,10 +14,16 @@ type ExecutionEvidenceReadRepository = Pick<
 >;
 import type { Env } from "./env";
 
+type ExecutionSourceSnapshotReadRepository = Pick<
+  PostgresExecutionSourceSnapshotRepository,
+  "getAttemptSourceSnapshot"
+>;
+
 interface ApiDependencies {
   readonly authenticator: Authenticator;
   readonly repository: ProblemRepository;
   readonly evidenceRepository?: ExecutionEvidenceReadRepository;
+  readonly sourceSnapshotRepository?: ExecutionSourceSnapshotReadRepository;
   readonly allowedOrigins?: string;
 }
 
@@ -180,7 +192,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
       ? path.match(/^\/api\/v1\/executions\/([^/]+)\/events$/)
       : null;
 
-    if (!isProblemList && !problemMatch && !attemptHistoryMatch && !executionEventsMatch) {
+    if (!isProblemList && !problemMatch && !attemptHistoryMatch && !executionEventsMatch && !attemptSourceMatch) {
       return errorResponse(
         "NOT_FOUND",
         "The requested API route does not exist.",
@@ -242,6 +254,105 @@ export function createApiHandler(dependencies: ApiDependencies) {
         origin,
         allowedOrigins,
       );
+    }
+
+    if (attemptSourceMatch) {
+      if (!dependencies.sourceSnapshotRepository) {
+        return errorResponse(
+          "SOURCE_SNAPSHOT_STORE_NOT_CONFIGURED",
+          "The saved source snapshot is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      let attemptId: string;
+      try {
+        attemptId = decodeURIComponent(attemptSourceMatch[1] ?? "");
+      } catch {
+        attemptId = "";
+      }
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attemptId)) {
+        return errorResponse(
+          "INVALID_ATTEMPT_ID",
+          "The attempt identifier is invalid.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      try {
+        const snapshot = await dependencies.sourceSnapshotRepository.getAttemptSourceSnapshot(
+          principal.tenantId,
+          principal.userId,
+          attemptId,
+        );
+        return jsonResponse(
+          { data: snapshot },
+          200,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      } catch (error) {
+        if (error instanceof ExecutionSourceSnapshotNotFoundError) {
+          return errorResponse(
+            "ATTEMPT_SOURCE_NOT_FOUND",
+            "The requested source snapshot was not found.",
+            404,
+            false,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        if (
+          error instanceof DatabaseUnavailableError ||
+          error instanceof ExecutionSourceSnapshotUnavailableError
+        ) {
+          return errorResponse(
+            "SOURCE_SNAPSHOT_UNAVAILABLE",
+            "The saved source snapshot is temporarily unavailable.",
+            503,
+            true,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        if (error instanceof ExecutionSourceSnapshotIntegrityError) {
+          console.error("execution_source_snapshot_integrity_failed", {
+            correlationId: requestId,
+          });
+          return errorResponse(
+            "SOURCE_SNAPSHOT_INTEGRITY_FAILED",
+            "The saved source snapshot could not be verified.",
+            500,
+            false,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        console.error("execution_source_snapshot_read_failed", {
+          correlationId: requestId,
+        });
+        return errorResponse(
+          "INTERNAL_ERROR",
+          "The saved source snapshot could not be loaded.",
+          500,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
     }
 
     if (attemptHistoryMatch) {
