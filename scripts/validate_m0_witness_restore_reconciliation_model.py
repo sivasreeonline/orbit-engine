@@ -64,6 +64,7 @@ def decide_reconciliation(
     monitors: Sequence[MonitorHead],
     latest_read_status: str,
     consistency_proof_status: str,
+    local_consistency_proof_status: str,
     checkpoint_chain_verified: bool,
     local_state_replayable: bool,
     trust_generation: int,
@@ -137,6 +138,13 @@ def decide_reconciliation(
 
     if local.generation > witness.generation:
         return Decision(Outcome.QUARANTINE, "restored authority claims a generation ahead of witness")
+    if local.generation == protected.generation and local.digest != protected.digest:
+        return Decision(Outcome.QUARANTINE, "authority conflicts with protected verifier digest")
+    if local.generation > protected.generation and local.generation < witness.generation:
+        if local_consistency_proof_status == "MISSING":
+            return Decision(Outcome.BLOCKED, "consistency proof from protected high-water to restored authority is missing")
+        if local_consistency_proof_status != "VERIFIED":
+            return Decision(Outcome.QUARANTINE, "restored authority is not proven to descend from protected high-water")
     if local.generation == witness.generation:
         if local.digest != witness.digest:
             return Decision(Outcome.QUARANTINE, "authority and witness disagree at the same generation")
@@ -163,6 +171,13 @@ def decide_reconciliation(
         expected_predecessor = checkpoint.digest
     if expected_generation - 1 != witness.generation or expected_predecessor != witness.digest:
         return Decision(Outcome.QUARANTINE, "recovery chain does not terminate at witness high-water")
+    if local.generation < protected.generation:
+        protected_checkpoint = next(
+            (item for item in witness_chain if item.generation == protected.generation),
+            None,
+        )
+        if protected_checkpoint is None or protected_checkpoint.digest != protected.digest:
+            return Decision(Outcome.QUARANTINE, "recovery chain does not intersect the protected verifier high-water")
     if not checkpoint_chain_verified:
         return Decision(Outcome.QUARANTINE, "recovery checkpoint artifacts or signatures are not verified")
     if not local_state_replayable:
@@ -191,6 +206,7 @@ def base_case() -> dict:
         "monitors": monitors,
         "latest_read_status": "VERIFIED",
         "consistency_proof_status": "NOT_REQUIRED",
+        "local_consistency_proof_status": "NOT_REQUIRED",
         "checkpoint_chain_verified": True,
         "local_state_replayable": True,
         "trust_generation": 4,
@@ -227,6 +243,22 @@ def main() -> None:
     expect("missing consistency proof", {"consistency_proof_status": "MISSING"}, Outcome.BLOCKED)
     expect("invalid consistency proof", {"consistency_proof_status": "INVALID"}, Outcome.QUARANTINE)
     expect(
+        "witness advanced beyond protected high-water",
+        {
+            "witness": HighWater(7, "7" * 64),
+            "witness_chain": [
+                Checkpoint(6, "6" * 64, "5" * 64),
+                Checkpoint(7, "7" * 64, "6" * 64),
+            ],
+            "monitors": [
+                MonitorHead("monitor-a", "operator-a", "account-a", "region-a", 7, "7" * 64),
+                MonitorHead("monitor-b", "operator-b", "account-b", "region-b", 7, "7" * 64),
+            ],
+            "consistency_proof_status": "VERIFIED",
+        },
+        Outcome.RECOVERED,
+    )
+    expect(
         "witness rollback",
         {"witness": HighWater(5, "5" * 64)},
         Outcome.QUARANTINE,
@@ -251,7 +283,44 @@ def main() -> None:
             "witness_chain": [],
         },
         Outcome.QUARANTINE,
-        "disagree at the same generation",
+        "protected verifier digest",
+    )
+    expect(
+        "local chain misses protected high-water",
+        {"witness_chain": [Checkpoint(6, "a" * 64, "5" * 64)]},
+        Outcome.QUARANTINE,
+        "does not intersect",
+    )
+    expect(
+        "missing protected-to-local proof",
+        {
+            "local": HighWater(6, "6" * 64),
+            "witness": HighWater(7, "7" * 64),
+            "witness_chain": [Checkpoint(7, "7" * 64, "6" * 64)],
+            "monitors": [
+                MonitorHead("monitor-a", "operator-a", "account-a", "region-a", 7, "7" * 64),
+                MonitorHead("monitor-b", "operator-b", "account-b", "region-b", 7, "7" * 64),
+            ],
+            "consistency_proof_status": "VERIFIED",
+            "local_consistency_proof_status": "MISSING",
+        },
+        Outcome.BLOCKED,
+    )
+    expect(
+        "invalid protected-to-local proof",
+        {
+            "local": HighWater(6, "6" * 64),
+            "witness": HighWater(7, "7" * 64),
+            "witness_chain": [Checkpoint(7, "7" * 64, "6" * 64)],
+            "monitors": [
+                MonitorHead("monitor-a", "operator-a", "account-a", "region-a", 7, "7" * 64),
+                MonitorHead("monitor-b", "operator-b", "account-b", "region-b", 7, "7" * 64),
+            ],
+            "consistency_proof_status": "VERIFIED",
+            "local_consistency_proof_status": "INVALID",
+        },
+        Outcome.QUARANTINE,
+        "not proven to descend",
     )
     expect(
         "chain gap",
@@ -342,7 +411,7 @@ def main() -> None:
     )
 
     print("FENCE-001 restore/reconciliation reference model: PASS")
-    print("Scenarios: 24 fail-closed and recovery cases")
+    print("Scenarios: 28 fail-closed and recovery cases")
     print("Outcomes exercised: RECONCILED, RECOVERED, BLOCKED, QUARANTINE")
     print("Scope: deterministic state-machine model only; no provider, database restore or execution authorization")
 
