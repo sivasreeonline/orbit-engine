@@ -433,6 +433,14 @@ def self_test() -> None:
         trust_path.write_bytes(trust_bytes)
         loaded_trust_keys, trust_digest = load_json_with_sha256(trust_path)
         require_trust_keys_outside_evidence_root(trust_path, root)
+        in_evidence_trust_path = root / "untrusted-trust-keys.json"
+        in_evidence_trust_path.write_bytes(trust_bytes)
+        try:
+            require_trust_keys_outside_evidence_root(in_evidence_trust_path, root)
+        except PlanError:
+            pass
+        else:
+            raise AssertionError("trust-key inventory inside evidence root accepted")
 
         def validate_fixture(candidate: dict[str, Any], document: dict[str, Any] = loaded_trust_keys,
                              actual_digest: str = trust_digest, expected_digest: str = trust_digest) -> dict[str, Any]:
@@ -474,6 +482,28 @@ def self_test() -> None:
 
         result = validate_fixture(plan)
         require(result["result"] == "READY_FOR_INDEPENDENT_REVIEW", "valid signed plan rejected")
+        try:
+            validate_plan(plan, root, loaded_trust_keys, trust_digest, "0" * 64, now=fixed_now)
+        except PlanError:
+            pass
+        else:
+            raise AssertionError("wrong out-of-band trust-key inventory pin accepted")
+
+        substituted_trust = copy.deepcopy(trust_keys)
+        substituted_public = Ed25519PrivateKey.generate().public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        substituted_trust["keys"][0]["publicKeyBase64Url"] = (
+            base64.urlsafe_b64encode(substituted_public).decode("ascii").rstrip("=")
+        )
+        substituted_trust["keys"][0]["publicKeySha256"] = hashlib.sha256(substituted_public).hexdigest()
+        substituted_digest = hashlib.sha256(
+            canonical_json(substituted_trust, "substituted trust-key fixture") + b"\n"
+        ).hexdigest()
+        try:
+            validate_plan(plan, root, substituted_trust, substituted_digest, trust_digest, now=fixed_now)
+        except PlanError:
+            pass
+        else:
+            raise AssertionError("replacement trust-key inventory accepted under the old pin")
         require(result["productionApproval"] is False, "approval state changed")
         require(set(result["attestationSigners"]) == set(EXPECTED_ATTESTATIONS),
                 "not all independent attestation roles were verified")
@@ -558,7 +588,7 @@ def self_test() -> None:
         candidate = copy.deepcopy(plan)
         candidate["stages"]["evidence_object_store"]["sha256"] = "0" * 64
         try:
-            validate_plan(candidate, root, trust_keys, now=fixed_now)
+            validate_fixture(candidate)
         except PlanError:
             pass
         else:
@@ -576,13 +606,13 @@ def self_test() -> None:
         (root / "witness.evidence").write_bytes(f"synthetic-stage:witness".encode())
         (root / "providerApproval.attestation").write_bytes(b"tampered-attestation")
         try:
-            validate_plan(plan, root, trust_keys, now=fixed_now)
+            validate_fixture(plan)
         except PlanError:
             pass
         else:
             raise AssertionError("tampered signed attestation evidence bytes accepted")
 
-        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 23 fail-closed checks)")
+        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 26 fail-closed checks)")
         print("Ed25519 signatures verified against an independent trust-key inventory.")
         print("Synthetic only: no provider calls, production keys, destructive tests or production approval.")
 
