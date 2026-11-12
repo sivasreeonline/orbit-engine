@@ -70,6 +70,7 @@ def validate_attestation(document: dict[str, Any]) -> list[str]:
     target = document["targetObject"]
     seen_actions: set[str] = set()
     seen_events: set[str] = set()
+    seen_audit_artifacts: set[str] = set()
     for attempt in document["bypassAttempts"]:
         action = attempt["action"]
         if action in seen_actions:
@@ -85,6 +86,9 @@ def validate_attestation(document: dict[str, Any]) -> list[str]:
         if attempt["auditEventId"] in seen_events:
             raise ValueError(f"{action}: audit event ID is reused")
         seen_events.add(attempt["auditEventId"])
+        if attempt["auditArtifactId"] in seen_audit_artifacts:
+            raise ValueError(f"{action}: audit artifact ID is reused")
+        seen_audit_artifacts.add(attempt["auditArtifactId"])
     missing = set(ACTIONS) - seen_actions
     if missing:
         raise ValueError(f"missing privileged bypass attempts: {', '.join(sorted(missing))}")
@@ -118,6 +122,7 @@ def run_fixture_tests() -> tuple[int, int]:
     reject(lambda d: d["bypassAttempts"][0].update(auditAcquiredByPrincipalId="collector-principal"), "independent verifier")
     reject(lambda d: d["bypassAttempts"][0].update(objectRef="synthetic://different-object"), "exact retained object version")
     reject(lambda d: d["bypassAttempts"][1].update(auditEventId=d["bypassAttempts"][0]["auditEventId"]), "audit event ID is reused")
+    reject(lambda d: d["bypassAttempts"][1].update(auditArtifactId=d["bypassAttempts"][0]["auditArtifactId"]), "audit artifact ID is reused")
     reject(lambda d: d["topology"]["monitors"][0].update(organizationId=d["topology"]["storage"]["organizationId"]), "organizationId must be distinct")
     reject(lambda d: d["bypassAttempts"].pop(), "is too short")
     reject(lambda d: d["privilegedPrincipals"].update(accountOwner=d["topology"]["verifier"]["principalId"]), "overlaps a privileged bypass principal")
@@ -167,6 +172,12 @@ def main() -> None:
             audit_artifact = audit_artifacts[0]
             if audit_artifact["artifactType"] not in ("RAW_PROVIDER_EXCHANGE", "CONTRACT_EVIDENCE"):
                 raise ValueError("privileged audit artifact has an invalid artifact type")
+            if audit_artifact["collectorIdentity"] != document["topology"]["collector"]["principalId"]:
+                raise ValueError("raw audit artifact collector identity does not match the isolation topology")
+            if audit_artifact["independentVerifierIdentity"] != document["topology"]["verifier"]["principalId"]:
+                raise ValueError("raw audit artifact verifier identity does not match the isolation topology")
+            if audit_artifact["artifactId"] == artifact["artifactId"]:
+                raise ValueError("raw audit artifact cannot reuse the independence attestation artifact")
             if audit_artifact["sha256"] != attempt["auditEventSha256"]:
                 raise ValueError("audit-event digest differs from signed manifest")
             if attempt["providerRequestId"] not in audit_artifact["providerRequestIds"]:
