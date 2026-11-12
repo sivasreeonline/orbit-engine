@@ -88,11 +88,13 @@ describe.skipIf(!databaseUrl)("PostgresExecutionEvidenceRepository PostgreSQL in
       lease.leaseOwner,
       lease.leaseToken,
     );
-    const recorded = await evidence.recordResult(resultInput);
-    const replayed = await evidence.recordResult(resultInput);
-    expect(recorded.replayed).toBe(false);
-    expect(replayed.replayed).toBe(true);
-    expect(recorded.state).toBe("COMPLETED");
+    const concurrentCompletions = await Promise.all([
+      evidence.recordResult(resultInput),
+      evidence.recordResult(resultInput),
+    ]);
+    expect(concurrentCompletions.filter((item) => !item.replayed)).toHaveLength(1);
+    expect(concurrentCompletions.filter((item) => item.replayed)).toHaveLength(1);
+    expect(concurrentCompletions.every((item) => item.state === "COMPLETED")).toBe(true);
 
     const history = await evidence.listProblemAttemptHistory(tenantId, actorId, "two-sum");
     const entry = history.find((item) => item.executionId === created.executionId);
