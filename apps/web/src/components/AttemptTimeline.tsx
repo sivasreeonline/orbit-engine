@@ -296,6 +296,7 @@ export default function AttemptTimeline({ problemSlug }: AttemptTimelineProps) {
                       <input
                         type="checkbox"
                         checked={selectedForDiff.includes(entry.attemptId)}
+                        disabled={!selectedForDiff.includes(entry.attemptId) && selectedForDiff.length >= 2}
                         onChange={() => toggleDiffSelection(entry.attemptId)}
                         aria-label={`Select ${entry.action} attempt from ${formatDate(entry.createdAt)} for comparison`}
                       />
@@ -343,6 +344,7 @@ export default function AttemptTimeline({ problemSlug }: AttemptTimelineProps) {
           </div>
           <pre className="timeline-diff-code"><code>{diff.diff.operations.map((operation, index) => (
             <span className={`timeline-diff-line ${operation.kind.toLowerCase()}`} key={`${index}-${operation.kind}`}>
+              <span className="timeline-diff-number">{operation.kind === "INSERT" ? operation.targetLine ?? "" : operation.baseLine ?? operation.targetLine ?? ""}</span>
               <span className="timeline-diff-sign">{operation.kind === "INSERT" ? "+" : operation.kind === "DELETE" ? "−" : " "}</span>
               {operation.text}
             </span>
