@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, "feat/**", "fix/**", "docs/**", "test/**"]
+    branches: [main, "feat/**", "fix/**", "docs/**", "test/**", "security/**"]
     paths:
       - "apps/web/**"
       - "apps/api/**"
@@ -14,7 +14,7 @@ on:
       - "AGENTS.md"
       - "CLAUDE.md"
   push:
-    branches: [main, "feat/**", "fix/**", "docs/**"]
+    branches: [main, "feat/**", "fix/**", "docs/**", "security/**"]
     paths:
       - "apps/web/**"
       - "apps/api/**"
