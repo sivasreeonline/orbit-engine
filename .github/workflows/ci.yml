@@ -130,6 +130,9 @@ jobs:
       - name: Validate FENCE-001 monitor gossip envelope schema and semantic bindings
         run: python ../../scripts/validate_m0_fence_monitor_gossip_envelope.py
 
+      - name: Verify FENCE-001 monitor gossip replay state machine
+        run: python ../../scripts/validate_m0_monitor_gossip_replay_state.py
+
       - name: Configure PostgreSQL client wrappers
         run: |
           set -euo pipefail
