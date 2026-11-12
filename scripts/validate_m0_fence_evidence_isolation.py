@@ -116,6 +116,9 @@ def run_fixture_tests() -> tuple[int, int]:
     reject(lambda d: d["bypassAttempts"][0].update(result="ALLOWED"), "DENIED")
     reject(lambda d: d["bypassAttempts"][0].update(actorPrincipalId="collector-principal"), "designated storageAdmin")
     reject(lambda d: d["bypassAttempts"][0].update(auditAcquiredByPrincipalId="collector-principal"), "independent verifier")
+    reject(lambda d: d["bypassAttempts"][0].update(objectRef="synthetic://different-object"), "exact retained object version")
+    reject(lambda d: d["bypassAttempts"][1].update(auditEventId=d["bypassAttempts"][0]["auditEventId"]), "audit event ID is reused")
+    reject(lambda d: d["topology"]["monitors"][0].update(organizationId=d["topology"]["storage"]["organizationId"]), "organizationId must be distinct")
     reject(lambda d: d["bypassAttempts"].pop(), "is too short")
     reject(lambda d: d["privilegedPrincipals"].update(accountOwner=d["topology"]["verifier"]["principalId"]), "overlaps a privileged bypass principal")
     return len(validated), negatives
