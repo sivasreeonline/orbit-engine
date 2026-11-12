@@ -35,7 +35,44 @@ const (
 var (
 	runtimeVersionPattern = regexp.MustCompile(`^[A-Za-z0-9._+-]{1,64}$`)
 	artifactCaseIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
-	imageReferencePattern = regexp.MustCompile(`^.+@sha256:([0-9a-f]{64})$`)
+	imageReferencePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._:/-]*@sha256:([0-9a-f]{64})package runner
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"regexp"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+)
+
+var (
+	ErrSandboxNotConfigured = errors.New("sandbox executor is not configured")
+	ErrInvalidRuntimeConfig = errors.New("invalid pinned runtime configuration")
+)
+
+const (
+	maximumSourceBytes  = 200 * 1024
+	maximumTestCases    = 1000
+	maximumTestBytes    = 64 * 1024
+	maximumBundleBytes  = 4 * 1024 * 1024
+	maximumCPUQuota     = int64(2000)
+	maximumMemoryBytes  = int64(1024 * 1024 * 1024)
+	maximumWallMillis   = int64(30_000)
+	maximumProcessCount = int64(128)
+	maximumOutputBytes  = int64(1024 * 1024)
+)
+
+var (
+	runtimeVersionPattern = regexp.MustCompile(`^[A-Za-z0-9._+-]{1,64}$`)
+	artifactCaseIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+	)
 )
 
 type Executor interface {
