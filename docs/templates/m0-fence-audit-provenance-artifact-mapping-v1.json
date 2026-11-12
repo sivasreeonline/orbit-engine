@@ -1,0 +1,17 @@
+[
+  {
+    "sourceGroup": "pages",
+    "sourceArtifact": "audit-page-0001.bin",
+    "manifestArtifactId": "manifest-audit-page-0001"
+  },
+  {
+    "sourceGroup": "authenticationEvidence",
+    "sourceArtifact": "audit-page-0001-authentication.bin",
+    "manifestArtifactId": "manifest-audit-authentication-0001"
+  },
+  {
+    "sourceGroup": "events",
+    "sourceArtifact": "audit-event-000001.bin",
+    "manifestArtifactId": "manifest-audit-event-000001"
+  }
+]
