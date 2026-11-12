@@ -1,0 +1,106 @@
+{
+  "profile": "sky-high-fence-witness-merkle-v1",
+  "testOnly": true,
+  "algorithm": {
+    "tree": "RFC9162-MerkleTree",
+    "hash": "SHA-256",
+    "leafPrefixHex": "00",
+    "nodePrefixHex": "01"
+  },
+  "entriesUtf8": [
+    "checkpoint-00",
+    "checkpoint-01",
+    "checkpoint-02",
+    "checkpoint-03",
+    "checkpoint-04",
+    "checkpoint-05",
+    "checkpoint-06"
+  ],
+  "treeHeads": {
+    "3": {
+      "treeSize": 3,
+      "rootHashHex": "e930e8dbbd3caee2b4b8e59345f800407876c4bf11c0db52a8fc59864a7c30b2"
+    },
+    "4": {
+      "treeSize": 4,
+      "rootHashHex": "d5be0c686ccfff0dd718cd00ebcf4bd6d11c13d4606c2ff3b6c148586135a776"
+    },
+    "6": {
+      "treeSize": 6,
+      "rootHashHex": "4ce37120c25082fc2d677249fa780d9675ac97c738769f3c23f0b666a21be5b3"
+    },
+    "7": {
+      "treeSize": 7,
+      "rootHashHex": "c0991797c2869acc19cade2833d0a391b8a2b58ed9ee0f5f4c443e486bd5efec"
+    }
+  },
+  "inclusionProofs": [
+    {
+      "treeSize": 7,
+      "leafIndex": 0,
+      "leafUtf8": "checkpoint-00",
+      "pathHex": [
+        "b7678c9767677245321c2f2fcbc19dee0e8aa5f88b21cfb961578b3ca386c6e6",
+        "512ef26335dd5e7b841c4c77a0b49be33a8fcf4475b8731fd7199d58650649a2",
+        "062b03d370c259198fb6bda005e32f537371e30a69bd49e244f409346fae1a91"
+      ]
+    },
+    {
+      "treeSize": 7,
+      "leafIndex": 3,
+      "leafUtf8": "checkpoint-03",
+      "pathHex": [
+        "a4e779ea817865f2497547da7e8a4b8390f4238bb7c2bbd0429d3077b00de9a1",
+        "34abf60142aa6b0b3fa7c33e5aa0d194c3fb48dbd7619c25f21ad481acb88379",
+        "062b03d370c259198fb6bda005e32f537371e30a69bd49e244f409346fae1a91"
+      ]
+    },
+    {
+      "treeSize": 7,
+      "leafIndex": 4,
+      "leafUtf8": "checkpoint-04",
+      "pathHex": [
+        "d85910ce52e6a65a161a1cd4054409edc6ba8709d93476a8ed51695c754b4855",
+        "bf484ab165a74cd483200449e68d6b3bbd277c853a474bac76c30e521de875e3",
+        "d5be0c686ccfff0dd718cd00ebcf4bd6d11c13d4606c2ff3b6c148586135a776"
+      ]
+    },
+    {
+      "treeSize": 7,
+      "leafIndex": 6,
+      "leafUtf8": "checkpoint-06",
+      "pathHex": [
+        "a901209f05b5623d51970359665641305923011faaa2d677ce494e6beea3cc34",
+        "d5be0c686ccfff0dd718cd00ebcf4bd6d11c13d4606c2ff3b6c148586135a776"
+      ]
+    }
+  ],
+  "consistencyProofs": [
+    {
+      "firstTreeSize": 3,
+      "secondTreeSize": 7,
+      "pathHex": [
+        "a4e779ea817865f2497547da7e8a4b8390f4238bb7c2bbd0429d3077b00de9a1",
+        "e1b03d94fb61cb1515c278261e909e5b64e7967aa358fddf24516927e7bf60c9",
+        "34abf60142aa6b0b3fa7c33e5aa0d194c3fb48dbd7619c25f21ad481acb88379",
+        "062b03d370c259198fb6bda005e32f537371e30a69bd49e244f409346fae1a91"
+      ]
+    },
+    {
+      "firstTreeSize": 4,
+      "secondTreeSize": 7,
+      "pathHex": [
+        "062b03d370c259198fb6bda005e32f537371e30a69bd49e244f409346fae1a91"
+      ]
+    },
+    {
+      "firstTreeSize": 6,
+      "secondTreeSize": 7,
+      "pathHex": [
+        "a901209f05b5623d51970359665641305923011faaa2d677ce494e6beea3cc34",
+        "bf484ab165a74cd483200449e68d6b3bbd277c853a474bac76c30e521de875e3",
+        "d5be0c686ccfff0dd718cd00ebcf4bd6d11c13d4606c2ff3b6c148586135a776"
+      ]
+    }
+  ]
+}
