@@ -64,3 +64,19 @@ The external mode rejects test-only attestations. It validates schema, distinct 
 The validator checks declarations; it does not authenticate cloud audit logs, prove that an actor truly held the declared role, or establish that the provider enforced the denial. The independent reviewer must authenticate the provider-native audit events and account ownership through a channel outside the storage account. Those raw records must be covered by the dual-signed manifest and exact-byte verification.
 
 Any ALLOWED result, missing action, missing audit event, duplicate identity/domain, collector/verifier overlap, shared privileged principal, or unresolved provider evidence keeps the candidate BLOCKED. This package cannot grant production approval.
+
+## Binding to the independently signed evidence package
+
+Each of the seven privileged attempts must target the exact same object reference and immutable version ID recorded in `targetObject`. External validation is coupled to the existing evidence chain and requires all four inputs:
+
+```sh
+python scripts/validate_m0_fence_evidence_isolation.py \
+  --attestation /secure/evidence/isolation-attestation.json \
+  --manifest /secure/evidence/evidence-manifest.json \
+  --trusted-keys /secure/trust/fence-evidence-keys.json \
+  --artifact-root /secure/evidence/materialized
+```
+
+The validator requires a non-test-only dual-signed manifest and independently governed trusted keys. Exactly one manifest artifact must have type `INDEPENDENCE_ATTESTATION` and cover WIT-012 and WIT-014. Its collector and verifier identities must match the topology, and its provider request-ID list must cover all seven privileged attempts. Every manifest artifact is byte-verified from the materialized evidence root, and the materialized independence-attestation bytes must exactly equal the supplied attestation. Provider scope must match exactly.
+
+This binds the declared bypass/topology record to the signed evidence package. It still does not authenticate provider audit-event origin or prove the named accounts and roles; the independent reviewer must verify those facts directly through provider-controlled channels outside the storage account.
