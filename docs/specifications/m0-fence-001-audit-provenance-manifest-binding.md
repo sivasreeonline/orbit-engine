@@ -14,12 +14,18 @@ The validator:
 - Requires a non-test-only completed audit provenance report in external mode.
 - Requires provider name, account, region and service to match the signed manifest exactly.
 - Requires the report's independent verifier identity to match the manifest's independent-verifier signer.
+- Validates the report profile, pinned trust-root ID/fingerprint and per-page trust-root consistency.
+- Requires page numbering and cursor progression to be contiguous, ordered and terminated at the declared final cursor.
+- Requires supported authentication methods, non-empty authenticated service principals, safe unique artifact names, valid SHA-256 digests and positive byte counts.
+- Requires event IDs to be unique, event sequence numbers to be contiguous, event request IDs to be present and eventCount to match the event inventory.
 - Binds the exact canonical audit report bytes by SHA-256.
 - Requires one unique manifest artifact mapping for every raw page, provider authentication evidence file and event file.
 - Requires exact SHA-256 and byte-count equality, correct artifact type and WIT-012/WIT-014 control coverage.
 - Requires each event artifact to include its originating provider request ID.
 - Materializes every mapped artifact under its manifest artifact ID and rechecks exact bytes against the signed manifest.
 - Verifies two distinct collector and independent-verifier Ed25519 attestations over the binding digest using a separate domain-separation prefix.
+
+The generator invokes the same semantic report validator before it signs. The independent binding verifier repeats those checks before accepting the envelope.
 
 ## Binding signature profile
 
@@ -50,7 +56,9 @@ The audit report and binding must be generated after the provider audit provenan
 
 ## Synthetic CI scope
 
-The self-test constructs ephemeral in-memory Ed25519 keys and synthetic manifest, report and evidence bytes. It verifies the positive binding and rejects report substitution. CI proves only the local verifier logic and schema wiring. It does not prove provider audit authenticity, key governance, evidence-store immutability or signer independence.
+The self-test constructs ephemeral Ed25519 keys and synthetic manifest, report and evidence bytes. It verifies the positive binding and rejects report substitution, cursor discontinuity, trust-root substitution, event-count mismatch, event-sequence gaps and duplicate event IDs. The generator and final custody integration tests also exercise the semantic report checks.
+
+CI proves only local verifier logic and schema wiring. It does not prove provider audit authenticity, key governance, evidence-store immutability or signer independence.
 
 ## Remaining limits
 
