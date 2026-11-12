@@ -72,9 +72,14 @@ def verify_inclusion(
         return False
     if tree_size <= 0 or leaf_index < 0 or leaf_index >= tree_size:
         return False
-    if len(leaf_digest) != HASH_SIZE or len(root_digest) != HASH_SIZE:
+    if (
+        not isinstance(leaf_digest, bytes)
+        or not isinstance(root_digest, bytes)
+        or len(leaf_digest) != HASH_SIZE
+        or len(root_digest) != HASH_SIZE
+    ):
         return False
-    if any(len(item) != HASH_SIZE for item in proof):
+    if any(not isinstance(item, bytes) or len(item) != HASH_SIZE for item in proof):
         return False
 
     fn = leaf_index
@@ -129,9 +134,14 @@ def verify_consistency(
         return False
     if first_size <= 0 or second_size < first_size:
         return False
-    if len(first_root) != HASH_SIZE or len(second_root) != HASH_SIZE:
+    if (
+        not isinstance(first_root, bytes)
+        or not isinstance(second_root, bytes)
+        or len(first_root) != HASH_SIZE
+        or len(second_root) != HASH_SIZE
+    ):
         return False
-    if any(len(item) != HASH_SIZE for item in proof):
+    if any(not isinstance(item, bytes) or len(item) != HASH_SIZE for item in proof):
         return False
     if first_size == second_size:
         return not proof and first_root == second_root
