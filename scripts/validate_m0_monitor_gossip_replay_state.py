@@ -71,6 +71,7 @@ def receive_message(
     state: ReplayState,
     message: Message,
     *,
+    expected_sender: str,
     expected_recipient: str,
     expected_scope: str,
     now: int,
@@ -84,8 +85,12 @@ def receive_message(
     for value in (message.message_id, message.sender_id, message.recipient_id, message.scope):
         if not isinstance(value, str) or not value.strip():
             return reject(state, Outcome.QUARANTINE, "message identity or scope is malformed")
-    if message.recipient_id != expected_recipient or message.scope != expected_scope:
-        return reject(state, Outcome.QUARANTINE, "message recipient or witness scope substitution detected")
+    if message.sender_id != expected_sender or message.recipient_id != expected_recipient:
+        return reject(state, Outcome.QUARANTINE, "message sender or recipient identity substitution detected")
+    if message.sender_id == message.recipient_id:
+        return reject(state, Outcome.QUARANTINE, "monitor gossip message cannot be self-addressed")
+    if message.scope != expected_scope:
+        return reject(state, Outcome.QUARANTINE, "message witness scope substitution detected")
     if type(message.sequence) is not int or message.sequence < 1:
         return reject(state, Outcome.QUARANTINE, "sender sequence is malformed")
     if not isinstance(message.canonical_digest, str) or DIGEST_RE.fullmatch(message.canonical_digest) is None:
@@ -213,6 +218,7 @@ def apply(
     return receive_message(
         state,
         message,
+        expected_sender="monitor-a",
         expected_recipient="monitor-b",
         expected_scope="trust-domain-a|witness-a|authority-a|host-a",
         now=now,
@@ -263,6 +269,18 @@ def main() -> None:
         "wrong recipient",
         apply(initial, replace(first, recipient_id="monitor-c")),
         Outcome.QUARANTINE,
+    )
+    expect(
+        "wrong sender",
+        apply(initial, replace(first, sender_id="monitor-c")),
+        Outcome.QUARANTINE,
+        "sender or recipient",
+    )
+    expect(
+        "self-addressed message",
+        apply(initial, replace(first, sender_id="monitor-b")),
+        Outcome.QUARANTINE,
+        "self-addressed",
     )
     expect(
         "wrong scope",
@@ -375,7 +393,7 @@ def main() -> None:
     )
 
     print("FENCE-001 monitor gossip replay state machine: PASS")
-    print("Scenarios: 25 deterministic replay, sequence, expiry and request-correlation cases")
+    print("Scenarios: 27 deterministic replay, identity, sequence, expiry and request-correlation cases")
     print("Outcomes exercised: ACCEPTED, ACCEPTED_WITH_GAP, DUPLICATE, BLOCKED, QUARANTINE")
     print("Scope: receiver policy model only; cryptographic verification, durable storage and transport remain external")
 
