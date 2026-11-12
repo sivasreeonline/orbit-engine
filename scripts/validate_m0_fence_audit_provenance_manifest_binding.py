@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,8 @@ def validate_binding(
         item["signerIdentity"] for item in manifest_envelope["attestations"]
         if item["role"] == "INDEPENDENT_VERIFIER"
     )
+    if report.get("independentVerifierPrincipalId") != verifier_identity:
+        raise ValueError("audit provenance report verifier does not match signed manifest verifier")
     if body["independentVerifierIdentity"] != verifier_identity:
         raise ValueError("audit provenance verifier does not match evidence-manifest verifier")
     manifest_artifacts = {item["artifactId"]: item for item in manifest_envelope["manifestBody"]["artifacts"]}
@@ -221,6 +224,17 @@ def fixture_test() -> None:
         kid = sha(pub)
         manifest_keys.append({"keyId":kid,"identity":identity,"role":role,"publicKeyBase64Url":b64(pub)})
         manifest_attestations.append((role,identity,private))
+    # Bind each manifest artifact to the ephemeral signer keys used below.
+    generated_collector_public = manifest_privates[0].public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    generated_verifier_public = manifest_privates[1].public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    for artifact in body["artifacts"]:
+        artifact["collectorKeyId"] = sha(generated_collector_public)
+        artifact["verifierKeyId"] = sha(generated_verifier_public)
+
     # Build manifest envelope using the repository's established signature profile.
     import rfc8785 as canonical
     prefix = b"SKYHIGH-FENCE-001-EVIDENCE-MANIFEST-V1\x00"
