@@ -387,6 +387,9 @@ class FixtureAdapter:
     def read_restored_high_water(self, target, *, independent_verifier_principal_id):
         return self.witness
 
+    def read_admission_state(self, target, *, independent_verifier_principal_id):
+        return False
+
     def read_latest_witness(self, *, witness_reader_principal_id):
         return self.witness, "VERIFIED"
 
