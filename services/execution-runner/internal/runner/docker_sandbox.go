@@ -52,12 +52,15 @@ func (cli OSCommandDockerCLI) binary() string {
 
 func (cli OSCommandDockerCLI) Create(ctx context.Context, args []string) (string, error) {
 	command := exec.CommandContext(ctx, cli.binary(), append([]string{"create"}, args...)...)
-	output, err := command.Output()
-	if err != nil {
-		return "", ErrDockerCommandFailed
-	}
+	output, commandErr := command.Output()
 	id := strings.TrimSpace(string(output))
 	if !containerIDPattern.MatchString(id) {
+		return "", ErrDockerCommandFailed
+	}
+	if commandErr != nil {
+		cleanupContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = cli.Remove(cleanupContext, id)
+		cancel()
 		return "", ErrDockerCommandFailed
 	}
 	return id, nil
@@ -263,7 +266,7 @@ func (sandbox *DockerSandbox) RunCase(
 	if runContext.Err() != nil {
 		return observation, runContext.Err()
 	}
-	if startErr != nil || inspectErr != nil || state.Status != "exited" {
+	if startErr != nil || inspectErr != nil || state.Status != "exited" || state.ExitCode != exitCode {
 		return observation, ErrDockerCommandFailed
 	}
 	if state.OOMKilled {
