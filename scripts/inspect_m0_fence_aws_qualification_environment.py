@@ -226,6 +226,8 @@ def inspect_aws(config: dict[str, Any], session: Any) -> dict[str, Any]:
                   {"accountId": actual_account, "callerArn": actual_arn},
                   "Caller account and assumed-role ARN prefix match operator-pinned values."
                   if identity_ok else "Caller account or assumed-role ARN prefix does not match the pinned qualification identity.")
+        if not identity_ok:
+            return make_report(config, checks)
     except Exception as exc:
         add_check(checks, "AWS-IDENTITY-001", "BLOCK", {"errorCode": error_code(exc)},
                   "Could not authenticate the AWS caller identity.")
