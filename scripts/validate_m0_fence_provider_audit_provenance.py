@@ -255,7 +255,10 @@ def run_contract(
     report = {
         "profile": "sky-high-fence-provider-audit-provenance-v1",
         "testOnly": False,
-        "providerIdentity": expected,
+        "providerIdentity": {
+            "provider": expected["provider"], "accountId": expected["account_id"],
+            "region": expected["region"], "service": expected["service"]
+        },
         "independentVerifierPrincipalId": verifier_id,
         "pinnedTrustRoot": {"id": pinned_root_id, "sha256": pinned_root_sha256},
         "initialCursor": initial_cursor,
