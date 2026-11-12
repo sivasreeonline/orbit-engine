@@ -133,9 +133,19 @@ def advanced_selector_covers(selectors: list[dict[str, Any]], resource_type: str
             continue
 
         read_only = fields.get("readOnly")
-        if read_only and "false" not in read_only.get("Equals", []) \
-                and "true" in read_only.get("Equals", []):
-            continue
+        if read_only is not None:
+            equals = read_only.get("Equals")
+            not_equals = read_only.get("NotEquals")
+            if isinstance(equals, list):
+                if "false" not in equals:
+                    continue
+            elif isinstance(not_equals, list):
+                if "true" not in not_equals:
+                    continue
+            else:
+                # Unknown or unsupported readOnly filter semantics are not
+                # accepted as proof of write-event coverage.
+                continue
 
         arn_filter = fields.get("resources.ARN")
         if arn_filter is None:
@@ -475,6 +485,22 @@ class FakeClient:
     def get_event_selectors(self, **kwargs: Any) -> dict[str, Any]:
         self._called("get_event_selectors")
         table_arn = f"arn:aws:dynamodb:{self.config['region']}:{self.config['accountId']}:table/{self.config['dynamodbTableName']}"
+        if self.scenario in {"advanced-write", "advanced-read-only"}:
+            read_only = {"Field": "readOnly", "Equals": ["true" if self.scenario == "advanced-read-only" else "false"]}
+            return {"AdvancedEventSelectors": [
+                {"Name": "S3 object writes", "FieldSelectors": [
+                    {"Field": "eventCategory", "Equals": ["Data"]},
+                    {"Field": "resources.type", "Equals": ["AWS::S3::Object"]},
+                    {"Field": "resources.ARN", "StartsWith": [f"arn:aws:s3:::{self.config['evidenceBucketName']}/"]},
+                    read_only,
+                ]},
+                {"Name": "DynamoDB table writes", "FieldSelectors": [
+                    {"Field": "eventCategory", "Equals": ["Data"]},
+                    {"Field": "resources.type", "Equals": ["AWS::DynamoDB::Table"]},
+                    {"Field": "resources.ARN", "Equals": [table_arn]},
+                    read_only,
+                ]},
+            ]}
         return {
             "EventSelectors": [{
                 "ReadWriteType": "All",
@@ -534,6 +560,16 @@ def self_test() -> None:
     blocked = inspect_aws(config, bad_identity)
     require(blocked["result"] == "BLOCKED" and len(blocked["checks"]) == 1,
             "wrong caller account did not stop resource inspection")
+
+    advanced = inspect_aws(config, FakeSession(config, "advanced-write"))
+    require("AWS-AUDIT-007" not in advanced["blockers"]
+            and "AWS-AUDIT-008" not in advanced["blockers"],
+            "valid advanced CloudTrail write selectors were not recognized")
+
+    read_only_advanced = inspect_aws(config, FakeSession(config, "advanced-read-only"))
+    require("AWS-AUDIT-007" in read_only_advanced["blockers"]
+            and "AWS-AUDIT-008" in read_only_advanced["blockers"],
+            "read-only-only advanced selectors were accepted as write-event coverage")
 
     bad_selectors = FakeSession(config)
     bad_selectors.clients["cloudtrail"].get_event_selectors = lambda **kwargs: {"EventSelectors": []}
