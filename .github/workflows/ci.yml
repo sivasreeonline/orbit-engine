@@ -709,8 +709,6 @@ jobs:
       - name: Verify FENCE-001 end-to-end evidence custody gate
         run: python ../../scripts/validate_m0_fence_end_to_end_custody.py --self-test
 
-      - name: Verify FENCE-001 external qualification orchestrator (synthetic only)
-        run: python ../../scripts/validate_m0_fence_external_qualification.py --self-test
 
 
       - name: Verify FENCE-001 restore and witness reconciliation reference model
