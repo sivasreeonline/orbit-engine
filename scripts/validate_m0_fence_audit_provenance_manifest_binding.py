@@ -363,16 +363,29 @@ def fixture_test() -> None:
         payload = prefix + canonical.dumps({"manifestDigest":md,"role":role,"signerIdentity":identity,"keyId":kid})
         manifest["attestations"].append({"role":role,"signerIdentity":identity,"keyId":kid,"signatureBase64Url":b64(private.sign(payload))})
     report = {
+        "profile":"sky-high-fence-provider-audit-provenance-v1",
         "qualificationStatus":"AUDIT_STREAM_AUTHENTICATED_AND_REQUESTS_CORRELATED",
         "testOnly":False,
         "providerIdentity":{"provider":"fixture-provider","accountId":"qualification-account","region":"fixture-region","service":"audit-service"},
         "independentVerifierPrincipalId":"verifier-fixture",
+        "pinnedTrustRoot":{"id":"fixture-root","sha256":"a"*64},
+        "initialCursor":"cursor-0",
+        "finalCursor":"cursor-1",
         "pages":[{
+            "page":1,"cursorStart":"cursor-0","cursorEnd":"cursor-1",
             "rawResponseArtifact":"page-001.bin","rawResponseSha256":sha(raw),"rawResponseByteCount":len(raw),
             "authenticationEvidenceArtifact":"auth-001.bin","authenticationEvidenceSha256":sha(auth),
-            "authenticationEvidenceByteCount":len(auth)
+            "authenticationEvidenceByteCount":len(auth),
+            "authenticationMethod":"PROVIDER_SIGNED_AUDIT_ENVELOPE",
+            "trustRootId":"fixture-root","trustRootSha256":"a"*64,
+            "authenticatedServicePrincipalId":"audit-service-principal"
         }],
-        "events":[{"artifact":"event-001.bin","sha256":sha(event),"byteCount":len(event),"providerRequestId":"request-001"}]
+        "events":[{
+            "artifact":"event-001.bin","sha256":sha(event),"byteCount":len(event),
+            "providerRequestId":"request-001","eventId":"event-001","sequence":1
+        }],
+        "eventCount":1,
+        "limitations":["Synthetic fixture; no provider truth is asserted."]
     }
     binding_body = {
         "profile":"sky-high-fence-audit-provenance-binding-v1","schemaVersion":1,
@@ -393,6 +406,24 @@ def fixture_test() -> None:
         identities.append((role,identity,private))
     binding=sign_binding(binding_body,identities)
     validate_binding(manifest,manifest_keys,report,binding,binding_keys,root,allow_test_only=True)
+    expected_provider = report["providerIdentity"]
+    semantic_cases = [
+        ("cursor discontinuity", lambda item: item["pages"][0].update({"cursorStart":"cursor-replayed"}), "cursor gap"),
+        ("trust-root substitution", lambda item: item["pages"][0].update({"trustRootSha256":"b"*64}), "trust root"),
+        ("event count mismatch", lambda item: item.update({"eventCount":2}), "eventCount"),
+        ("event sequence gap", lambda item: item["events"][0].update({"sequence":2}), "sequence"),
+        ("duplicate event ID", lambda item: item["events"].append(copy.deepcopy(item["events"][0])), "duplicate"),
+    ]
+    for label, mutate, expected_error in semantic_cases:
+        malformed = copy.deepcopy(report)
+        mutate(malformed)
+        try:
+            validate_audit_report(malformed, expected_provider, "verifier-fixture")
+        except ValueError as error:
+            if expected_error not in str(error):
+                raise AssertionError(f"{label}: unexpected rejection: {error}") from error
+        else:
+            raise AssertionError(f"malformed audit report was accepted: {label}")
     tampered=copy.deepcopy(report); tampered["events"][0]["providerRequestId"]="request-substituted"
     try:
         validate_binding(manifest,manifest_keys,tampered,binding,binding_keys,root,allow_test_only=True)
