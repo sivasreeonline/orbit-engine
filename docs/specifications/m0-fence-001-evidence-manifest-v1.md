@@ -45,3 +45,19 @@ The validator verifies manifest-level signatures and structural bindings. It doe
 `docs/test-vectors/fence-evidence-manifest-v1.json` contains deterministic test keys and signatures. It is marked `testOnly: true` and is accepted only by the harness's fixture path. External qualification mode rejects test-only manifests. Fixture private seeds are not included. No key in the fixture is trusted for production use.
 
 A valid manifest signature proves that the configured collector and verifier keys signed the manifest digest. It does not prove that the provider evidence is truthful, that the object store is immutable, or that either signer is independent. Production approval remains false until the full evidence package is independently reviewed.
+
+
+## Binding into the qualification record
+
+A completed qualification record must reference the independently signed manifest using `evidenceManifest.manifestId`, immutable `objectRef`, `objectVersion` and the verified manifest SHA-256. The qualification validator accepts an actual record and manifest with:
+
+```sh
+python scripts/validate_m0_fence_witness_qualification.py \
+  --record qualification-record.json \
+  --evidence-manifest evidence-manifest.json \
+  --trusted-keys /secure/trust/fence-evidence-keys.json
+```
+
+The validator verifies the manifest signatures first, then requires exact provider and adapter pin equality between the qualification record and signed manifest. Every evidence item attached to a `PASS` control must match an artifact by immutable object reference, version, SHA-256 and byte count; the artifact must explicitly include that WIT control and the same collector/verifier identities. A record cannot reach `READY_FOR_INDEPENDENT_REVIEW` without a manifest reference.
+
+This binding prevents a valid manifest for one provider, adapter build or test control from being substituted into another qualification record. It still does not establish that evidence bytes were truthfully collected or that external identities are genuinely independent; those claims require independent operational verification.
