@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, "feat/**", "fix/**", "docs/**"]
+    branches: [main, "feat/**", "fix/**", "docs/**", "test/**"]
     paths:
       - "apps/web/**"
       - "apps/api/**"
