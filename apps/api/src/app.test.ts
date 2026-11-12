@@ -588,6 +588,53 @@ describe("M1 API control plane", () => {
     });
   });
 
+  it("returns 413 rather than a partial diff when source exceeds comparison limits", async () => {
+    const getComparableAttemptSources = vi.fn(async () => ({
+      base: {
+        attemptId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+        sourceSha256: "a".repeat(64),
+        sourceByteLength: "1",
+        sourceCode: "a".repeat(128 * 1024 + 1),
+      },
+      target: {
+        attemptId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2",
+        sourceSha256: "b".repeat(64),
+        sourceByteLength: "1",
+        sourceCode: "b",
+      },
+    }));
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+
+    expect(response.status).toBe(413);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "SOURCE_COMPARISON_LIMIT_EXCEEDED", retryable: false },
+    });
+  });
+
+  it("returns retryable unavailable when the comparison store cannot be read", async () => {
+    const getComparableAttemptSources = vi.fn(async (): Promise<never> => {
+      throw new DatabaseUnavailableError();
+    });
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+
+    expect(response.status).toBe(503);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "SOURCE_COMPARISON_UNAVAILABLE", retryable: true },
+    });
+  });
+
   it("returns 404 for unknown routes", async () => {
     const { handler, authenticator } = makeHarness();
 
