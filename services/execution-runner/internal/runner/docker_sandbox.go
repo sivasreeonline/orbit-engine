@@ -369,9 +369,9 @@ func runtimeScript(language protocol.Language, runtimeVersion string) string {
 		return strings.Join([]string{
 			"set -eu",
 			"command -v python3 >/dev/null 2>&1 || exit 87",
-			"python_version=\\"$(python3 --version 2>&1)\\" || exit 87",
-			"case \\"$python_version\\" in 'Python " + runtimeVersion + "'*) ;; *) exit 87 ;; esac",
-			"python3 -I -B -c 'import pathlib; compile(pathlib.Path(\\\"/workspace/main.py\\\").read_bytes(), \\\"/workspace/main.py\\\", \\\"exec\\\")' || exit 86",
+			"python_version=\"$(python3 --version 2>&1)\" || exit 87",
+			"case \"$python_version\" in 'Python " + runtimeVersion + "'*) ;; *) exit 87 ;; esac",
+			"python3 -I -B -c 'import pathlib; compile(pathlib.Path(\"/workspace/main.py\").read_bytes(), \"/workspace/main.py\", \"exec\")' || exit 86",
 			"exec python3 -I -B /workspace/main.py",
 		}, "\n")
 	default:
