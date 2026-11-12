@@ -102,7 +102,7 @@ def _decode_record(item: dict[str, Any] | None) -> Any:
         checkpoint_digest=checkpoint_body["checkpoint_digest"],
         previous_digest=checkpoint_body["previous_digest"],
     )
-    receipt = Receipt(
+    receipt = contract.Receipt(
         scope=contract.Scope(**receipt_body["scope"]),
         generation=receipt_body["generation"],
         operation_id=receipt_body["operation_id"],
@@ -162,7 +162,7 @@ class DynamoDBWitnessAdapter:
         if not isinstance(value.checkpoint_digest, str) or DIGEST.fullmatch(value.checkpoint_digest) is None:
             raise ValueError("checkpoint_digest must be lowercase SHA-256 hex")
         if value.previous_digest != expected_digest:
-            raise AppendConflict("checkpoint does not name the exact expected predecessor")
+            raise _contract_types().AppendConflict("checkpoint does not name the exact expected predecessor")
         if not isinstance(value.operation_id, str) or SAFE_ID.fullmatch(value.operation_id) is None:
             raise ValueError("operation_id must be a safe non-empty identifier")
         if not isinstance(value.phase, str) or SAFE_ID.fullmatch(value.phase) is None:
@@ -187,12 +187,12 @@ class DynamoDBWitnessAdapter:
 
     def append_if_current(
         self,
-        value: Checkpoint,
+        value: Any,
         *,
         expected_generation: int,
         expected_digest: str,
         idempotency_key: str,
-    ) -> Receipt:
+    ) -> Any:
         self._validate_append(
             value,
             expected_generation=expected_generation,
@@ -215,14 +215,14 @@ class DynamoDBWitnessAdapter:
 
         prior_operation_item = self._get(scope, f"OP#{value.operation_id}")
         if prior_operation_item is not None:
-            raise IdempotencyConflict("operation ID already exists with another checkpoint or idempotency key")
+            raise _contract_types().IdempotencyConflict("operation ID already exists with another checkpoint or idempotency key")
 
         head_item = self._get(scope, "HEAD")
         head_record = _decode_record(head_item)
         actual_generation = head_record.checkpoint.generation if head_record else 0
         actual_digest = head_record.checkpoint.checkpoint_digest if head_record else "0" * 64
         if (actual_generation, actual_digest) != (expected_generation, expected_digest):
-            raise AppendConflict("expected predecessor is not the current DynamoDB witness high-water")
+            raise _contract_types().AppendConflict("expected predecessor is not the current DynamoDB witness high-water")
 
         # This stable opaque value is an adapter transaction-correlation token,
         # not a cryptographic proof of linearizability or provider authenticity.
@@ -347,7 +347,7 @@ class DynamoDBWitnessAdapter:
                     "DynamoDB returned a transient service error; retry the exact checkpoint and idempotency key"
                 ) from exc
             if code == "IdempotentParameterMismatchException":
-                raise IdempotencyConflict(
+                raise _contract_types().IdempotencyConflict(
                     "DynamoDB received the same transaction token with different request parameters"
                 ) from exc
             if code != "TransactionCanceledException":
@@ -363,7 +363,7 @@ class DynamoDBWitnessAdapter:
             except Exception:
                 # The operation remains ambiguous if readback itself is unavailable.
                 pass
-            raise AmbiguousCommit(
+            raise _contract_types().AmbiguousCommit(
                 "DynamoDB transaction outcome is ambiguous; retry the exact checkpoint and idempotency key"
             ) from exc
 
@@ -376,13 +376,13 @@ class DynamoDBWitnessAdapter:
                 recovered, checkpoint_json, idempotency_hash, recovered_item
             )
         if self._get(scope, f"OP#{value.operation_id}") is not None:
-            raise IdempotencyConflict("operation ID was committed with different checkpoint content")
+            raise _contract_types().IdempotencyConflict("operation ID was committed with different checkpoint content")
         current = _decode_record(self._get(scope, "HEAD"))
         current_generation = current.checkpoint.generation if current else 0
         current_digest = current.checkpoint.checkpoint_digest if current else "0" * 64
         if (current_generation, current_digest) != (expected_generation, expected_digest):
-            raise AppendConflict("DynamoDB compare-and-append lost the predecessor race")
-        raise AppendConflict("DynamoDB rejected one or more immutable witness-key conditions")
+            raise _contract_types().AppendConflict("DynamoDB compare-and-append lost the predecessor race")
+        raise _contract_types().AppendConflict("DynamoDB rejected one or more immutable witness-key conditions")
 
     def read_latest(self, scope: Any) -> Any:
         return _decode_record(self._get(scope, "HEAD"))
