@@ -19,7 +19,9 @@ const sourceCode = "public class Main { }";
 const sourceBytes = new TextEncoder().encode(sourceCode);
 
 async function digest(value: Uint8Array): Promise<string> {
-  const result = await crypto.subtle.digest("SHA-256", value);
+  const buffer = new ArrayBuffer(value.byteLength);
+  new Uint8Array(buffer).set(value);
+  const result = await crypto.subtle.digest("SHA-256", buffer);
   return Array.from(new Uint8Array(result), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
