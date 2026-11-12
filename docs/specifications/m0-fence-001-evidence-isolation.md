@@ -82,3 +82,10 @@ The validator requires a non-test-only dual-signed manifest and independently go
 This binds the declared bypass/topology record to the signed evidence package. It still does not authenticate provider audit-event origin or prove the named accounts and roles; the independent reviewer must verify those facts directly through provider-controlled channels outside the storage account.
 
 Each bypass attempt also names a stable `auditArtifactId`. The signed manifest must contain one raw provider-exchange or contract-evidence artifact for each attempt; its SHA-256 must equal `auditEventSha256`, and its provider request-ID list must include the attempt's request ID. The verifier byte-checks these raw audit artifacts individually. This prevents a signed summary from merely claiming that audit events exist without carrying the corresponding source records.
+
+
+## Evidence for operating-domain independence
+
+Each of the five operating domains (storage, collector, verifier, monitor A and monitor B) must name a distinct `identityEvidenceArtifactId`. The dual-signed manifest must contain one corresponding `CONFIGURATION_ATTESTATION` artifact for each domain. Each artifact must be collected by the declared collector and independently verified by the declared verifier, and all artifacts are byte-verified with the rest of the manifest.
+
+These artifacts should contain provider-native account and organization ownership records, administrative-boundary and deployment-control-plane configuration, principal identity and role-assignment evidence, and the mapping to the declared failure domain. The independent reviewer must validate source authenticity and control of each account through channels outside the storage account. Distinct strings in an attestation are not proof of independent ownership; if account ownership or boundary separation cannot be independently established, the topology remains unqualified.
