@@ -242,10 +242,10 @@ func (sandbox *DockerSandbox) RunCase(
 	standardOutput := output.StdoutBytes()
 	compiled, standardOutput := removeCompileSuccessMarker(standardOutput)
 	observation := SandboxObservation{
-		StandardOutput:   standardOutput,
-		StandardError:    output.StderrBytes(),
+		StandardOutput:    standardOutput,
+		StandardError:     output.StderrBytes(),
 		CompilationStatus: CompilationNotStarted,
-		ElapsedMillis:     elapsed.Milliseconds(),
+		CleanupSucceeded:  cleanupSucceeded,
 		CleanupSucceeded: cleanupSucceeded,
 	}
 	if compiled {
