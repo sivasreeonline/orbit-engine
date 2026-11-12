@@ -118,7 +118,7 @@ After the account owner supplies and approves the disposable account, Region, re
 
 
 
-## Account choice and cost-control prerequisites
+## 5. Account choice and cost-control prerequisites
 
 No AWS account is required for the current engineering phase. We are using DynamoDB Local and synthetic tests until an account is deliberately arranged.
 
@@ -133,7 +133,7 @@ Before any signup or account upgrade, we must:
 
 AWS currently advertises up to USD $200 in Free Tier credits for eligible new customers, but those credits are not a promise that every required service is available on the Free plan or that every qualification cost is covered. [AWS Free Tier FAQ](https://aws.amazon.com/free/free-tier-faqs/).
 
-## 5. DynamoDB witness adapter — local-first implementation
+## 6. DynamoDB witness adapter — local-first implementation
 
 The first AWS-specific implementation is `scripts/aws_dynamodb_witness_adapter.py`. Its single-table data model uses a scope-hash partition key and distinct sort keys:
 
@@ -169,7 +169,7 @@ The adapter never creates a live table. Without a loopback endpoint, it refuses 
 
 This code path has not been used. No AWS account or credentials are available in the current development environment, so live mode remains untested and is not considered qualified.
 
-## 6. AWS documentation references
+## 7. AWS documentation references
 
 - [DynamoDB TransactWriteItems API](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html) — atomic transaction limits and the 10-minute ClientRequestToken idempotency window.
 - [DynamoDB transaction behavior](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transaction-apis.html) — transaction conflict and retry guidance.
