@@ -96,7 +96,9 @@
         "restoreOperator",
         "witnessReader",
         "collector",
-        "independentVerifier"
+        "independentVerifier",
+        "providerApprovalAuthority",
+        "evidenceRetentionAuthority"
       ],
       "properties": {
         "storageAdministrator": {
@@ -124,6 +126,12 @@
           "$ref": "#/$defs/identifier"
         },
         "independentVerifier": {
+          "$ref": "#/$defs/identifier"
+        },
+        "providerApprovalAuthority": {
+          "$ref": "#/$defs/identifier"
+        },
+        "evidenceRetentionAuthority": {
           "$ref": "#/$defs/identifier"
         }
       }
