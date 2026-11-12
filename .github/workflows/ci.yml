@@ -121,6 +121,9 @@ jobs:
       - name: Verify RFC 9162 Merkle inclusion and consistency proof vectors
         run: python ../../scripts/validate_m0_fence_witness_merkle_proofs.py
 
+      - name: Verify FENCE-001 restore and witness reconciliation reference model
+        run: python ../../scripts/validate_m0_witness_restore_reconciliation_model.py
+
       - name: Configure PostgreSQL client wrappers
         run: |
           set -euo pipefail
