@@ -24,6 +24,7 @@ var (
 )
 
 const compileSuccessMarker = "__SKYHIGH_COMPILE_OK__\n"
+
 type DockerContainerState struct {
 	Status    string `json:"Status"`
 	ExitCode  int    `json:"ExitCode"`
