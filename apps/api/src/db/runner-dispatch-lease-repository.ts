@@ -92,6 +92,100 @@ export class PostgresRunnerDispatchLeaseRepository {
     });
   }
 
+  /**
+   * Claims at most one pending dispatch per student lane in this batch.
+   * Lanes are served by least-recently-served order; each lane's oldest
+   * eligible dispatch is selected first. Lane row locks serialize competing
+   * fair schedulers and survive process restarts through the persisted cursor.
+   */
+  async claimFairBatch(
+    workerId: string,
+    batchSize: number,
+    leaseSeconds: number,
+  ): Promise<RunnerDispatchLease[]> {
+    if (!this.connectionString) throw new DatabaseUnavailableError();
+    this.validateWorker(workerId);
+    if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 100) {
+      throw new Error("invalid_runner_dispatch_batch_size");
+    }
+    if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 1 || leaseSeconds > 3600) {
+      throw new Error("invalid_runner_dispatch_lease_duration");
+    }
+
+    return this.withClient(async (client) => {
+      const result = await client.query<ClaimedRow>(
+        [
+          "WITH candidate_lanes AS MATERIALIZED (",
+          "  SELECT lane.tenant_id, lane.actor_user_id",
+          "  FROM runner_dispatch_scheduler_lanes AS lane",
+          "  WHERE EXISTS (",
+          "    SELECT 1",
+          "    FROM runner_dispatch_outbox AS pending",
+          "    INNER JOIN execution_attempts AS owner_attempt",
+          "      ON owner_attempt.id = pending.attempt_id",
+          "    WHERE owner_attempt.tenant_id = lane.tenant_id",
+          "      AND owner_attempt.actor_user_id = lane.actor_user_id",
+          "      AND pending.delivery_state = 'PENDING'",
+          "      AND pending.available_at <= now()",
+          "      AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= now())",
+          "  )",
+          "  ORDER BY lane.last_served_at, lane.tenant_id, lane.actor_user_id",
+          "  LIMIT $1",
+          "  FOR UPDATE OF lane SKIP LOCKED",
+          "), candidate_dispatches AS (",
+          "  SELECT DISTINCT ON (owner_attempt.tenant_id, owner_attempt.actor_user_id)",
+          "    pending.id, owner_attempt.tenant_id, owner_attempt.actor_user_id",
+          "  FROM candidate_lanes AS lane",
+          "  INNER JOIN execution_attempts AS owner_attempt",
+          "    ON owner_attempt.tenant_id = lane.tenant_id",
+          "   AND owner_attempt.actor_user_id = lane.actor_user_id",
+          "  INNER JOIN runner_dispatch_outbox AS pending",
+          "    ON pending.attempt_id = owner_attempt.id",
+          "  WHERE pending.delivery_state = 'PENDING'",
+          "    AND pending.available_at <= now()",
+          "    AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= now())",
+          "  ORDER BY owner_attempt.tenant_id, owner_attempt.actor_user_id,",
+          "    pending.available_at, pending.created_at, pending.id",
+          "), claimed AS (",
+          "  UPDATE runner_dispatch_outbox AS dispatch",
+          "  SET lease_owner = $2, lease_token = gen_random_uuid(),",
+          "      lease_expires_at = now() + make_interval(secs => $3),",
+          "      delivery_attempts = dispatch.delivery_attempts + 1",
+          "  FROM candidate_dispatches AS candidate",
+          "  WHERE dispatch.id = candidate.id",
+          "  RETURNING dispatch.id, dispatch.execution_id, dispatch.attempt_id,",
+          "    dispatch.protocol_version, dispatch.correlation_id,",
+          "    dispatch.delivery_attempts, dispatch.lease_token, dispatch.lease_expires_at",
+          "), served AS (",
+          "  UPDATE runner_dispatch_scheduler_lanes AS lane",
+          "  SET last_served_at = now(), updated_at = now()",
+          "  FROM claimed",
+          "  INNER JOIN execution_attempts AS owner_attempt ON owner_attempt.id = claimed.attempt_id",
+          "  WHERE lane.tenant_id = owner_attempt.tenant_id",
+          "    AND lane.actor_user_id = owner_attempt.actor_user_id",
+          "  RETURNING lane.tenant_id",
+          ")",
+          "SELECT claimed.* FROM claimed",
+          "CROSS JOIN (SELECT count(*) FROM served) AS scheduler_cursor_write",
+        ].join("\\n"),
+        [batchSize, workerId, leaseSeconds],
+      );
+
+      return result.rows.map((row) => ({
+        id: row.id,
+        executionId: row.execution_id,
+        attemptId: row.attempt_id,
+        protocolVersion: row.protocol_version,
+        correlationId: row.correlation_id,
+        deliveryAttempts: row.delivery_attempts,
+        leaseToken: row.lease_token,
+        leaseExpiresAt: row.lease_expires_at instanceof Date
+          ? row.lease_expires_at.toISOString()
+          : new Date(row.lease_expires_at).toISOString(),
+      }));
+    });
+  }
+
   /** Mark delivered only after the runner transport returns an authenticated receipt. */
   async markDelivered(dispatchId: string, workerId: string, leaseToken: string): Promise<boolean> {
     if (!this.connectionString) throw new DatabaseUnavailableError();
