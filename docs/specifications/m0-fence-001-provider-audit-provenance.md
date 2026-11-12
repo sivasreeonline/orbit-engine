@@ -15,6 +15,7 @@ For every page, the harness requires:
 - A page cursor that starts at the previously accepted cursor and advances; the verifier authenticates the exact page bytes.
 - Non-empty raw response and provider-native authentication evidence, preserved as artifacts.
 - A verifier result of `VERIFIED` for both provider-native authentication and authenticated transport, using the pinned trust-root ID and SHA-256 fingerprint.
+- A verifier-provided digest of the normalized event projection that the harness independently recomputes; this prevents a collector from pairing an authenticated raw page with substituted parsed event objects.
 - A supported, explicitly declared authentication method: `PROVIDER_SIGNED_AUDIT_ENVELOPE` or `AUTHENTICATED_AUDIT_API_RESPONSE`.
 - A complete, contiguous event sequence with unique event IDs and exact correlation to every provider request ID in the PR #98 run report.
 - Exact actor, action, denial outcome, object reference and immutable version binding for each privileged request.
