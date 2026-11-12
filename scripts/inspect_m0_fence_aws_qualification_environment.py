@@ -265,7 +265,7 @@ def inspect_aws(config: dict[str, Any], session: Any) -> dict[str, Any]:
     try:
         s3 = session.client("s3", region_name=region)
         location = s3.get_bucket_location(Bucket=evidence_bucket).get("LocationConstraint")
-        bucket_region = location or "us-east-1"
+        bucket_region = "eu-west-1" if location == "EU" else (location or "us-east-1")
         region_ok = bucket_region == region
         add_check(checks, "AWS-EVIDENCE-001", "PASS" if region_ok else "BLOCK",
                   {"bucketRegion": bucket_region},
@@ -559,6 +559,16 @@ def self_test() -> None:
             and report["privilegedMutationAttemptsPerformed"] is False
             and report["restoreOperationsPerformed"] is False,
             "read-only fixture claimed a mutating operation")
+    allowed_calls = {
+        "sts": {"get_caller_identity"},
+        "dynamodb": {"describe_table", "describe_continuous_backups"},
+        "s3": {"get_bucket_location", "get_bucket_versioning", "get_object_lock_configuration",
+               "get_public_access_block", "get_bucket_encryption"},
+        "cloudtrail": {"describe_trails", "get_trail_status", "get_event_selectors"},
+    }
+    for service, client in session.clients.items():
+        require(set(client.calls).issubset(allowed_calls[service]),
+                f"unexpected non-read-only AWS operation in {service}: {client.calls}")
 
     for scenario, blocker in (
         ("governance-only", "AWS-EVIDENCE-003"),
@@ -574,6 +584,9 @@ def self_test() -> None:
     blocked = inspect_aws(config, bad_identity)
     require(blocked["result"] == "BLOCKED" and len(blocked["checks"]) == 1,
             "wrong caller account did not stop resource inspection")
+    require(all(not client.calls for service, client in bad_identity.clients.items()
+                if service != "sts"),
+            "resource inspection continued after caller identity mismatch")
 
     advanced = inspect_aws(config, FakeSession(config, "advanced-write"))
     require("AWS-AUDIT-007" not in advanced["blockers"]
