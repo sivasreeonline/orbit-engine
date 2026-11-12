@@ -75,7 +75,8 @@
       "auditAcquiredByPrincipalId": "verifier-service",
       "occurredAt": "2026-11-12T10:00:00Z",
       "objectRef": "synthetic://evidence/object-001",
-      "versionId": "version-001"
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-001"
     },
     {
       "action": "SHORTEN_RETENTION_AS_OBJECT_OWNER",
@@ -87,7 +88,8 @@
       "auditAcquiredByPrincipalId": "verifier-service",
       "occurredAt": "2026-11-12T10:00:00Z",
       "objectRef": "synthetic://evidence/object-001",
-      "versionId": "version-001"
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-002"
     },
     {
       "action": "DELETE_AS_ACCOUNT_OWNER",
@@ -99,7 +101,8 @@
       "auditAcquiredByPrincipalId": "verifier-service",
       "occurredAt": "2026-11-12T10:00:00Z",
       "objectRef": "synthetic://evidence/object-001",
-      "versionId": "version-001"
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-003"
     },
     {
       "action": "DISABLE_OBJECT_LOCK_AS_ORG_ADMIN",
@@ -111,7 +114,8 @@
       "auditAcquiredByPrincipalId": "verifier-service",
       "occurredAt": "2026-11-12T10:00:00Z",
       "objectRef": "synthetic://evidence/object-001",
-      "versionId": "version-001"
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-004"
     },
     {
       "action": "DELETE_VIA_RECOVERY_ADMIN",
@@ -123,7 +127,8 @@
       "auditAcquiredByPrincipalId": "verifier-service",
       "occurredAt": "2026-11-12T10:00:00Z",
       "objectRef": "synthetic://evidence/object-001",
-      "versionId": "version-001"
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-005"
     },
     {
       "action": "OVERWRITE_EXACT_VERSION",
@@ -135,7 +140,8 @@
       "auditAcquiredByPrincipalId": "verifier-service",
       "occurredAt": "2026-11-12T10:00:00Z",
       "objectRef": "synthetic://evidence/object-001",
-      "versionId": "version-001"
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-006"
     },
     {
       "action": "REPLACE_VERSION_MAPPING",
@@ -147,7 +153,8 @@
       "auditAcquiredByPrincipalId": "verifier-service",
       "occurredAt": "2026-11-12T10:00:00Z",
       "objectRef": "synthetic://evidence/object-001",
-      "versionId": "version-001"
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-007"
     }
   ]
 }
