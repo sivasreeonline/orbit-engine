@@ -244,7 +244,7 @@ export default function App() {
 
           {focusMode === "editor" && (
             <section className="focus-side-column" aria-label="Execution output and controls">
-              <ExecutionOutput problem={twoSumProblem} activeTab={outputTab} onTabChange={setOutputTab} feedback={feedback} />
+              <ExecutionOutput problem={twoSumProblem} problemSlug="two-sum" activeTab={outputTab} onTabChange={setOutputTab} feedback={feedback} />
               {editorActions}
             </section>
           )}
