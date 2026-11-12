@@ -329,7 +329,7 @@ func (executor *SandboxExecutor) Execute(
 					startedAt,
 				), nil
 			}
-			result.CompilationStatus = CompilationSucceeded
+			result.CompilationStatus = observation.CompilationStatus
 			result.Verdict = VerdictTimeLimitExceeded
 			if testCase.Visibility == TestVisibilityPublic {
 				result.PublicTestResults = append(result.PublicTestResults, PublicTestResult{
@@ -352,7 +352,7 @@ func (executor *SandboxExecutor) Execute(
 					startedAt,
 				), nil
 			}
-			result.CompilationStatus = CompilationSucceeded
+			result.CompilationStatus = observation.CompilationStatus
 			result.Verdict = VerdictMemoryLimitExceeded
 			if testCase.Visibility == TestVisibilityPublic {
 				result.PublicTestResults = append(result.PublicTestResults, PublicTestResult{
@@ -375,7 +375,7 @@ func (executor *SandboxExecutor) Execute(
 					startedAt,
 				), nil
 			}
-			result.CompilationStatus = CompilationSucceeded
+			result.CompilationStatus = observation.CompilationStatus
 			result.Verdict = VerdictOutputLimitExceeded
 			if testCase.Visibility == TestVisibilityPublic {
 				result.PublicTestResults = append(result.PublicTestResults, PublicTestResult{
