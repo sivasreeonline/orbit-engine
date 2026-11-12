@@ -146,7 +146,7 @@ One `TransactWriteItems` call conditionally writes the generation, operation and
 
 The adapter performs `GetItem(ConsistentRead=true)` on the base table for the head, operation and idempotency records. It does not use a GSI or stream as an authoritative current-state read.
 
-The idempotency record is checked before submitting another transaction. This is deliberately separate from DynamoDB's native `ClientRequestToken` cache (10 minutes): a retry after that window can recover the exact receipt from the durable idempotency item without creating a second generation. The opaque receipt consistency token is an adapter correlation value persisted atomically with the transaction; it is not a cryptographic consistency proof.
+The idempotency record is checked before submitting another transaction. The adapter deliberately does not set DynamoDB's optional `ClientRequestToken`: its 10-minute parameter cache is not the durable contract. Instead, an idempotency item, operation record and head update commit atomically. An exact retry reads the durable idempotency record and returns the original receipt without issuing another write, regardless of elapsed time. The opaque receipt consistency token is an adapter correlation value persisted atomically with the transaction; it is not a cryptographic consistency proof.
 
 ### Account-less integration testing
 
