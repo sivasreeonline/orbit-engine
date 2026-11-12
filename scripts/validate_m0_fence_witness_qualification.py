@@ -147,7 +147,7 @@ def validate_record_manifest_binding(
 
 
 def run_manifest_binding_fixture_tests() -> int:
-    vector = load_json(ROOT / "docs/test-vectors/m0-fence-evidence-manifest-v1.json")
+    vector = load_json(ROOT / "docs/test-vectors/fence-evidence-manifest-v1.json")
     envelope = {key: vector[key] for key in ("manifestBody", "manifestDigest", "attestations")}
     body = envelope["manifestBody"]
     artifact = body["artifacts"][0]
