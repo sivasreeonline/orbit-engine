@@ -18,8 +18,10 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import rfc8785
+from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[1]
+MAPPING_SCHEMA = ROOT / "docs/schemas/m0-fence-audit-provenance-artifact-mapping-v1.schema.json"
 sys.path.insert(0, str(ROOT / "scripts"))
 from validate_m0_fence_evidence_manifest import validate_manifest  # noqa: E402
 from validate_m0_fence_audit_provenance_manifest_binding import (  # noqa: E402
@@ -184,6 +186,9 @@ def main() -> None:
     manifest_keys=load_object(args.manifest_trusted_keys)["keys"]
     report=load_object(args.audit_report)
     mappings=json.loads(args.mapping_file.read_text(encoding="utf-8"))
+    mapping_errors=list(Draft202012Validator(load_object(MAPPING_SCHEMA)).iter_errors(mappings))
+    if mapping_errors:
+        parser.error(f"mapping file schema failure: {mapping_errors[0].message}")
     binding_keys=load_object(args.binding_trusted_keys)["keys"]
     envelope=build_binding(manifest,manifest_keys,report,mappings,binding_keys,
                            args.collector_signing_key,args.verifier_signing_key)
