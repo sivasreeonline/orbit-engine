@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { OutboxLease } from "../db/outbox-lease-repository";
 import {
   LocalExecutionOutboxDispatcher,
+  type LocalExecutionDispatchEnvelope,
   type LocalOutboxLeaseRepository,
 } from "./local-execution-outbox-dispatcher";
 
@@ -47,7 +48,7 @@ describe("LocalExecutionOutboxDispatcher", () => {
       return true;
     });
     const sink = {
-      accept: vi.fn(async (value) => {
+      accept: vi.fn(async (value: LocalExecutionDispatchEnvelope) => {
         order.push("sink");
         expect(value).toEqual({ executionId, attemptId, protocolVersion: "v1" });
       }),
