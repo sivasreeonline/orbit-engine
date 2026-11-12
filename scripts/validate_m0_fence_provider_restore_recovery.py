@@ -63,6 +63,7 @@ class RestoreTarget:
     qualification_run_id: str
     disposable: bool
     isolated_from_source: bool
+    admission_disabled: bool
 
 
 @dataclass(frozen=True)
@@ -107,6 +108,9 @@ class ProviderRestoreAdapter(Protocol):
     def read_restored_high_water(
         self, target: RestoreTarget, *, independent_verifier_principal_id: str
     ) -> HighWater: ...
+    def read_admission_state(
+        self, target: RestoreTarget, *, independent_verifier_principal_id: str
+    ) -> bool: ...
     def read_latest_witness(
         self, *, witness_reader_principal_id: str
     ) -> tuple[HighWater, str]: ...
@@ -257,6 +261,7 @@ def run_external(adapter: ProviderRestoreAdapter, expected_account: str, run_id:
         or target.qualification_run_id != run_id
         or target.disposable is not True
         or target.isolated_from_source is not True
+        or target.admission_disabled is not True
         or not target.target_id
     ):
         raise ValueError("provider restore target is not disposable, isolated and run-bound")
@@ -282,6 +287,8 @@ def run_external(adapter: ProviderRestoreAdapter, expected_account: str, run_id:
     if result.applied_generations != expected_applied:
         raise ValueError("restore receipt applied generation list does not match exact verified chain")
 
+    if adapter.read_admission_state(target, independent_verifier_principal_id=verifier) is not False:
+        raise ValueError("independent target readback shows host admission is enabled")
     restored = adapter.read_restored_high_water(target, independent_verifier_principal_id=verifier)
     if restored != bundle.witness:
         raise ValueError("independent restored-target readback does not match witness high-water")
