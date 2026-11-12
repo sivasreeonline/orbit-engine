@@ -238,6 +238,23 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/runner-dispatch-lease-repository.integration.test.ts
 
+      - name: Apply and re-apply fair runner dispatch scheduler migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0006_runner_dispatch_scheduler_lanes.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0006_runner_dispatch_scheduler_lanes.sql
+
+      - name: Verify fair scheduler cursor SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0006_runner_dispatch_scheduler_lanes.sql
+
+      - name: Verify fair dispatch across concurrent student lanes
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-dispatch-fair-scheduler.integration.test.ts
+
       - name: Worker deployment dry run
         run: npx wrangler deploy --dry-run
 
