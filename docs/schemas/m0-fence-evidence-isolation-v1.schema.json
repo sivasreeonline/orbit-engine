@@ -221,7 +221,8 @@
         "administrativeBoundaryId",
         "deploymentControlPlaneId",
         "failureDomainId",
-        "principalId"
+        "principalId",
+        "identityEvidenceArtifactId"
       ],
       "properties": {
         "accountId": {
@@ -247,6 +248,11 @@
         "principalId": {
           "type": "string",
           "minLength": 1
+        },
+        "identityEvidenceArtifactId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         }
       }
     }
