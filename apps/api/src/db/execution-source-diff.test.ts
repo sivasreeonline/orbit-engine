@@ -43,7 +43,7 @@ describe("diffSourceSnapshots", () => {
       "DELETE", "DELETE", "INSERT", "INSERT",
     ]);
     expect(result.operations.map((item) => item.text)).toEqual([
-      "  café\r\n", " café\n", "end", "end\n",
+      "  café\r\n", "end", " café\n", "end\n",
     ]);
   });
 
