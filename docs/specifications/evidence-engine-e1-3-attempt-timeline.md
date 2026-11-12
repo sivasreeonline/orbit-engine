@@ -23,7 +23,7 @@ The timeline is a read model over the existing execution intake and append-only 
 
 - The timeline is assembled in one SQL query using the existing `execution_attempts`, `execution_jobs`, `source_snapshots`, `execution_result_records` and `execution_evidence_events` records.
 - Attempts are filtered by tenant, actor and problem slug.
-- Events are joined using execution ID and the attempt's tenant/actor scope.
+- Events are joined using execution ID, exact attempt ID and the attempt's tenant/actor scope.
 - Events are aggregated in ascending sequence order.
 - Attempts are ordered newest first, with attempt ID as a deterministic tie-breaker.
 - No derived timeline row is persisted; this is a read model over append-only records.
