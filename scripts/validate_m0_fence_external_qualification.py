@@ -12,10 +12,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator, FormatChecker
+
 PROFILE = "sky-high-fence-external-qualification-plan-v1"
 STAGES = ("witness", "evidence_object_store", "privileged_bypass", "restore_recovery", "audit_provenance")
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,159}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+SCHEMA_PATH = Path(__file__).resolve().parents[1] / "schemas" / "fence-001-external-qualification-plan-v1.schema.json"
 
 
 class PlanError(ValueError):
@@ -46,7 +49,25 @@ def parse_expiry(value: Any) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def validate_plan_schema(plan: dict[str, Any]) -> None:
+    try:
+        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+        errors = sorted(
+            validator.iter_errors(plan),
+            key=lambda error: tuple(str(part) for part in error.absolute_path),
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise PlanError(f"cannot load qualification plan schema: {exc}") from exc
+    if errors:
+        error = errors[0]
+        location = ".".join(str(part) for part in error.absolute_path) or "<root>"
+        raise PlanError(f"qualification plan schema violation at {location}: {error.message}")
+
+
 def validate_plan(plan: dict[str, Any], evidence_root: Path, *, now: datetime | None = None) -> dict[str, Any]:
+    validate_plan_schema(plan)
     now = now or datetime.now(timezone.utc)
     require(plan.get("profile") == PROFILE, "unsupported qualification plan profile")
     require(plan.get("testOnly") is False, "test-only plan cannot qualify external evidence")
@@ -98,6 +119,7 @@ def validate_plan(plan: dict[str, Any], evidence_root: Path, *, now: datetime | 
         "evidence_object_store": "evidenceStore",
         "privileged_bypass": "compute",
         "restore_recovery": "compute",
+        "audit_provenance": "compute",
     }
     evidence = plan.get("stages")
     require(isinstance(evidence, dict), "stage evidence map missing")
@@ -237,6 +259,9 @@ def self_test() -> None:
             ("missing attestation", lambda p: p["externalAttestations"].update({"providerApproval": {"verified": False}})),
             ("expired approval", lambda p: p["run"].update({"approvalExpiresAt": "2000-01-01T00:00:00Z"})),
             ("provider mismatch", lambda p: p["stages"]["witness"].update({"provider": "other-provider"})),
+            ("audit provider mismatch", lambda p: p["stages"]["audit_provenance"].update({"provider": "other-provider"})),
+            ("malformed approval expiry", lambda p: p["run"].update({"approvalExpiresAt": "not-a-date"})),
+            ("unknown plan property", lambda p: p.update({"unrecognized": True})),
         )
         for label, mutate in negative:
             candidate = copy.deepcopy(plan)
@@ -261,7 +286,7 @@ def self_test() -> None:
             pass
         else:
             raise AssertionError("tampered materialized evidence bytes accepted")
-        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 12 fail-closed checks)")
+        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 15 fail-closed checks)")
         print("Synthetic only: no provider calls, credentials, destructive tests or production approval.")
 
 

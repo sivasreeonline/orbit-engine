@@ -2,6 +2,7 @@
 
 **Status:** Provider-neutral pre-review reconciliation contract. No provider is selected or qualified.
 **Command:** `scripts/validate_m0_fence_external_qualification.py`
+**Canonical plan schema:** `schemas/fence-001-external-qualification-plan-v1.schema.json` (JSON Schema Draft 2020-12)
 **Production status:** BLOCKED. This command never invokes provider adapters or performs destructive operations.
 
 ## Purpose
@@ -20,7 +21,7 @@ The plan must contain PASS evidence for:
 4. `restore_recovery`: isolated disposable restore, post-restore witness re-read and monitor reconciliation.
 5. `audit_provenance`: provider audit authentication and request/event correlation.
 
-Every stage is bound to the exact `runId` and `accountId`, names the provider, and references an evidence file by safe basename, SHA-256 and byte count. The orchestrator recomputes the digest and length from bytes on disk. Missing stages, cross-run/account evidence, digest mismatches and unsupported states fail closed.
+Every stage is bound to the exact `runId` and `accountId`, names the provider, and references an evidence file by safe basename, SHA-256 and byte count. The orchestrator recomputes the digest and length from bytes on disk. Missing stages, cross-run/account evidence, digest mismatches and unsupported states fail closed. The canonical JSON Schema rejects unknown fields, missing required fields, malformed identifiers/digests, invalid ISO-8601 approval expiry values and incomplete stage/attestation records before the semantic checks run.
 
 ## Shared run scope
 
@@ -34,7 +35,7 @@ The plan must declare and independently substantiate:
 - Distinct storage administrator, account owner, organization administrator, recovery administrator, source reader, restore operator, witness reader, collector and independent verifier identities.
 - Independently verified provider-approval, verifier and evidence-retention attestations bound to the same run/account.
 
-The validator checks declarations and byte bindings. It cannot prove external attestations are truthful; their provenance, role separation and administrative/failure-domain independence must be reviewed separately.
+The validator checks declarations and byte bindings. It cannot prove external attestations are truthful; their provenance, role separation and administrative/failure-domain independence must be reviewed separately. The audit-provenance stage is pinned to the same compute provider identity used for the privileged-bypass and restore/recovery stages.
 
 ## Invocation
 
