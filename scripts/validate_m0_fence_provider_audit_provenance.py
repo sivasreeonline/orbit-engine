@@ -54,6 +54,7 @@ class Verification:
     verified_response_sha256: str
     signature_status: str
     transport_status: str
+    verified_event_set_sha256: str
 
 
 class AuditPageAdapter(Protocol):
@@ -76,6 +77,18 @@ def require_id(value: Any, field: str) -> str:
     if not isinstance(value, str) or not SAFE_ID.fullmatch(value):
         raise ValueError(f"{field} must be a non-empty safe provider identifier")
     return value
+
+
+def normalized_event_set_digest(events: tuple[dict[str, Any], ...]) -> str:
+    """Digest the verifier-authenticated normalized event projection deterministically."""
+    normalized = []
+    for event in events:
+        normalized.append({
+            key: ({"$bytesSha256": digest(value), "$byteCount": len(value)} if isinstance(value, bytes) else value)
+            for key, value in sorted(event.items())
+        })
+    encoded = json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return digest(encoded)
 
 
 def validate_page(
@@ -116,6 +129,8 @@ def validate_page(
         raise ValueError("provider audit verification used a trust root other than the independently pinned root")
     if verification.verified_response_sha256 != digest(page.raw_response):
         raise ValueError("verifier result is not bound to the exact captured raw response bytes")
+    if verification.verified_event_set_sha256 != normalized_event_set_digest(page.events):
+        raise ValueError("normalized audit events are not bound to the independently verified raw page")
 
 
 def validate_event(
@@ -314,7 +329,7 @@ class FixtureVerifier:
             "PROVIDER_SIGNED_AUDIT_ENVELOPE", pinned_trust_root_id,
             "0" * 64 if self.scenario == "wrong-root" else pinned_trust_root_sha256,
             digest(page.raw_response), "INVALID" if self.scenario == "bad-signature" else "VERIFIED",
-            "VERIFIED"
+            "VERIFIED", normalized_event_set_digest(page.events)
         )
 
 
