@@ -51,7 +51,7 @@ jobs:
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
-            printf '%s\\n' "$unformatted"
+            printf '%s\n' "$unformatted"
             exit 1
           fi
 
