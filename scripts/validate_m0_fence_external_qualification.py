@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed reconciliation of one externally executed FENCE-001 qualification run.
-
-This validator never invokes a provider. It binds five independently executed
-qualification stages to one approved disposable run and re-hashes each evidence
-artifact before allowing the package to advance to independent review.
-"""
+"""Fail-closed reconciliation of one externally executed FENCE-001 qualification run."""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +8,7 @@ import hashlib
 import json
 import re
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +36,18 @@ def load_json(path: Path) -> dict[str, Any]:
     return data
 
 
-def validate_plan(plan: dict[str, Any], evidence_root: Path) -> dict[str, Any]:
+def parse_expiry(value: Any) -> datetime:
+    require(isinstance(value, str) and value.strip(), "approval expiry missing")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise PlanError("approval expiry must be ISO-8601 with timezone") from exc
+    require(parsed.tzinfo is not None, "approval expiry must include a timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def validate_plan(plan: dict[str, Any], evidence_root: Path, *, now: datetime | None = None) -> dict[str, Any]:
+    now = now or datetime.now(timezone.utc)
     require(plan.get("profile") == PROFILE, "unsupported qualification plan profile")
     require(plan.get("testOnly") is False, "test-only plan cannot qualify external evidence")
     require(plan.get("productionApproval") is False, "productionApproval must remain explicitly false")
@@ -51,8 +58,7 @@ def validate_plan(plan: dict[str, Any], evidence_root: Path) -> dict[str, Any]:
     require(isinstance(run_id, str) and ID.fullmatch(run_id), "runId missing or unsafe")
     require(isinstance(account_id, str) and ID.fullmatch(account_id), "accountId missing or unsafe")
     require(isinstance(run.get("approvalId"), str) and ID.fullmatch(run["approvalId"]), "approvalId missing")
-    require(isinstance(run.get("approvalExpiresAt"), str) and run["approvalExpiresAt"].strip(),
-            "approval expiry missing")
+    require(parse_expiry(run.get("approvalExpiresAt")) > now, "qualification approval is expired")
     require(run.get("environment") == "QUALIFICATION", "environment must be QUALIFICATION")
     require(run.get("production") is False, "production scope is forbidden")
     require(run.get("disposable") is True, "account must be explicitly disposable")
@@ -61,17 +67,17 @@ def validate_plan(plan: dict[str, Any], evidence_root: Path) -> dict[str, Any]:
     require(run.get("operatorPinned") is True, "provider/account scope is not operator-pinned")
     require(run.get("admissionEnabled") is False, "host admission must remain disabled")
 
-    identity_roles = (
+    roles = (
         "storageAdministrator", "accountOwner", "organizationAdministrator",
         "recoveryAdministrator", "sourceReader", "restoreOperator",
         "witnessReader", "collector", "independentVerifier",
     )
     identities = plan.get("identities")
     require(isinstance(identities, dict), "identity inventory missing")
-    for role in identity_roles:
+    for role in roles:
         value = identities.get(role)
         require(isinstance(value, str) and ID.fullmatch(value), f"{role} identity missing or malformed")
-    require(len({identities[r] for r in identity_roles}) == len(identity_roles),
+    require(len({identities[role] for role in roles}) == len(roles),
             "privileged and independent roles must use distinct principals")
 
     pins = plan.get("providerPins")
@@ -80,15 +86,14 @@ def validate_plan(plan: dict[str, Any], evidence_root: Path) -> dict[str, Any]:
         pin = pins.get(name)
         require(isinstance(pin, dict), f"{name} provider pin missing")
         for field in ("provider", "accountId", "region", "service", "adapterDigest"):
-            require(isinstance(pin.get(field), str) and pin[field].strip(),
-                    f"{name}.{field} missing")
+            require(isinstance(pin.get(field), str) and pin[field].strip(), f"{name}.{field} missing")
         require(pin["accountId"] == account_id, f"{name} account differs from qualification account")
         require(SHA256.fullmatch(pin["adapterDigest"]) is not None,
                 f"{name} adapterDigest must be lowercase SHA-256")
     require(run.get("computeProvider") == pins["compute"]["provider"],
             "compute provider differs from run scope")
 
-    mapping = {
+    stage_pin = {
         "witness": "witness",
         "evidence_object_store": "evidenceStore",
         "privileged_bypass": "compute",
@@ -98,13 +103,14 @@ def validate_plan(plan: dict[str, Any], evidence_root: Path) -> dict[str, Any]:
     require(isinstance(evidence, dict), "stage evidence map missing")
     checked: dict[str, Any] = {}
     root = evidence_root.resolve()
+    used_paths: set[Path] = set()
     for stage in STAGES:
         record = evidence.get(stage)
         require(isinstance(record, dict), f"required stage {stage} missing")
         require(record.get("status") == "PASS", f"stage {stage} did not PASS")
         require(record.get("runId") == run_id, f"stage {stage} belongs to another run")
         require(record.get("accountId") == account_id, f"stage {stage} belongs to another account")
-        pin_name = mapping.get(stage)
+        pin_name = stage_pin.get(stage)
         if pin_name:
             require(record.get("provider") == pins[pin_name]["provider"],
                     f"stage {stage} provider differs from pinned provider")
@@ -118,6 +124,8 @@ def validate_plan(plan: dict[str, Any], evidence_root: Path) -> dict[str, Any]:
         require(type(count) is int and count > 0, f"stage {stage} byte count invalid")
         path = (root / artifact).resolve()
         require(path.parent == root, f"stage {stage} artifact escapes evidence root")
+        require(path not in used_paths, f"stage {stage} reuses another stage evidence artifact")
+        used_paths.add(path)
         try:
             raw = path.read_bytes()
         except OSError as exc:
@@ -130,13 +138,24 @@ def validate_plan(plan: dict[str, Any], evidence_root: Path) -> dict[str, Any]:
     require(isinstance(external, dict), "external attestation inventory missing")
     for name in ("providerApproval", "independentVerifier", "evidenceStoreRetention"):
         item = external.get(name)
-        require(isinstance(item, dict) and item.get("verified") is True,
-                f"{name} is not independently verified")
+        require(isinstance(item, dict) and item.get("verified") is True, f"{name} is not independently verified")
         require(item.get("runId") == run_id and item.get("accountId") == account_id,
                 f"{name} is not bound to this run and account")
-        artifact = item.get("evidenceArtifact")
+        artifact, digest, count = item.get("evidenceArtifact"), item.get("sha256"), item.get("byteCount")
         require(isinstance(artifact, str) and re.fullmatch(r"[A-Za-z0-9._-]{1,200}", artifact),
                 f"{name} evidence reference missing or unsafe")
+        require(SHA256.fullmatch(digest or "") is not None, f"{name} evidence digest malformed")
+        require(type(count) is int and count > 0, f"{name} evidence byte count invalid")
+        path = (root / artifact).resolve()
+        require(path.parent == root, f"{name} evidence path escapes evidence root")
+        require(path not in used_paths, f"{name} reuses another evidence artifact")
+        used_paths.add(path)
+        try:
+            raw = path.read_bytes()
+        except OSError as exc:
+            raise PlanError(f"{name} attestation evidence missing") from exc
+        require(len(raw) == count and hashlib.sha256(raw).hexdigest() == digest,
+                f"{name} attestation evidence byte binding mismatch")
 
     require(isinstance(plan.get("limitations"), list) and plan["limitations"],
             "qualification limitations must be explicit")
@@ -144,16 +163,11 @@ def validate_plan(plan: dict[str, Any], evidence_root: Path) -> dict[str, Any]:
     require(review in {"NOT_STARTED", "PENDING"}, "orchestrator cannot complete independent review")
 
     return {
-        "profile": PROFILE,
-        "runId": run_id,
-        "accountId": account_id,
-        "stageCount": len(STAGES),
-        "stages": checked,
+        "profile": PROFILE, "runId": run_id, "accountId": account_id,
+        "stageCount": len(STAGES), "stages": checked,
         "result": "READY_FOR_INDEPENDENT_REVIEW",
-        "independentReviewStatus": review,
-        "productionApproval": False,
-        "hostAdmissionEnabled": False,
-        "limitations": plan["limitations"],
+        "independentReviewStatus": review, "productionApproval": False,
+        "hostAdmissionEnabled": False, "limitations": plan["limitations"],
     }
 
 
@@ -166,15 +180,25 @@ def self_test() -> None:
             "witnessReader", "collector", "independentVerifier",
         )
         stages: dict[str, Any] = {}
-        for name in STAGES:
+        attestations: dict[str, Any] = {}
+        for name in STAGES + ("providerApproval", "independentVerifierAttestation", "evidenceStoreRetention"):
             raw = f"synthetic:{name}".encode()
             filename = f"{name}.evidence"
             (root / filename).write_bytes(raw)
-            stages[name] = {
-                "status": "PASS", "runId": "run-fixture-001", "accountId": "account-fixture",
-                "provider": "provider-fixture", "artifact": filename,
-                "sha256": hashlib.sha256(raw).hexdigest(), "byteCount": len(raw),
-            }
+            bound = {"artifact": filename, "sha256": hashlib.sha256(raw).hexdigest(), "byteCount": len(raw)}
+            if name in STAGES:
+                stages[name] = {
+                    **bound, "status": "PASS", "runId": "run-fixture-001",
+                    "accountId": "account-fixture", "provider": "provider-fixture",
+                }
+            else:
+                attestations[{
+                    "providerApproval": "providerApproval",
+                    "independentVerifierAttestation": "independentVerifier",
+                    "evidenceStoreRetention": "evidenceStoreRetention",
+                }[name]] = {
+                    **bound, "verified": True, "runId": "run-fixture-001", "accountId": "account-fixture",
+                }
         plan = {
             "profile": PROFILE, "testOnly": False, "productionApproval": False,
             "run": {
@@ -182,8 +206,7 @@ def self_test() -> None:
                 "approvalId": "approval-fixture", "approvalExpiresAt": "2099-01-01T00:00:00Z",
                 "environment": "QUALIFICATION", "production": False, "disposable": True,
                 "sourceReadOnly": True, "approvalRunId": "run-fixture-001",
-                "operatorPinned": True, "admissionEnabled": False,
-                "computeProvider": "provider-fixture",
+                "operatorPinned": True, "admissionEnabled": False, "computeProvider": "provider-fixture",
             },
             "identities": {role: f"principal-{i}" for i, role in enumerate(roles)},
             "providerPins": {
@@ -192,16 +215,12 @@ def self_test() -> None:
                       "adapterDigest": hashlib.sha256(key.encode()).hexdigest()}
                 for key in ("witness", "evidenceStore", "compute")
             },
-            "stages": stages,
-            "externalAttestations": {
-                key: {"verified": True, "runId": "run-fixture-001",
-                      "accountId": "account-fixture", "evidenceArtifact": f"{key}.attestation"}
-                for key in ("providerApproval", "independentVerifier", "evidenceStoreRetention")
-            },
+            "stages": stages, "externalAttestations": attestations,
             "limitations": ["Synthetic fixtures only; no provider truth is asserted."],
             "independentReviewStatus": "PENDING",
         }
-        result = validate_plan(plan, root)
+        fixed_now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        result = validate_plan(plan, root, now=fixed_now)
         require(result["result"] == "READY_FOR_INDEPENDENT_REVIEW", "valid plan rejected")
         require(result["productionApproval"] is False, "approval state changed")
         negative = (
@@ -213,31 +232,33 @@ def self_test() -> None:
             ("identity collision", lambda p: p["identities"].update({"independentVerifier": p["identities"]["collector"]})),
             ("approval substitution", lambda p: p["run"].update({"approvalRunId": "other-run"})),
             ("missing attestation", lambda p: p["externalAttestations"].update({"providerApproval": {"verified": False}})),
+            ("expired approval", lambda p: p["run"].update({"approvalExpiresAt": "2000-01-01T00:00:00Z"})),
+            ("provider mismatch", lambda p: p["stages"]["witness"].update({"provider": "other-provider"})),
         )
         for label, mutate in negative:
             candidate = copy.deepcopy(plan)
             mutate(candidate)
             try:
-                validate_plan(candidate, root)
+                validate_plan(candidate, root, now=fixed_now)
             except PlanError:
                 continue
             raise AssertionError(f"fail-closed test accepted: {label}")
         candidate = copy.deepcopy(plan)
         candidate["stages"]["evidence_object_store"]["sha256"] = "0" * 64
         try:
-            validate_plan(candidate, root)
+            validate_plan(candidate, root, now=fixed_now)
         except PlanError:
             pass
         else:
             raise AssertionError("tampered evidence digest accepted")
         (root / "witness.evidence").write_bytes(b"tampered")
         try:
-            validate_plan(plan, root)
+            validate_plan(plan, root, now=fixed_now)
         except PlanError:
             pass
         else:
             raise AssertionError("tampered materialized evidence bytes accepted")
-        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 10 fail-closed checks)")
+        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 12 fail-closed checks)")
         print("Synthetic only: no provider calls, credentials, destructive tests or production approval.")
 
 
