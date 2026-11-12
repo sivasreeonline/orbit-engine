@@ -293,9 +293,10 @@ def main() -> None:
     fill_two = apply(fill_one.state, msg("message-2", 2, "2" * 64))
     expect("gap fully reconciled", fill_two, Outcome.ACCEPTED)
     require(not fill_two.state.missing_sequences, "resolved sequence gap remains recorded")
+    old_window_state = ReplayState(100, {}, {}, {}, frozenset(), frozenset())
     expect(
         "old replay outside window",
-        apply(gap.state, msg("old-message", 1, "a" * 64), protected=0),
+        apply(old_window_state, msg("old-message", 1, "a" * 64), protected=0),
         Outcome.BLOCKED,
         "older than the replay window",
     )
@@ -357,7 +358,7 @@ def main() -> None:
     )
     expect(
         "expired originating request",
-        apply(request_accepted.state, response, now=10_101),
+        apply(request_accepted.state, replace(response, expires_at=10_200), now=10_101),
         Outcome.BLOCKED,
         "request has expired",
     )
