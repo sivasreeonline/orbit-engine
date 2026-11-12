@@ -402,7 +402,7 @@ export class PostgresExecutionEvidenceRepository {
             "SELECT id FROM execution_jobs",
             "WHERE id = $1::uuid AND attempt_id = $2::uuid",
             "FOR UPDATE",
-          ].join("\\n"),
+          ].join("\n"),
           [input.executionId, input.attemptId],
         );
         if (job.rows.length !== 1) throw new ExecutionEvidenceNotFoundError();
