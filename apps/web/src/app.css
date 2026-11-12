@@ -2587,3 +2587,10 @@ button:focus-visible, a:focus-visible, select:focus-visible {
   .timeline-card-top time { text-align: left; }
   .timeline-compare-bar { align-items: flex-start; flex-direction: column; }
 }
+
+
+.timeline-diff-number {
+  display: inline-block; width: 34px; padding-right: 8px;
+  color: #697a91; text-align: right; user-select: none;
+}
+.timeline-card-actions input:disabled { opacity: .45; cursor: not-allowed; }
