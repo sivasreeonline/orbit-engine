@@ -29,6 +29,7 @@ async function comparisonRow(overrides: Record<string, unknown> = {}) {
     base_problem_version_id: "11000000-0000-4000-8000-000000000001",
     base_language: "java",
     base_runtime_version: "25",
+    base_attempt_sha256: await digest(baseBytes),
     base_sha256: await digest(baseBytes),
     base_byte_length: baseBytes.byteLength,
     base_storage_kind: "DATABASE",
@@ -38,6 +39,7 @@ async function comparisonRow(overrides: Record<string, unknown> = {}) {
     target_problem_version_id: "11000000-0000-4000-8000-000000000001",
     target_language: "java",
     target_runtime_version: "25",
+    target_attempt_sha256: await digest(targetBytes),
     target_sha256: await digest(targetBytes),
     target_byte_length: targetBytes.byteLength,
     target_storage_kind: "DATABASE",
@@ -88,6 +90,8 @@ describe("PostgresExecutionSourceComparisonRepository", () => {
     expect(query?.text).toContain("b.actor_user_id = $4::uuid");
     expect(query?.text).toContain("t.tenant_id = $3::uuid");
     expect(query?.text).toContain("t.actor_user_id = $4::uuid");
+    expect(query?.text).toContain("bs.tenant_id = $3::uuid");
+    expect(query?.text).toContain("ts.actor_user_id = $4::uuid");
     expect(fake.ended()).toBe(true);
   });
 
