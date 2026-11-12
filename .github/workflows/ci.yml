@@ -124,6 +124,9 @@ jobs:
       - name: Verify FENCE-001 materialized evidence artifact bytes
         run: python ../../scripts/verify_m0_fence_evidence_artifact_bytes.py
 
+      - name: Verify FENCE-001 immutable evidence object-store contract
+        run: python ../../scripts/validate_m0_fence_evidence_object_store.py
+
       - name: Verify RFC 9162 Merkle inclusion and consistency proof vectors
         run: python ../../scripts/validate_m0_fence_witness_merkle_proofs.py
 
