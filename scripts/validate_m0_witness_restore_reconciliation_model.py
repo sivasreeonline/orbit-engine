@@ -254,8 +254,39 @@ def main() -> None:
     expect("missing witness", {"witness": None}, Outcome.BLOCKED)
     expect("latest read unavailable", {"latest_read_status": "UNAVAILABLE"}, Outcome.BLOCKED)
     expect("latest read stale", {"latest_read_status": "STALE"}, Outcome.QUARANTINE)
-    expect("missing consistency proof", {"consistency_proof_status": "MISSING"}, Outcome.BLOCKED)
-    expect("invalid consistency proof", {"consistency_proof_status": "INVALID"}, Outcome.QUARANTINE)
+    expect(
+        "missing consistency proof",
+        {
+            "witness": HighWater(7, "7" * 64),
+            "witness_chain": [
+                Checkpoint(6, "6" * 64, "5" * 64),
+                Checkpoint(7, "7" * 64, "6" * 64),
+            ],
+            "monitors": [
+                MonitorHead("monitor-a", "operator-a", "account-a", "region-a", 7, "7" * 64),
+                MonitorHead("monitor-b", "operator-b", "account-b", "region-b", 7, "7" * 64),
+            ],
+            "consistency_proof_status": "MISSING",
+        },
+        Outcome.BLOCKED,
+    )
+    expect(
+        "invalid consistency proof",
+        {
+            "witness": HighWater(7, "7" * 64),
+            "witness_chain": [
+                Checkpoint(6, "6" * 64, "5" * 64),
+                Checkpoint(7, "7" * 64, "6" * 64),
+            ],
+            "monitors": [
+                MonitorHead("monitor-a", "operator-a", "account-a", "region-a", 7, "7" * 64),
+                MonitorHead("monitor-b", "operator-b", "account-b", "region-b", 7, "7" * 64),
+            ],
+            "consistency_proof_status": "INVALID",
+        },
+        Outcome.QUARANTINE,
+        "consistency proof is invalid",
+    )
     expect(
         "witness advanced beyond protected high-water",
         {
