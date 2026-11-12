@@ -199,6 +199,11 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/execution-source-comparison-repository.integration.test.ts
 
+      - name: Verify owner-scoped attempt timeline against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/execution-attempt-timeline.integration.test.ts
+
       - name: Verify outbox leases against PostgreSQL
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
