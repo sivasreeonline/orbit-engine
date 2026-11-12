@@ -130,6 +130,9 @@ jobs:
       - name: Verify FENCE-001 privileged retention-bypass and evidence-isolation contract
         run: python ../../scripts/validate_m0_fence_evidence_isolation.py
 
+      - name: Verify guarded FENCE-001 provider privileged-bypass harness
+        run: python ../../scripts/validate_m0_fence_provider_privileged_bypass.py --self-test
+
       - name: Verify RFC 9162 Merkle inclusion and consistency proof vectors
         run: python ../../scripts/validate_m0_fence_witness_merkle_proofs.py
 
