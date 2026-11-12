@@ -33,12 +33,12 @@ The plan must declare and independently substantiate:
 - Approval bound to the same run ID; the plan producer must check expiry against independently trusted time before creating the plan.
 - A read-only source boundary and `admissionEnabled=false`.
 - Provider, account, region, service and adapter SHA-256 pins for witness, evidence store and compute.
-- Distinct storage administrator, account owner, organization administrator, recovery administrator, source reader, restore operator, witness reader, collector and independent verifier identities.
+- Distinct storage administrator, account owner, organization administrator, recovery administrator, source reader, restore operator, witness reader, collector, independent verifier, provider-approval authority and evidence-retention authority identities.
 - Independently verified provider-approval, verifier and evidence-retention attestations bound to the same run/account.
 
 The three external attestations are no longer accepted as a self-asserted `verified=true` flag. Each must carry an Ed25519 signature over an RFC 8785 canonical body with a dedicated domain-separation prefix. The body binds the attestation type, run ID, account ID, approval ID, issue/expiry times, exact attestation evidence digest/byte count and a SHA-256 digest of the shared run/identity/provider-pin scope.
 
-Signatures are verified against a separate `--trust-keys` inventory. That inventory must be provisioned independently of the provider and evidence store; each of the three roles has a distinct active signer, key ID and Ed25519 public key. Public-key fingerprints are recomputed. CI creates ephemeral keys only; no production trust key or private key is committed.
+Signatures are verified against a separate `--trust-keys` inventory. That inventory must be provisioned independently of the provider and evidence store; each of the three roles has a distinct active signer, key ID and Ed25519 public key. Their signer identities must also match three separately named plan principals: provider-approval authority, independent verifier and evidence-retention authority. Public-key fingerprints are recomputed. CI creates ephemeral keys only; no production trust key or private key is committed.
 
 The validator still cannot prove that a trust authority's real-world governance or statement is truthful. Trust-key governance, signer independence and administrative/failure-domain separation require independent review. The audit-provenance stage is pinned to the same compute provider identity used for privileged-bypass and restore/recovery.
 
