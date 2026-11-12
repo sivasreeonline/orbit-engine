@@ -17,8 +17,8 @@ import { diffSourceSnapshots, SourceDiffLimitError } from "./db/execution-source
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
-  "listProblemAttemptHistory" | "listExecutionEvents" | "listProblemAttemptTimeline"
->;
+  "listProblemAttemptHistory" | "listExecutionEvents"
+> & Partial<Pick<PostgresExecutionEvidenceRepository, "listProblemAttemptTimeline">>;
 import type { Env } from "./env";
 
 type ExecutionSourceSnapshotReadRepository = Pick<
@@ -517,7 +517,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
     }
 
     if (attemptTimelineMatch) {
-      if (!dependencies.evidenceRepository) {
+      if (!dependencies.evidenceRepository?.listProblemAttemptTimeline) {
         return errorResponse(
           "EVIDENCE_STORE_NOT_CONFIGURED",
           "The coding journey is temporarily unavailable.",
