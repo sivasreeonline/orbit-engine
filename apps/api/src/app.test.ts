@@ -8,6 +8,12 @@ import type {
   ProblemSummary,
 } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
+import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+
+type ExecutionEvidenceReadRepository = Pick<
+  PostgresExecutionEvidenceRepository,
+  "listProblemAttemptHistory" | "listExecutionEvents"
+>;
 
 const allowedOrigin = "https://app.skyhigh.example";
 
@@ -50,6 +56,7 @@ const authenticated: AuthenticationResult = {
 interface HarnessOptions {
   auth?: AuthenticationResult;
   repository?: Partial<ProblemRepository>;
+  evidenceRepository?: ExecutionEvidenceReadRepository;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -68,6 +75,9 @@ function makeHarness(options: HarnessOptions = {}) {
   const handler = createApiHandler({
     authenticator,
     repository,
+    ...(options.evidenceRepository
+      ? { evidenceRepository: options.evidenceRepository }
+      : {}),
     allowedOrigins: allowedOrigin,
   });
 
@@ -272,6 +282,93 @@ describe("M1 API control plane", () => {
     expect(body).toMatchObject({
       error: { code: "INTERNAL_ERROR", retryable: true },
     });
+  });
+
+  it("returns attempt history only for the authenticated tenant and student", async () => {
+    const listProblemAttemptHistory = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _problemSlug: string,
+      _limit?: number,
+    ) => []);
+    const listExecutionEvents = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _executionId: string,
+    ) => []);
+    const { handler } = makeHarness({
+      evidenceRepository: { listProblemAttemptHistory, listExecutionEvents },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/problems/two-sum/attempts?limit=7",
+    ));
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toEqual({ data: [], meta: { count: 0, limit: 7 } });
+    expect(listProblemAttemptHistory).toHaveBeenCalledWith(
+      authenticated.principal.tenantId,
+      authenticated.principal.userId,
+      "two-sum",
+      7,
+    );
+  });
+
+  it("rejects invalid attempt-history limits before querying evidence", async () => {
+    const listProblemAttemptHistory = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _problemSlug: string,
+      _limit?: number,
+    ) => []);
+    const listExecutionEvents = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _executionId: string,
+    ) => []);
+    const { handler } = makeHarness({
+      evidenceRepository: { listProblemAttemptHistory, listExecutionEvents },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/problems/two-sum/attempts?limit=101",
+    ));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_LIMIT", retryable: false },
+    });
+    expect(listProblemAttemptHistory).not.toHaveBeenCalled();
+  });
+
+  it("returns timeline events scoped to the authenticated student", async () => {
+    const executionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+    const listProblemAttemptHistory = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _problemSlug: string,
+      _limit?: number,
+    ) => []);
+    const listExecutionEvents = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _executionId: string,
+    ) => []);
+    const { handler } = makeHarness({
+      evidenceRepository: { listProblemAttemptHistory, listExecutionEvents },
+    });
+
+    const response = await handler(makeRequest(
+      `/api/v1/executions/${executionId}/events`,
+    ));
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toEqual({ data: [], meta: { count: 0 } });
+    expect(listExecutionEvents).toHaveBeenCalledWith(
+      authenticated.principal.tenantId,
+      authenticated.principal.userId,
+      executionId,
+    );
   });
 
   it("returns 404 for unknown routes", async () => {
