@@ -227,7 +227,7 @@ class DynamoDBWitnessAdapter:
         # This stable opaque value is an adapter transaction-correlation token,
         # not a cryptographic proof of linearizability or provider authenticity.
         transaction_binding = hashlib.sha256(
-            (partition_key + "\x00" + idempotency_hash + "\x00" + checkpoint_json).encode("utf-8")
+            (self._table_name + "\x00" + partition_key + "\x00" + idempotency_hash + "\x00" + checkpoint_json).encode("utf-8")
         ).hexdigest()
         consistency_token = "dynamodb-correlation-" + transaction_binding[:32]
         receipt = _contract_types().Receipt(
