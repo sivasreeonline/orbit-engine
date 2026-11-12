@@ -1,0 +1,418 @@
+package runner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+)
+
+var (
+	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
+	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+)
+
+type DockerContainerState struct {
+	Status   string `json:"Status"`
+	ExitCode int    `json:"ExitCode"`
+	OOMKilled bool  `json:"OOMKilled"`
+}
+
+// DockerCLI isolates the Docker command boundary so policy and lifecycle
+// behavior can be tested without running untrusted code on the host.
+type DockerCLI interface {
+	Create(context.Context, []string) (string, error)
+	StartAttached(context.Context, string, io.Reader, io.Writer, io.Writer) (int, error)
+	Inspect(context.Context, string) (DockerContainerState, error)
+	Remove(context.Context, string) error
+}
+
+type OSCommandDockerCLI struct {
+	Binary string
+}
+
+func (cli OSCommandDockerCLI) binary() string {
+	if cli.Binary != "" {
+		return cli.Binary
+	}
+	return "docker"
+}
+
+func (cli OSCommandDockerCLI) Create(ctx context.Context, args []string) (string, error) {
+	command := exec.CommandContext(ctx, cli.binary(), append([]string{"create"}, args...)...)
+	output, err := command.Output()
+	if err != nil {
+		return "", ErrDockerCommandFailed
+	}
+	id := strings.TrimSpace(string(output))
+	if !containerIDPattern.MatchString(id) {
+		return "", ErrDockerCommandFailed
+	}
+	return id, nil
+}
+
+func (cli OSCommandDockerCLI) StartAttached(
+	ctx context.Context,
+	id string,
+	stdin io.Reader,
+	stdout io.Writer,
+	stderr io.Writer,
+) (int, error) {
+	if !containerIDPattern.MatchString(id) {
+		return 0, ErrDockerCommandFailed
+	}
+	command := exec.CommandContext(ctx, cli.binary(), "start", "--attach", "--interactive", id)
+	command.Stdin = stdin
+	command.Stdout = stdout
+	command.Stderr = stderr
+	err := command.Run()
+	if err == nil {
+		return 0, nil
+	}
+	var exitError *exec.ExitError
+	if errors.As(err, &exitError) && ctx.Err() == nil {
+		return exitError.ExitCode(), nil
+	}
+	return 0, ErrDockerCommandFailed
+}
+
+func (cli OSCommandDockerCLI) Inspect(ctx context.Context, id string) (DockerContainerState, error) {
+	if !containerIDPattern.MatchString(id) {
+		return DockerContainerState{}, ErrDockerCommandFailed
+	}
+	command := exec.CommandContext(
+		ctx,
+		cli.binary(),
+		"inspect",
+		"--format",
+		"{{json .State}}",
+		id,
+	)
+	output, err := command.Output()
+	if err != nil {
+		return DockerContainerState{}, ErrDockerCommandFailed
+	}
+	var state DockerContainerState
+	if err := json.Unmarshal(output, &state); err != nil {
+		return DockerContainerState{}, ErrDockerCommandFailed
+	}
+	return state, nil
+}
+
+func (cli OSCommandDockerCLI) Remove(ctx context.Context, id string) error {
+	if !containerIDPattern.MatchString(id) {
+		return ErrDockerCommandFailed
+	}
+	command := exec.CommandContext(ctx, cli.binary(), "rm", "--force", id)
+	if err := command.Run(); err != nil {
+		return ErrDockerCommandFailed
+	}
+	return nil
+}
+
+type DockerSandbox struct {
+	cli             DockerCLI
+	temporaryRoot   string
+	cleanupTimeout  time.Duration
+}
+
+func NewDockerSandbox(cli DockerCLI, temporaryRoot string) (*DockerSandbox, error) {
+	if cli == nil {
+		return nil, ErrSandboxNotConfigured
+	}
+	if temporaryRoot == "" {
+		temporaryRoot = os.TempDir()
+	}
+	info, err := os.Stat(temporaryRoot)
+	if err != nil || !info.IsDir() {
+		return nil, ErrSandboxNotConfigured
+	}
+	return &DockerSandbox{
+		cli:            cli,
+		temporaryRoot:  temporaryRoot,
+		cleanupTimeout: 5 * time.Second,
+	}, nil
+}
+
+func (sandbox *DockerSandbox) RunCase(
+	parent context.Context,
+	request SandboxRequest,
+) (SandboxObservation, error) {
+	if err := validateSandboxRequest(request); err != nil {
+		return SandboxObservation{}, err
+	}
+
+	workspace, err := os.MkdirTemp(sandbox.temporaryRoot, "sky-high-exec-")
+	if err != nil {
+		return SandboxObservation{}, ErrDockerCommandFailed
+	}
+	cleanupWorkspace := true
+	defer func() {
+		if cleanupWorkspace {
+			_ = os.RemoveAll(workspace)
+		}
+	}()
+	if err := os.Chmod(workspace, 0711); err != nil {
+		return SandboxObservation{}, ErrDockerCommandFailed
+	}
+	sourcePath := filepath.Join(workspace, request.SourceName)
+	file, err := os.OpenFile(sourcePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0444)
+	if err != nil {
+		return SandboxObservation{}, ErrDockerCommandFailed
+	}
+	if _, err := file.Write(request.SourceBytes); err != nil {
+		_ = file.Close()
+		return SandboxObservation{}, ErrDockerCommandFailed
+	}
+	if err := file.Close(); err != nil {
+		return SandboxObservation{}, ErrDockerCommandFailed
+	}
+	if err := os.Chmod(sourcePath, 0444); err != nil {
+		return SandboxObservation{}, ErrDockerCommandFailed
+	}
+
+	wallClock := time.Duration(request.Limits.WallTimeMillis) * time.Millisecond
+	runContext, cancel := context.WithTimeout(parent, wallClock)
+	defer cancel()
+	output := newBoundedOutput(request.Limits.OutputBytes, cancel)
+
+	args, err := dockerCreateArguments(request, workspace)
+	if err != nil {
+		return SandboxObservation{}, err
+	}
+	containerID, err := sandbox.cli.Create(runContext, args)
+	if err != nil {
+		if parent.Err() != nil {
+			return SandboxObservation{}, parent.Err()
+		}
+		if runContext.Err() != nil {
+			return SandboxObservation{}, runContext.Err()
+		}
+		return SandboxObservation{}, ErrDockerCommandFailed
+	}
+	if !containerIDPattern.MatchString(containerID) {
+		return SandboxObservation{}, ErrDockerCommandFailed
+	}
+
+	startedAt := time.Now()
+	exitCode, startErr := sandbox.cli.StartAttached(
+		runContext,
+		containerID,
+		bytes.NewReader(request.StandardInput),
+		output,
+		output,
+	)
+	elapsed := time.Since(startedAt)
+
+	// Inspect before removal only when the command completed normally. For
+	// cancellation/timeout, removal itself is the kill operation.
+	state := DockerContainerState{}
+	var inspectErr error
+	if startErr == nil && runContext.Err() == nil {
+		inspectContext, inspectCancel := context.WithTimeout(context.Background(), sandbox.cleanupTimeout)
+		state, inspectErr = sandbox.cli.Inspect(inspectContext, containerID)
+		inspectCancel()
+	}
+
+	cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), sandbox.cleanupTimeout)
+	removeErr := sandbox.cli.Remove(cleanupContext, containerID)
+	cleanupCancel()
+	removeWorkspaceErr := os.RemoveAll(workspace)
+	cleanupWorkspace = false
+
+	cleanupSucceeded := removeErr == nil && removeWorkspaceErr == nil
+	observation := SandboxObservation{
+		StandardOutput:   output.Bytes(),
+		StandardError:    nil,
+		ElapsedMillis:    elapsed.Milliseconds(),
+		CleanupSucceeded: cleanupSucceeded,
+	}
+
+	if parent.Err() != nil {
+		return observation, parent.Err()
+	}
+	if !cleanupSucceeded {
+		return observation, ErrDockerCommandFailed
+	}
+	if output.Exceeded() {
+		observation.Status = SandboxOutputLimit
+		observation.CompilationStatus = CompilationNotStarted
+		return observation, nil
+	}
+	if errors.Is(runContext.Err(), context.DeadlineExceeded) {
+		observation.Status = SandboxTimeLimit
+		observation.CompilationStatus = CompilationSucceeded
+		return observation, nil
+	}
+	if runContext.Err() != nil {
+		return observation, runContext.Err()
+	}
+	if startErr != nil || inspectErr != nil || state.Status != "exited" {
+		return observation, ErrDockerCommandFailed
+	}
+	if state.OOMKilled {
+		observation.Status = SandboxMemoryLimit
+		observation.CompilationStatus = CompilationSucceeded
+		return observation, nil
+	}
+
+	switch {
+	case request.Language == protocol.LanguageJava && exitCode == 86:
+		observation.Status = SandboxCompileError
+		observation.CompilationStatus = CompilationFailed
+	case request.Language == protocol.LanguagePython && exitCode == 86:
+		observation.Status = SandboxCompileError
+		observation.CompilationStatus = CompilationFailed
+	case exitCode == 87:
+		return observation, ErrDockerCommandFailed
+	case exitCode == 0:
+		observation.Status = SandboxSucceeded
+		observation.CompilationStatus = CompilationSucceeded
+	default:
+		observation.Status = SandboxRuntimeError
+		observation.CompilationStatus = CompilationSucceeded
+	}
+	return observation, nil
+}
+
+func validateSandboxRequest(request SandboxRequest) error {
+	if !containerSafeID(request.ExecutionID) ||
+		(request.Language != protocol.LanguageJava && request.Language != protocol.LanguagePython) ||
+		!imageReferencePattern.MatchString(request.ImageRef) {
+		return protocol.ErrInvalidRequest
+	}
+	expectedName := sourceFileName(request.Language)
+	if request.SourceName != expectedName || len(request.SourceBytes) == 0 ||
+		len(request.SourceBytes) > maximumSourceBytes {
+		return protocol.ErrInvalidRequest
+	}
+	return validateExecutionLimits(request.Limits)
+}
+
+func containerSafeID(value string) bool {
+	return artifactCaseIDPattern.MatchString(value)
+}
+
+func dockerCreateArguments(request SandboxRequest, workspace string) ([]string, error) {
+	if !imageReferencePattern.MatchString(request.ImageRef) {
+		return nil, ErrInvalidRuntimeConfig
+	}
+	cpuValue := strconv.FormatFloat(float64(request.Limits.CPUQuotaMillis)/1000, 'f', 3, 64)
+	memoryValue := strconv.FormatInt(request.Limits.MemoryBytes, 10)
+	processValue := strconv.FormatInt(request.Limits.ProcessLimit, 10)
+	tmpfsSize := "64m"
+	if request.Limits.MemoryBytes < 128*1024*1024 {
+		tmpfsSize = "16m"
+	}
+
+	script := runtimeScript(request.Language)
+	args := []string{
+		"--runtime=runsc",
+		"--network=none",
+		"--ipc=none",
+		"--read-only",
+		"--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=" + tmpfsSize,
+		"--memory=" + memoryValue,
+		"--memory-swap=" + memoryValue,
+		"--cpus=" + cpuValue,
+		"--pids-limit=" + processValue,
+		"--cap-drop=ALL",
+		"--security-opt=no-new-privileges",
+		"--user=65532:65532",
+		"--ulimit", "core=0:0",
+		"--interactive",
+		"--mount", "type=bind,src=" + workspace + ",dst=/workspace,readonly",
+		"--workdir=/workspace",
+		"--label", "com.skyhigh.execution-id=" + request.ExecutionID,
+		"--entrypoint=/bin/sh",
+		request.ImageRef,
+		"-c",
+		script,
+	}
+	return args, nil
+}
+
+func runtimeScript(language protocol.Language) string {
+	switch language {
+	case protocol.LanguageJava:
+		return strings.Join([]string{
+			"set -eu",
+			"command -v javac >/dev/null 2>&1 || exit 87",
+			"command -v java >/dev/null 2>&1 || exit 87",
+			"mkdir -p /tmp/classes || exit 87",
+			"if javac -J-XX:MaxRAMPercentage=50 -proc:none -d /tmp/classes /workspace/Main.java; then",
+			"  exec java -XX:MaxRAMPercentage=75 -Djava.io.tmpdir=/tmp -cp /tmp/classes Main",
+			"else",
+			"  exit 86",
+			"fi",
+		}, "\n")
+	case protocol.LanguagePython:
+		return strings.Join([]string{
+			"set -eu",
+			"command -v python3 >/dev/null 2>&1 || exit 87",
+			"python3 -I -B -c 'import pathlib; compile(pathlib.Path("/workspace/main.py").read_bytes(), "/workspace/main.py", "exec")' || exit 86",
+			"exec python3 -I -B /workspace/main.py",
+		}, "\n")
+	default:
+		return "exit 87"
+	}
+}
+
+type boundedOutput struct {
+	mu       sync.Mutex
+	buffer   bytes.Buffer
+	maximum  int64
+	exceeded bool
+	cancel   context.CancelFunc
+}
+
+func newBoundedOutput(maximum int64, cancel context.CancelFunc) *boundedOutput {
+	return &boundedOutput{maximum: maximum, cancel: cancel}
+}
+
+func (writer *boundedOutput) Write(value []byte) (int, error) {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	originalLength := len(value)
+	remaining := writer.maximum - int64(writer.buffer.Len())
+	if remaining > 0 {
+		toWrite := value
+		if int64(len(toWrite)) > remaining {
+			toWrite = toWrite[:remaining]
+		}
+		_, _ = writer.buffer.Write(toWrite)
+	}
+	if int64(originalLength) > remaining && !writer.exceeded {
+		writer.exceeded = true
+		writer.cancel()
+	}
+	return originalLength, nil
+}
+
+func (writer *boundedOutput) Bytes() []byte {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return append([]byte(nil), writer.buffer.Bytes()...)
+}
+
+func (writer *boundedOutput) Exceeded() bool {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return writer.exceeded
+}
+
+func memoryFlag(bytes int64) string {
+	return fmt.Sprintf("%d", bytes)
+}
