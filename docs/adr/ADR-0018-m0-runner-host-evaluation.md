@@ -88,3 +88,12 @@ Before provisioning, the owner must approve or reject:
 4. The temporary monthly cost ceiling and explicit teardown date.
 
 If any approval is withheld, continue with local protocol/unit tests only and do not create paid infrastructure.
+
+
+## Research references
+
+- [gVisor FAQ](https://gvisor.dev/docs/user_guide/faq/) — Linux requirement and AMD64/ARM64 support.
+- [gVisor installation guide](https://gvisor.dev/docs/user_guide/install/) — Linux 5.6+ requirement and ARM64 installation.
+- [gVisor production guide](https://gvisor.dev/docs/user_guide/production/) — recommends `systrap` for VM deployments and discusses KVM on bare metal.
+- [AWS EC2 instance types by Region](https://docs.aws.amazon.com/ec2/latest/instancetypes/ec2-instance-regions.html) — lists M8g in Hyderabad (`ap-south-2`).
+- [Indicative m8g.xlarge pricing](https://vmprices.com/aws/m8g.xlarge/) — third-party estimate; verify the final quote in AWS before provisioning.
