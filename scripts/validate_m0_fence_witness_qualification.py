@@ -146,6 +146,73 @@ def validate_record_manifest_binding(
                 raise ValueError(f"{test['id']}: independent verifier differs from manifest")
 
 
+def run_manifest_binding_fixture_tests() -> int:
+    vector = load_json(ROOT / "docs/test-vectors/m0-fence-evidence-manifest-v1.json")
+    envelope = {key: vector[key] for key in ("manifestBody", "manifestDigest", "attestations")}
+    body = envelope["manifestBody"]
+    artifact = body["artifacts"][0]
+    record = load_json(TEMPLATE)
+    record["provider"] = {
+        **body["providerScope"],
+        "contractReference": "fixture-only",
+    }
+    record["adapter"] = body["adapter"]
+    record["evidenceManifest"] = {
+        "manifestId": body["manifestId"],
+        "objectRef": "fixture://manifests/001",
+        "objectVersion": "immutable-v1",
+        "sha256": envelope["manifestDigest"],
+    }
+    record["tests"][0]["status"] = "PASS"
+    record["tests"][0]["evidence"] = [{
+        "objectRef": artifact["objectRef"],
+        "objectVersion": artifact["objectVersion"],
+        "sha256": artifact["sha256"],
+        "byteCount": artifact["byteCount"],
+        "acquiredAt": artifact["acquiredAt"],
+        "acquisitionMethod": "synthetic signed-vector fixture",
+        "collectorIdentity": artifact["collectorIdentity"],
+        "independentVerifierIdentity": artifact["independentVerifierIdentity"],
+        "providerScope": "|".join((
+            body["providerScope"]["name"], body["providerScope"]["account"],
+            body["providerScope"]["region"], body["providerScope"]["service"],
+            body["adapter"]["commit"],
+        )),
+        "redaction": artifact["redaction"],
+    }]
+    validate_record_manifest_binding(record, envelope, vector["trustedKeys"], allow_test_only=True)
+    rejected = 0
+
+    wrong_provider = copy.deepcopy(record)
+    wrong_provider["provider"]["account"] = "different-account"
+    try:
+        validate_record_manifest_binding(wrong_provider, envelope, vector["trustedKeys"], allow_test_only=True)
+    except ValueError:
+        rejected += 1
+    else:
+        raise AssertionError("provider substitution in qualification record was accepted")
+
+    wrong_manifest_digest = copy.deepcopy(record)
+    wrong_manifest_digest["evidenceManifest"]["sha256"] = "f" * 64
+    try:
+        validate_record_manifest_binding(wrong_manifest_digest, envelope, vector["trustedKeys"], allow_test_only=True)
+    except ValueError:
+        rejected += 1
+    else:
+        raise AssertionError("manifest digest substitution in qualification record was accepted")
+
+    unmanifested_artifact = copy.deepcopy(record)
+    unmanifested_artifact["tests"][0]["evidence"][0]["objectRef"] = "fixture://evidence/not-in-manifest"
+    try:
+        validate_record_manifest_binding(unmanifested_artifact, envelope, vector["trustedKeys"], allow_test_only=True)
+    except ValueError:
+        rejected += 1
+    else:
+        raise AssertionError("PASS evidence absent from signed manifest was accepted")
+
+    return rejected
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--record", type=Path, default=TEMPLATE, help="qualification record JSON (defaults to blank repository template)")
@@ -175,46 +242,49 @@ def main() -> None:
         if record["productionApproval"] is not False:
             raise SystemExit("template must keep production approval false")
 
-    # Exercise important fail-closed semantic boundaries using mutations of the blank template.
-    missing_test = copy.deepcopy(record)
-    missing_test["tests"].pop()
-    expect_rejected("missing mandatory test", missing_test, validator)
+    if args.record.resolve() == TEMPLATE.resolve():
+        # Exercise important fail-closed semantic boundaries using mutations of the blank template.
+        missing_test = copy.deepcopy(record)
+        missing_test["tests"].pop()
+        expect_rejected("missing mandatory test", missing_test, validator)
 
-    duplicate_test = copy.deepcopy(record)
-    duplicate_test["tests"][-1]["id"] = duplicate_test["tests"][0]["id"]
-    expect_rejected("duplicate test ID", duplicate_test, validator)
+        duplicate_test = copy.deepcopy(record)
+        duplicate_test["tests"][-1]["id"] = duplicate_test["tests"][0]["id"]
+        expect_rejected("duplicate test ID", duplicate_test, validator)
 
-    pass_without_evidence = copy.deepcopy(record)
-    pass_without_evidence["tests"][0]["status"] = "PASS"
-    expect_rejected("PASS without evidence", pass_without_evidence, validator)
+        pass_without_evidence = copy.deepcopy(record)
+        pass_without_evidence["tests"][0]["status"] = "PASS"
+        expect_rejected("PASS without evidence", pass_without_evidence, validator)
 
-    approval_attempt = copy.deepcopy(record)
-    approval_attempt["productionApproval"] = True
-    expect_rejected("production approval flag", approval_attempt, validator)
+        approval_attempt = copy.deepcopy(record)
+        approval_attempt["productionApproval"] = True
+        expect_rejected("production approval flag", approval_attempt, validator)
 
-    same_reviewer = copy.deepcopy(record)
-    same_reviewer["provider"] = {
-        "name": "synthetic-provider", "account": "fixture-account",
-        "region": "fixture-region", "service": "fixture-witness",
-        "contractReference": "fixture-only"
-    }
-    same_reviewer["adapter"] = {
-        "repository": "https://example.invalid/adapter", "commit": "1" * 40,
-        "version": "fixture-only", "configurationDigest": "2" * 64
-    }
-    same_reviewer["tests"][0]["status"] = "PASS"
-    same_reviewer["tests"][0]["evidence"] = [{
-        "objectRef": "evidence://synthetic/1", "objectVersion": "v1",
-        "sha256": "a" * 64, "byteCount": 1, "acquiredAt": "2026-01-01T00:00:00Z",
-        "acquisitionMethod": "synthetic negative fixture", "collectorIdentity": "reviewer-1",
-        "independentVerifierIdentity": "reviewer-1",
-        "providerScope": "synthetic-provider|fixture-account|fixture-region|fixture-witness|" + "1" * 40,
-        "redaction": "NONE"
-    }]
-    reviewer_errors = semantic_errors(same_reviewer)
-    if not any("collector and independent verifier must differ" in error for error in reviewer_errors):
-        raise AssertionError("same collector/verifier identity was not specifically rejected")
+        same_reviewer = copy.deepcopy(record)
+        same_reviewer["provider"] = {
+            "name": "synthetic-provider", "account": "fixture-account",
+            "region": "fixture-region", "service": "fixture-witness",
+            "contractReference": "fixture-only"
+        }
+        same_reviewer["adapter"] = {
+            "repository": "https://example.invalid/adapter", "commit": "1" * 40,
+            "version": "fixture-only", "configurationDigest": "2" * 64
+        }
+        same_reviewer["tests"][0]["status"] = "PASS"
+        same_reviewer["tests"][0]["evidence"] = [{
+            "objectRef": "evidence://synthetic/1", "objectVersion": "v1",
+            "sha256": "a" * 64, "byteCount": 1, "acquiredAt": "2026-01-01T00:00:00Z",
+            "acquisitionMethod": "synthetic negative fixture", "collectorIdentity": "reviewer-1",
+            "independentVerifierIdentity": "reviewer-1",
+            "providerScope": "synthetic-provider|fixture-account|fixture-region|fixture-witness|" + "1" * 40,
+            "redaction": "NONE"
+        }]
+        reviewer_errors = semantic_errors(same_reviewer)
+        if not any("collector and independent verifier must differ" in error for error in reviewer_errors):
+            raise AssertionError("same collector/verifier identity was not specifically rejected")
 
+
+    binding_negative_cases = run_manifest_binding_fixture_tests()
     if args.evidence_manifest:
         manifest_envelope = load_json(args.evidence_manifest)
         trust_document = load_json(args.trusted_keys)
@@ -227,6 +297,7 @@ def main() -> None:
     print(f"Mandatory test inventory: {len(EXPECTED_IDS)} unique controls")
     print("Blank record: NOT_STARTED; provider/adapter unselected; all tests NOT_RUN")
     print("Negative gate cases: missing/duplicate test, PASS without evidence, same reviewer, production approval")
+    print(f"Manifest-binding negative cases rejected: {binding_negative_cases}")
     print("Scope: record/schema validation only; no provider qualification or production authorization")
 
 
