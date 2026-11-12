@@ -73,6 +73,7 @@ def decide_reconciliation(
     revocation_generation: int,
     protected_revocation_generation: int,
     revocation_state_available: bool,
+    revocation_chain_status: str,
 ) -> Decision:
     """Decide whether a restored authority may reconcile with witness high-water.
 
@@ -110,6 +111,13 @@ def decide_reconciliation(
         return Decision(Outcome.BLOCKED, "fresh revocation state is unavailable")
     if revocation_generation < protected_revocation_generation:
         return Decision(Outcome.QUARANTINE, "revocation generation rollback detected")
+    if revocation_generation > protected_revocation_generation:
+        if revocation_chain_status == "MISSING":
+            return Decision(Outcome.BLOCKED, "revocation successor chain is unavailable")
+        if revocation_chain_status != "VERIFIED":
+            return Decision(Outcome.QUARANTINE, "revocation successor chain is invalid")
+    elif revocation_chain_status not in ("VERIFIED", "NOT_REQUIRED"):
+        return Decision(Outcome.QUARANTINE, "unexpected revocation-chain state for equal generation")
 
     if len(monitors) < 2:
         return Decision(Outcome.BLOCKED, "fewer than two independent monitor observations")
@@ -215,6 +223,7 @@ def base_case() -> dict:
         "revocation_generation": 8,
         "protected_revocation_generation": 8,
         "revocation_state_available": True,
+        "revocation_chain_status": "NOT_REQUIRED",
     }
 
 
@@ -376,6 +385,22 @@ def main() -> None:
         "revocation generation rollback",
     )
     expect(
+        "revocation successor verified",
+        {"revocation_generation": 9, "revocation_chain_status": "VERIFIED"},
+        Outcome.RECOVERED,
+    )
+    expect(
+        "revocation successor missing",
+        {"revocation_generation": 9, "revocation_chain_status": "MISSING"},
+        Outcome.BLOCKED,
+    )
+    expect(
+        "revocation successor invalid",
+        {"revocation_generation": 9, "revocation_chain_status": "INVALID"},
+        Outcome.QUARANTINE,
+        "revocation successor chain is invalid",
+    )
+    expect(
         "single monitor",
         {"monitors": base_case()["monitors"][:1]},
         Outcome.BLOCKED,
@@ -411,7 +436,7 @@ def main() -> None:
     )
 
     print("FENCE-001 restore/reconciliation reference model: PASS")
-    print("Scenarios: 28 fail-closed and recovery cases")
+    print("Scenarios: 32 fail-closed and recovery cases")
     print("Outcomes exercised: RECONCILED, RECOVERED, BLOCKED, QUARANTINE")
     print("Scope: deterministic state-machine model only; no provider, database restore or execution authorization")
 
