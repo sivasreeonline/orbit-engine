@@ -1,0 +1,165 @@
+{
+  "profile": "sky-high-fence-evidence-isolation-v1",
+  "schemaVersion": 1,
+  "testOnly": true,
+  "providerScope": {
+    "name": "synthetic-provider",
+    "service": "synthetic-object-store",
+    "region": "test-region-1",
+    "storageAccountId": "acct-storage"
+  },
+  "topology": {
+    "storage": {
+      "accountId": "acct-storage",
+      "organizationId": "org-storage",
+      "administrativeBoundaryId": "admin-storage",
+      "deploymentControlPlaneId": "control-storage",
+      "failureDomainId": "failure-storage",
+      "principalId": "storage-service",
+      "identityEvidenceArtifactId": "identity-storage"
+    },
+    "collector": {
+      "accountId": "acct-collector",
+      "organizationId": "org-collector",
+      "administrativeBoundaryId": "admin-collector",
+      "deploymentControlPlaneId": "control-collector",
+      "failureDomainId": "failure-collector",
+      "principalId": "collector-service",
+      "identityEvidenceArtifactId": "identity-collector"
+    },
+    "verifier": {
+      "accountId": "acct-verifier",
+      "organizationId": "org-verifier",
+      "administrativeBoundaryId": "admin-verifier",
+      "deploymentControlPlaneId": "control-verifier",
+      "failureDomainId": "failure-verifier",
+      "principalId": "verifier-service",
+      "identityEvidenceArtifactId": "identity-verifier"
+    },
+    "monitors": [
+      {
+        "accountId": "acct-monitor-a",
+        "organizationId": "org-monitor-a",
+        "administrativeBoundaryId": "admin-monitor-a",
+        "deploymentControlPlaneId": "control-monitor-a",
+        "failureDomainId": "failure-monitor-a",
+        "principalId": "monitor-a",
+        "identityEvidenceArtifactId": "identity-monitor-1"
+      },
+      {
+        "accountId": "acct-monitor-b",
+        "organizationId": "org-monitor-b",
+        "administrativeBoundaryId": "admin-monitor-b",
+        "deploymentControlPlaneId": "control-monitor-b",
+        "failureDomainId": "failure-monitor-b",
+        "principalId": "monitor-b",
+        "identityEvidenceArtifactId": "identity-monitor-2"
+      }
+    ]
+  },
+  "privilegedPrincipals": {
+    "accountOwner": "principal-account-owner",
+    "organizationAdmin": "principal-org-admin",
+    "storageAdmin": "principal-storage-admin",
+    "recoveryAdmin": "principal-recovery-admin"
+  },
+  "targetObject": {
+    "objectRef": "synthetic://evidence/object-001",
+    "versionId": "version-001",
+    "retentionMode": "COMPLIANCE",
+    "retentionUntil": 1900000000
+  },
+  "bypassAttempts": [
+    {
+      "action": "DELETE_AS_OBJECT_OWNER",
+      "actorPrincipalId": "principal-storage-admin",
+      "result": "DENIED",
+      "providerRequestId": "synthetic-request-1",
+      "auditEventId": "synthetic-audit-1",
+      "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000001",
+      "auditAcquiredByPrincipalId": "verifier-service",
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-001"
+    },
+    {
+      "action": "SHORTEN_RETENTION_AS_OBJECT_OWNER",
+      "actorPrincipalId": "principal-storage-admin",
+      "result": "DENIED",
+      "providerRequestId": "synthetic-request-2",
+      "auditEventId": "synthetic-audit-2",
+      "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000002",
+      "auditAcquiredByPrincipalId": "verifier-service",
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-002"
+    },
+    {
+      "action": "DELETE_AS_ACCOUNT_OWNER",
+      "actorPrincipalId": "principal-account-owner",
+      "result": "DENIED",
+      "providerRequestId": "synthetic-request-3",
+      "auditEventId": "synthetic-audit-3",
+      "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000003",
+      "auditAcquiredByPrincipalId": "verifier-service",
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-003"
+    },
+    {
+      "action": "DISABLE_OBJECT_LOCK_AS_ORG_ADMIN",
+      "actorPrincipalId": "principal-org-admin",
+      "result": "DENIED",
+      "providerRequestId": "synthetic-request-4",
+      "auditEventId": "synthetic-audit-4",
+      "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000004",
+      "auditAcquiredByPrincipalId": "verifier-service",
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-004"
+    },
+    {
+      "action": "DELETE_VIA_RECOVERY_ADMIN",
+      "actorPrincipalId": "principal-recovery-admin",
+      "result": "DENIED",
+      "providerRequestId": "synthetic-request-5",
+      "auditEventId": "synthetic-audit-5",
+      "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000005",
+      "auditAcquiredByPrincipalId": "verifier-service",
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-005"
+    },
+    {
+      "action": "OVERWRITE_EXACT_VERSION",
+      "actorPrincipalId": "principal-storage-admin",
+      "result": "DENIED",
+      "providerRequestId": "synthetic-request-6",
+      "auditEventId": "synthetic-audit-6",
+      "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000006",
+      "auditAcquiredByPrincipalId": "verifier-service",
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-006"
+    },
+    {
+      "action": "REPLACE_VERSION_MAPPING",
+      "actorPrincipalId": "principal-recovery-admin",
+      "result": "DENIED",
+      "providerRequestId": "synthetic-request-7",
+      "auditEventId": "synthetic-audit-7",
+      "auditEventSha256": "0000000000000000000000000000000000000000000000000000000000000007",
+      "auditAcquiredByPrincipalId": "verifier-service",
+      "occurredAt": "2026-11-12T10:00:00Z",
+      "objectRef": "synthetic://evidence/object-001",
+      "versionId": "version-001",
+      "auditArtifactId": "audit-artifact-007"
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+# FENCE-001 evidence-store privileged-bypass and independence qualification
+
+**Status:** Provider-neutral qualification contract. No provider has been selected or qualified.
+**Validator:** `scripts/validate_m0_fence_evidence_isolation.py`.
+**Fixture:** Synthetic and test-only; never acceptable as external qualification evidence.
+
+## Objective
+
+The existing object-store contract tests ordinary deletion denial and metadata claims. This milestone adds two controls that the ordinary contract cannot establish:
+
+1. Whether privileged identities can bypass retention, overwrite an exact version, or alter recovery/version mappings.
+2. Whether storage, collection, independent verification and two monitors actually occupy separate administrative and operational failure domains.
+
+A provider's `COMPLIANCE` label or a denied request from an ordinary writer is not sufficient.
+
+## Mandatory privileged bypass attempts
+
+A candidate qualification run must execute and preserve provider-native request and audit evidence for all seven actions against the same retained exact object version:
+
+- Delete as object owner.
+- Shorten retention as object owner.
+- Delete as account owner.
+- Disable object lock as organization administrator.
+- Delete through the recovery administrator.
+- Overwrite the exact version.
+- Replace or rebind the version mapping.
+
+Every operation must be denied by the provider. A successful mutation, missing request ID, missing audit event, changed exact-version bytes, or inability to obtain the provider audit event independently is a hard failure. The attempts must be performed in an isolated qualification account with a disposable retained artifact and approved test window; do not test destructive actions against production evidence.
+
+The structured attestation binds each action to its privileged actor, provider request ID, audit event ID, audit-event digest and independent verifier acquisition identity. The raw provider request/response and audit-event artifacts must also be materialized, byte-verified and included in the existing dual-signed evidence manifest. The manifest, not this JSON document alone, supplies integrity and independent attestations.
+
+## Required independence topology
+
+Five distinct operating domains are required:
+
+- Evidence storage.
+- Evidence collection.
+- Independent evidence verification.
+- Monitor A.
+- Monitor B.
+
+For each domain, the attestation records account ID, organization ID, administrative boundary, deployment control plane, failure domain and principal identity. All five values must be distinct across all five domains. The four privileged bypass principals must be mutually distinct and must not overlap any of the five domain principals.
+
+This is a deliberately strong qualification bar. Two processes, two IAM users in one account, or two monitors controlled by one administrator do not count as independent. If a candidate provider cannot meet this topology, document the residual risk and keep the provider blocked; do not weaken the validator silently.
+
+## Validation
+
+Fixture validation:
+
+```sh
+python scripts/validate_m0_fence_evidence_isolation.py
+```
+
+External attestation validation:
+
+```sh
+python scripts/validate_m0_fence_evidence_isolation.py --attestation /secure/evidence/isolation-attestation.json
+```
+
+The external mode rejects test-only attestations. It validates schema, distinct account/organization/administrative/deployment/failure domains, role separation, all seven unique bypass actions, designated privileged actors, DENIED outcomes and independent verifier acquisition identity.
+
+## Evidence limitations and fail-closed rule
+
+The validator checks declarations; it does not authenticate cloud audit logs, prove that an actor truly held the declared role, or establish that the provider enforced the denial. The independent reviewer must authenticate the provider-native audit events and account ownership through a channel outside the storage account. Those raw records must be covered by the dual-signed manifest and exact-byte verification.
+
+Any ALLOWED result, missing action, missing audit event, duplicate identity/domain, collector/verifier overlap, shared privileged principal, or unresolved provider evidence keeps the candidate BLOCKED. This package cannot grant production approval.
+
+## Binding to the independently signed evidence package
+
+Each of the seven privileged attempts must target the exact same object reference and immutable version ID recorded in `targetObject`. External validation is coupled to the existing evidence chain and requires all four inputs:
+
+```sh
+python scripts/validate_m0_fence_evidence_isolation.py \
+  --attestation /secure/evidence/isolation-attestation.json \
+  --manifest /secure/evidence/evidence-manifest.json \
+  --trusted-keys /secure/trust/fence-evidence-keys.json \
+  --artifact-root /secure/evidence/materialized
+```
+
+The validator requires a non-test-only dual-signed manifest and independently governed trusted keys. Exactly one manifest artifact must have type `INDEPENDENCE_ATTESTATION` and cover WIT-012 and WIT-014. Its collector and verifier identities must match the topology, and its provider request-ID list must cover all seven privileged attempts. Every manifest artifact is byte-verified from the materialized evidence root, and the materialized independence-attestation bytes must exactly equal the supplied attestation. Provider scope must match exactly.
+
+This binds the declared bypass/topology record to the signed evidence package. It still does not authenticate provider audit-event origin or prove the named accounts and roles; the independent reviewer must verify those facts directly through provider-controlled channels outside the storage account.
+
+Each bypass attempt also names a stable `auditArtifactId`. The signed manifest must contain one raw provider-exchange or contract-evidence artifact for each attempt; its SHA-256 must equal `auditEventSha256`, and its provider request-ID list must include the attempt's request ID. The verifier byte-checks these raw audit artifacts individually. This prevents a signed summary from merely claiming that audit events exist without carrying the corresponding source records.
+
+
+## Evidence for operating-domain independence
+
+Each of the five operating domains (storage, collector, verifier, monitor A and monitor B) must name a distinct `identityEvidenceArtifactId`. The dual-signed manifest must contain one corresponding `CONFIGURATION_ATTESTATION` artifact for each domain. Each artifact must be collected by the declared collector and independently verified by the declared verifier, and all artifacts are byte-verified with the rest of the manifest.
+
+These artifacts should contain provider-native account and organization ownership records, administrative-boundary and deployment-control-plane configuration, principal identity and role-assignment evidence, and the mapping to the declared failure domain. The independent reviewer must validate source authenticity and control of each account through channels outside the storage account. Distinct strings in an attestation are not proof of independent ownership; if account ownership or boundary separation cannot be independently established, the topology remains unqualified.
