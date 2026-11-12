@@ -204,8 +204,11 @@ func TestStudentFailuresRemainDistinctFromInfrastructureFailures(t *testing.T) {
 		{SandboxCompileError, CompilationFailed, VerdictCompilationError},
 		{SandboxRuntimeError, CompilationSucceeded, VerdictRuntimeError},
 		{SandboxTimeLimit, CompilationSucceeded, VerdictTimeLimitExceeded},
+		{SandboxTimeLimit, CompilationNotStarted, VerdictTimeLimitExceeded},
 		{SandboxMemoryLimit, CompilationSucceeded, VerdictMemoryLimitExceeded},
+		{SandboxMemoryLimit, CompilationNotStarted, VerdictMemoryLimitExceeded},
 		{SandboxOutputLimit, CompilationSucceeded, VerdictOutputLimitExceeded},
+		{SandboxOutputLimit, CompilationNotStarted, VerdictOutputLimitExceeded},
 	}
 	for _, item := range cases {
 		item := item
@@ -221,8 +224,10 @@ func TestStudentFailuresRemainDistinctFromInfrastructureFailures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Execute: %v", err)
 			}
-			if result.InfrastructureStatus != InfrastructureSucceeded || result.Verdict != item.want {
-				t.Fatalf("result = %+v, want verdict %s", result, item.want)
+			if result.InfrastructureStatus != InfrastructureSucceeded ||
+				result.Verdict != item.want || result.CompilationStatus != item.compilation {
+				t.Fatalf("result = %+v, want verdict/compilation %s/%s",
+					result, item.want, item.compilation)
 			}
 		})
 	}
