@@ -11,7 +11,6 @@ from enum import Enum
 import re
 from typing import Sequence
 
-ZERO_DIGEST = "0" * 64
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -129,6 +128,12 @@ def decide_reconciliation(
     )
     if any(len(set(values)) != len(values) for values in dimensions):
         return Decision(Outcome.BLOCKED, "monitor identities, operators, accounts and failure domains must be distinct")
+    if any(
+        not isinstance(value, str) or not value.strip()
+        for item in monitors
+        for value in (item.monitor_id, item.operator, item.account, item.failure_domain)
+    ):
+        return Decision(Outcome.QUARANTINE, "monitor identity metadata is malformed")
     for item in monitors:
         if not valid_digest(item.digest) or type(item.generation) is not int or item.generation < 0:
             return Decision(Outcome.QUARANTINE, "monitor supplied a malformed signed-head summary")
@@ -296,14 +301,44 @@ def main() -> None:
     )
     expect(
         "local chain misses protected high-water",
-        {"witness_chain": [Checkpoint(6, "a" * 64, "5" * 64)]},
+        {
+            "local": HighWater(4, "4" * 64),
+            "protected": HighWater(5, "5" * 64),
+            "witness": HighWater(6, "6" * 64),
+            "witness_chain": [
+                Checkpoint(5, "a" * 64, "4" * 64),
+                Checkpoint(6, "6" * 64, "a" * 64),
+            ],
+            "monitors": [
+                MonitorHead("monitor-a", "operator-a", "account-a", "region-a", 6, "6" * 64),
+                MonitorHead("monitor-b", "operator-b", "account-b", "region-b", 6, "6" * 64),
+            ],
+            "consistency_proof_status": "VERIFIED",
+        },
         Outcome.QUARANTINE,
         "does not intersect",
+    )
+    expect(
+        "local ahead of protected with proof",
+        {
+            "local": HighWater(6, "6" * 64),
+            "protected": HighWater(5, "5" * 64),
+            "witness": HighWater(7, "7" * 64),
+            "witness_chain": [Checkpoint(7, "7" * 64, "6" * 64)],
+            "monitors": [
+                MonitorHead("monitor-a", "operator-a", "account-a", "region-a", 7, "7" * 64),
+                MonitorHead("monitor-b", "operator-b", "account-b", "region-b", 7, "7" * 64),
+            ],
+            "consistency_proof_status": "VERIFIED",
+            "local_consistency_proof_status": "VERIFIED",
+        },
+        Outcome.RECOVERED,
     )
     expect(
         "missing protected-to-local proof",
         {
             "local": HighWater(6, "6" * 64),
+            "protected": HighWater(5, "5" * 64),
             "witness": HighWater(7, "7" * 64),
             "witness_chain": [Checkpoint(7, "7" * 64, "6" * 64)],
             "monitors": [
@@ -319,6 +354,7 @@ def main() -> None:
         "invalid protected-to-local proof",
         {
             "local": HighWater(6, "6" * 64),
+            "protected": HighWater(5, "5" * 64),
             "witness": HighWater(7, "7" * 64),
             "witness_chain": [Checkpoint(7, "7" * 64, "6" * 64)],
             "monitors": [
@@ -436,7 +472,7 @@ def main() -> None:
     )
 
     print("FENCE-001 restore/reconciliation reference model: PASS")
-    print("Scenarios: 32 fail-closed and recovery cases")
+    print("Scenarios: 33 fail-closed and recovery cases")
     print("Outcomes exercised: RECONCILED, RECOVERED, BLOCKED, QUARANTINE")
     print("Scope: deterministic state-machine model only; no provider, database restore or execution authorization")
 
