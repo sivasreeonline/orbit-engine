@@ -29,7 +29,7 @@ It also requires a pinned qualification account, unique run ID, provider adapter
 - a non-empty provider restore approval ID explicitly bound to this run ID and not expired;
 - distinct source-reader, restore-operator, witness-reader and independent-verifier principals.
 
-The provider must enforce these boundaries independently of the harness. The source snapshot must be immutable and its bytes must hash to the declared digest. The target must be disposable, isolated from the source and bound to the same account/run.
+The provider must enforce these boundaries independently of the harness. The source snapshot must be immutable and its bytes must hash to the declared digest. The target must be disposable, isolated from the source, bound to the same account/run, and independently report host admission disabled both before and after restore.
 
 ## Adapter operations
 
@@ -41,6 +41,7 @@ The adapter implements:
 - `fetch_verified_recovery_bundle(snapshot, witness_reader_principal_id=..., independent_verifier_principal_id=...)`
 - `restore_and_replay(target, snapshot, bundle, restore_operator_principal_id=...)`
 - `read_restored_high_water(target, independent_verifier_principal_id=...)`
+- `read_admission_state(target, independent_verifier_principal_id=...)`
 - `read_latest_witness(witness_reader_principal_id=...)`
 - `read_monitor_heads(independent_verifier_principal_id=...)`
 
@@ -72,6 +73,6 @@ The provider adapter and credentials are supplied out-of-band. The report path m
 
 ## Success and non-claims
 
-Success means the adapter restored/replayed the declared checkpoint range into the disposable target, an independent verifier read back the exact witness high-water, a post-restore strong witness read matched, and independent monitor observations remained consistent. The report explicitly keeps `admissionEnabled=false`.
+Success means the adapter restored/replayed the declared checkpoint range into the disposable target, an independent verifier read back the exact witness high-water, a post-restore strong witness read matched, and independent monitor observations remained consistent. The harness requires the target's admission-disabled state before restore and independently re-reads it after restore; the report explicitly keeps `admissionEnabled=false`.
 
 This does not prove provider audit authenticity, account ownership, actual monitor administrative independence, provider durability, production restore behavior, cryptographic correctness beyond the adapter's asserted verifier results, or safe host admission. The report is not a dual-signed evidence manifest. Raw provider evidence must still be packaged through the FENCE-001 manifest process and independently reviewed. No production approval is granted.
