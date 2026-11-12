@@ -6,7 +6,7 @@ The generator creates the separate dual-attested binding envelope consumed by `v
 
 - The already dual-signed evidence manifest and its independently provisioned trusted-key file.
 - A completed, non-test-only PR #100 provider audit provenance report.
-- A mapping JSON array with one entry for each report artifact:
+- A mapping JSON array validated against `docs/schemas/m0-fence-audit-provenance-artifact-mapping-v1.schema.json`, with a starting example at `docs/templates/m0-fence-audit-provenance-artifact-mapping-v1.json`, and one entry for each report artifact:
   - `pages` → `rawResponseArtifact`
   - `authenticationEvidence` → `authenticationEvidenceArtifact`
   - `events` → `artifact`
