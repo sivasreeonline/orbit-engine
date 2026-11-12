@@ -113,19 +113,22 @@ def validate_audit_report(
     def valid_digest(value: Any) -> bool:
         return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
+    def safe_identifier(value: Any) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,159}", value) is not None
+
     trust_root = report.get("pinnedTrustRoot")
-    if not isinstance(trust_root, dict) or not nonempty(trust_root.get("id")) or not valid_digest(trust_root.get("sha256")):
+    if not isinstance(trust_root, dict) or not safe_identifier(trust_root.get("id")) or not valid_digest(trust_root.get("sha256")):
         raise ValueError("audit report pinned trust-root identity or digest is missing or malformed")
     root_id = trust_root["id"]
     root_digest = trust_root["sha256"]
 
     pages = report.get("pages")
     events = report.get("events")
-    if not isinstance(pages, list) or not pages or not isinstance(events, list) or not events:
+    if not isinstance(pages, list) or not pages or len(pages) > 1000 or not isinstance(events, list) or not events or len(events) > 100000:
         raise ValueError("authenticated audit report must contain non-empty page and event arrays")
     initial_cursor = report.get("initialCursor")
     final_cursor = report.get("finalCursor")
-    if not nonempty(initial_cursor) or not nonempty(final_cursor):
+    if not safe_identifier(initial_cursor) or not safe_identifier(final_cursor):
         raise ValueError("audit report initial/final cursor is missing")
     cursor = initial_cursor
     artifact_names: set[str] = set()
@@ -138,7 +141,7 @@ def validate_audit_report(
         if page.get("cursorStart") != cursor:
             raise ValueError("audit cursor gap, replay or out-of-order page detected in signed report")
         cursor_end = page.get("cursorEnd")
-        if not nonempty(cursor_end) or cursor_end == cursor:
+        if not safe_identifier(cursor_end) or cursor_end == cursor:
             raise ValueError("audit page cursor must advance")
         cursor = cursor_end
         if page.get("authenticationMethod") not in {
@@ -147,7 +150,7 @@ def validate_audit_report(
             raise ValueError("audit page authentication method is unsupported")
         if page.get("trustRootId") != root_id or page.get("trustRootSha256") != root_digest:
             raise ValueError("audit page trust root differs from the report's pinned trust root")
-        if not nonempty(page.get("authenticatedServicePrincipalId")):
+        if not safe_identifier(page.get("authenticatedServicePrincipalId")):
             raise ValueError("audit page authenticated service principal is missing")
         for artifact_field, digest_field, count_field in (
             ("rawResponseArtifact", "rawResponseSha256", "rawResponseByteCount"),
@@ -171,10 +174,10 @@ def validate_audit_report(
             raise ValueError("audit event record must be an object")
         event_id = event.get("eventId")
         request_id = event.get("providerRequestId")
-        if not nonempty(event_id) or event_id in seen_event_ids:
+        if not safe_identifier(event_id) or event_id in seen_event_ids:
             raise ValueError("audit report contains a missing or duplicate provider event ID")
         seen_event_ids.add(event_id)
-        if not nonempty(request_id):
+        if not safe_identifier(request_id):
             raise ValueError("audit event provider request ID is missing")
         if type(event.get("sequence")) is not int or event["sequence"] != index:
             raise ValueError("provider audit event sequence must be contiguous and ordered from one")
