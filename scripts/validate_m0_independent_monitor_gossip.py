@@ -420,7 +420,7 @@ def main() -> None:
         [base[0], replace(newer, head=head(7, "7" * 64, "a" * 64))],
         Outcome.QUARANTINE,
         proof="VERIFIED",
-        reason="does not link",
+        reason="exact protected predecessor",
     )
     expect(
         "three-way inconsistent highest heads",
