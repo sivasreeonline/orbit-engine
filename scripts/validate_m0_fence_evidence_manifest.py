@@ -22,7 +22,7 @@ import rfc8785
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "docs/schemas/m0-fence-evidence-manifest-v1.schema.json"
 VECTOR_PATH = ROOT / "docs/test-vectors/fence-evidence-manifest-v1.json"
-SIGNATURE_PREFIX = b"SKYHIGH-FENCE-001-EVIDENCE-MANIFEST-V1\\x00"
+SIGNATURE_PREFIX = b"SKYHIGH-FENCE-001-EVIDENCE-MANIFEST-V1\x00"
 
 
 def strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
