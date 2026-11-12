@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
