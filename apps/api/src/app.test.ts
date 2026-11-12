@@ -19,8 +19,8 @@ import { ExecutionSourceComparisonConflictError, ExecutionSourceComparisonNotFou
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
-  "listProblemAttemptHistory" | "listExecutionEvents" | "listProblemAttemptTimeline"
->;
+  "listProblemAttemptHistory" | "listExecutionEvents"
+> & Partial<Pick<PostgresExecutionEvidenceRepository, "listProblemAttemptTimeline">>;
 
 const allowedOrigin = "https://app.skyhigh.example";
 
