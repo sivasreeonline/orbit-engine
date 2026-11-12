@@ -73,7 +73,8 @@ The qualification validator supports a filled record and independently provision
 python scripts/validate_m0_fence_witness_qualification.py \
   --record qualification-record.json \
   --evidence-manifest evidence-manifest.json \
-  --trusted-keys /secure/trust/fence-evidence-keys.json
+  --trusted-keys /secure/trust/fence-evidence-keys.json \
+  --artifact-root /secure/materialized-evidence/run-123
 ```
 
 Every `PASS` control's evidence must match an artifact in the dual-signed manifest by object reference, version, SHA-256 and byte count. The artifact must list the exact WIT control and the same collector and independent-verifier identities. Provider account/region/service and adapter repository/commit/version/configuration digest must exactly match the signed manifest.
