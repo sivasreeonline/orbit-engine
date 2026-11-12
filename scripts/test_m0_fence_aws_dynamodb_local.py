@@ -97,8 +97,9 @@ def main() -> None:
         genesis, expected_generation=0, expected_digest=ZERO_DIGEST,
         idempotency_key="multi-genesis-key",
     )
+    digest_characters = "bcdef012"
     candidates = [
-        make_checkpoint(race_scope, 2, f"multi-race-{index}", chr(ord("b") + index),
+        make_checkpoint(race_scope, 2, f"multi-race-{index}", digest_characters[index],
                         genesis_receipt.checkpoint_digest)
         for index in range(len(adapters))
     ]
