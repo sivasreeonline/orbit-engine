@@ -8,12 +8,19 @@ import type {
   ProblemSummary,
 } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
+import {
+  ExecutionSourceSnapshotNotFoundError,
+  ExecutionSourceSnapshotUnavailableError,
+  type PostgresExecutionSourceSnapshotRepository,
+} from "./db/execution-source-snapshot-repository";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+import type { PostgresExecutionSourceComparisonRepository } from "./db/execution-source-comparison-repository";
+import { ExecutionSourceComparisonConflictError, ExecutionSourceComparisonNotFoundError } from "./db/execution-source-comparison-repository";
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
   "listProblemAttemptHistory" | "listExecutionEvents"
->;
+> & Partial<Pick<PostgresExecutionEvidenceRepository, "listProblemAttemptTimeline">>;
 
 const allowedOrigin = "https://app.skyhigh.example";
 
@@ -57,6 +64,8 @@ interface HarnessOptions {
   auth?: AuthenticationResult;
   repository?: Partial<ProblemRepository>;
   evidenceRepository?: ExecutionEvidenceReadRepository;
+  sourceSnapshotRepository?: Pick<PostgresExecutionSourceSnapshotRepository, "getAttemptSourceSnapshot">;
+  sourceComparisonRepository?: Pick<PostgresExecutionSourceComparisonRepository, "getComparableAttemptSources">;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -77,6 +86,12 @@ function makeHarness(options: HarnessOptions = {}) {
     repository,
     ...(options.evidenceRepository
       ? { evidenceRepository: options.evidenceRepository }
+      : {}),
+    ...(options.sourceSnapshotRepository
+      ? { sourceSnapshotRepository: options.sourceSnapshotRepository }
+      : {}),
+    ...(options.sourceComparisonRepository
+      ? { sourceComparisonRepository: options.sourceComparisonRepository }
       : {}),
     allowedOrigins: allowedOrigin,
   });
@@ -284,6 +299,105 @@ describe("M1 API control plane", () => {
     });
   });
 
+  it("returns an exact source snapshot only through the authenticated owner scope", async () => {
+    const attemptId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
+    const snapshot = {
+      attemptId,
+      sourceSha256: "a".repeat(64),
+      sourceByteLength: "21",
+      sourceCode: "public class Main {}",
+    };
+    const getAttemptSourceSnapshot = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _attemptId: string,
+    ) => snapshot);
+    const { handler } = makeHarness({
+      sourceSnapshotRepository: { getAttemptSourceSnapshot },
+    });
+
+    const response = await handler(makeRequest(
+      `/api/v1/attempts/${attemptId}/source`,
+    ));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await readJson(response)).toEqual({ data: snapshot });
+    expect(getAttemptSourceSnapshot).toHaveBeenCalledWith(
+      authenticated.principal.tenantId,
+      authenticated.principal.userId,
+      attemptId,
+    );
+  });
+
+  it("rejects invalid attempt identifiers before reading source evidence", async () => {
+    const getAttemptSourceSnapshot = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _attemptId: string,
+    ) => ({
+      attemptId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+      sourceSha256: "a".repeat(64),
+      sourceByteLength: "1",
+      sourceCode: "x",
+    }));
+    const { handler } = makeHarness({
+      sourceSnapshotRepository: { getAttemptSourceSnapshot },
+    });
+
+    const response = await handler(makeRequest("/api/v1/attempts/not-a-uuid/source"));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_ATTEMPT_ID", retryable: false },
+    });
+    expect(getAttemptSourceSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("returns a non-disclosing 404 when the owned source snapshot does not exist", async () => {
+    const getAttemptSourceSnapshot = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _attemptId: string,
+    ): Promise<never> => {
+      throw new ExecutionSourceSnapshotNotFoundError();
+    });
+    const { handler } = makeHarness({
+      sourceSnapshotRepository: { getAttemptSourceSnapshot },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1/source",
+    ));
+
+    expect(response.status).toBe(404);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "ATTEMPT_SOURCE_NOT_FOUND", retryable: false },
+    });
+  });
+
+  it("returns retryable unavailable while private R2 source retrieval is not configured", async () => {
+    const getAttemptSourceSnapshot = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _attemptId: string,
+    ): Promise<never> => {
+      throw new ExecutionSourceSnapshotUnavailableError();
+    });
+    const { handler } = makeHarness({
+      sourceSnapshotRepository: { getAttemptSourceSnapshot },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1/source",
+    ));
+
+    expect(response.status).toBe(503);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "SOURCE_SNAPSHOT_UNAVAILABLE", retryable: true },
+    });
+  });
+
   it("returns attempt history only for the authenticated tenant and student", async () => {
     const listProblemAttemptHistory = vi.fn(async (
       _tenantId: string,
@@ -341,6 +455,83 @@ describe("M1 API control plane", () => {
     expect(listProblemAttemptHistory).not.toHaveBeenCalled();
   });
 
+  it("returns a chronological attempt timeline with safe execution events for the authenticated student", async () => {
+    const timeline = [{
+      attemptId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+      executionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      action: "RUN" as const,
+      language: "java" as const,
+      runtimeVersion: "25",
+      sourceSha256: "a".repeat(64),
+      sourceByteLength: 42,
+      createdAt: "2026-11-12T10:00:00.000Z",
+      executionState: "COMPLETED",
+      infrastructureStatus: "SUCCEEDED" as const,
+      compilationStatus: "SUCCEEDED" as const,
+      verdict: "WRONG_ANSWER" as const,
+      cleanupStatus: "SUCCEEDED" as const,
+      testsTotal: 3,
+      testsPassed: 2,
+      elapsedMs: "42",
+      peakMemoryBytes: "1024",
+      resultSha256: "b".repeat(64),
+      events: [{
+        sequenceId: "1",
+        eventId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+        eventType: "RUNNER_STARTED" as const,
+        actorKind: "RUNNER" as const,
+        phaseStatus: "STARTED" as const,
+        safeCode: null,
+        durationMs: null,
+        createdAt: "2026-11-12T10:00:00.010Z",
+      }],
+    }];
+    const listProblemAttemptTimeline = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _problemSlug: string,
+      _limit: number,
+    ) => timeline);
+    const { handler } = makeHarness({
+      evidenceRepository: {
+        listProblemAttemptHistory: vi.fn(async () => []),
+        listExecutionEvents: vi.fn(async () => []),
+        listProblemAttemptTimeline,
+      },
+    });
+
+    const response = await handler(makeRequest("/api/v1/problems/two-sum/timeline?limit=20"));
+    const body = await readJson<{ data: typeof timeline; meta: { count: number; limit: number } }>(response);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(listProblemAttemptTimeline).toHaveBeenCalledWith(
+      authenticated.principal.tenantId,
+      authenticated.principal.userId,
+      "two-sum",
+      20,
+    );
+    expect(body.meta).toEqual({ count: 1, limit: 20 });
+    expect(body.data[0]?.events[0]?.eventType).toBe("RUNNER_STARTED");
+    expect(JSON.stringify(body)).not.toContain("sourceCode");
+  });
+
+  it("rejects invalid timeline limits before querying evidence", async () => {
+    const listProblemAttemptTimeline = vi.fn(async () => []);
+    const { handler } = makeHarness({
+      evidenceRepository: {
+        listProblemAttemptHistory: vi.fn(async () => []),
+        listExecutionEvents: vi.fn(async () => []),
+        listProblemAttemptTimeline,
+      },
+    });
+
+    const response = await handler(makeRequest("/api/v1/problems/two-sum/timeline?limit=101"));
+
+    expect(response.status).toBe(400);
+    expect(listProblemAttemptTimeline).not.toHaveBeenCalled();
+  });
+
   it("returns timeline events scoped to the authenticated student", async () => {
     const executionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
     const listProblemAttemptHistory = vi.fn(async (
@@ -369,6 +560,159 @@ describe("M1 API control plane", () => {
       authenticated.principal.userId,
       executionId,
     );
+  });
+
+
+  it("returns a bounded diff for two comparable owned snapshots", async () => {
+    const baseAttemptId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
+    const targetAttemptId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2";
+    const getComparableAttemptSources = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _baseAttemptId: string,
+      _targetAttemptId: string,
+    ) => ({
+      base: {
+        attemptId: baseAttemptId,
+        sourceSha256: "a".repeat(64),
+        sourceByteLength: "7",
+        sourceCode: "old();\n",
+      },
+      target: {
+        attemptId: targetAttemptId,
+        sourceSha256: "b".repeat(64),
+        sourceByteLength: "7",
+        sourceCode: "new();\n",
+      },
+    }));
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const response = await handler(makeRequest(
+      `/api/v1/attempts/${targetAttemptId}/diff?baseAttemptId=${baseAttemptId}`,
+    ));
+    const body = await readJson<{
+      data: {
+        base: { attemptId: string; sourceSha256: string };
+        target: { attemptId: string; sourceSha256: string };
+        diff: { operations: Array<{ kind: string; text: string }> };
+      };
+    }>(response);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(getComparableAttemptSources).toHaveBeenCalledWith(
+      authenticated.principal.tenantId,
+      authenticated.principal.userId,
+      baseAttemptId,
+      targetAttemptId,
+    );
+    expect(body.data.diff.operations.map((item) => item.kind)).toEqual(["DELETE", "INSERT"]);
+    expect(JSON.stringify(body)).not.toContain("sourceCode");
+  });
+
+  it("rejects malformed or identical attempt IDs before repository access", async () => {
+    const getComparableAttemptSources = vi.fn(async () => {
+      throw new Error("must not be called");
+    });
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const invalid = await handler(makeRequest(
+      "/api/v1/attempts/not-a-uuid/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+    const duplicate = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+
+    expect(invalid.status).toBe(400);
+    expect(duplicate.status).toBe(400);
+    expect(getComparableAttemptSources).not.toHaveBeenCalled();
+  });
+
+  it("returns a non-disclosing 404 for missing or out-of-scope comparison attempts", async () => {
+    const getComparableAttemptSources = vi.fn(async (): Promise<never> => {
+      throw new ExecutionSourceComparisonNotFoundError();
+    });
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+
+    expect(response.status).toBe(404);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "ATTEMPT_COMPARISON_NOT_FOUND", retryable: false },
+    });
+  });
+
+  it("rejects attempts from different problem versions or runtimes", async () => {
+    const getComparableAttemptSources = vi.fn(async (): Promise<never> => {
+      throw new ExecutionSourceComparisonConflictError();
+    });
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "ATTEMPTS_NOT_COMPARABLE", retryable: false },
+    });
+  });
+
+  it("returns 413 rather than a partial diff when source exceeds comparison limits", async () => {
+    const getComparableAttemptSources = vi.fn(async () => ({
+      base: {
+        attemptId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+        sourceSha256: "a".repeat(64),
+        sourceByteLength: "1",
+        sourceCode: "a".repeat(128 * 1024 + 1),
+      },
+      target: {
+        attemptId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2",
+        sourceSha256: "b".repeat(64),
+        sourceByteLength: "1",
+        sourceCode: "b",
+      },
+    }));
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+
+    expect(response.status).toBe(413);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "SOURCE_COMPARISON_LIMIT_EXCEEDED", retryable: false },
+    });
+  });
+
+  it("returns retryable unavailable when the comparison store cannot be read", async () => {
+    const getComparableAttemptSources = vi.fn(async (): Promise<never> => {
+      throw new DatabaseUnavailableError();
+    });
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+
+    expect(response.status).toBe(503);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "SOURCE_COMPARISON_UNAVAILABLE", retryable: true },
+    });
   });
 
   it("returns 404 for unknown routes", async () => {

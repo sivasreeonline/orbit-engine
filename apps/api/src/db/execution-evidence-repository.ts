@@ -101,6 +101,10 @@ export interface ExecutionAttemptHistoryEntry {
   readonly resultSha256: string | null;
 }
 
+export interface ExecutionAttemptTimelineEntry extends ExecutionAttemptHistoryEntry {
+  readonly events: readonly ExecutionEvidenceEvent[];
+}
+
 export interface ExecutionEvidenceEvent {
   readonly sequenceId: string;
   readonly eventId: string;
@@ -175,6 +179,10 @@ interface ResultRow extends Record<string, unknown> {
 
 interface UpdatedJobRow extends Record<string, unknown> {
   readonly id: string;
+}
+
+interface TimelineRow extends HistoryRow {
+  readonly events: unknown;
 }
 
 interface HistoryRow extends Record<string, unknown> {
@@ -583,6 +591,118 @@ export class PostgresExecutionEvidenceRepository {
         peakMemoryBytes: row.peak_memory_bytes === null ? null : String(row.peak_memory_bytes),
         resultSha256: row.result_sha256?.trim() ?? null,
       }));
+    });
+  }
+
+  async listProblemAttemptTimeline(
+    tenantId: string,
+    actorUserId: string,
+    problemSlug: string,
+    limit = 30,
+  ): Promise<readonly ExecutionAttemptTimelineEntry[]> {
+    if (!this.connectionString) throw new DatabaseUnavailableError();
+    if (!isUuid(tenantId) || !isUuid(actorUserId)) {
+      throw new Error("invalid_execution_history_owner");
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(problemSlug) || problemSlug.length > 64) {
+      throw new Error("invalid_execution_history_problem");
+    }
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("invalid_execution_history_limit");
+    }
+
+    return this.withClient(async (client) => {
+      const result = await client.query<TimelineRow>(
+        [
+          "SELECT ea.id AS attempt_id, ej.id AS execution_id, ea.action, ea.language,",
+          "  ea.runtime_version, ea.source_sha256, ss.byte_length AS source_byte_length,",
+          "  ea.created_at, ej.state AS execution_state,",
+          "  rr.infrastructure_status, rr.compilation_status, rr.verdict, rr.cleanup_status,",
+          "  rr.tests_total, rr.tests_passed, rr.elapsed_ms, rr.peak_memory_bytes, rr.result_sha256,",
+          "  COALESCE(",
+          "    json_agg(json_build_object(",
+          "      'sequenceId', ee.sequence_id::text, 'eventId', ee.event_id,",
+          "      'eventType', ee.event_type, 'actorKind', ee.actor_kind,",
+          "      'phaseStatus', ee.phase_status, 'safeCode', ee.safe_code,",
+          "      'durationMs', ee.duration_ms::text, 'createdAt', ee.created_at",
+          "    ) ORDER BY ee.sequence_id) FILTER (WHERE ee.sequence_id IS NOT NULL),",
+          "    '[]'::json",
+          "  ) AS events",
+          "FROM execution_attempts AS ea",
+          "INNER JOIN execution_jobs AS ej ON ej.attempt_id = ea.id",
+          "INNER JOIN source_snapshots AS ss ON ss.id = ea.source_snapshot_id",
+          "INNER JOIN problems AS p ON p.id = ea.problem_id",
+          "LEFT JOIN execution_result_records AS rr ON rr.execution_id = ej.id",
+          "LEFT JOIN execution_evidence_events AS ee",
+          "  ON ee.execution_id = ej.id AND ee.attempt_id = ea.id",
+          "  AND ee.tenant_id = ea.tenant_id AND ee.actor_user_id = ea.actor_user_id",
+          "WHERE ea.tenant_id = $1::uuid AND ea.actor_user_id = $2::uuid",
+          "  AND p.slug = $3",
+          "GROUP BY ea.id, ej.id, ss.byte_length, rr.execution_id",
+          "ORDER BY ea.created_at DESC, ea.id DESC",
+          "LIMIT $4",
+        ].join("\n"),
+        [tenantId, actorUserId, problemSlug, limit],
+      );
+
+      return result.rows.map((row) => {
+        let rawEvents: unknown = row.events;
+        if (typeof rawEvents === "string") {
+          try {
+            rawEvents = JSON.parse(rawEvents);
+          } catch {
+            throw new Error("invalid_execution_timeline_events");
+          }
+        }
+        if (!Array.isArray(rawEvents)) throw new Error("invalid_execution_timeline_events");
+        const events = rawEvents.map((event): ExecutionEvidenceEvent => {
+          if (!event || typeof event !== "object") throw new Error("invalid_execution_timeline_event");
+          const value = event as Record<string, unknown>;
+          if (
+            typeof value.sequenceId !== "string" ||
+            typeof value.eventId !== "string" ||
+            typeof value.eventType !== "string" ||
+            typeof value.actorKind !== "string" ||
+            !(value.phaseStatus === null || typeof value.phaseStatus === "string") ||
+            !(value.safeCode === null || typeof value.safeCode === "string") ||
+            !(value.durationMs === null || typeof value.durationMs === "string") ||
+            !(typeof value.createdAt === "string" || value.createdAt instanceof Date)
+          ) {
+            throw new Error("invalid_execution_timeline_event");
+          }
+          return {
+            sequenceId: value.sequenceId,
+            eventId: value.eventId,
+            eventType: value.eventType as ExecutionEvidenceEventType,
+            actorKind: value.actorKind as EvidenceActorKind,
+            phaseStatus: value.phaseStatus as EvidencePhaseStatus | null,
+            safeCode: value.safeCode,
+            durationMs: value.durationMs,
+            createdAt: isoTimestamp(value.createdAt as string | Date),
+          };
+        });
+        return {
+          attemptId: row.attempt_id,
+          executionId: row.execution_id,
+          action: row.action,
+          language: row.language,
+          runtimeVersion: row.runtime_version,
+          sourceSha256: row.source_sha256.trim(),
+          sourceByteLength: Number(row.source_byte_length),
+          createdAt: isoTimestamp(row.created_at),
+          executionState: row.execution_state,
+          infrastructureStatus: row.infrastructure_status,
+          compilationStatus: row.compilation_status,
+          verdict: row.verdict,
+          cleanupStatus: row.cleanup_status,
+          testsTotal: row.tests_total,
+          testsPassed: row.tests_passed,
+          elapsedMs: row.elapsed_ms === null ? null : String(row.elapsed_ms),
+          peakMemoryBytes: row.peak_memory_bytes === null ? null : String(row.peak_memory_bytes),
+          resultSha256: row.result_sha256?.trim() ?? null,
+          events,
+        };
+      });
     });
   }
 

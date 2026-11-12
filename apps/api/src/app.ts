@@ -1,17 +1,37 @@
 import type { Authenticator, ProblemRepository } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+import {
+  ExecutionSourceSnapshotIntegrityError,
+  ExecutionSourceSnapshotNotFoundError,
+  ExecutionSourceSnapshotUnavailableError,
+  type PostgresExecutionSourceSnapshotRepository,
+} from "./db/execution-source-snapshot-repository";
+import {
+  ExecutionSourceComparisonConflictError,
+  ExecutionSourceComparisonLimitError,
+  ExecutionSourceComparisonNotFoundError,
+  type PostgresExecutionSourceComparisonRepository,
+} from "./db/execution-source-comparison-repository";
+import { diffSourceSnapshots, SourceDiffLimitError } from "./db/execution-source-diff";
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
   "listProblemAttemptHistory" | "listExecutionEvents"
->;
+> & Partial<Pick<PostgresExecutionEvidenceRepository, "listProblemAttemptTimeline">>;
 import type { Env } from "./env";
+
+type ExecutionSourceSnapshotReadRepository = Pick<
+  PostgresExecutionSourceSnapshotRepository,
+  "getAttemptSourceSnapshot"
+>;
 
 interface ApiDependencies {
   readonly authenticator: Authenticator;
   readonly repository: ProblemRepository;
   readonly evidenceRepository?: ExecutionEvidenceReadRepository;
+  readonly sourceSnapshotRepository?: ExecutionSourceSnapshotReadRepository;
+  readonly sourceComparisonRepository?: Pick<PostgresExecutionSourceComparisonRepository, "getComparableAttemptSources">;
   readonly allowedOrigins?: string;
 }
 
@@ -176,11 +196,20 @@ export function createApiHandler(dependencies: ApiDependencies) {
     const attemptHistoryMatch = request.method === "GET"
       ? path.match(/^\/api\/v1\/problems\/([^/]+)\/attempts$/)
       : null;
+    const attemptTimelineMatch = request.method === "GET"
+      ? path.match(/^\/api\/v1\/problems\/([^/]+)\/timeline$/)
+      : null;
     const executionEventsMatch = request.method === "GET"
       ? path.match(/^\/api\/v1\/executions\/([^/]+)\/events$/)
       : null;
+    const attemptSourceMatch = request.method === "GET"
+      ? path.match(/^\/api\/v1\/attempts\/([^/]+)\/source$/)
+      : null;
+    const attemptDiffMatch = request.method === "GET"
+      ? path.match(/^\/api\/v1\/attempts\/([^/]+)\/diff$/)
+      : null;
 
-    if (!isProblemList && !problemMatch && !attemptHistoryMatch && !executionEventsMatch) {
+    if (!isProblemList && !problemMatch && !attemptHistoryMatch && !attemptTimelineMatch && !executionEventsMatch && !attemptSourceMatch && !attemptDiffMatch) {
       return errorResponse(
         "NOT_FOUND",
         "The requested API route does not exist.",
@@ -242,6 +271,333 @@ export function createApiHandler(dependencies: ApiDependencies) {
         origin,
         allowedOrigins,
       );
+    }
+
+
+    if (attemptDiffMatch) {
+      if (!dependencies.sourceComparisonRepository) {
+        return errorResponse(
+          "SOURCE_COMPARISON_STORE_NOT_CONFIGURED",
+          "The requested source comparison is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      let targetAttemptId: string;
+      try {
+        targetAttemptId = decodeURIComponent(attemptDiffMatch[1] ?? "");
+      } catch {
+        targetAttemptId = "";
+      }
+      const baseAttemptId = url.searchParams.get("baseAttemptId") ?? "";
+      const isUuid = (value: string) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+      if (!isUuid(targetAttemptId) || !isUuid(baseAttemptId) || targetAttemptId === baseAttemptId) {
+        return errorResponse(
+          "INVALID_ATTEMPT_COMPARISON",
+          "Two distinct valid attempt identifiers are required.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      try {
+        const snapshots = await dependencies.sourceComparisonRepository.getComparableAttemptSources(
+          principal.tenantId,
+          principal.userId,
+          baseAttemptId,
+          targetAttemptId,
+        );
+        const diff = diffSourceSnapshots(
+          snapshots.base.sourceCode,
+          snapshots.target.sourceCode,
+        );
+        return jsonResponse(
+          {
+            data: {
+              base: {
+                attemptId: snapshots.base.attemptId,
+                sourceSha256: snapshots.base.sourceSha256,
+                sourceByteLength: snapshots.base.sourceByteLength,
+              },
+              target: {
+                attemptId: snapshots.target.attemptId,
+                sourceSha256: snapshots.target.sourceSha256,
+                sourceByteLength: snapshots.target.sourceByteLength,
+              },
+              diff,
+            },
+          },
+          200,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      } catch (error) {
+        if (error instanceof ExecutionSourceComparisonNotFoundError) {
+          return errorResponse(
+            "ATTEMPT_COMPARISON_NOT_FOUND",
+            "The requested source comparison was not found.",
+            404,
+            false,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        if (error instanceof ExecutionSourceComparisonConflictError) {
+          return errorResponse(
+            "ATTEMPTS_NOT_COMPARABLE",
+            "The selected attempts cannot be compared.",
+            409,
+            false,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        if (
+          error instanceof DatabaseUnavailableError ||
+          error instanceof ExecutionSourceSnapshotUnavailableError
+        ) {
+          return errorResponse(
+            "SOURCE_COMPARISON_UNAVAILABLE",
+            "The requested source comparison is temporarily unavailable.",
+            503,
+            true,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        if (error instanceof ExecutionSourceSnapshotIntegrityError) {
+          console.error("execution_source_comparison_integrity_failed", {
+            correlationId: requestId,
+          });
+          return errorResponse(
+            "SOURCE_SNAPSHOT_INTEGRITY_FAILED",
+            "The saved source snapshots could not be verified.",
+            500,
+            false,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        if (error instanceof SourceDiffLimitError || error instanceof ExecutionSourceComparisonLimitError) {
+          return errorResponse(
+            "SOURCE_COMPARISON_LIMIT_EXCEEDED",
+            "The selected source snapshots exceed the comparison limits.",
+            413,
+            false,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        console.error("execution_source_comparison_failed", {
+          correlationId: requestId,
+        });
+        return errorResponse(
+          "INTERNAL_ERROR",
+          "The requested source comparison could not be generated.",
+          500,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+    }
+
+    if (attemptSourceMatch) {
+      if (!dependencies.sourceSnapshotRepository) {
+        return errorResponse(
+          "SOURCE_SNAPSHOT_STORE_NOT_CONFIGURED",
+          "The saved source snapshot is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      let attemptId: string;
+      try {
+        attemptId = decodeURIComponent(attemptSourceMatch[1] ?? "");
+      } catch {
+        attemptId = "";
+      }
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(attemptId)) {
+        return errorResponse(
+          "INVALID_ATTEMPT_ID",
+          "The attempt identifier is invalid.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      try {
+        const snapshot = await dependencies.sourceSnapshotRepository.getAttemptSourceSnapshot(
+          principal.tenantId,
+          principal.userId,
+          attemptId,
+        );
+        return jsonResponse(
+          { data: snapshot },
+          200,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      } catch (error) {
+        if (error instanceof ExecutionSourceSnapshotNotFoundError) {
+          return errorResponse(
+            "ATTEMPT_SOURCE_NOT_FOUND",
+            "The requested source snapshot was not found.",
+            404,
+            false,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        if (
+          error instanceof DatabaseUnavailableError ||
+          error instanceof ExecutionSourceSnapshotUnavailableError
+        ) {
+          return errorResponse(
+            "SOURCE_SNAPSHOT_UNAVAILABLE",
+            "The saved source snapshot is temporarily unavailable.",
+            503,
+            true,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        if (error instanceof ExecutionSourceSnapshotIntegrityError) {
+          console.error("execution_source_snapshot_integrity_failed", {
+            correlationId: requestId,
+          });
+          return errorResponse(
+            "SOURCE_SNAPSHOT_INTEGRITY_FAILED",
+            "The saved source snapshot could not be verified.",
+            500,
+            false,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        console.error("execution_source_snapshot_read_failed", {
+          correlationId: requestId,
+        });
+        return errorResponse(
+          "INTERNAL_ERROR",
+          "The saved source snapshot could not be loaded.",
+          500,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+    }
+
+    if (attemptTimelineMatch) {
+      if (!dependencies.evidenceRepository?.listProblemAttemptTimeline) {
+        return errorResponse(
+          "EVIDENCE_STORE_NOT_CONFIGURED",
+          "The coding journey is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      let slug: string;
+      try {
+        slug = decodeURIComponent(attemptTimelineMatch[1] ?? "");
+      } catch {
+        slug = "";
+      }
+      if (!isValidSlug(slug)) {
+        return errorResponse(
+          "INVALID_PROBLEM_ID",
+          "The problem identifier is invalid.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const rawLimit = url.searchParams.get("limit");
+      const limit = rawLimit === null ? 30 : Number(rawLimit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        return errorResponse(
+          "INVALID_LIMIT",
+          "The limit must be an integer between 1 and 100.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      try {
+        const timeline = await dependencies.evidenceRepository.listProblemAttemptTimeline(
+          principal.tenantId,
+          principal.userId,
+          slug,
+          limit,
+        );
+        return jsonResponse(
+          { data: timeline, meta: { count: timeline.length, limit } },
+          200,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      } catch (error) {
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse(
+            "DATABASE_UNAVAILABLE",
+            "The coding journey is temporarily unavailable.",
+            503,
+            true,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        console.error("execution_timeline_read_failed", { correlationId: requestId });
+        return errorResponse(
+          "INTERNAL_ERROR",
+          "The coding journey could not be loaded.",
+          500,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
     }
 
     if (attemptHistoryMatch) {

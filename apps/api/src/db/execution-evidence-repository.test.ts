@@ -186,6 +186,78 @@ describe("PostgresExecutionEvidenceRepository", () => {
     expect(fake.calls.at(-1)?.text).toBe("ROLLBACK");
   });
 
+  it("returns attempts and their ordered safe events in one owner-scoped timeline query", async () => {
+    const fake = makeClient((text) => {
+      if (text.includes("json_agg(json_build_object")) {
+        return [{
+          attempt_id: attemptId,
+          execution_id: executionId,
+          action: "RUN",
+          language: "java",
+          runtime_version: "25",
+          source_sha256: "a".repeat(64),
+          source_byte_length: "12",
+          created_at: "2026-11-12T10:00:00.000Z",
+          execution_state: "COMPLETED",
+          infrastructure_status: "SUCCEEDED",
+          compilation_status: "SUCCEEDED",
+          verdict: "WRONG_ANSWER",
+          cleanup_status: "SUCCEEDED",
+          tests_total: 2,
+          tests_passed: 1,
+          elapsed_ms: "42",
+          peak_memory_bytes: "1024",
+          result_sha256: "b".repeat(64),
+          events: [{
+            sequenceId: "1",
+            eventId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+            eventType: "RUNNER_STARTED",
+            actorKind: "RUNNER",
+            phaseStatus: "STARTED",
+            safeCode: null,
+            durationMs: null,
+            createdAt: "2026-11-12T10:00:00.010Z",
+          }],
+        }];
+      }
+      return [];
+    });
+    const repository = new PostgresExecutionEvidenceRepository(connection, () => fake.client);
+
+    const timeline = await repository.listProblemAttemptTimeline(
+      "30000000-0000-4000-8000-000000000001",
+      "20000000-0000-4000-8000-000000000001",
+      "two-sum",
+      25,
+    );
+
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]?.action).toBe("RUN");
+    expect(timeline[0]?.verdict).toBe("WRONG_ANSWER");
+    expect(timeline[0]?.events).toEqual([{
+      sequenceId: "1",
+      eventId: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+      eventType: "RUNNER_STARTED",
+      actorKind: "RUNNER",
+      phaseStatus: "STARTED",
+      safeCode: null,
+      durationMs: null,
+      createdAt: "2026-11-12T10:00:00.010Z",
+    }]);
+    const query = fake.calls.find((call) => call.text.includes("json_agg(json_build_object"));
+    expect(query?.values).toEqual([
+      "30000000-0000-4000-8000-000000000001",
+      "20000000-0000-4000-8000-000000000001",
+      "two-sum",
+      25,
+    ]);
+    expect(query?.text).toContain("ea.tenant_id = $1::uuid AND ea.actor_user_id = $2::uuid");
+    expect(query?.text).toContain("ee.execution_id = ej.id AND ee.attempt_id = ea.id");
+    expect(query?.text).toContain("ee.tenant_id = ea.tenant_id AND ee.actor_user_id = ea.actor_user_id");
+    expect(query?.text).toContain("ORDER BY ee.sequence_id");
+    expect(fake.ended()).toBe(true);
+  });
+
   it("fails closed when database configuration is absent", async () => {
     const repository = new PostgresExecutionEvidenceRepository(undefined);
     await expect(repository.listProblemAttemptHistory(

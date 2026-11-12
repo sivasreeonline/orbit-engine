@@ -2451,3 +2451,146 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 @media (max-width: 420px) {
   .brand-logo { width: 122px; height: 36px; }
 }
+
+
+/* E1.4 — immutable coding journey history, source review and attempt comparison. */
+.attempt-timeline { display: grid; gap: 12px; color: #e8eef8; }
+.timeline-toolbar, .timeline-detail-heading {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+}
+.timeline-toolbar strong, .timeline-detail-heading strong { display: block; color: #f1f5fb; font-size: 11px; }
+.timeline-toolbar p, .timeline-detail-heading small {
+  display: block; margin: 5px 0 0; color: #91a0b5; font-size: 9px; line-height: 1.5;
+}
+.timeline-refresh, .timeline-state button, .timeline-card-actions button,
+.timeline-compare-actions button, .timeline-detail-heading button {
+  border: 1px solid rgba(0,194,255,.28); border-radius: 7px;
+  background: rgba(0,194,255,.09); color: #8ee3fa;
+  padding: 7px 10px; font-size: 9px; font-weight: 800;
+}
+.timeline-refresh:disabled, .timeline-card-actions button:disabled { opacity: .55; cursor: wait; }
+.timeline-state {
+  border: 1px dashed rgba(166,190,221,.22); border-radius: 10px;
+  background: rgba(6,12,22,.38); padding: 16px;
+}
+.timeline-state strong { color: #edf3fb; font-size: 10px; }
+.timeline-state p { margin: 6px 0 0; color: #9aa8bb; font-size: 9px; line-height: 1.6; }
+.timeline-state small { display: block; margin-top: 8px; color: #8796ab; font-size: 8px; line-height: 1.5; }
+.timeline-error { border-style: solid; border-color: rgba(255,175,120,.25); }
+.timeline-error button { margin-top: 12px; }
+.timeline-compare-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border: 1px solid rgba(166,190,221,.14); border-radius: 8px;
+  background: rgba(255,255,255,.025); padding: 8px 10px;
+  color: #a9b7c9; font-size: 8px;
+}
+.timeline-compare-actions { display: flex; gap: 6px; }
+.timeline-compare-actions button { padding: 6px 8px; }
+.timeline-compare-actions button:disabled { opacity: .4; cursor: not-allowed; }
+.timeline-list {
+  position: relative; display: grid; gap: 10px; list-style: none;
+  margin: 0; padding: 0 0 0 17px;
+}
+.timeline-list::before {
+  position: absolute; top: 9px; bottom: 9px; left: 5px;
+  width: 1px; background: rgba(0,194,255,.25); content: "";
+}
+.timeline-item { position: relative; min-width: 0; }
+.timeline-marker {
+  position: absolute; top: 14px; left: -16px; width: 9px; height: 9px;
+  border: 2px solid #0b1220; border-radius: 50%; background: #00c2ff;
+  box-shadow: 0 0 0 1px rgba(0,194,255,.5);
+}
+.timeline-marker.submit { background: #d17ae9; box-shadow: 0 0 0 1px rgba(209,122,233,.5); }
+.timeline-card {
+  min-width: 0; border: 1px solid rgba(182,201,228,.14); border-radius: 10px;
+  background: rgba(7,12,21,.55); padding: 10px;
+}
+.timeline-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.timeline-card-top time { color: #8998ad; font-size: 8px; text-align: right; }
+.timeline-card-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.timeline-card-heading strong { color: #e9eff8; font-size: 9px; }
+.timeline-action {
+  border-radius: 4px; padding: 3px 6px; font-size: 7px; font-weight: 900; letter-spacing: .5px;
+}
+.timeline-action.run { border: 1px solid rgba(0,194,255,.24); background: rgba(0,194,255,.09); color: #83dff6; }
+.timeline-action.submit { border: 1px solid rgba(209,122,233,.28); background: rgba(209,122,233,.1); color: #e0a1ef; }
+.timeline-metadata, .timeline-phases {
+  display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px;
+  color: #a1aec0; font-size: 8px;
+}
+.timeline-phases { color: #8191a7; font-size: 7px; }
+.timeline-events { margin-top: 9px; border-top: 1px solid rgba(182,201,228,.1); padding-top: 7px; }
+.timeline-events summary { color: #8eddf2; cursor: pointer; font-size: 8px; font-weight: 750; }
+.timeline-events ol { display: grid; gap: 6px; margin: 8px 0 0; padding-left: 15px; }
+.timeline-events li { color: #b7c3d2; font-size: 8px; }
+.timeline-events li small { display: block; margin-top: 3px; color: #8291a5; font-size: 7px; }
+.timeline-events li code { display: inline-block; margin-top: 3px; color: #f0d477; font-size: 7px; }
+.timeline-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.timeline-card-actions button { padding: 6px 8px; }
+.timeline-card-actions label { display: inline-flex; align-items: center; gap: 5px; color: #a9b7c9; font-size: 8px; cursor: pointer; }
+.timeline-card-actions input { accent-color: #00c2ff; }
+.timeline-selection-note { margin: -4px 0 0; color: #8c9db2; font-size: 8px; line-height: 1.5; }
+.timeline-detail-error { border: 1px solid rgba(255,160,120,.25); border-radius: 7px; background: rgba(255,160,120,.07); color: #ffc29f; padding: 8px; font-size: 8px; line-height: 1.5; }
+.timeline-source-view, .timeline-diff-view {
+  min-width: 0; border: 1px solid rgba(0,194,255,.22); border-radius: 10px;
+  background: rgba(4,9,17,.72); padding: 10px;
+}
+.timeline-detail-heading { align-items: center; }
+.timeline-detail-heading button { flex: 0 0 auto; padding: 5px 8px; }
+.timeline-source-meta, .timeline-diff-summary {
+  display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 9px 0;
+  color: #94a4b9; font-size: 7px;
+}
+.timeline-source-meta code { overflow-wrap: anywhere; color: #8eddf2; }
+.timeline-source-view pre, .timeline-diff-code {
+  max-height: 330px; overflow: auto; margin: 0; border-radius: 7px;
+  background: #080e19; color: #d9e5f3; padding: 10px;
+  font-family: "Cascadia Code", Consolas, monospace; font-size: 8px;
+  line-height: 1.6; tab-size: 4; white-space: pre;
+}
+.timeline-diff-summary .inserted { color: #79d6a0; }
+.timeline-diff-summary .deleted { color: #f29a9a; }
+.timeline-diff-code { white-space: pre; }
+.timeline-diff-line { display: block; min-height: 1.6em; }
+.timeline-diff-sign { display: inline-block; width: 16px; user-select: none; color: #8191a5; }
+.timeline-diff-line.insert { background: rgba(60,180,110,.13); color: #a5edbd; }
+.timeline-diff-line.insert .timeline-diff-sign { color: #65d98e; }
+.timeline-diff-line.delete { background: rgba(220,90,90,.13); color: #f2b1b1; }
+.timeline-diff-line.delete .timeline-diff-sign { color: #ff8d8d; }
+.app-shell[data-theme="light"] .attempt-timeline { color: #4c4055; }
+.app-shell[data-theme="light"] .timeline-toolbar strong,
+.app-shell[data-theme="light"] .timeline-detail-heading strong,
+.app-shell[data-theme="light"] .timeline-state strong,
+.app-shell[data-theme="light"] .timeline-card-heading strong { color: #382746; }
+.app-shell[data-theme="light"] .timeline-toolbar p,
+.app-shell[data-theme="light"] .timeline-detail-heading small,
+.app-shell[data-theme="light"] .timeline-state p,
+.app-shell[data-theme="light"] .timeline-state small { color: #82758a; }
+.app-shell[data-theme="light"] .timeline-state,
+.app-shell[data-theme="light"] .timeline-card { border-color: #e8dfea; background: #fffdf9; }
+.app-shell[data-theme="light"] .timeline-compare-bar { border-color: #e8dfea; background: #fcf8fd; color: #776a80; }
+.app-shell[data-theme="light"] .timeline-card-top time,
+.app-shell[data-theme="light"] .timeline-metadata,
+.app-shell[data-theme="light"] .timeline-phases,
+.app-shell[data-theme="light"] .timeline-card-actions label { color: #81748a; }
+.app-shell[data-theme="light"] .timeline-events { border-top-color: #eee6ed; }
+.app-shell[data-theme="light"] .timeline-events li { color: #65566f; }
+.app-shell[data-theme="light"] .timeline-events li small { color: #8b7d90; }
+.app-shell[data-theme="light"] .timeline-selection-note { color: #82758a; }
+.app-shell[data-theme="light"] .timeline-source-view,
+.app-shell[data-theme="light"] .timeline-diff-view { border-color: #e7dfea; background: #fcf8fd; }
+.app-shell[data-theme="light"] .timeline-source-view pre,
+.app-shell[data-theme="light"] .timeline-diff-code { background: #282033; color: #f0eaf6; }
+@media (max-width: 520px) {
+  .timeline-card-top { flex-direction: column; }
+  .timeline-card-top time { text-align: left; }
+  .timeline-compare-bar { align-items: flex-start; flex-direction: column; }
+}
+
+
+.timeline-diff-number {
+  display: inline-block; width: 34px; padding-right: 8px;
+  color: #697a91; text-align: right; user-select: none;
+}
+.timeline-card-actions input:disabled { opacity: .45; cursor: not-allowed; }

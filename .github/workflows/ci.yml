@@ -194,6 +194,11 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/execution-intake-repository.integration.test.ts
 
+      - name: Verify immutable source comparisons against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/execution-source-comparison-repository.integration.test.ts
+
       - name: Verify outbox leases against PostgreSQL
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
@@ -210,6 +215,11 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0004_append_only_execution_results.sql
           psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0004_append_only_execution_results.sql
+
+      - name: Verify owner-scoped attempt timeline against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/execution-attempt-timeline.integration.test.ts
 
       - name: Verify append-only execution evidence against PostgreSQL
         env:
