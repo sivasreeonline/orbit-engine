@@ -6,12 +6,27 @@ This is the first M1 student-workspace slice, built with Vite, React and TypeScr
 
 Requires Node.js >= 22.12.0 and npm.
 
+Run the API and web workspace in separate terminals.
+
+**Terminal 1 — API Worker**
+
 ```powershell
+cd apps/api
 npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite.
+Wrangler listens on `http://127.0.0.1:8787` by default.
+
+**Terminal 2 — web workspace**
+
+```powershell
+cd apps/web
+npm install
+npm run dev
+```
+
+Open the local URL printed by Vite. Its `/api` requests are proxied to the Wrangler Worker.
 
 ## Available commands
 
