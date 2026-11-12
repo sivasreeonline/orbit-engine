@@ -16,7 +16,7 @@ const (
 type OutputComparison string
 
 const (
-	CompareExactBytes           OutputComparison = "EXACT_BYTES"
+	CompareExactBytes             OutputComparison = "EXACT_BYTES"
 	CompareTrimTrailingWhitespace OutputComparison = "TRIM_TRAILING_WHITESPACE"
 )
 
