@@ -118,6 +118,9 @@ jobs:
       - name: Validate FENCE-001 external witness qualification record and fail-closed gates
         run: python ../../scripts/validate_m0_fence_witness_qualification.py
 
+      - name: Verify RFC 9162 Merkle inclusion and consistency proof vectors
+        run: python ../../scripts/validate_m0_fence_witness_merkle_proofs.py
+
       - name: Configure PostgreSQL client wrappers
         run: |
           set -euo pipefail
