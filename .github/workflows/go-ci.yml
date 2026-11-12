@@ -40,6 +40,9 @@ jobs:
           cache: true
           cache-dependency-path: services/execution-runner/go.mod
 
+      - name: Temporary gofmt diff diagnostics
+        run: gofmt -d .
+
       - name: Check formatting
         run: |
           files="$(gofmt -l .)"
