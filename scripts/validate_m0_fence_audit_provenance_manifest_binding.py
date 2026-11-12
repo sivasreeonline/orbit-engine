@@ -238,8 +238,11 @@ def fixture_test() -> None:
         "testOnly":False,
         "providerIdentity":{"provider":"fixture-provider","accountId":"qualification-account","region":"fixture-region","service":"audit-service"},
         "independentVerifierPrincipalId":"verifier-fixture",
-        "pages":[{"rawResponseArtifact":"page-001.bin","rawResponseSha256":sha(raw),"rawResponseByteCount":len(raw)}],
-        "authenticationEvidence":[{"artifact":"auth-001.bin","sha256":sha(auth),"byteCount":len(auth)}],
+        "pages":[{
+            "rawResponseArtifact":"page-001.bin","rawResponseSha256":sha(raw),"rawResponseByteCount":len(raw),
+            "authenticationEvidenceArtifact":"auth-001.bin","authenticationEvidenceSha256":sha(auth),
+            "authenticationEvidenceByteCount":len(auth)
+        }],
         "events":[{"artifact":"event-001.bin","sha256":sha(event),"byteCount":len(event),"providerRequestId":"request-001"}]
     }
     binding_body = {
