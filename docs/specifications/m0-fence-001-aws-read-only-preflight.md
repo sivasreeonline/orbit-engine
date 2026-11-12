@@ -117,6 +117,22 @@ After the account owner supplies and approves the disposable account, Region, re
 **Production approval remains false. Host admission remains disabled.**
 
 
+
+## Account choice and cost-control prerequisites
+
+No AWS account is required for the current engineering phase. We are using DynamoDB Local and synthetic tests until an account is deliberately arranged.
+
+When an account is eventually considered, do not assume the Free account plan is sufficient for FENCE-001. AWS documents that the Free plan is restricted to selected services/features, while the Paid plan has access to all AWS services and features. The Free plan ends after six months or when its credits are exhausted, whichever occurs first; after expiry the account closes and content is retained for 90 days before deletion. A Paid plan can incur pay-as-you-go charges after credits or where credits do not apply. See [AWS account plan comparison](https://docs.aws.amazon.com/us_en/awsaccountbilling/latest/aboutv2/free-tier-plans.html).
+
+Before any signup or account upgrade, we must:
+- confirm which exact S3 Object Lock, CloudTrail data-event and DynamoDB features are available on the selected plan;
+- create a cost estimate for the exact Region, retained evidence volume, retention duration, data-event volume and expected test window;
+- get the account owner's explicit budget and payment-plan approval;
+- configure verified AWS Budgets alerts and Free Tier usage alerts; and
+- separately approve any transition from Free to Paid plan.
+
+AWS currently advertises up to USD $200 in Free Tier credits for eligible new customers, but those credits are not a promise that every required service is available on the Free plan or that every qualification cost is covered. [AWS Free Tier FAQ](https://aws.amazon.com/free/free-tier-faqs/).
+
 ## 5. DynamoDB witness adapter — local-first implementation
 
 The first AWS-specific implementation is `scripts/aws_dynamodb_witness_adapter.py`. Its single-table data model uses a scope-hash partition key and distinct sort keys:
