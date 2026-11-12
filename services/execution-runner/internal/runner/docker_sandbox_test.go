@@ -57,10 +57,6 @@ func (fake *fakeDockerCLI) StartAttached(
 	if err != nil {
 		return 0, err
 	}
-	if fake.waitForContext {
-		<-ctx.Done()
-		return 0, ctx.Err()
-	}
 	if len(fake.stdout) > 0 {
 		if _, err := stdout.Write(fake.stdout); err != nil {
 			return 0, err
@@ -70,6 +66,10 @@ func (fake *fakeDockerCLI) StartAttached(
 		if _, err := stderr.Write(fake.stderr); err != nil {
 			return 0, err
 		}
+	}
+	if fake.waitForContext {
+		<-ctx.Done()
+		return 0, ctx.Err()
 	}
 	return fake.startExitCode, fake.startErr
 }
@@ -171,7 +171,7 @@ func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *tes
 	t.Parallel()
 	root := t.TempDir()
 	fake := &fakeDockerCLI{
-		stdout: []byte("program output\n"),
+		stdout: []byte(compileSuccessMarker + "program output\n"),
 		stderr: []byte("program warning\n"),
 		state:  DockerContainerState{Status: "exited", ExitCode: 0},
 	}
@@ -233,6 +233,7 @@ func TestDockerSandboxMapsCompileAndOOMStatuses(t *testing.T) {
 			name: "out of memory",
 			fake: fakeDockerCLI{
 				startExitCode: 137,
+				stdout:        []byte(compileSuccessMarker),
 				state:         DockerContainerState{Status: "exited", ExitCode: 137, OOMKilled: true},
 			},
 			want:            SandboxMemoryLimit,
@@ -242,6 +243,7 @@ func TestDockerSandboxMapsCompileAndOOMStatuses(t *testing.T) {
 			name: "runtime error",
 			fake: fakeDockerCLI{
 				startExitCode: 1,
+				stdout:        []byte(compileSuccessMarker),
 				state:         DockerContainerState{Status: "exited", ExitCode: 1},
 			},
 			want:            SandboxRuntimeError,
@@ -314,7 +316,8 @@ func TestDockerSandboxTimeoutKillsContainerAndCleansWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunCase: %v", err)
 	}
-	if observation.Status != SandboxTimeLimit || !observation.CleanupSucceeded || !fake.removed {
+	if observation.Status != SandboxTimeLimit || observation.CompilationStatus != CompilationNotStarted ||
+		!observation.CleanupSucceeded || !fake.removed {
 		t.Fatalf("timeout cleanup not enforced: observation=%+v removed=%v", observation, fake.removed)
 	}
 }
