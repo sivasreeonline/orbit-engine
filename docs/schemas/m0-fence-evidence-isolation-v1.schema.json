@@ -4,80 +4,244 @@
   "title": "FENCE-001 privileged-retention-bypass and independence attestation",
   "type": "object",
   "additionalProperties": false,
-  "required": ["profile", "schemaVersion", "testOnly", "providerScope", "topology", "privilegedPrincipals", "targetObject", "bypassAttempts"],
+  "required": [
+    "profile",
+    "schemaVersion",
+    "testOnly",
+    "providerScope",
+    "topology",
+    "privilegedPrincipals",
+    "targetObject",
+    "bypassAttempts"
+  ],
   "properties": {
-    "profile": {"const": "sky-high-fence-evidence-isolation-v1"},
-    "schemaVersion": {"const": 1},
-    "testOnly": {"type": "boolean"},
+    "profile": {
+      "const": "sky-high-fence-evidence-isolation-v1"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "testOnly": {
+      "type": "boolean"
+    },
     "providerScope": {
-      "type": "object", "additionalProperties": false,
-      "required": ["name", "service", "region", "storageAccountId"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "service",
+        "region",
+        "storageAccountId"
+      ],
       "properties": {
-        "name": {"type": "string", "minLength": 1},
-        "service": {"type": "string", "minLength": 1},
-        "region": {"type": "string", "minLength": 1},
-        "storageAccountId": {"type": "string", "minLength": 1}
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "storageAccountId": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "topology": {
-      "type": "object", "additionalProperties": false,
-      "required": ["storage", "collector", "verifier", "monitors"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storage",
+        "collector",
+        "verifier",
+        "monitors"
+      ],
       "properties": {
-        "storage": {"$ref": "#/$defs/domain"},
-        "collector": {"$ref": "#/$defs/domain"},
-        "verifier": {"$ref": "#/$defs/domain"},
-        "monitors": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/domain"}}
+        "storage": {
+          "$ref": "#/$defs/domain"
+        },
+        "collector": {
+          "$ref": "#/$defs/domain"
+        },
+        "verifier": {
+          "$ref": "#/$defs/domain"
+        },
+        "monitors": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/domain"
+          }
+        }
       }
     },
     "privilegedPrincipals": {
-      "type": "object", "additionalProperties": false,
-      "required": ["accountOwner", "organizationAdmin", "storageAdmin", "recoveryAdmin"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountOwner",
+        "organizationAdmin",
+        "storageAdmin",
+        "recoveryAdmin"
+      ],
       "properties": {
-        "accountOwner": {"type": "string", "minLength": 1},
-        "organizationAdmin": {"type": "string", "minLength": 1},
-        "storageAdmin": {"type": "string", "minLength": 1},
-        "recoveryAdmin": {"type": "string", "minLength": 1}
+        "accountOwner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "organizationAdmin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "storageAdmin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recoveryAdmin": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "targetObject": {
-      "type": "object", "additionalProperties": false,
-      "required": ["objectRef", "versionId", "retentionMode", "retentionUntil"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "objectRef",
+        "versionId",
+        "retentionMode",
+        "retentionUntil"
+      ],
       "properties": {
-        "objectRef": {"type": "string", "minLength": 1},
-        "versionId": {"type": "string", "minLength": 1},
-        "retentionMode": {"const": "COMPLIANCE"},
-        "retentionUntil": {"type": "integer", "minimum": 1}
+        "objectRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "versionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retentionMode": {
+          "const": "COMPLIANCE"
+        },
+        "retentionUntil": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "bypassAttempts": {
-      "type": "array", "minItems": 7,
+      "type": "array",
+      "minItems": 7,
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["action", "actorPrincipalId", "result", "providerRequestId", "auditEventId", "auditEventSha256", "auditAcquiredByPrincipalId", "occurredAt"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action",
+          "actorPrincipalId",
+          "result",
+          "providerRequestId",
+          "auditEventId",
+          "auditEventSha256",
+          "auditAcquiredByPrincipalId",
+          "occurredAt",
+          "objectRef",
+          "versionId"
+        ],
         "properties": {
-          "action": {"enum": ["DELETE_AS_OBJECT_OWNER", "SHORTEN_RETENTION_AS_OBJECT_OWNER", "DELETE_AS_ACCOUNT_OWNER", "DISABLE_OBJECT_LOCK_AS_ORG_ADMIN", "DELETE_VIA_RECOVERY_ADMIN", "OVERWRITE_EXACT_VERSION", "REPLACE_VERSION_MAPPING"]},
-          "actorPrincipalId": {"type": "string", "minLength": 1},
-          "result": {"const": "DENIED"},
-          "providerRequestId": {"type": "string", "minLength": 1},
-          "auditEventId": {"type": "string", "minLength": 1},
-          "auditEventSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-          "auditAcquiredByPrincipalId": {"type": "string", "minLength": 1},
-          "occurredAt": {"type": "string", "format": "date-time"}
+          "action": {
+            "enum": [
+              "DELETE_AS_OBJECT_OWNER",
+              "SHORTEN_RETENTION_AS_OBJECT_OWNER",
+              "DELETE_AS_ACCOUNT_OWNER",
+              "DISABLE_OBJECT_LOCK_AS_ORG_ADMIN",
+              "DELETE_VIA_RECOVERY_ADMIN",
+              "OVERWRITE_EXACT_VERSION",
+              "REPLACE_VERSION_MAPPING"
+            ]
+          },
+          "actorPrincipalId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "result": {
+            "const": "DENIED"
+          },
+          "providerRequestId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "auditEventId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "auditEventSha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "auditAcquiredByPrincipalId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "objectRef": {
+            "type": "string",
+            "minLength": 1
+          },
+          "versionId": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     }
   },
   "$defs": {
     "domain": {
-      "type": "object", "additionalProperties": false,
-      "required": ["accountId", "organizationId", "administrativeBoundaryId", "deploymentControlPlaneId", "failureDomainId", "principalId"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountId",
+        "organizationId",
+        "administrativeBoundaryId",
+        "deploymentControlPlaneId",
+        "failureDomainId",
+        "principalId"
+      ],
       "properties": {
-        "accountId": {"type": "string", "minLength": 1},
-        "organizationId": {"type": "string", "minLength": 1},
-        "administrativeBoundaryId": {"type": "string", "minLength": 1},
-        "deploymentControlPlaneId": {"type": "string", "minLength": 1},
-        "failureDomainId": {"type": "string", "minLength": 1},
-        "principalId": {"type": "string", "minLength": 1}
+        "accountId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "administrativeBoundaryId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deploymentControlPlaneId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "failureDomainId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "principalId": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     }
   }
