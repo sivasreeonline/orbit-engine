@@ -160,6 +160,17 @@ def main() -> None:
         if artifact["independentVerifierIdentity"] != document["topology"]["verifier"]["principalId"]:
             raise ValueError("manifest independent verifier does not match the isolation attestation")
         request_ids = {attempt["providerRequestId"] for attempt in document["bypassAttempts"]}
+        for attempt in document["bypassAttempts"]:
+            audit_artifacts = [item for item in body["artifacts"] if item["artifactId"] == attempt["auditArtifactId"]]
+            if len(audit_artifacts) != 1:
+                raise ValueError("manifest must contain exactly one raw audit artifact per privileged attempt")
+            audit_artifact = audit_artifacts[0]
+            if audit_artifact["artifactType"] not in ("RAW_PROVIDER_EXCHANGE", "CONTRACT_EVIDENCE"):
+                raise ValueError("privileged audit artifact has an invalid artifact type")
+            if audit_artifact["sha256"] != attempt["auditEventSha256"]:
+                raise ValueError("audit-event digest differs from signed manifest")
+            if attempt["providerRequestId"] not in audit_artifact["providerRequestIds"]:
+                raise ValueError("raw audit artifact does not bind the provider request ID")
         if not request_ids.issubset(set(artifact["providerRequestIds"])):
             raise ValueError("manifest independence artifact does not bind every privileged bypass provider request ID")
         verify_artifact_files(body, args.artifact_root)
