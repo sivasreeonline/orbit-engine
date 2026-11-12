@@ -56,7 +56,15 @@ The harness checks 12 contract cases:
 10. concurrent compare-and-append with exactly one winner;
 11. receipt-to-checkpoint field binding and non-empty consistency token.
 
-The suite uses an in-memory reference adapter to validate its own test logic and CI wiring. It is not a substitute for running the same tests against a provider adapter. The fixture is not durable, is not distributed, does not prove network partitions, and cannot demonstrate independent failure-domain separation.
+The suite uses an in-memory reference adapter by default to validate its own test logic and CI wiring. A provider implementation can expose a zero-argument factory returning an object that satisfies `WitnessAdapter`, then run the exact same suite by setting:
+
+```sh
+FENCE_WITNESS_ADAPTER_FACTORY=package.module:create_adapter python scripts/validate_m0_witness_provider_adapter_conformance.py
+```
+
+The configured factory is imported by the harness; provider SDK dependencies and credentials must be installed/provided by the external qualification environment, never committed to this repository. The harness wraps the supplied adapter to inject a lost acknowledgement after a successful append call, then retries the exact same bytes and idempotency key. This exercises provider idempotency through the same adapter surface.
+
+The fixture is not durable, is not distributed, does not prove network partitions, and cannot demonstrate independent failure-domain separation. CI runs only the in-memory fixture unless a separately governed qualification job explicitly supplies a real adapter factory and evidence collector.
 
 ## Evidence required for real provider qualification
 
