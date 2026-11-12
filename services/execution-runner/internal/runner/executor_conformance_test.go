@@ -15,7 +15,7 @@ import (
 type conformanceResolver struct {
 	source []byte
 	bundle TestBundle
-	err error
+	err    error
 }
 
 func (r *conformanceResolver) ResolveSource(context.Context, protocol.ExecutionRequest) ([]byte, error) {
@@ -28,7 +28,7 @@ func (r *conformanceResolver) ResolveTestBundle(context.Context, protocol.Execut
 
 type conformanceSandbox struct {
 	observations []SandboxObservation
-	requests []SandboxRequest
+	requests     []SandboxRequest
 }
 
 func (s *conformanceSandbox) RunCase(_ context.Context, request SandboxRequest) (SandboxObservation, error) {
@@ -48,22 +48,22 @@ func conformanceSource() []byte {
 func conformanceRequest(action protocol.Action, source []byte) protocol.ExecutionRequest {
 	digest := sha256.Sum256(source)
 	return protocol.ExecutionRequest{
-		ProtocolVersion: "v1",
-		ExecutionID: "exec_evidence_1",
-		AttemptID: "attempt_evidence_1",
+		ProtocolVersion:  "v1",
+		ExecutionID:      "exec_evidence_1",
+		AttemptID:        "attempt_evidence_1",
 		ProblemVersionID: "problem_v1",
-		Action: action,
-		Language: protocol.LanguageJava,
-		RuntimeVersion: "25",
+		Action:           action,
+		Language:         protocol.LanguageJava,
+		RuntimeVersion:   "25",
 		SourceArtifactID: "source_1",
-		SourceSHA256: hex.EncodeToString(digest[:]),
-		TestBundleID: "bundle_1",
+		SourceSHA256:     hex.EncodeToString(digest[:]),
+		TestBundleID:     "bundle_1",
 		Limits: protocol.ResourceLimits{
 			CPUQuotaMillis: 1000,
-			MemoryBytes: 256 * 1024 * 1024,
+			MemoryBytes:    256 * 1024 * 1024,
 			WallTimeMillis: 5000,
-			ProcessLimit: 64,
-			OutputBytes: 1024 * 1024,
+			ProcessLimit:   64,
+			OutputBytes:    1024 * 1024,
 		},
 	}
 }
@@ -81,10 +81,10 @@ func conformanceBundle() TestBundle {
 func conformanceExecutor(t *testing.T, resolver ArtifactResolver, sandbox Sandbox) *SandboxExecutor {
 	t.Helper()
 	executor, err := NewSandboxExecutor(resolver, sandbox, RuntimeConfiguration{
-		RunnerVersion: "runner-test",
-		JavaVersion: "25",
-		JavaImageRef: "registry.example/sky-high/java@sha256:" + strings.Repeat("a", 64),
-		PythonVersion: "3.14",
+		RunnerVersion:  "runner-test",
+		JavaVersion:    "25",
+		JavaImageRef:   "registry.example/sky-high/java@sha256:" + strings.Repeat("a", 64),
+		PythonVersion:  "3.14",
 		PythonImageRef: "registry.example/sky-high/python@sha256:" + strings.Repeat("b", 64),
 	})
 	if err != nil {
@@ -197,9 +197,9 @@ func TestSourceHashMismatchFailsBeforeSandbox(t *testing.T) {
 func TestStudentFailuresRemainDistinctFromInfrastructureFailures(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		status SandboxStatus
+		status      SandboxStatus
 		compilation CompilationStatus
-		want Verdict
+		want        Verdict
 	}{
 		{SandboxCompileError, CompilationFailed, VerdictCompilationError},
 		{SandboxRuntimeError, CompilationSucceeded, VerdictRuntimeError},
