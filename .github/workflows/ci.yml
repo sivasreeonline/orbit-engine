@@ -143,6 +143,9 @@ jobs:
 
       - name: Verify FENCE-001 provider audit provenance contract
         run: python ../../scripts/validate_m0_fence_provider_audit_provenance.py --self-test
+ 
+      - name: Verify FENCE-001 AWS read-only qualification preflight
+        run: python ../../scripts/inspect_m0_fence_aws_qualification_environment.py --self-test
 
       - name: Verify FENCE-001 audit provenance evidence-manifest binding
         run: python ../../scripts/validate_m0_fence_audit_provenance_manifest_binding.py --self-test
