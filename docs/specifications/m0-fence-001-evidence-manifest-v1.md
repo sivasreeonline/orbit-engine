@@ -79,3 +79,19 @@ python scripts/validate_m0_fence_witness_qualification.py \
 Every `PASS` control's evidence must match an artifact in the dual-signed manifest by object reference, version, SHA-256 and byte count. The artifact must list the exact WIT control and the same collector and independent-verifier identities. Provider account/region/service and adapter repository/commit/version/configuration digest must exactly match the signed manifest.
 
 The validator refuses a record containing `PASS` evidence or claiming review readiness if the signed manifest and trusted-key configuration are not supplied for verification. The fixture path runs positive and negative binding tests with test-only keys; external qualification mode rejects test-only manifests.
+
+
+## Materialized artifact byte verification
+
+Before an external manifest can be used to qualify controls, the independent verifier must materialize each immutable evidence object into a controlled local directory, naming the file by its manifest `artifactId`. Run:
+
+```sh
+python scripts/verify_m0_fence_evidence_artifact_bytes.py \
+  --manifest evidence-manifest.json \
+  --trusted-keys /secure/trust/fence-evidence-keys.json \
+  --artifact-root /secure/materialized-evidence/run-123
+```
+
+The verifier rechecks the manifest's two signatures and digest, rejects unsafe artifact IDs, symlinks and paths escaping the artifact root, and streams every file through SHA-256 while counting bytes. A missing file, digest mismatch or byte-count mismatch fails closed. The qualification-record validator uses the same byte-verification routine; `--artifact-root` is mandatory when a manifest is supplied.
+
+This confirms that the bytes independently materialized at verification time match the signed manifest. It does not prove that the remote object reference is immutable, that retention/object-lock is enforced, or that the bytes originated from the claimed provider. The independent verifier must establish those facts through provider-side API evidence and governance controls.
