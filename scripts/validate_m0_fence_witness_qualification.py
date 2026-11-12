@@ -232,6 +232,14 @@ def main() -> None:
     semantic = semantic_errors(record)
     if semantic:
         raise SystemExit("blank qualification template failed semantic checks: " + "; ".join(semantic))
+    needs_manifest_verification = (
+        record.get("evidenceManifest") is not None
+        or record.get("qualificationStatus") == "READY_FOR_INDEPENDENT_REVIEW"
+        or any(item.get("status") == "PASS" for item in record.get("tests", []))
+    )
+    if needs_manifest_verification and not args.evidence_manifest:
+        raise SystemExit("PASS evidence or review readiness requires --evidence-manifest and --trusted-keys")
+
     if args.record.resolve() == TEMPLATE.resolve():
         if record["qualificationStatus"] != "NOT_STARTED":
             raise SystemExit("template must start NOT_STARTED")
@@ -295,10 +303,13 @@ def main() -> None:
 
     print("FENCE-001 external witness qualification record: PASS")
     print(f"Mandatory test inventory: {len(EXPECTED_IDS)} unique controls")
-    print("Blank record: NOT_STARTED; provider/adapter unselected; all tests NOT_RUN")
+    if record.get("qualificationStatus") == "NOT_STARTED":
+        print("Record: NOT_STARTED; no provider qualification claimed")
+    else:
+        print(f"Record status: {record['qualificationStatus']}")
     print("Negative gate cases: missing/duplicate test, PASS without evidence, same reviewer, production approval")
     print(f"Manifest-binding negative cases rejected: {binding_negative_cases}")
-    print("Scope: record/schema validation only; no provider qualification or production authorization")
+    print("Scope: manifest binding and record validation only; no provider qualification or production authorization")
 
 
 if __name__ == "__main__":
