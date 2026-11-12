@@ -26,7 +26,7 @@ var (
 type DockerContainerState struct {
 	Status    string `json:"Status"`
 	ExitCode  int    `json:"ExitCode"`
-	OOMKilled bool  `json:"OOMKilled"`
+	OOMKilled bool   `json:"OOMKilled"`
 }
 
 // DockerCLI isolates the Docker command boundary so policy and lifecycle
@@ -448,4 +448,3 @@ func (writer *boundedOutput) Exceeded() bool {
 	defer writer.mu.Unlock()
 	return writer.exceeded
 }
-
