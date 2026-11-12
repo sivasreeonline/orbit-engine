@@ -239,8 +239,6 @@ class DynamoDBWitnessAdapter:
             consistency_token=consistency_token,
         )
         receipt_json = _canonical(_receipt_document(receipt))
-        client_request_token = str(uuid.UUID(hex=transaction_binding[:32]))
-
         def record_item(sort_key: str) -> dict[str, Any]:
             return {
                 "PK": {"S": partition_key},
@@ -326,7 +324,6 @@ class DynamoDBWitnessAdapter:
         try:
             self._client.transact_write_items(
                 TransactItems=[*immutable_puts, head_action],
-                ClientRequestToken=client_request_token,
             )
             return receipt
         except ClientError as exc:
