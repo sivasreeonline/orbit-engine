@@ -23,6 +23,15 @@
 - CloudTrail digest delivery is periodic. A successful CloudTrail status read is not proof that the required event window has a complete, independently verified digest chain.
 - CloudTrail data events are not enabled by default. The exact S3 and DynamoDB resource selectors must cover the qualification evidence bucket and witness table, including writes.
 
+
+### Irreversible and cost gates before provisioning
+
+- Enabling S3 Object Lock on a bucket cannot later be undone, and versioning cannot be suspended after Object Lock is enabled. A compliance-retained version cannot be deleted before its retention expiry, including by the account root user (subject to AWS's documented account-deletion exception). The account owner must approve the bucket's retention duration, data classification, expected evidence volume, expiry/cost owner and account lifecycle before the bucket is created.
+- CloudTrail data events are opt-in and can incur additional charges. The account owner must approve the precise S3 object and DynamoDB table selectors, expected event volume and cost budget before those selectors are enabled.
+- The log-file validation digest chain is time-dependent. Do not disable/re-enable logging or validation as a quick troubleshooting step; preserve the gap and investigate it as a qualification blocker.
+
+These are provisioning gates, not actions performed by the read-only inspector.
+
 ## 2. Read-only preflight
 
 The preflight requires a non-secret JSON configuration file with these exact fields:
