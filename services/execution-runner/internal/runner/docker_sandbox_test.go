@@ -14,20 +14,20 @@ import (
 )
 
 type fakeDockerCLI struct {
-	createArgs []string
-	containerID string
-	createErr error
-	startExitCode int
-	startErr error
-	stdout []byte
-	stderr []byte
+	createArgs     []string
+	containerID    string
+	createErr      error
+	startExitCode  int
+	startErr       error
+	stdout         []byte
+	stderr         []byte
 	waitForContext bool
-	state DockerContainerState
-	inspectErr error
-	removeErr error
-	created bool
-	removed bool
-	stdin []byte
+	state          DockerContainerState
+	inspectErr     error
+	removeErr      error
+	created        bool
+	removed        bool
+	stdin          []byte
 }
 
 func (fake *fakeDockerCLI) Create(_ context.Context, args []string) (string, error) {
@@ -91,19 +91,19 @@ func (fake *fakeDockerCLI) Remove(_ context.Context, id string) error {
 
 func dockerSandboxTestRequest() SandboxRequest {
 	return SandboxRequest{
-		ExecutionID: "exec_docker_test",
-		Language: protocol.LanguageJava,
+		ExecutionID:    "exec_docker_test",
+		Language:       protocol.LanguageJava,
 		RuntimeVersion: "25",
-		ImageRef: "registry.example/sky-high/java@sha256:" + strings.Repeat("a", 64),
-		SourceName: "Main.java",
-		SourceBytes: []byte("public class Main {}"),
-		StandardInput: []byte("hello stdin\n"),
+		ImageRef:       "registry.example/sky-high/java@sha256:" + strings.Repeat("a", 64),
+		SourceName:     "Main.java",
+		SourceBytes:    []byte("public class Main {}"),
+		StandardInput:  []byte("hello stdin\n"),
 		Limits: protocol.ResourceLimits{
 			CPUQuotaMillis: 1000,
-			MemoryBytes: 256 * 1024 * 1024,
+			MemoryBytes:    256 * 1024 * 1024,
 			WallTimeMillis: 1000,
-			ProcessLimit: 64,
-			OutputBytes: 1024,
+			ProcessLimit:   64,
+			OutputBytes:    1024,
 		},
 	}
 }
@@ -173,7 +173,7 @@ func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *tes
 	fake := &fakeDockerCLI{
 		stdout: []byte("program output\n"),
 		stderr: []byte("program warning\n"),
-		state: DockerContainerState{Status: "exited", ExitCode: 0},
+		state:  DockerContainerState{Status: "exited", ExitCode: 0},
 	}
 	sandbox, err := NewDockerSandbox(fake, root)
 	if err != nil {
@@ -214,37 +214,37 @@ func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *tes
 func TestDockerSandboxMapsCompileAndOOMStatuses(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
-		fake fakeDockerCLI
-		want SandboxStatus
+		name            string
+		fake            fakeDockerCLI
+		want            SandboxStatus
 		wantCompilation CompilationStatus
 	}{
 		{
 			name: "compiler error",
 			fake: fakeDockerCLI{
 				startExitCode: 86,
-				state: DockerContainerState{Status: "exited", ExitCode: 86},
-				stderr: []byte("compiler error"),
+				state:         DockerContainerState{Status: "exited", ExitCode: 86},
+				stderr:        []byte("compiler error"),
 			},
-			want: SandboxCompileError,
+			want:            SandboxCompileError,
 			wantCompilation: CompilationFailed,
 		},
 		{
 			name: "out of memory",
 			fake: fakeDockerCLI{
 				startExitCode: 137,
-				state: DockerContainerState{Status: "exited", ExitCode: 137, OOMKilled: true},
+				state:         DockerContainerState{Status: "exited", ExitCode: 137, OOMKilled: true},
 			},
-			want: SandboxMemoryLimit,
+			want:            SandboxMemoryLimit,
 			wantCompilation: CompilationSucceeded,
 		},
 		{
 			name: "runtime error",
 			fake: fakeDockerCLI{
 				startExitCode: 1,
-				state: DockerContainerState{Status: "exited", ExitCode: 1},
+				state:         DockerContainerState{Status: "exited", ExitCode: 1},
 			},
-			want: SandboxRuntimeError,
+			want:            SandboxRuntimeError,
 			wantCompilation: CompilationSucceeded,
 		},
 	}
@@ -276,7 +276,7 @@ func TestDockerSandboxEnforcesCombinedStdoutAndStderrLimit(t *testing.T) {
 	fake := &fakeDockerCLI{
 		stdout: []byte("123456"),
 		stderr: []byte("abcdef"),
-		state: DockerContainerState{Status: "exited", ExitCode: 0},
+		state:  DockerContainerState{Status: "exited", ExitCode: 0},
 	}
 	sandbox, err := NewDockerSandbox(fake, t.TempDir())
 	if err != nil {
@@ -322,7 +322,7 @@ func TestDockerSandboxTimeoutKillsContainerAndCleansWorkspace(t *testing.T) {
 func TestDockerSandboxTreatsContainerCleanupFailureAsInfrastructureError(t *testing.T) {
 	t.Parallel()
 	fake := &fakeDockerCLI{
-		state: DockerContainerState{Status: "exited", ExitCode: 0},
+		state:     DockerContainerState{Status: "exited", ExitCode: 0},
 		removeErr: errors.New("docker rm failed"),
 	}
 	sandbox, err := NewDockerSandbox(fake, t.TempDir())
