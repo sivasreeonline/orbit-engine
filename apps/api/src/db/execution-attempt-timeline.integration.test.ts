@@ -5,8 +5,8 @@ import { PostgresExecutionIntakeRepository } from "./execution-intake-repository
 
 const databaseUrl = process.env.DATABASE_URL;
 const tenantId = "30000000-0000-4000-8000-000000000001";
-const actorId = "20000000-0000-4000-8000-000000000001";
-const otherActorId = "20000000-0000-4000-8000-000000000002";
+const actorId = randomUUID();
+const otherActorId = randomUUID();
 
 describe.skipIf(!databaseUrl)("Postgres execution attempt timeline integration", () => {
   it("returns each student's attempts with ordered events and excludes another student's activity", async () => {
