@@ -17,10 +17,11 @@
 - The witness must not be behind the independently protected verifier high-water.
 - Same-generation heads must have the same digest.
 - A witness-ahead recovery chain must contain every generation exactly once and link each checkpoint to the exact predecessor.
+- When the restored database is behind protected high-water, the recovery chain must intersect the exact protected generation/digest. When the restored database is ahead of protected high-water but behind the witness, a separate consistency proof must bind that local head to protected high-water.
 - The chain must terminate at the witness's exact high-water digest.
 - Checkpoint artifacts/signatures and deterministic state replay are separate required inputs.
 - At least two monitors must have distinct identities, operators, accounts and failure domains; their heads must agree with the claimed latest witness head.
-- Trust-bundle and revocation generations cannot roll back.
+- Trust-bundle and revocation generations cannot roll back; every successor generation requires a verified predecessor chain.
 - Missing strong reads, proofs, revocation state or monitor catch-up block progress; contradictory evidence quarantines.
 
 The model assumes its `VERIFIED` booleans/statuses were produced by independent provider, signature and proof verifiers. It does not implement those verifiers. It does not restore PostgreSQL, reconstruct real authority state, authenticate monitor identities, or test a real provider. Synthetic fixtures are not external evidence.
