@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sky High FENCE-001 independent attestation trust keys v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "keys"
+  ],
+  "properties": {
+    "profile": {
+      "const": "sky-high-fence-external-qualification-trust-keys-v1"
+    },
+    "keys": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "signerIdentity",
+          "keyId",
+          "publicKeyBase64Url",
+          "publicKeySha256",
+          "status"
+        ],
+        "properties": {
+          "role": {
+            "enum": [
+              "PROVIDER_APPROVAL_AUTHORITY",
+              "INDEPENDENT_VERIFIER",
+              "EVIDENCE_RETENTION_AUTHORITY"
+            ]
+          },
+          "signerIdentity": {
+            "$ref": "#/$defs/identifier"
+          },
+          "keyId": {
+            "$ref": "#/$defs/identifier"
+          },
+          "publicKeyBase64Url": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "publicKeySha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "status": {
+            "const": "ACTIVE"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$"
+    }
+  }
+}
