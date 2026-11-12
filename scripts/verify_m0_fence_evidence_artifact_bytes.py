@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import os
 from pathlib import Path
 import tempfile
 from typing import Any
@@ -57,7 +56,7 @@ def verify_artifact_files(body: dict[str, Any], artifact_root: Path) -> int:
     return verified
 
 
-def run_fixture_tests() -> int:
+def run_fixture_tests() -> tuple[int, int]:
     vector = load_json(ROOT / "docs/test-vectors/m0-fence-evidence-manifest-v1.json")
     body = vector["manifestBody"]
     with tempfile.TemporaryDirectory(prefix="fence-evidence-") as directory:
@@ -84,7 +83,7 @@ def run_fixture_tests() -> int:
             pass
         else:
             raise AssertionError("missing artifact was accepted")
-    return 2
+    return require_count, 2
 
 
 def main() -> None:
@@ -110,10 +109,10 @@ def main() -> None:
         return
 
     vector = load_json(ROOT / "docs/test-vectors/m0-fence-evidence-manifest-v1.json")
-    count = run_fixture_tests()
+    verified, rejected = run_fixture_tests()
     print("FENCE-001 evidence artifact byte verifier: PASS")
-    print(f"Fixture artifacts byte-verified: {count - 2 + 1}")
-    print("Negative cases rejected: tampered bytes, missing artifact")
+    print(f"Fixture artifacts byte-verified: {verified}")
+    print(f"Negative cases rejected: {rejected} (tampered bytes, missing artifact)")
     print("Scope: synthetic fixture only; no provider evidence or remote immutability proof")
 
 
