@@ -28,6 +28,7 @@ function repository(batch: OutboxLease[], marked = true) {
   const outbox: LocalOutboxLeaseRepository = {
     claimBatch: vi.fn().mockResolvedValue(batch),
     markPublished: vi.fn().mockResolvedValue(marked),
+    markDeadLetter: vi.fn().mockResolvedValue(true),
   };
   return outbox;
 }
@@ -94,6 +95,10 @@ describe("LocalExecutionOutboxDispatcher", () => {
     });
     expect(sink.accept).not.toHaveBeenCalled();
     expect(outbox.markPublished).not.toHaveBeenCalled();
+    expect(outbox.markDeadLetter).toHaveBeenCalledWith(
+      item.id, configuration.workerId, item.leaseToken,
+    );
+    expect(outbox.markDeadLetter).not.toHaveBeenCalled();
   });
 
   it("reports a stale lease as fenced when acknowledgement loses the race", async () => {
