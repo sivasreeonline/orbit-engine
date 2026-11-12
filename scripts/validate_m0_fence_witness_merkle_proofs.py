@@ -299,6 +299,10 @@ def run_negative_cases(entries: list[bytes], roots: dict[int, bytes]) -> int:
         "reversed tree sizes were accepted",
     )
     require(
+        verify_consistency(7, 7, roots[7], roots[7], []),
+        "identical same-size tree heads were rejected",
+    )
+    require(
         not verify_consistency(7, 7, roots[7], bytes([roots[7][0] ^ 1]) + roots[7][1:], []),
         "same-size conflicting roots were accepted",
     )
@@ -310,7 +314,7 @@ def run_negative_cases(entries: list[bytes], roots: dict[int, bytes]) -> int:
         not verify_consistency(3, 7, roots[3], forked_root, consistency),
         "a rewritten prefix was accepted as an append-only extension",
     )
-    return 12
+    return 15
 
 
 def exhaustive_model_checks(max_size: int = 40) -> tuple[int, int]:
