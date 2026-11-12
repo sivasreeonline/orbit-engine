@@ -8,6 +8,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -84,6 +85,118 @@ def verify_binding_signatures(envelope: dict[str, Any], trusted_keys: list[dict[
     return digest
 
 
+def validate_audit_report(
+    report: dict[str, Any], expected_provider: dict[str, str], verifier_identity: str
+) -> None:
+    """Validate the authenticated audit report's internal stream structure."""
+    if report.get("profile") != "sky-high-fence-provider-audit-provenance-v1":
+        raise ValueError("unsupported provider audit provenance report profile")
+    if report.get("testOnly") is not False:
+        raise ValueError("test-only audit provenance report cannot qualify external evidence")
+    if report.get("qualificationStatus") != "AUDIT_STREAM_AUTHENTICATED_AND_REQUESTS_CORRELATED":
+        raise ValueError("audit provenance report is not a completed authenticated run")
+    if report.get("providerIdentity") != expected_provider:
+        raise ValueError("audit provenance provider identity differs from the signed manifest")
+    if report.get("independentVerifierPrincipalId") != verifier_identity:
+        raise ValueError("audit provenance verifier identity differs from the signed manifest")
+
+    def nonempty(value: Any) -> bool:
+        return isinstance(value, str) and bool(value.strip())
+
+    def safe_artifact(value: Any) -> bool:
+        return (
+            isinstance(value, str) and 1 <= len(value) <= 256
+            and value not in {".", ".."}
+            and all(character.isalnum() or character in "._-" for character in value)
+        )
+
+    def valid_digest(value: Any) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+    def safe_identifier(value: Any) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,159}", value) is not None
+
+    trust_root = report.get("pinnedTrustRoot")
+    if not isinstance(trust_root, dict) or not safe_identifier(trust_root.get("id")) or not valid_digest(trust_root.get("sha256")):
+        raise ValueError("audit report pinned trust-root identity or digest is missing or malformed")
+    root_id = trust_root["id"]
+    root_digest = trust_root["sha256"]
+
+    pages = report.get("pages")
+    events = report.get("events")
+    if not isinstance(pages, list) or not pages or len(pages) > 1000 or not isinstance(events, list) or not events or len(events) > 100000:
+        raise ValueError("authenticated audit report must contain non-empty page and event arrays")
+    initial_cursor = report.get("initialCursor")
+    final_cursor = report.get("finalCursor")
+    if not safe_identifier(initial_cursor) or not safe_identifier(final_cursor):
+        raise ValueError("audit report initial/final cursor is missing")
+    cursor = initial_cursor
+    artifact_names: set[str] = set()
+
+    for index, page in enumerate(pages, start=1):
+        if not isinstance(page, dict):
+            raise ValueError("audit page record must be an object")
+        if type(page.get("page")) is not int or page["page"] != index:
+            raise ValueError("audit page numbering must be contiguous and ordered from one")
+        if page.get("cursorStart") != cursor:
+            raise ValueError("audit cursor gap, replay or out-of-order page detected in signed report")
+        cursor_end = page.get("cursorEnd")
+        if not safe_identifier(cursor_end) or cursor_end == cursor:
+            raise ValueError("audit page cursor must advance")
+        cursor = cursor_end
+        if page.get("authenticationMethod") not in {
+            "PROVIDER_SIGNED_AUDIT_ENVELOPE", "AUTHENTICATED_AUDIT_API_RESPONSE"
+        }:
+            raise ValueError("audit page authentication method is unsupported")
+        if page.get("trustRootId") != root_id or page.get("trustRootSha256") != root_digest:
+            raise ValueError("audit page trust root differs from the report's pinned trust root")
+        if not safe_identifier(page.get("authenticatedServicePrincipalId")):
+            raise ValueError("audit page authenticated service principal is missing")
+        for artifact_field, digest_field, count_field in (
+            ("rawResponseArtifact", "rawResponseSha256", "rawResponseByteCount"),
+            ("authenticationEvidenceArtifact", "authenticationEvidenceSha256", "authenticationEvidenceByteCount"),
+        ):
+            artifact_name = page.get(artifact_field)
+            if not safe_artifact(artifact_name) or artifact_name in artifact_names:
+                raise ValueError("audit report contains an unsafe or duplicate source artifact name")
+            artifact_names.add(artifact_name)
+            if not valid_digest(page.get(digest_field)):
+                raise ValueError("audit page artifact digest is malformed")
+            count = page.get(count_field)
+            if type(count) is not int or count < 1:
+                raise ValueError("audit page artifact byte count must be a positive integer")
+    if cursor != final_cursor:
+        raise ValueError("audit report final cursor does not match the last page cursor")
+
+    seen_event_ids: set[str] = set()
+    for index, event in enumerate(events, start=1):
+        if not isinstance(event, dict):
+            raise ValueError("audit event record must be an object")
+        event_id = event.get("eventId")
+        request_id = event.get("providerRequestId")
+        if not safe_identifier(event_id) or event_id in seen_event_ids:
+            raise ValueError("audit report contains a missing or duplicate provider event ID")
+        seen_event_ids.add(event_id)
+        if not safe_identifier(request_id):
+            raise ValueError("audit event provider request ID is missing")
+        if type(event.get("sequence")) is not int or event["sequence"] != index:
+            raise ValueError("provider audit event sequence must be contiguous and ordered from one")
+        artifact_name = event.get("artifact")
+        if not safe_artifact(artifact_name) or artifact_name in artifact_names:
+            raise ValueError("audit report contains an unsafe or duplicate source artifact name")
+        artifact_names.add(artifact_name)
+        if not valid_digest(event.get("sha256")):
+            raise ValueError("audit event artifact digest is malformed")
+        count = event.get("byteCount")
+        if type(count) is not int or count < 1:
+            raise ValueError("audit event artifact byte count must be a positive integer")
+
+    if type(report.get("eventCount")) is not int or report["eventCount"] != len(events):
+        raise ValueError("audit report eventCount does not match its event inventory")
+    if not isinstance(report.get("limitations"), list) or not report["limitations"]:
+        raise ValueError("audit report must retain explicit qualification limitations")
+
+
 def validate_binding(
     manifest_envelope: dict[str, Any], manifest_keys: list[dict[str, str]],
     report: dict[str, Any], binding: dict[str, Any], binding_keys: list[dict[str, str]],
@@ -114,6 +227,7 @@ def validate_binding(
     )
     if report.get("independentVerifierPrincipalId") != verifier_identity:
         raise ValueError("audit provenance report verifier does not match signed manifest verifier")
+    validate_audit_report(report, expected_provider, verifier_identity)
     if body["independentVerifierIdentity"] != verifier_identity:
         raise ValueError("audit provenance verifier does not match evidence-manifest verifier")
     manifest_artifacts = {item["artifactId"]: item for item in manifest_envelope["manifestBody"]["artifacts"]}
@@ -252,16 +366,29 @@ def fixture_test() -> None:
         payload = prefix + canonical.dumps({"manifestDigest":md,"role":role,"signerIdentity":identity,"keyId":kid})
         manifest["attestations"].append({"role":role,"signerIdentity":identity,"keyId":kid,"signatureBase64Url":b64(private.sign(payload))})
     report = {
+        "profile":"sky-high-fence-provider-audit-provenance-v1",
         "qualificationStatus":"AUDIT_STREAM_AUTHENTICATED_AND_REQUESTS_CORRELATED",
         "testOnly":False,
         "providerIdentity":{"provider":"fixture-provider","accountId":"qualification-account","region":"fixture-region","service":"audit-service"},
         "independentVerifierPrincipalId":"verifier-fixture",
+        "pinnedTrustRoot":{"id":"fixture-root","sha256":"a"*64},
+        "initialCursor":"cursor-0",
+        "finalCursor":"cursor-1",
         "pages":[{
+            "page":1,"cursorStart":"cursor-0","cursorEnd":"cursor-1",
             "rawResponseArtifact":"page-001.bin","rawResponseSha256":sha(raw),"rawResponseByteCount":len(raw),
             "authenticationEvidenceArtifact":"auth-001.bin","authenticationEvidenceSha256":sha(auth),
-            "authenticationEvidenceByteCount":len(auth)
+            "authenticationEvidenceByteCount":len(auth),
+            "authenticationMethod":"PROVIDER_SIGNED_AUDIT_ENVELOPE",
+            "trustRootId":"fixture-root","trustRootSha256":"a"*64,
+            "authenticatedServicePrincipalId":"audit-service-principal"
         }],
-        "events":[{"artifact":"event-001.bin","sha256":sha(event),"byteCount":len(event),"providerRequestId":"request-001"}]
+        "events":[{
+            "artifact":"event-001.bin","sha256":sha(event),"byteCount":len(event),
+            "providerRequestId":"request-001","eventId":"event-001","sequence":1
+        }],
+        "eventCount":1,
+        "limitations":["Synthetic fixture; no provider truth is asserted."]
     }
     binding_body = {
         "profile":"sky-high-fence-audit-provenance-binding-v1","schemaVersion":1,
@@ -282,6 +409,24 @@ def fixture_test() -> None:
         identities.append((role,identity,private))
     binding=sign_binding(binding_body,identities)
     validate_binding(manifest,manifest_keys,report,binding,binding_keys,root,allow_test_only=True)
+    expected_provider = report["providerIdentity"]
+    semantic_cases = [
+        ("cursor discontinuity", lambda item: item["pages"][0].update({"cursorStart":"cursor-replayed"}), "cursor gap"),
+        ("trust-root substitution", lambda item: item["pages"][0].update({"trustRootSha256":"b"*64}), "trust root"),
+        ("event count mismatch", lambda item: item.update({"eventCount":2}), "eventCount"),
+        ("event sequence gap", lambda item: item["events"][0].update({"sequence":2}), "sequence"),
+        ("duplicate event ID", lambda item: item["events"].append(copy.deepcopy(item["events"][0])), "duplicate"),
+    ]
+    for label, mutate, expected_error in semantic_cases:
+        malformed = copy.deepcopy(report)
+        mutate(malformed)
+        try:
+            validate_audit_report(malformed, expected_provider, "verifier-fixture")
+        except ValueError as error:
+            if expected_error not in str(error):
+                raise AssertionError(f"{label}: unexpected rejection: {error}") from error
+        else:
+            raise AssertionError(f"malformed audit report was accepted: {label}")
     tampered=copy.deepcopy(report); tampered["events"][0]["providerRequestId"]="request-substituted"
     try:
         validate_binding(manifest,manifest_keys,tampered,binding,binding_keys,root,allow_test_only=True)

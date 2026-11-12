@@ -48,8 +48,8 @@ python scripts/validate_m0_fence_audit_provenance_manifest_binding.py \
   --artifact-root /secure/materialized-evidence/run-123
 ```
 
-The generator only signs the canonical report digest and mapping after validating manifest signatures, report status and identity/scope equality. The independent validator must still verify the binding signatures, all mappings, and the materialized artifact bytes. The generator does not upload evidence, choose a provider, or approve a qualification.
+Before signing, the generator verifies the manifest signatures, report profile and completion state, provider/verifier identity, pinned trust root, contiguous cursor chain, page/event inventories, artifact-name uniqueness, digest/byte-count fields and complete source-to-manifest mapping. The independent validator repeats report semantics and verifies binding signatures, all mappings and materialized artifact bytes. The generator does not upload evidence, choose a provider, or approve a qualification.
 
 ## Security boundary
 
-The checked-in self-test creates ephemeral keys and proves only local key authorization and envelope-signing behavior. Production key custody, rotation/revocation, trusted time, signer independence and provider audit authenticity remain external requirements. Never use fixture keys for qualification.
+The CI self-test now runs the complete generator and independent verifier using ephemeral non-production keys and synthetic bytes, including negative cases for provider substitution, incomplete mappings and tampered materialized bytes. Production key custody, rotation/revocation, trusted time, signer independence and provider audit authenticity remain external requirements. Never use fixture keys for qualification.

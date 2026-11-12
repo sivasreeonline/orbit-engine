@@ -24,7 +24,7 @@ MAPPING_SCHEMA = ROOT / "docs/schemas/m0-fence-audit-provenance-artifact-mapping
 sys.path.insert(0, str(ROOT / "scripts"))
 from validate_m0_fence_evidence_manifest import validate_manifest  # noqa: E402
 from validate_m0_fence_audit_provenance_manifest_binding import (  # noqa: E402
-    sign_binding, validate_binding, verify_binding_signatures
+    sign_binding, validate_audit_report, validate_binding, verify_binding_signatures
 )
 
 
@@ -95,6 +95,7 @@ def build_binding(manifest: dict[str, Any], manifest_keys: list[dict[str, str]],
     verifier_identity = manifest_signers["INDEPENDENT_VERIFIER"]
     if report.get("independentVerifierPrincipalId") != verifier_identity:
         raise ValueError("audit report verifier identity does not match signed evidence manifest")
+    validate_audit_report(report, expected_provider, verifier_identity)
 
     required_sources = []
     for page in report.get("pages", []):
@@ -228,19 +229,29 @@ def self_test() -> None:
             "testOnly": False,
             "providerIdentity": provider_identity,
             "independentVerifierPrincipalId": "verifier-fixture",
+            "pinnedTrustRoot": {"id": "fixture-root", "sha256": "a" * 64},
+            "initialCursor": "cursor-0",
+            "finalCursor": "cursor-1",
             "qualificationStatus": "AUDIT_STREAM_AUTHENTICATED_AND_REQUESTS_CORRELATED",
             "pages": [{
+                "page": 1, "cursorStart": "cursor-0", "cursorEnd": "cursor-1",
                 "rawResponseArtifact": "page-001.bin",
                 "rawResponseSha256": sha(sources[0][1]),
                 "rawResponseByteCount": len(sources[0][1]),
                 "authenticationEvidenceArtifact": "auth-001.bin",
                 "authenticationEvidenceSha256": sha(sources[1][1]),
                 "authenticationEvidenceByteCount": len(sources[1][1]),
+                "authenticationMethod": "PROVIDER_SIGNED_AUDIT_ENVELOPE",
+                "trustRootId": "fixture-root", "trustRootSha256": "a" * 64,
+                "authenticatedServicePrincipalId": "audit-service-principal",
             }],
             "events": [{
                 "artifact": "event-001.bin", "sha256": sha(sources[2][1]),
                 "byteCount": len(sources[2][1]), "providerRequestId": "request-001",
+                "eventId": "event-001", "sequence": 1,
             }],
+            "eventCount": 1,
+            "limitations": ["Synthetic fixture; no provider truth is asserted."],
         }
         mappings = [
             {"sourceGroup": "pages", "sourceArtifact": "page-001.bin", "manifestArtifactId": artifact_ids[0]},
