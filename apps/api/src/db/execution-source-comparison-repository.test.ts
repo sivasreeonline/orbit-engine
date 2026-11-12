@@ -19,7 +19,9 @@ const baseBytes = new TextEncoder().encode("class Main {}\n");
 const targetBytes = new TextEncoder().encode("class Main { int n; }\n");
 
 async function digest(bytes: Uint8Array): Promise<string> {
-  const result = await crypto.subtle.digest("SHA-256", bytes);
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  const result = await crypto.subtle.digest("SHA-256", buffer);
   return Array.from(new Uint8Array(result), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
