@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
 )
@@ -49,6 +50,7 @@ func conformanceRequest(action protocol.Action, source []byte) protocol.Executio
 	digest := sha256.Sum256(source)
 	return protocol.ExecutionRequest{
 		ProtocolVersion:  "v1",
+		RequestID:        "request_evidence_1",
 		ExecutionID:      "exec_evidence_1",
 		AttemptID:        "attempt_evidence_1",
 		ProblemVersionID: "problem_v1",
@@ -57,7 +59,11 @@ func conformanceRequest(action protocol.Action, source []byte) protocol.Executio
 		RuntimeVersion:   "25",
 		SourceArtifactID: "source_1",
 		SourceSHA256:     hex.EncodeToString(digest[:]),
+		SourceByteLength: int64(len(source)),
 		TestBundleID:     "bundle_1",
+		TraceID:          "trace_evidence_1",
+		IssuedAt:         time.Now().UTC().Add(-time.Second),
+		ExpiresAt:        time.Now().UTC().Add(time.Minute),
 		Limits: protocol.ResourceLimits{
 			CPUQuotaMillis: 1000,
 			MemoryBytes:    256 * 1024 * 1024,
@@ -173,6 +179,26 @@ func TestRunRejectsHiddenTestBundleBeforeSandbox(t *testing.T) {
 	}
 	if len(sandbox.requests) != 0 {
 		t.Fatal("sandbox started with a Run bundle containing hidden tests")
+	}
+}
+
+func TestSourceByteLengthMismatchFailsBeforeSandbox(t *testing.T) {
+	t.Parallel()
+	source := conformanceSource()
+	sandbox := &conformanceSandbox{}
+	executor := conformanceExecutor(t, &conformanceResolver{source: source, bundle: conformanceBundle()}, sandbox)
+	request := conformanceRequest(protocol.ActionRun, source)
+	request.SourceByteLength++
+
+	result, err := executor.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.InfrastructureErrorCode != "SOURCE_LENGTH_MISMATCH" || result.Verdict != VerdictNotEvaluated {
+		t.Fatalf("source length mismatch was not rejected: %+v", result)
+	}
+	if len(sandbox.requests) != 0 {
+		t.Fatal("sandbox started before source length verification")
 	}
 }
 

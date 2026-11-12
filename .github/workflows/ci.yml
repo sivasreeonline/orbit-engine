@@ -2,10 +2,12 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    # Stacked engineering PRs target feat/* branches before the final PR targets main.
+    branches: [main, "feat/**", "fix/**"]
     paths:
       - "apps/web/**"
       - "apps/api/**"
+      - "services/execution-runner/**"
       - "docs/**"
       - ".github/workflows/**"
       - "AGENTS.md"
@@ -15,6 +17,7 @@ on:
     paths:
       - "apps/web/**"
       - "apps/api/**"
+      - "services/execution-runner/**"
       - "docs/**"
       - ".github/workflows/**"
       - "AGENTS.md"
@@ -29,6 +32,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  runner:
+    name: Go runner format, vet and race tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/execution-runner
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: services/execution-runner/go.mod
+          cache-dependency-path: services/execution-runner/go.mod
+
+      - name: Verify formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Race-enabled tests
+        run: go test -race -cover ./...
+
   web:
     name: Web typecheck, tests and build
     runs-on: ubuntu-latest
