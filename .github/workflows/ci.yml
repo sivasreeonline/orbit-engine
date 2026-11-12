@@ -136,6 +136,9 @@ jobs:
       - name: Verify RFC 9162 Merkle inclusion and consistency proof vectors
         run: python ../../scripts/validate_m0_fence_witness_merkle_proofs.py
 
+      - name: Verify guarded FENCE-001 provider restore/recovery harness
+        run: python ../../scripts/validate_m0_fence_provider_restore_recovery.py --self-test
+
       - name: Verify FENCE-001 restore and witness reconciliation reference model
         run: python ../../scripts/validate_m0_witness_restore_reconciliation_model.py
 
