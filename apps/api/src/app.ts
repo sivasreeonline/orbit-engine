@@ -17,7 +17,7 @@ import { diffSourceSnapshots, SourceDiffLimitError } from "./db/execution-source
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
-  "listProblemAttemptHistory" | "listExecutionEvents"
+  "listProblemAttemptHistory" | "listExecutionEvents" | "listProblemAttemptTimeline"
 >;
 import type { Env } from "./env";
 
@@ -196,6 +196,9 @@ export function createApiHandler(dependencies: ApiDependencies) {
     const attemptHistoryMatch = request.method === "GET"
       ? path.match(/^\/api\/v1\/problems\/([^/]+)\/attempts$/)
       : null;
+    const attemptTimelineMatch = request.method === "GET"
+      ? path.match(/^\/api\/v1\/problems\/([^/]+)\/timeline$/)
+      : null;
     const executionEventsMatch = request.method === "GET"
       ? path.match(/^\/api\/v1\/executions\/([^/]+)\/events$/)
       : null;
@@ -206,7 +209,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
       ? path.match(/^\/api\/v1\/attempts\/([^/]+)\/diff$/)
       : null;
 
-    if (!isProblemList && !problemMatch && !attemptHistoryMatch && !executionEventsMatch && !attemptSourceMatch && !attemptDiffMatch) {
+    if (!isProblemList && !problemMatch && !attemptHistoryMatch && !attemptTimelineMatch && !executionEventsMatch && !attemptSourceMatch && !attemptDiffMatch) {
       return errorResponse(
         "NOT_FOUND",
         "The requested API route does not exist.",
@@ -504,6 +507,90 @@ export function createApiHandler(dependencies: ApiDependencies) {
         return errorResponse(
           "INTERNAL_ERROR",
           "The saved source snapshot could not be loaded.",
+          500,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+    }
+
+    if (attemptTimelineMatch) {
+      if (!dependencies.evidenceRepository) {
+        return errorResponse(
+          "EVIDENCE_STORE_NOT_CONFIGURED",
+          "The coding journey is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      let slug: string;
+      try {
+        slug = decodeURIComponent(attemptTimelineMatch[1] ?? "");
+      } catch {
+        slug = "";
+      }
+      if (!isValidSlug(slug)) {
+        return errorResponse(
+          "INVALID_PROBLEM_ID",
+          "The problem identifier is invalid.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const rawLimit = url.searchParams.get("limit");
+      const limit = rawLimit === null ? 30 : Number(rawLimit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        return errorResponse(
+          "INVALID_LIMIT",
+          "The limit must be an integer between 1 and 100.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      try {
+        const timeline = await dependencies.evidenceRepository.listProblemAttemptTimeline(
+          principal.tenantId,
+          principal.userId,
+          slug,
+          limit,
+        );
+        return jsonResponse(
+          { data: timeline, meta: { count: timeline.length, limit } },
+          200,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      } catch (error) {
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse(
+            "DATABASE_UNAVAILABLE",
+            "The coding journey is temporarily unavailable.",
+            503,
+            true,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        console.error("execution_timeline_read_failed", { correlationId: requestId });
+        return errorResponse(
+          "INTERNAL_ERROR",
+          "The coding journey could not be loaded.",
           500,
           true,
           requestId,
