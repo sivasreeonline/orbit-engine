@@ -23,6 +23,7 @@ var (
 	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
 )
 
+const compileSuccessMarker = "__SKYHIGH_COMPILE_OK__\n"
 type DockerContainerState struct {
 	Status    string `json:"Status"`
 	ExitCode  int    `json:"ExitCode"`
@@ -234,13 +235,17 @@ func (sandbox *DockerSandbox) RunCase(
 	}
 
 	cleanupSucceeded := removeErr == nil && removeWorkspaceErr == nil
+	standardOutput := output.StdoutBytes()
+	compiled, standardOutput := removeCompileSuccessMarker(standardOutput)
 	observation := SandboxObservation{
-		StandardOutput:   output.StdoutBytes(),
+		StandardOutput:   standardOutput,
 		StandardError:    output.StderrBytes(),
 		ElapsedMillis:    elapsed.Milliseconds(),
 		CleanupSucceeded: cleanupSucceeded,
 	}
-
+	if compiled {
+		observation.CompilationStatus = CompilationSucceeded
+	}
 	if parent.Err() != nil {
 		return observation, parent.Err()
 	}
@@ -254,7 +259,6 @@ func (sandbox *DockerSandbox) RunCase(
 	}
 	if errors.Is(runContext.Err(), context.DeadlineExceeded) {
 		observation.Status = SandboxTimeLimit
-		observation.CompilationStatus = CompilationSucceeded
 		return observation, nil
 	}
 	if runContext.Err() != nil {
@@ -265,7 +269,6 @@ func (sandbox *DockerSandbox) RunCase(
 	}
 	if state.OOMKilled {
 		observation.Status = SandboxMemoryLimit
-		observation.CompilationStatus = CompilationSucceeded
 		return observation, nil
 	}
 
@@ -347,6 +350,14 @@ func dockerCreateArguments(request SandboxRequest, workspace string) ([]string, 
 	return args, nil
 }
 
+func removeCompileSuccessMarker(output []byte) (bool, []byte) {
+	marker := []byte(compileSuccessMarker)
+	if !bytes.HasPrefix(output, marker) {
+		return false, output
+	}
+	return true, append([]byte(nil), output[len(marker):]...)
+}
+
 func runtimeScript(language protocol.Language, runtimeVersion string) string {
 	// RuntimeVersion is validated against runtimeVersionPattern before this
 	// value enters the fixed shell program; student source is never interpolated.
@@ -360,6 +371,7 @@ func runtimeScript(language protocol.Language, runtimeVersion string) string {
 			"case \"$java_version\" in *'version \"" + runtimeVersion + "'*) ;; *) exit 87 ;; esac",
 			"mkdir -p /tmp/classes || exit 87",
 			"if javac -J-XX:MaxRAMPercentage=50 -proc:none -d /tmp/classes /workspace/Main.java; then",
+			"  printf '" + compileSuccessMarker + "'"
 			"  exec java -XX:MaxRAMPercentage=75 -Djava.io.tmpdir=/tmp -cp /tmp/classes Main",
 			"else",
 			"  exit 86",
@@ -372,6 +384,7 @@ func runtimeScript(language protocol.Language, runtimeVersion string) string {
 			"python_version=\"$(python3 --version 2>&1)\" || exit 87",
 			"case \"$python_version\" in 'Python " + runtimeVersion + "'*) ;; *) exit 87 ;; esac",
 			"python3 -I -B -c 'import pathlib; compile(pathlib.Path(\"/workspace/main.py\").read_bytes(), \"/workspace/main.py\", \"exec\")' || exit 86",
+			"printf '" + compileSuccessMarker + "'"
 			"exec python3 -I -B /workspace/main.py",
 		}, "\n")
 	default:
