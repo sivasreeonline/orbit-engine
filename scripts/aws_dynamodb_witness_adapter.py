@@ -605,6 +605,20 @@ def create_adapter() -> AWSDynamoDBWitnessAdapter:
 
 
 def self_test() -> None:
+    # Live mode must remain unavailable unless the exact operator opt-in is set.
+    previous_opt_in = os.environ.pop("FENCE_AWS_DDB_ENABLE_WRITES", None)
+    try:
+        try:
+            create_adapter()
+        except SystemExit as error:
+            _require("exact FENCE_AWS_DDB_ENABLE_WRITES opt-in" in str(error),
+                     "live factory rejected an unapproved call for an unexpected reason")
+        else:
+            raise AssertionError("live AWS factory opened without the explicit write opt-in")
+    finally:
+        if previous_opt_in is not None:
+            os.environ["FENCE_AWS_DDB_ENABLE_WRITES"] = previous_opt_in
+
     clients: list[FakeDynamoDBClient] = []
 
     def fresh_adapter() -> AWSDynamoDBWitnessAdapter:
