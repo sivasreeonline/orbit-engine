@@ -1,0 +1,177 @@
+{
+  "profile": "sky-high-fence-monitor-gossip-v1",
+  "testOnly": true,
+  "messages": [
+    {
+      "profile": "sky-high-fence-monitor-gossip-v1",
+      "sender": {
+        "monitorId": "monitor-a",
+        "keyId": "monitor-key-a"
+      },
+      "recipient": {
+        "monitorId": "monitor-b",
+        "keyId": "monitor-key-b"
+      },
+      "senderSequence": 1,
+      "issuedAt": "2026-11-12T00:00:00Z",
+      "expiresAt": "2026-11-12T00:05:00Z",
+      "nonce": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "scope": {
+        "trustDomain": "trust-domain-a",
+        "witnessId": "witness-a",
+        "authorityId": "authority-a",
+        "hostId": "host-a"
+      },
+      "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "messageType": "HEAD_ADVERTISEMENT",
+      "messageId": "10000000-0000-4000-8000-000000000001",
+      "body": {
+        "head": {
+          "profile": "sky-high-fence-witness-merkle-v1",
+          "scope": {
+            "trustDomain": "trust-domain-a",
+            "witnessId": "witness-a",
+            "authorityId": "authority-a",
+            "hostId": "host-a"
+          },
+          "generation": 6,
+          "rootHash": "6666666666666666666666666666666666666666666666666666666666666666",
+          "previousRootHash": "5555555555555555555555555555555555555555555555555555555555555555",
+          "timestamp": "2026-11-12T00:00:00Z",
+          "keyId": "witness-key-1",
+          "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        }
+      }
+    },
+    {
+      "profile": "sky-high-fence-monitor-gossip-v1",
+      "sender": {
+        "monitorId": "monitor-a",
+        "keyId": "monitor-key-a"
+      },
+      "recipient": {
+        "monitorId": "monitor-b",
+        "keyId": "monitor-key-b"
+      },
+      "senderSequence": 2,
+      "issuedAt": "2026-11-12T00:00:00Z",
+      "expiresAt": "2026-11-12T00:05:00Z",
+      "nonce": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "scope": {
+        "trustDomain": "trust-domain-a",
+        "witnessId": "witness-a",
+        "authorityId": "authority-a",
+        "hostId": "host-a"
+      },
+      "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "messageType": "CONSISTENCY_PROOF_REQUEST",
+      "messageId": "10000000-0000-4000-8000-000000000002",
+      "body": {
+        "fromHead": {
+          "generation": 6,
+          "rootHash": "6666666666666666666666666666666666666666666666666666666666666666"
+        },
+        "toHead": {
+          "generation": 7,
+          "rootHash": "7777777777777777777777777777777777777777777777777777777777777777"
+        },
+        "requestNonce": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+      }
+    },
+    {
+      "profile": "sky-high-fence-monitor-gossip-v1",
+      "sender": {
+        "monitorId": "monitor-a",
+        "keyId": "monitor-key-a"
+      },
+      "recipient": {
+        "monitorId": "monitor-b",
+        "keyId": "monitor-key-b"
+      },
+      "senderSequence": 3,
+      "issuedAt": "2026-11-12T00:00:00Z",
+      "expiresAt": "2026-11-12T00:05:00Z",
+      "nonce": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "scope": {
+        "trustDomain": "trust-domain-a",
+        "witnessId": "witness-a",
+        "authorityId": "authority-a",
+        "hostId": "host-a"
+      },
+      "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "messageType": "CONSISTENCY_PROOF_RESPONSE",
+      "messageId": "10000000-0000-4000-8000-000000000003",
+      "body": {
+        "fromHead": {
+          "generation": 6,
+          "rootHash": "6666666666666666666666666666666666666666666666666666666666666666"
+        },
+        "toHead": {
+          "generation": 7,
+          "rootHash": "7777777777777777777777777777777777777777777777777777777777777777"
+        },
+        "proofNodes": [
+          "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+        ],
+        "requestMessageId": "10000000-0000-4000-8000-000000000002",
+        "requestNonce": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+      }
+    },
+    {
+      "profile": "sky-high-fence-monitor-gossip-v1",
+      "sender": {
+        "monitorId": "monitor-a",
+        "keyId": "monitor-key-a"
+      },
+      "recipient": {
+        "monitorId": "monitor-b",
+        "keyId": "monitor-key-b"
+      },
+      "senderSequence": 4,
+      "issuedAt": "2026-11-12T00:00:00Z",
+      "expiresAt": "2026-11-12T00:05:00Z",
+      "nonce": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "scope": {
+        "trustDomain": "trust-domain-a",
+        "witnessId": "witness-a",
+        "authorityId": "authority-a",
+        "hostId": "host-a"
+      },
+      "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "messageType": "EQUIVOCATION_ALERT",
+      "messageId": "10000000-0000-4000-8000-000000000004",
+      "body": {
+        "firstHead": {
+          "profile": "sky-high-fence-witness-merkle-v1",
+          "scope": {
+            "trustDomain": "trust-domain-a",
+            "witnessId": "witness-a",
+            "authorityId": "authority-a",
+            "hostId": "host-a"
+          },
+          "generation": 7,
+          "rootHash": "7777777777777777777777777777777777777777777777777777777777777777",
+          "previousRootHash": "6666666666666666666666666666666666666666666666666666666666666666",
+          "timestamp": "2026-11-12T00:00:00Z",
+          "keyId": "witness-key-1",
+          "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        },
+        "secondHead": {
+          "profile": "sky-high-fence-witness-merkle-v1",
+          "scope": {
+            "trustDomain": "trust-domain-a",
+            "witnessId": "witness-a",
+            "authorityId": "authority-a",
+            "hostId": "host-a"
+          },
+          "generation": 7,
+          "rootHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "previousRootHash": "6666666666666666666666666666666666666666666666666666666666666666",
+          "timestamp": "2026-11-12T00:00:00Z",
+          "keyId": "witness-key-1",
+          "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        }
+      }
+    }
+  ]
+}
