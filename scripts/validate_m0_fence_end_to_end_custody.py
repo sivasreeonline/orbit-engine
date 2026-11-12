@@ -132,13 +132,13 @@ def self_test() -> None:
         manifest_body["artifacts"] = []
         evidence_by_test = {}
 
-        def add_artifact(artifact_id: str, data: bytes, test_ids: list[str], request_ids: list[str]):
+        def add_artifact(artifact_id: str, data: bytes, test_ids: list[str], request_ids: list[str], artifact_type: str = "RAW_PROVIDER_EXCHANGE"):
             (artifact_root / artifact_id).write_bytes(data)
             artifact = copy.deepcopy(vector["manifestBody"]["artifacts"][0])
             artifact.update({
                 "artifactId": artifact_id,
                 "testIds": test_ids,
-                "artifactType": "RAW_PROVIDER_EXCHANGE",
+                "artifactType": artifact_type,
                 "objectRef": f"fixture://evidence/{artifact_id}",
                 "objectVersion": "immutable-v1",
                 "sha256": hashlib.sha256(data).hexdigest(),
@@ -202,7 +202,7 @@ def self_test() -> None:
         auth_bytes = b"synthetic audit authentication evidence"
         event_bytes = b"synthetic audit event for request-001"
         page_evidence = add_artifact("audit-page-0001.bin", page_bytes, ["WIT-012", "WIT-014"], ["request-001"])
-        auth_evidence = add_artifact("audit-auth-0001.bin", auth_bytes, ["WIT-012", "WIT-014"], ["request-001"])
+        auth_evidence = add_artifact("audit-auth-0001.bin", auth_bytes, ["WIT-012", "WIT-014"], ["request-001"], "CONTRACT_EVIDENCE")
         event_evidence = add_artifact("audit-event-0001.bin", event_bytes, ["WIT-012", "WIT-014"], ["request-001"])
 
         manifest_digest = hashlib.sha256(rfc8785.dumps(manifest_body)).hexdigest()
@@ -314,7 +314,7 @@ def self_test() -> None:
         if rejected_audit.returncode == 0 or "materialized manifest artifact bytes" not in rejected_audit.stdout:
             raise AssertionError("end-to-end gate did not reject tampered audit evidence bytes")
 
-        qualification_path = artifact_root / "qualification-001.bin"
+        qualification_path = artifact_root / "qualification-001"
         original_qualification_bytes = qualification_path.read_bytes()
         qualification_path.write_bytes(original_qualification_bytes + b"tamper")
         rejected_qualification = subprocess.run(
