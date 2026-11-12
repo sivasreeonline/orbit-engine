@@ -229,7 +229,9 @@ func (sandbox *DockerSandbox) RunCase(
 	removeErr := sandbox.cli.Remove(cleanupContext, containerID)
 	cleanupCancel()
 	removeWorkspaceErr := os.RemoveAll(workspace)
-	cleanupWorkspace = false
+	if removeWorkspaceErr == nil {
+		cleanupWorkspace = false
+	}
 
 	cleanupSucceeded := removeErr == nil && removeWorkspaceErr == nil
 	observation := SandboxObservation{
@@ -293,8 +295,8 @@ func validateSandboxRequest(request SandboxRequest) error {
 		return protocol.ErrInvalidRequest
 	}
 	expectedName := sourceFileName(request.Language)
-	if request.SourceName != expectedName || len(request.SourceBytes) == 0 ||
-		len(request.SourceBytes) > maximumSourceBytes {
+	if request.SourceName != expectedName || !runtimeVersionPattern.MatchString(request.RuntimeVersion) ||
+		len(request.SourceBytes) == 0 || len(request.SourceBytes) > maximumSourceBytes {
 		return protocol.ErrInvalidRequest
 	}
 	return validateExecutionLimits(request.Limits)
@@ -305,7 +307,8 @@ func containerSafeID(value string) bool {
 }
 
 func dockerCreateArguments(request SandboxRequest, workspace string) ([]string, error) {
-	if !imageReferencePattern.MatchString(request.ImageRef) {
+	if !imageReferencePattern.MatchString(request.ImageRef) ||
+		strings.ContainsAny(workspace, ",\r\n") {
 		return nil, ErrInvalidRuntimeConfig
 	}
 	cpuValue := strconv.FormatFloat(float64(request.Limits.CPUQuotaMillis)/1000, 'f', 3, 64)
@@ -316,7 +319,7 @@ func dockerCreateArguments(request SandboxRequest, workspace string) ([]string, 
 		tmpfsSize = "16m"
 	}
 
-	script := runtimeScript(request.Language)
+	script := runtimeScript(request.Language, request.RuntimeVersion)
 	args := []string{
 		"--runtime=runsc",
 		"--network=none",
@@ -332,6 +335,7 @@ func dockerCreateArguments(request SandboxRequest, workspace string) ([]string, 
 		"--user=65532:65532",
 		"--ulimit", "core=0:0",
 		"--interactive",
+		"--env=HOME=/tmp",
 		"--mount", "type=bind,src=" + workspace + ",dst=/workspace,readonly",
 		"--workdir=/workspace",
 		"--label", "com.skyhigh.execution-id=" + request.ExecutionID,
@@ -343,13 +347,17 @@ func dockerCreateArguments(request SandboxRequest, workspace string) ([]string, 
 	return args, nil
 }
 
-func runtimeScript(language protocol.Language) string {
+func runtimeScript(language protocol.Language, runtimeVersion string) string {
+	// RuntimeVersion is validated against runtimeVersionPattern before this
+	// value enters the fixed shell program; student source is never interpolated.
 	switch language {
 	case protocol.LanguageJava:
 		return strings.Join([]string{
 			"set -eu",
 			"command -v javac >/dev/null 2>&1 || exit 87",
 			"command -v java >/dev/null 2>&1 || exit 87",
+			"java_version=\"$(java -version 2>&1)\" || exit 87",
+			"case \"$java_version\" in *'version \"" + runtimeVersion + "'*) ;; *) exit 87 ;; esac",
 			"mkdir -p /tmp/classes || exit 87",
 			"if javac -J-XX:MaxRAMPercentage=50 -proc:none -d /tmp/classes /workspace/Main.java; then",
 			"  exec java -XX:MaxRAMPercentage=75 -Djava.io.tmpdir=/tmp -cp /tmp/classes Main",
