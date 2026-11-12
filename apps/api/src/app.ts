@@ -1,10 +1,17 @@
 import type { Authenticator, ProblemRepository } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
+import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+
+type ExecutionEvidenceReadRepository = Pick<
+  PostgresExecutionEvidenceRepository,
+  "listProblemAttemptHistory" | "listExecutionEvents"
+>;
 import type { Env } from "./env";
 
 interface ApiDependencies {
   readonly authenticator: Authenticator;
   readonly repository: ProblemRepository;
+  readonly evidenceRepository?: ExecutionEvidenceReadRepository;
   readonly allowedOrigins?: string;
 }
 
@@ -166,8 +173,14 @@ export function createApiHandler(dependencies: ApiDependencies) {
     const problemMatch = request.method === "GET"
       ? path.match(/^\/api\/v1\/problems\/([^/]+)$/)
       : null;
+    const attemptHistoryMatch = request.method === "GET"
+      ? path.match(/^\/api\/v1\/problems\/([^/]+)\/attempts$/)
+      : null;
+    const executionEventsMatch = request.method === "GET"
+      ? path.match(/^\/api\/v1\/executions\/([^/]+)\/events$/)
+      : null;
 
-    if (!isProblemList && !problemMatch) {
+    if (!isProblemList && !problemMatch && !attemptHistoryMatch && !executionEventsMatch) {
       return errorResponse(
         "NOT_FOUND",
         "The requested API route does not exist.",
@@ -229,6 +242,167 @@ export function createApiHandler(dependencies: ApiDependencies) {
         origin,
         allowedOrigins,
       );
+    }
+
+    if (attemptHistoryMatch) {
+      if (!dependencies.evidenceRepository) {
+        return errorResponse(
+          "EVIDENCE_STORE_NOT_CONFIGURED",
+          "Execution history is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      let slug: string;
+      try {
+        slug = decodeURIComponent(attemptHistoryMatch[1] ?? "");
+      } catch {
+        return errorResponse(
+          "INVALID_PROBLEM_ID",
+          "The problem identifier is invalid.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+      if (!isValidSlug(slug)) {
+        return errorResponse(
+          "INVALID_PROBLEM_ID",
+          "The problem identifier is invalid.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const rawLimit = url.searchParams.get("limit");
+      const limit = rawLimit === null ? 30 : Number(rawLimit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        return errorResponse(
+          "INVALID_LIMIT",
+          "The limit must be an integer between 1 and 100.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      try {
+        const attempts = await dependencies.evidenceRepository.listProblemAttemptHistory(
+          principal.tenantId,
+          principal.userId,
+          slug,
+          limit,
+        );
+        return jsonResponse(
+          { data: attempts, meta: { count: attempts.length, limit } },
+          200,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      } catch (error) {
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse(
+            "DATABASE_UNAVAILABLE",
+            "Execution history is temporarily unavailable.",
+            503,
+            true,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        console.error("execution_history_read_failed", { correlationId: requestId });
+        return errorResponse(
+          "INTERNAL_ERROR",
+          "Execution history could not be loaded.",
+          500,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+    }
+
+    if (executionEventsMatch) {
+      if (!dependencies.evidenceRepository) {
+        return errorResponse(
+          "EVIDENCE_STORE_NOT_CONFIGURED",
+          "Execution details are temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      let executionId: string;
+      try {
+        executionId = decodeURIComponent(executionEventsMatch[1] ?? "");
+      } catch {
+        executionId = "";
+      }
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(executionId)) {
+        return errorResponse(
+          "INVALID_EXECUTION_ID",
+          "The execution identifier is invalid.",
+          400,
+          false,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      try {
+        const events = await dependencies.evidenceRepository.listExecutionEvents(
+          principal.tenantId,
+          principal.userId,
+          executionId,
+        );
+        return jsonResponse(
+          { data: events, meta: { count: events.length } },
+          200,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      } catch (error) {
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse(
+            "DATABASE_UNAVAILABLE",
+            "Execution details are temporarily unavailable.",
+            503,
+            true,
+            requestId,
+            origin,
+            allowedOrigins,
+          );
+        }
+        console.error("execution_events_read_failed", { correlationId: requestId });
+        return errorResponse(
+          "INTERNAL_ERROR",
+          "Execution details could not be loaded.",
+          500,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
     }
 
     if (isProblemList) {

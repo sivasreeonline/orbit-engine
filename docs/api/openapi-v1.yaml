@@ -23,6 +23,36 @@ paths:
       responses:
         "200": { description: Problem details }
         "404": { description: Not found }
+  /problems/{problemId}/attempts:
+    get:
+      summary: Get the authenticated student's immutable attempts for a problem
+      parameters:
+        - in: path
+          name: problemId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200": { description: Owner-scoped attempt history; source bytes and hidden tests are excluded }
+        "400": { description: Invalid problem identifier or limit }
+        "401": { description: Authentication required }
+        "503": { description: Evidence store unavailable }
+  /executions/{executionId}/events:
+    get:
+      summary: Get the authenticated student's append-only lifecycle events for an execution
+      parameters:
+        - in: path
+          name: executionId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Owner-scoped execution evidence events }
+        "400": { description: Invalid execution identifier }
+        "401": { description: Authentication required }
+        "503": { description: Evidence store unavailable }
   /problems/{problemId}/runs:
     post:
       summary: Create a Run attempt using public tests
