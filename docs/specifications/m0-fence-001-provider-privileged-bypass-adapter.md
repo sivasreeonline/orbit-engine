@@ -19,7 +19,7 @@ External mode refuses to call the adapter unless all of the following hold:
 - `FENCE_QUALIFICATION_RUN_ID` is a safe unique run identifier.
 - `FENCE_PROVIDER_PRIVILEGED_BYPASS_FACTORY` names the provider adapter factory.
 - `--output-dir` points to a new or empty restricted evidence directory.
-- The adapter's provider-native preflight reports environment `QUALIFICATION`, `production=false`, a disposable account, approved destructive-test window and unexpired approval.
+- The adapter's provider-native preflight reports environment `QUALIFICATION`, `production=false`, a disposable account, a non-empty approval ID, an approval explicitly bound to the same qualification run ID, an approved destructive-test window and unexpired approval.
 - Storage administrator, account owner, organization administrator, recovery administrator and independent verifier are distinct principals.
 - The adapter creates a disposable retained target bound to the pinned account and run ID, with compliance retention extending at least seven days from the run start.
 
