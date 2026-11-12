@@ -55,7 +55,7 @@ All requests use `credentials: "include"` and `Cache-Control: no-store`. The API
 
 For local development, the Vite server proxies `/api` to Wrangler at `http://127.0.0.1:8787`. Start the API Worker separately before using History. Copy `.env.example` to `.env.local` only when you need to set `VITE_API_BASE_URL` to a deployed API origin. A cross-origin deployment must configure credentialed CORS and the identity provider correctly.
 
-The current API authenticator is not yet connected to a real identity provider. Until that is configured, the history view will show the API's authentication/configuration response rather than fabricated student records.
+The current API authenticator is not yet connected to a real identity provider, and the local Wrangler configuration still has placeholder database bindings. Until those are configured, the history view will show the API's authentication/configuration response rather than fabricated student records. The timeline UI and read-only source/diff flows are implemented, but end-to-end student-session verification remains blocked on identity and database configuration.
 
 ## Deployment
 
