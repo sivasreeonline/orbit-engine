@@ -148,6 +148,9 @@ jobs:
       - name: Verify FENCE-001 audit provenance binding generator
         run: python ../../scripts/create_m0_fence_audit_provenance_binding.py --self-test
 
+      - name: Verify FENCE-001 end-to-end evidence custody gate
+        run: python ../../scripts/validate_m0_fence_end_to_end_custody.py --self-test
+
       - name: Verify FENCE-001 restore and witness reconciliation reference model
         run: python ../../scripts/validate_m0_witness_restore_reconciliation_model.py
 
