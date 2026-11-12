@@ -17,7 +17,6 @@ const actorUserId = "20000000-0000-4000-8000-000000000001";
 const attemptId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
 const sourceCode = "public class Main { }";
 const sourceBytes = new TextEncoder().encode(sourceCode);
-const sourceHash = "e7c5c2d8c4b35b7d7b5b7a4c2f1b2e3c4d5e6f708192a3b4c5d6e7f8091a2b3c";
 
 async function digest(value: Uint8Array): Promise<string> {
   const result = await crypto.subtle.digest("SHA-256", value);
