@@ -245,23 +245,29 @@ class AWSDynamoDBWitnessAdapter:
     ) -> None:
         _require(type(expected_generation) is int and 0 <= expected_generation <= MAX_SAFE_INTEGER,
                  "expected_generation must be a non-negative safe integer")
+        _require(type(value.generation) is int and 1 <= value.generation <= MAX_SAFE_INTEGER,
+                 "checkpoint generation must be a positive safe integer")
         _require(value.generation == expected_generation + 1,
                  "checkpoint generation must advance exactly one")
         _require(value.previous_digest == expected_digest,
                  "checkpoint predecessor differs from expected digest")
-        _require(SHA256.fullmatch(expected_digest or "") is not None,
+        _require(isinstance(expected_digest, str) and SHA256.fullmatch(expected_digest) is not None,
                  "expected predecessor digest must be lowercase SHA-256")
-        _require(SHA256.fullmatch(value.checkpoint_digest or "") is not None,
+        _require(isinstance(value.checkpoint_digest, str)
+                 and SHA256.fullmatch(value.checkpoint_digest) is not None,
                  "checkpoint digest must be lowercase SHA-256")
-        _require(bool(value.operation_id.strip()), "operation ID is required")
-        _require(bool(idempotency_key.strip()), "idempotency key is required")
+        _require(isinstance(value.operation_id, str) and 1 <= len(value.operation_id) <= 256
+                 and bool(value.operation_id.strip()), "operation ID must be a non-empty string of at most 256 characters")
+        _require(isinstance(idempotency_key, str) and 1 <= len(idempotency_key) <= 256
+                 and bool(idempotency_key.strip()), "idempotency key must be a non-empty string of at most 256 characters")
         for name, field in (
             ("trust_domain_id", value.scope.trust_domain_id),
             ("witness_id", value.scope.witness_id),
             ("authority_id", value.scope.authority_id),
             ("host_id", value.scope.host_id),
         ):
-            _require(isinstance(field, str) and field.strip(), f"{name} is required")
+            _require(isinstance(field, str) and 1 <= len(field) <= 256 and field.strip(),
+                     f"{name} must be a non-empty string of at most 256 characters")
         _require(value.phase in {"ISSUED", "ACCEPTED", "REVOKED"},
                  "unsupported witness checkpoint phase")
 
@@ -523,10 +529,16 @@ def _load_approval(config: dict[str, str]) -> None:
     expires = _parse_timestamp(approval.get("expiresAt"), "approval expiresAt")
     _require(issued <= now + MAX_FUTURE_SKEW, "AWS witness approval issue time is in the future")
     _require(expires > now and issued < expires, "AWS witness approval is expired or has an empty validity window")
+    _require(expires - issued <= timedelta(hours=8),
+             "AWS witness approval validity window must not exceed eight hours")
     _require(report.get("result") == "READY_FOR_READ_ONLY_AWS_ADAPTER_IMPLEMENTATION",
              "read-only AWS preflight report is not ready")
+    _require(report.get("qualificationRunId") == config["runId"],
+             "read-only AWS preflight run ID differs from approval")
     _require(report.get("accountId") == config["accountId"] and report.get("region") == config["region"],
              "read-only AWS preflight account/Region differs from approval")
+    _require(report.get("readOnlyInspection") is True,
+             "AWS preflight report is not marked as read-only inspection")
     _require(report.get("resourcePins", {}).get("dynamodbTableArn") == config["tableArn"],
              "read-only AWS preflight table ARN differs from approval")
     _require(report.get("resourceMutationsPerformed") is False
@@ -593,20 +605,31 @@ def create_adapter() -> AWSDynamoDBWitnessAdapter:
 
 
 def self_test() -> None:
-    fake = FakeDynamoDBClient()
-    adapter = AWSDynamoDBWitnessAdapter(fake, "fence-witness-fixture")
-    results = run_conformance(lambda: AWSDynamoDBWitnessAdapter(fake, "fence-witness-fixture"))
+    clients: list[FakeDynamoDBClient] = []
+
+    def fresh_adapter() -> AWSDynamoDBWitnessAdapter:
+        client = FakeDynamoDBClient()
+        clients.append(client)
+        return AWSDynamoDBWitnessAdapter(client, "fence-witness-fixture")
+
+    results = run_conformance(fresh_adapter)
     failed = [item for item in results if not item.passed]
     for item in results:
         print(f"{'PASS' if item.passed else 'FAIL'} AWS DynamoDB witness {item.name}: {item.detail}")
     _require(not failed, f"{len(failed)} AWS DynamoDB adapter contract tests failed")
-    _require(set(fake.calls).issubset({"GetItem", "TransactWriteItems"}),
-             "fake DynamoDB client observed an unexpected operation")
-    _require(fake.calls.count("TransactWriteItems") > 0, "no atomic DynamoDB transaction was exercised")
-    _require(fake.calls.count("GetItem") > 0, "no strongly consistent DynamoDB read was exercised")
+    _require(bool(clients), "conformance suite did not create a DynamoDB API fixture")
+    for fake in clients:
+        _require(set(fake.calls).issubset({"GetItem", "TransactWriteItems"}),
+                 "fake DynamoDB client observed an unexpected operation")
+        _require(fake.calls.count("TransactWriteItems") > 0,
+                 "a conformance case did not exercise an atomic DynamoDB transaction")
+        _require(fake.calls.count("GetItem") > 0,
+                 "a conformance case did not exercise a strongly consistent DynamoDB read")
 
     # A second independent adapter object must recover the same durable
     # operation from the idempotency index, without issuing another transaction.
+    durable_fake = FakeDynamoDBClient()
+    adapter = AWSDynamoDBWitnessAdapter(durable_fake, "fence-witness-fixture")
     from validate_m0_fence_provider_adapter_conformance import ZERO_DIGEST
     sample = Checkpoint(Scope("domain-x", "witness-x", "authority-x", "host-x"),
                         1, "durable-op", "ISSUED", "a" * 64, ZERO_DIGEST)
@@ -614,16 +637,16 @@ def self_test() -> None:
         sample, expected_generation=0, expected_digest=ZERO_DIGEST,
         idempotency_key="long-lived-idempotency-key",
     )
-    transaction_count = fake.calls.count("TransactWriteItems")
-    second_adapter = AWSDynamoDBWitnessAdapter(fake, "fence-witness-fixture")
+    transaction_count = durable_fake.calls.count("TransactWriteItems")
+    second_adapter = AWSDynamoDBWitnessAdapter(durable_fake, "fence-witness-fixture")
     second = second_adapter.append_if_current(
         sample, expected_generation=0, expected_digest=ZERO_DIGEST,
         idempotency_key="long-lived-idempotency-key",
     )
     _require(first == second, "durable idempotency recovery returned a different receipt")
-    _require(fake.calls.count("TransactWriteItems") == transaction_count,
+    _require(durable_fake.calls.count("TransactWriteItems") == transaction_count,
              "durable idempotency retry issued another transaction")
-    idem_record = fake.items[(_scope_partition(sample.scope), "IDEMP#" + _key_digest("long-lived-idempotency-key"))]
+    idem_record = durable_fake.items[(_scope_partition(sample.scope), "IDEMP#" + _key_digest("long-lived-idempotency-key"))]
     _require("ttl" not in idem_record and "expiresAt" not in idem_record,
              "durable idempotency record must not expire automatically")
 
