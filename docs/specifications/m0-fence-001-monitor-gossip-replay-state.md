@@ -32,6 +32,6 @@ A consistency-proof request creates one outstanding request ID and a fresh nonce
 
 ## Validation boundary
 
-`scripts/validate_m0_monitor_gossip_replay_state.py` models the receiver policy and exercises 25 cases. Signature verification, trusted time, scope authorization, durable transactions, cross-process concurrency, authenticated transport and proof verification are inputs or external dependencies. The model's dictionaries are in-memory fixtures, not production persistence.
+`scripts/validate_m0_monitor_gossip_replay_state.py` models the receiver policy and exercises 27 cases. Signature verification, trusted time, scope authorization, durable transactions, cross-process concurrency, authenticated transport and proof verification are inputs or external dependencies. The model's dictionaries are in-memory fixtures, not production persistence.
 
 The real implementation must commit replay-state changes atomically with message acceptance, serialize concurrent messages from one sender, and ensure a crash cannot apply a side effect without its deduplication record or consume a nonce without recording the response. Production approval also requires restore/failover tests against the independently protected high-water store.
