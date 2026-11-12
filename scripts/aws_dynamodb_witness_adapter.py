@@ -247,10 +247,10 @@ class AWSDynamoDBWitnessAdapter:
                  "expected_generation must be a non-negative safe integer")
         _require(type(value.generation) is int and 1 <= value.generation <= MAX_SAFE_INTEGER,
                  "checkpoint generation must be a positive safe integer")
-        _require(value.generation == expected_generation + 1,
-                 "checkpoint generation must advance exactly one")
-        _require(value.previous_digest == expected_digest,
-                 "checkpoint predecessor differs from expected digest")
+        if value.generation != expected_generation + 1:
+            raise AppendConflict("checkpoint generation must advance exactly one")
+        if value.previous_digest != expected_digest:
+            raise AppendConflict("checkpoint predecessor differs from expected digest")
         _require(isinstance(expected_digest, str) and SHA256.fullmatch(expected_digest) is not None,
                  "expected predecessor digest must be lowercase SHA-256")
         _require(isinstance(value.checkpoint_digest, str)
