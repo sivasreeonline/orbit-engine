@@ -8,6 +8,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -84,6 +85,115 @@ def verify_binding_signatures(envelope: dict[str, Any], trusted_keys: list[dict[
     return digest
 
 
+def validate_audit_report(
+    report: dict[str, Any], expected_provider: dict[str, str], verifier_identity: str
+) -> None:
+    """Validate the authenticated audit report's internal stream structure."""
+    if report.get("profile") != "sky-high-fence-provider-audit-provenance-v1":
+        raise ValueError("unsupported provider audit provenance report profile")
+    if report.get("testOnly") is not False:
+        raise ValueError("test-only audit provenance report cannot qualify external evidence")
+    if report.get("qualificationStatus") != "AUDIT_STREAM_AUTHENTICATED_AND_REQUESTS_CORRELATED":
+        raise ValueError("audit provenance report is not a completed authenticated run")
+    if report.get("providerIdentity") != expected_provider:
+        raise ValueError("audit provenance provider identity differs from the signed manifest")
+    if report.get("independentVerifierPrincipalId") != verifier_identity:
+        raise ValueError("audit provenance verifier identity differs from the signed manifest")
+
+    def nonempty(value: Any) -> bool:
+        return isinstance(value, str) and bool(value.strip())
+
+    def safe_artifact(value: Any) -> bool:
+        return (
+            isinstance(value, str) and 1 <= len(value) <= 256
+            and value not in {".", ".."}
+            and all(character.isalnum() or character in "._-" for character in value)
+        )
+
+    def valid_digest(value: Any) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+    trust_root = report.get("pinnedTrustRoot")
+    if not isinstance(trust_root, dict) or not nonempty(trust_root.get("id")) or not valid_digest(trust_root.get("sha256")):
+        raise ValueError("audit report pinned trust-root identity or digest is missing or malformed")
+    root_id = trust_root["id"]
+    root_digest = trust_root["sha256"]
+
+    pages = report.get("pages")
+    events = report.get("events")
+    if not isinstance(pages, list) or not pages or not isinstance(events, list) or not events:
+        raise ValueError("authenticated audit report must contain non-empty page and event arrays")
+    initial_cursor = report.get("initialCursor")
+    final_cursor = report.get("finalCursor")
+    if not nonempty(initial_cursor) or not nonempty(final_cursor):
+        raise ValueError("audit report initial/final cursor is missing")
+    cursor = initial_cursor
+    artifact_names: set[str] = set()
+
+    for index, page in enumerate(pages, start=1):
+        if not isinstance(page, dict):
+            raise ValueError("audit page record must be an object")
+        if type(page.get("page")) is not int or page["page"] != index:
+            raise ValueError("audit page numbering must be contiguous and ordered from one")
+        if page.get("cursorStart") != cursor:
+            raise ValueError("audit cursor gap, replay or out-of-order page detected in signed report")
+        cursor_end = page.get("cursorEnd")
+        if not nonempty(cursor_end) or cursor_end == cursor:
+            raise ValueError("audit page cursor must advance")
+        cursor = cursor_end
+        if page.get("authenticationMethod") not in {
+            "PROVIDER_SIGNED_AUDIT_ENVELOPE", "AUTHENTICATED_AUDIT_API_RESPONSE"
+        }:
+            raise ValueError("audit page authentication method is unsupported")
+        if page.get("trustRootId") != root_id or page.get("trustRootSha256") != root_digest:
+            raise ValueError("audit page trust root differs from the report's pinned trust root")
+        if not nonempty(page.get("authenticatedServicePrincipalId")):
+            raise ValueError("audit page authenticated service principal is missing")
+        for artifact_field, digest_field, count_field in (
+            ("rawResponseArtifact", "rawResponseSha256", "rawResponseByteCount"),
+            ("authenticationEvidenceArtifact", "authenticationEvidenceSha256", "authenticationEvidenceByteCount"),
+        ):
+            artifact_name = page.get(artifact_field)
+            if not safe_artifact(artifact_name) or artifact_name in artifact_names:
+                raise ValueError("audit report contains an unsafe or duplicate source artifact name")
+            artifact_names.add(artifact_name)
+            if not valid_digest(page.get(digest_field)):
+                raise ValueError("audit page artifact digest is malformed")
+            count = page.get(count_field)
+            if type(count) is not int or count < 1:
+                raise ValueError("audit page artifact byte count must be a positive integer")
+    if cursor != final_cursor:
+        raise ValueError("audit report final cursor does not match the last page cursor")
+
+    seen_event_ids: set[str] = set()
+    for index, event in enumerate(events, start=1):
+        if not isinstance(event, dict):
+            raise ValueError("audit event record must be an object")
+        event_id = event.get("eventId")
+        request_id = event.get("providerRequestId")
+        if not nonempty(event_id) or event_id in seen_event_ids:
+            raise ValueError("audit report contains a missing or duplicate provider event ID")
+        seen_event_ids.add(event_id)
+        if not nonempty(request_id):
+            raise ValueError("audit event provider request ID is missing")
+        if type(event.get("sequence")) is not int or event["sequence"] != index:
+            raise ValueError("provider audit event sequence must be contiguous and ordered from one")
+        artifact_name = event.get("artifact")
+        if not safe_artifact(artifact_name) or artifact_name in artifact_names:
+            raise ValueError("audit report contains an unsafe or duplicate source artifact name")
+        artifact_names.add(artifact_name)
+        if not valid_digest(event.get("sha256")):
+            raise ValueError("audit event artifact digest is malformed")
+        count = event.get("byteCount")
+        if type(count) is not int or count < 1:
+            raise ValueError("audit event artifact byte count must be a positive integer")
+
+    if type(report.get("eventCount")) is not int or report["eventCount"] != len(events):
+        raise ValueError("audit report eventCount does not match its event inventory")
+    if not isinstance(report.get("limitations"), list) or not report["limitations"]:
+        raise ValueError("audit report must retain explicit qualification limitations")
+
+
 def validate_binding(
     manifest_envelope: dict[str, Any], manifest_keys: list[dict[str, str]],
     report: dict[str, Any], binding: dict[str, Any], binding_keys: list[dict[str, str]],
@@ -114,6 +224,7 @@ def validate_binding(
     )
     if report.get("independentVerifierPrincipalId") != verifier_identity:
         raise ValueError("audit provenance report verifier does not match signed manifest verifier")
+    validate_audit_report(report, expected_provider, verifier_identity)
     if body["independentVerifierIdentity"] != verifier_identity:
         raise ValueError("audit provenance verifier does not match evidence-manifest verifier")
     manifest_artifacts = {item["artifactId"]: item for item in manifest_envelope["manifestBody"]["artifacts"]}
