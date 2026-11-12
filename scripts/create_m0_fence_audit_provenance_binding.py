@@ -204,7 +204,7 @@ def self_test() -> None:
             body["artifacts"].append(artifact)
 
         manifest_digest = sha(rfc8785.dumps(body))
-        manifest_prefix = b"SKYHIGH-FENCE-001-EVIDENCE-MANIFEST-V1\\x00"
+        manifest_prefix = b"SKYHIGH-FENCE-001-EVIDENCE-MANIFEST-V1\x00"
         manifest_attestations = []
         for role, identity, private, trusted in (
             ("COLLECTOR", "collector-fixture", collector_private, collector_trust),
