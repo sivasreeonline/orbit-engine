@@ -252,6 +252,7 @@ describe("PostgresExecutionEvidenceRepository", () => {
       25,
     ]);
     expect(query?.text).toContain("ea.tenant_id = $1::uuid AND ea.actor_user_id = $2::uuid");
+    expect(query?.text).toContain("ee.execution_id = ej.id AND ee.attempt_id = ea.id");
     expect(query?.text).toContain("ee.tenant_id = ea.tenant_id AND ee.actor_user_id = ea.actor_user_id");
     expect(query?.text).toContain("ORDER BY ee.sequence_id");
     expect(fake.ended()).toBe(true);
