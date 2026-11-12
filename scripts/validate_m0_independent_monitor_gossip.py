@@ -287,7 +287,14 @@ def main() -> None:
     expect("single monitor", base[:1], Outcome.BLOCKED)
     expect(
         "same-generation validly signed fork",
-        [base[0], replace(base[1], head=head(6, "a" * 64))],
+        [
+            base[0],
+            replace(
+                base[1],
+                head=head(6, "a" * 64),
+                protected_digest="a" * 64,
+            ),
+        ],
         Outcome.QUARANTINE,
         reason="conflicting heads",
     )
