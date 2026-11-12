@@ -361,3 +361,76 @@ func TestBoundedOutputCombinesStreamsAndCancelsOnOverflow(t *testing.T) {
 		t.Fatalf("captured %d bytes above the configured limit", bytes)
 	}
 }
+
+func TestRuntimeScriptsVerifyPinnedVersionsAndExposeCompileBoundary(t *testing.T) {
+	t.Parallel()
+
+	javaScript := runtimeScript(protocol.LanguageJava, "25")
+	for _, expected := range []string{
+		"java -version",
+		"javac ",
+		" -proc:none ",
+		"printf '",
+		"exec java ",
+	} {
+		if !strings.Contains(javaScript, expected) {
+			t.Errorf("Java runtime script missing %q: %s", expected, javaScript)
+		}
+	}
+	if strings.Index(javaScript, "printf '") > strings.Index(javaScript, "exec java ") {
+		t.Fatal("Java compile marker must be emitted before the program starts")
+	}
+
+	pythonScript := runtimeScript(protocol.LanguagePython, "3.14")
+	for _, expected := range []string{
+		"python3 --version",
+		"python3 -I -B -c",
+		"printf '",
+		"exec python3 -I -B /workspace/main.py",
+	} {
+		if !strings.Contains(pythonScript, expected) {
+			t.Errorf("Python runtime script missing %q: %s", expected, pythonScript)
+		}
+	}
+	if strings.Index(pythonScript, "printf '") > strings.Index(pythonScript, "exec python3 -I -B /workspace/main.py") {
+		t.Fatal("Python compile marker must be emitted before the program starts")
+	}
+	if strings.Contains(javaScript, "source bytes") || strings.Contains(pythonScript, "source bytes") {
+		t.Fatal("fixed runtime wrapper must not interpolate student source into shell text")
+	}
+}
+
+func TestCompileMarkerIsRemovedWithoutChangingProgramOutput(t *testing.T) {
+	t.Parallel()
+
+	output := []byte(compileSuccessMarker + "student output\n")
+	compiled, cleaned := removeCompileSuccessMarker(output)
+	if !compiled {
+		t.Fatal("compile marker was not recognized")
+	}
+	if string(cleaned) != "student output\n" {
+		t.Fatalf("cleaned output = %q, want student output", cleaned)
+	}
+
+	plain := []byte("student output\n")
+	compiled, cleaned = removeCompileSuccessMarker(plain)
+	if compiled || string(cleaned) != string(plain) {
+		t.Fatalf("ordinary output changed: compiled=%v output=%q", compiled, cleaned)
+	}
+}
+
+func TestSandboxRejectsUntrustedRuntimeAndImageTokens(t *testing.T) {
+	t.Parallel()
+
+	request := dockerSandboxTestRequest()
+	request.RuntimeVersion = "25; touch /tmp/injected"
+	if err := validateSandboxRequest(request); err == nil {
+		t.Fatal("runtime version accepted shell metacharacters")
+	}
+
+	request = dockerSandboxTestRequest()
+	request.ImageRef = "--privileged@sha256:" + strings.Repeat("a", 64)
+	if _, err := dockerCreateArguments(request, filepath.Join(t.TempDir(), "workspace")); err == nil {
+		t.Fatal("flag-like image reference was accepted")
+	}
+}
