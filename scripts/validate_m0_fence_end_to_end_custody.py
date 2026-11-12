@@ -314,7 +314,7 @@ def self_test() -> None:
         if rejected_audit.returncode == 0 or "materialized manifest artifact bytes" not in rejected_audit.stdout:
             raise AssertionError("end-to-end gate did not reject tampered audit evidence bytes")
 
-        qualification_path = artifact_root / "qualification-001"
+        qualification_path = artifact_root / "qualification-001.bin"
         original_qualification_bytes = qualification_path.read_bytes()
         qualification_path.write_bytes(original_qualification_bytes + b"tamper")
         rejected_qualification = subprocess.run(
