@@ -81,6 +81,10 @@ def validate_manifest(
         require(hashlib.sha256(public_key).hexdigest() == key_id, "trusted key fingerprint mismatch")
         key_map[key_id] = {**item, "rawPublicKey": public_key.hex()}
 
+    artifacts = body["artifacts"]
+    artifact_ids = [item["artifactId"] for item in artifacts]
+    require(len(artifact_ids) == len(set(artifact_ids)), "artifact IDs must be unique")
+
     attestations = envelope["attestations"]
     roles = [item["role"] for item in attestations]
     require(sorted(roles) == ["COLLECTOR", "INDEPENDENT_VERIFIER"], "exactly one collector and one independent verifier attestation are required")
@@ -111,9 +115,6 @@ def validate_manifest(
             raise ValueError("manifest attestation signature verification failed") from error
         role_identity[attestation["role"]] = attestation["signerIdentity"]
 
-    artifacts = body["artifacts"]
-    artifact_ids = [item["artifactId"] for item in artifacts]
-    require(len(artifact_ids) == len(set(artifact_ids)), "artifact IDs must be unique")
     provider = body["providerScope"]
     adapter = body["adapter"]
     require(bool(provider["name"] and provider["account"] and provider["region"] and provider["service"]), "provider scope must be complete")
