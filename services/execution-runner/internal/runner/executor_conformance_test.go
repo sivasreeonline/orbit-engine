@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
 )
@@ -49,6 +50,7 @@ func conformanceRequest(action protocol.Action, source []byte) protocol.Executio
 	digest := sha256.Sum256(source)
 	return protocol.ExecutionRequest{
 		ProtocolVersion:  "v1",
+		RequestID:        "request_evidence_1",
 		ExecutionID:      "exec_evidence_1",
 		AttemptID:        "attempt_evidence_1",
 		ProblemVersionID: "problem_v1",
@@ -57,7 +59,11 @@ func conformanceRequest(action protocol.Action, source []byte) protocol.Executio
 		RuntimeVersion:   "25",
 		SourceArtifactID: "source_1",
 		SourceSHA256:     hex.EncodeToString(digest[:]),
+		SourceByteLength: int64(len(source)),
 		TestBundleID:     "bundle_1",
+		TraceID:          "trace_evidence_1",
+		IssuedAt:         time.Now().UTC().Add(-time.Second),
+		ExpiresAt:        time.Now().UTC().Add(time.Minute),
 		Limits: protocol.ResourceLimits{
 			CPUQuotaMillis: 1000,
 			MemoryBytes:    256 * 1024 * 1024,
