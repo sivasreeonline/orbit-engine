@@ -16,6 +16,7 @@ on:
     paths:
       - "apps/web/**"
       - "apps/api/**"
+      - "services/execution-runner/**"
       - "docs/**"
       - ".github/workflows/**"
       - "AGENTS.md"
