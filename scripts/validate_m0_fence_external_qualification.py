@@ -113,9 +113,8 @@ def validate_trust_keys(trust_document: dict[str, Any]) -> dict[str, dict[str, A
     public_key_bytes: set[bytes] = set()
     for record in records:
         role = record["role"]
-        require(role in EXPECTED_ATTESTATIONS.values()[0] if False else role in {
-            item[0] for item in EXPECTED_ATTESTATIONS.values()
-        }, "trust-key role is not authorized")
+        allowed_roles = {item[0] for item in EXPECTED_ATTESTATIONS.values()}
+        require(role in allowed_roles, "trust-key role is not authorized")
         require(role not in trusted, "duplicate trust-key role")
         signer = record["signerIdentity"]
         key_id = record["keyId"]
@@ -185,6 +184,7 @@ def verify_external_attestations(
         issued_at = parse_timestamp(body["issuedAt"], f"{name} issuedAt")
         expires_at = parse_timestamp(body["expiresAt"], f"{name} expiresAt")
         require(issued_at <= now + MAX_ISSUED_AT_FUTURE_SKEW, f"{name} attestation issue time is in the future")
+        require(issued_at < expires_at, f"{name} attestation expiry must follow its issue time")
         require(expires_at > now, f"{name} attestation has expired")
         require(expires_at <= approval_expiry, f"{name} attestation outlives the qualification approval")
         if name == "providerApproval":
