@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -321,7 +322,11 @@ class DynamoDBWitnessAdapter:
             return receipt
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code", "")
-            if code in {"InternalServerError", "ServiceUnavailable", "ThrottlingException", "RequestLimitExceeded"}:
+            if code in {
+                "InternalServerError", "ServiceUnavailable", "ThrottlingException",
+                "RequestLimitExceeded", "ProvisionedThroughputExceededException",
+                "TransactionInProgressException", "LimitExceededException",
+            }:
                 recovered = self._read_idempotency(scope, idempotency_hash)
                 if recovered is not None:
                     item = self._get(scope, f"IDEMP#{idempotency_hash}")
@@ -331,6 +336,10 @@ class DynamoDBWitnessAdapter:
                     return recovered_receipt
                 raise AmbiguousCommit(
                     "DynamoDB returned a transient service error; retry the exact checkpoint and idempotency key"
+                ) from exc
+            if code == "IdempotentParameterMismatchException":
+                raise IdempotencyConflict(
+                    "DynamoDB received the same transaction token with different request parameters"
                 ) from exc
             if code != "TransactionCanceledException":
                 raise
@@ -415,7 +424,6 @@ def create_adapter() -> DynamoDBWitnessAdapter:
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "local"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "local"),
         )
-        import time
         for attempt in range(40):
             try:
                 client.list_tables(Limit=1)
@@ -447,7 +455,10 @@ def create_adapter() -> DynamoDBWitnessAdapter:
     admission_enabled = os.getenv("FENCE_AWS_WITNESS_ADMISSION_ENABLED", "")
     if not ACCOUNT_ID.fullmatch(expected_account):
         raise RuntimeError("a pinned 12-digit qualification account ID is required")
-    if not expected_arn_prefix.startswith(f"arn:aws:sts::{expected_account}:assumed-role/")             or not expected_arn_prefix.endswith("/"):
+    if (
+        not expected_arn_prefix.startswith(f"arn:aws:sts::{expected_account}:assumed-role/")
+        or not expected_arn_prefix.endswith("/")
+    ):
         raise RuntimeError("an exact assumed-role ARN prefix in the pinned account is required")
     if not table_name or not re.fullmatch(r"[A-Za-z0-9_.-]{3,255}", table_name):
         raise RuntimeError("a pre-provisioned qualification witness table is required")
