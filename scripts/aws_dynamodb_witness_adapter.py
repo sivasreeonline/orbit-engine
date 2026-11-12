@@ -8,9 +8,11 @@ unless a run-bound disposable-qualification approval is explicitly supplied.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 import re
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
@@ -20,15 +22,21 @@ from urllib.parse import urlparse
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-from validate_m0_witness_provider_adapter_conformance import (
-    AmbiguousCommit,
-    AppendConflict,
-    Checkpoint,
-    IdempotencyConflict,
-    Receipt,
-    Scope,
-    StoredCheckpoint,
-)
+def _contract_types():
+    """Return the active witness harness module, preserving type identity.
+
+    The conformance script is usually executed as __main__. Importing it again
+    by module name would create duplicate dataclasses and exceptions.
+    """
+    main_module = sys.modules.get("__main__")
+    required = (
+        "AmbiguousCommit", "AppendConflict", "Checkpoint",
+        "IdempotencyConflict", "Receipt", "Scope", "StoredCheckpoint",
+    )
+    if main_module is not None and all(hasattr(main_module, name) for name in required):
+        return main_module
+    return importlib.import_module("validate_m0_witness_provider_adapter_conformance")
+
 
 LIVE_OPT_IN = "I_UNDERSTAND_THIS_WRITES_TO_A_DISPOSABLE_QUALIFICATION_TABLE"
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$")
@@ -40,7 +48,7 @@ def _canonical(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def _scope_document(scope: Scope) -> dict[str, str]:
+def _scope_document(scope: Any) -> dict[str, str]:
     values = {
         "trust_domain_id": scope.trust_domain_id,
         "witness_id": scope.witness_id,
@@ -53,7 +61,7 @@ def _scope_document(scope: Scope) -> dict[str, str]:
     return values
 
 
-def _checkpoint_document(value: Checkpoint) -> dict[str, Any]:
+def _checkpoint_document(value: Any) -> dict[str, Any]:
     return {
         "scope": _scope_document(value.scope),
         "generation": value.generation,
@@ -64,7 +72,7 @@ def _checkpoint_document(value: Checkpoint) -> dict[str, Any]:
     }
 
 
-def _receipt_document(value: Receipt) -> dict[str, Any]:
+def _receipt_document(value: Any) -> dict[str, Any]:
     return {
         "scope": _scope_document(value.scope),
         "generation": value.generation,
@@ -75,17 +83,18 @@ def _receipt_document(value: Receipt) -> dict[str, Any]:
     }
 
 
-def _decode_record(item: dict[str, Any] | None) -> StoredCheckpoint | None:
+def _decode_record(item: dict[str, Any] | None) -> Any:
     if not item:
         return None
+    contract = _contract_types()
     checkpoint_json = item.get("checkpointJson", {}).get("S")
     receipt_json = item.get("receiptJson", {}).get("S")
     if not isinstance(checkpoint_json, str) or not isinstance(receipt_json, str):
         raise ValueError("DynamoDB witness record is missing its canonical checkpoint or receipt")
     checkpoint_body = json.loads(checkpoint_json)
     receipt_body = json.loads(receipt_json)
-    scope = Scope(**checkpoint_body["scope"])
-    checkpoint = Checkpoint(
+    scope = contract.Scope(**checkpoint_body["scope"])
+    checkpoint = contract.Checkpoint(
         scope=scope,
         generation=checkpoint_body["generation"],
         operation_id=checkpoint_body["operation_id"],
@@ -94,14 +103,14 @@ def _decode_record(item: dict[str, Any] | None) -> StoredCheckpoint | None:
         previous_digest=checkpoint_body["previous_digest"],
     )
     receipt = Receipt(
-        scope=Scope(**receipt_body["scope"]),
+        scope=contract.Scope(**receipt_body["scope"]),
         generation=receipt_body["generation"],
         operation_id=receipt_body["operation_id"],
         checkpoint_digest=receipt_body["checkpoint_digest"],
         previous_digest=receipt_body["previous_digest"],
         consistency_token=receipt_body["consistency_token"],
     )
-    return StoredCheckpoint(checkpoint=checkpoint, receipt=receipt)
+    return contract.StoredCheckpoint(checkpoint=checkpoint, receipt=receipt)
 
 
 class DynamoDBWitnessAdapter:
@@ -120,11 +129,11 @@ class DynamoDBWitnessAdapter:
         self._table_name = table_name
 
     @staticmethod
-    def _partition_key(scope: Scope) -> str:
+    def _partition_key(scope: Any) -> str:
         raw = _canonical(_scope_document(scope)).encode("utf-8")
         return "SCOPE#" + hashlib.sha256(raw).hexdigest()
 
-    def _get(self, scope: Scope, sort_key: str) -> dict[str, Any] | None:
+    def _get(self, scope: Any, sort_key: str) -> dict[str, Any] | None:
         response = self._client.get_item(
             TableName=self._table_name,
             Key={"PK": {"S": self._partition_key(scope)}, "SK": {"S": sort_key}},
@@ -132,12 +141,12 @@ class DynamoDBWitnessAdapter:
         )
         return response.get("Item")
 
-    def _read_idempotency(self, scope: Scope, idempotency_hash: str) -> StoredCheckpoint | None:
+    def _read_idempotency(self, scope: Any, idempotency_hash: str) -> Any:
         return _decode_record(self._get(scope, f"IDEMP#{idempotency_hash}"))
 
     @staticmethod
     def _validate_append(
-        value: Checkpoint,
+        value: Any,
         *,
         expected_generation: int,
         expected_digest: str,
@@ -147,7 +156,7 @@ class DynamoDBWitnessAdapter:
         if type(expected_generation) is not int or expected_generation < 0:
             raise ValueError("expected_generation must be a non-negative integer")
         if type(value.generation) is not int or value.generation != expected_generation + 1:
-            raise AppendConflict("checkpoint generation must advance exactly one")
+            raise _contract_types().AppendConflict("checkpoint generation must advance exactly one")
         if not isinstance(expected_digest, str) or DIGEST.fullmatch(expected_digest) is None:
             raise ValueError("expected_digest must be lowercase SHA-256 hex")
         if not isinstance(value.checkpoint_digest, str) or DIGEST.fullmatch(value.checkpoint_digest) is None:
@@ -165,15 +174,15 @@ class DynamoDBWitnessAdapter:
 
     @staticmethod
     def _require_same_idempotent_record(
-        stored: StoredCheckpoint,
+        stored: Any,
         checkpoint_json: str,
         idempotency_hash: str,
         item: dict[str, Any] | None,
-    ) -> Receipt:
+    ) -> Any:
         stored_checkpoint_json = (item or {}).get("checkpointJson", {}).get("S")
         stored_key_hash = (item or {}).get("idempotencyKeySha256", {}).get("S")
         if stored_checkpoint_json != checkpoint_json or stored_key_hash != idempotency_hash:
-            raise IdempotencyConflict("idempotency key is already bound to different checkpoint content")
+            raise _contract_types().IdempotencyConflict("idempotency key is already bound to different checkpoint content")
         return stored.receipt
 
     def append_if_current(
@@ -221,7 +230,7 @@ class DynamoDBWitnessAdapter:
             (partition_key + "\x00" + idempotency_hash + "\x00" + checkpoint_json).encode("utf-8")
         ).hexdigest()
         consistency_token = "dynamodb-correlation-" + transaction_binding[:32]
-        receipt = Receipt(
+        receipt = _contract_types().Receipt(
             scope=scope,
             generation=value.generation,
             operation_id=value.operation_id,
@@ -334,7 +343,7 @@ class DynamoDBWitnessAdapter:
                         recovered, checkpoint_json, idempotency_hash, item
                     )
                     return recovered_receipt
-                raise AmbiguousCommit(
+                raise _contract_types().AmbiguousCommit(
                     "DynamoDB returned a transient service error; retry the exact checkpoint and idempotency key"
                 ) from exc
             if code == "IdempotentParameterMismatchException":
@@ -375,10 +384,10 @@ class DynamoDBWitnessAdapter:
             raise AppendConflict("DynamoDB compare-and-append lost the predecessor race")
         raise AppendConflict("DynamoDB rejected one or more immutable witness-key conditions")
 
-    def read_latest(self, scope: Scope) -> StoredCheckpoint | None:
+    def read_latest(self, scope: Any) -> Any:
         return _decode_record(self._get(scope, "HEAD"))
 
-    def read_by_operation(self, scope: Scope, operation_id: str) -> StoredCheckpoint | None:
+    def read_by_operation(self, scope: Any, operation_id: str) -> Any:
         if not isinstance(operation_id, str) or SAFE_ID.fullmatch(operation_id) is None:
             raise ValueError("operation_id must be a safe non-empty identifier")
         return _decode_record(self._get(scope, f"OP#{operation_id}"))
