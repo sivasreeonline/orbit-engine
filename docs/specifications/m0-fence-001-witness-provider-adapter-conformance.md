@@ -43,7 +43,7 @@ Two writers presenting the same expected predecessor cannot both succeed. The pr
 
 ## Executable test suite
 
-The harness checks 11 contract cases:
+The harness checks 12 contract cases:
 1. atomic genesis append and immediate latest readback;
 2. exact idempotent retry;
 3. lost acknowledgement and retry recovery;
