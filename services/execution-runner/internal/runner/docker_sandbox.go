@@ -246,7 +246,6 @@ func (sandbox *DockerSandbox) RunCase(
 		StandardError:     output.StderrBytes(),
 		CompilationStatus: CompilationNotStarted,
 		CleanupSucceeded:  cleanupSucceeded,
-		CleanupSucceeded: cleanupSucceeded,
 	}
 	if compiled {
 		observation.CompilationStatus = CompilationSucceeded
