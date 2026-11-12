@@ -97,6 +97,17 @@ export class PostgresRunnerDispatchHandoffRepository {
           throw new InvalidRunnerDispatchEnvelopeError();
         }
 
+        // Ensure the authoritative student has a durable scheduling lane.
+        // This is part of the same transaction as the dispatch intent.
+        await client.query(
+          [
+            "INSERT INTO runner_dispatch_scheduler_lanes (tenant_id, actor_user_id)",
+            "SELECT tenant_id, actor_user_id FROM execution_attempts WHERE id = $1::uuid",
+            "ON CONFLICT (tenant_id, actor_user_id) DO NOTHING",
+          ].join("\n"),
+          [envelope.attemptId],
+        );
+
         // A redelivery after the job has advanced is still safe to acknowledge
         // when its exact durable handoff already exists.
         const existing = await client.query<DispatchRow>(
