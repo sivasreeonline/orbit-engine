@@ -175,7 +175,7 @@ export class PostgresOutboxLeaseRepository {
           "  AND lease_owner = $2 AND lease_token = $3::uuid",
           "  AND lease_expires_at > now()",
           "RETURNING id",
-        ].join("\\n"),
+        ].join("\n"),
         [outboxId, workerId, leaseToken],
       );
       return result.rows.length === 1;
