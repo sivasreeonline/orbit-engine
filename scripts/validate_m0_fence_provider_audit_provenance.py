@@ -136,6 +136,8 @@ def validate_page(
         raise ValueError("audit source principal is missing or aliases the independent verifier")
     if verification.authenticated_service_principal_id != page.source_principal_id:
         raise ValueError("authenticated audit-service identity does not match the captured source principal")
+    if type(page.complete) is not bool:
+        raise ValueError("audit page completion marker must be a boolean")
     if page.cursor_start != expected_cursor:
         raise ValueError("audit cursor gap, replay or out-of-order page detected")
     require_id(page.cursor_start, "cursor_start")
@@ -211,6 +213,8 @@ def run_contract(
     expected_requests: dict[str, dict[str, str]] = {}
     for attempt in attempts:
         request_id = require_id(attempt.get("providerRequestId"), "providerRequestId")
+        if attempt.get("result") != "DENIED":
+            raise ValueError("privileged-bypass run report contains a mutation outcome other than DENIED")
         if request_id in expected_requests:
             raise ValueError("privileged-bypass run report contains duplicate provider request IDs")
         expected_requests[request_id] = {
@@ -342,10 +346,11 @@ class FixtureAdapter:
             account = "attacker-account"
         else:
             account = "qualification-account"
+        completion = "false" if self.scenario == "non-boolean-complete" else True
         page = AuditPage(
             "fixture-provider", account, "fixture-region", "audit-service",
             "audit-service-principal", verifier_principal_id,
-            cursor, "cursor-1", True, (event,), raw, signature
+            cursor, "cursor-1", completion, (event,), raw, signature
         )
         self.cursor = "cursor-1"
         return page
@@ -451,6 +456,7 @@ def run_self_test() -> None:
         ("success", "unsigned", "did not pass"),
         ("success", "bad-signature", "signature"),
         ("success", "wrong-root", "trust root"),
+        ("non-boolean-complete", "success", "completion marker must be a boolean"),
     ):
         try:
             run_contract(FixtureAdapter(scenario), FixtureVerifier(verifier_scenario), expected,
@@ -461,6 +467,18 @@ def run_self_test() -> None:
                 raise AssertionError(f"unexpected rejection: {error}") from error
         else:
             raise AssertionError(f"unsafe fixture scenario was accepted: {scenario}/{verifier_scenario}")
+
+    allowed_attempt = [dict(attempts[0], result="ALLOWED")]
+    blocked_adapter = FixtureAdapter()
+    try:
+        run_contract(blocked_adapter, FixtureVerifier(), expected, "fixture-root", root_hash,
+                     "independent-verifier", "cursor-0", allowed_attempt,
+                     Path(tempfile.mkdtemp()))
+    except ValueError as error:
+        assert "outcome other than DENIED" in str(error)
+    else:
+        raise AssertionError("non-denied privileged mutation outcome was accepted")
+    assert blocked_adapter.fetch_calls == 0, "audit provider was queried for a non-denied bypass report"
 
     duplicated = [dict(attempts[0]), dict(attempts[0])]
     try:
