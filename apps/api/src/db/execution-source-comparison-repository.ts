@@ -26,6 +26,7 @@ interface ComparisonRow extends Record<string, unknown> {
   readonly base_problem_version_id: string;
   readonly base_language: string;
   readonly base_runtime_version: string;
+  readonly base_attempt_sha256: string;
   readonly base_sha256: string;
   readonly base_byte_length: string | number | bigint;
   readonly base_storage_kind: "DATABASE" | "R2";
@@ -35,6 +36,7 @@ interface ComparisonRow extends Record<string, unknown> {
   readonly target_problem_version_id: string;
   readonly target_language: string;
   readonly target_runtime_version: string;
+  readonly target_attempt_sha256: string;
   readonly target_sha256: string;
   readonly target_byte_length: string | number | bigint;
   readonly target_storage_kind: "DATABASE" | "R2";
@@ -149,12 +151,14 @@ export class PostgresExecutionSourceComparisonRepository {
           "SELECT",
           "  b.id AS base_attempt_id, b.problem_id AS base_problem_id,",
           "  b.problem_version_id AS base_problem_version_id, b.language AS base_language,",
-          "  b.runtime_version AS base_runtime_version, bs.sha256 AS base_sha256,",
+          "  b.runtime_version AS base_runtime_version, b.source_sha256 AS base_attempt_sha256,",
+          "  bs.sha256 AS base_sha256,",
           "  bs.byte_length AS base_byte_length, bs.storage_kind AS base_storage_kind,",
           "  bs.source_bytes AS base_source_bytes,",
           "  t.id AS target_attempt_id, t.problem_id AS target_problem_id,",
           "  t.problem_version_id AS target_problem_version_id, t.language AS target_language,",
-          "  t.runtime_version AS target_runtime_version, ts.sha256 AS target_sha256,",
+          "  t.runtime_version AS target_runtime_version, t.source_sha256 AS target_attempt_sha256,",
+          "  ts.sha256 AS target_sha256,",
           "  ts.byte_length AS target_byte_length, ts.storage_kind AS target_storage_kind,",
           "  ts.source_bytes AS target_source_bytes",
           "FROM execution_attempts AS b",
@@ -164,6 +168,8 @@ export class PostgresExecutionSourceComparisonRepository {
           "WHERE b.id = $1::uuid",
           "  AND b.tenant_id = $3::uuid AND b.actor_user_id = $4::uuid",
           "  AND t.tenant_id = $3::uuid AND t.actor_user_id = $4::uuid",
+          "  AND bs.tenant_id = $3::uuid AND bs.actor_user_id = $4::uuid",
+          "  AND ts.tenant_id = $3::uuid AND ts.actor_user_id = $4::uuid",
           "LIMIT 1",
         ].join("\n"),
         [baseAttemptId, targetAttemptId, tenantId, actorUserId],
@@ -178,6 +184,11 @@ export class PostgresExecutionSourceComparisonRepository {
         row.base_runtime_version !== row.target_runtime_version
       ) {
         throw new ExecutionSourceComparisonConflictError();
+      }
+
+      if (row.base_attempt_sha256.trim() !== row.base_sha256.trim() ||
+          row.target_attempt_sha256.trim() !== row.target_sha256.trim()) {
+        throw new ExecutionSourceSnapshotIntegrityError();
       }
 
       const [base, target] = await Promise.all([
