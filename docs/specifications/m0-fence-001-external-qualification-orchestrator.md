@@ -38,7 +38,7 @@ The plan must declare and independently substantiate:
 
 The three external attestations are no longer accepted as a self-asserted `verified=true` flag. Each must carry an Ed25519 signature over an RFC 8785 canonical body with a dedicated domain-separation prefix. The body binds the attestation type, run ID, account ID, approval ID, issue/expiry times, exact attestation evidence digest/byte count and a SHA-256 digest of the shared run/identity/provider-pin scope.
 
-Signatures are verified against a separate `--trust-keys` inventory. That inventory must be provisioned independently of the provider and evidence store; each of the three roles has a distinct active signer, key ID and Ed25519 public key. Their signer identities must also match three separately named plan principals: provider-approval authority, independent verifier and evidence-retention authority. Public-key fingerprints are recomputed. CI creates ephemeral keys only; no production trust key or private key is committed.
+Signatures are verified against a separate `--trust-keys` inventory. That inventory must be provisioned independently of the provider and evidence store; each of the three roles has a distinct active signer, key ID and Ed25519 public key. Their signer identities must also match three separately named plan principals: provider-approval authority, independent verifier and evidence-retention authority. Public-key fingerprints are recomputed. CI creates ephemeral keys only; no production trust key or private key is committed. The exact trust-inventory file bytes must also match `--expected-trust-keys-sha256`, supplied independently from a separate trusted channel. A matching set of self-consistent public-key fingerprints is not sufficient by itself: this out-of-band digest prevents wholesale trust-set substitution. The trust inventory is rejected when stored inside the materialized evidence root. The reconciliation summary records the verified trust-inventory digest.
 
 The validator still cannot prove that a trust authority's real-world governance or statement is truthful. Trust-key governance, signer independence and administrative/failure-domain separation require independent review. The audit-provenance stage is pinned to the same compute provider identity used for privileged-bypass and restore/recovery.
 
@@ -51,6 +51,7 @@ python scripts/validate_m0_fence_external_qualification.py `
   --plan ./qualification-plan-v2.json `
   --evidence-root ./materialized-qualification-evidence `
   --trust-keys ./independently-provisioned-qualification-trust-keys.json `
+  --expected-trust-keys-sha256 <out-of-band-64-character-sha256-pin> `
   --output ./qualification-summary.json
 ```
 
@@ -60,7 +61,7 @@ Synthetic self-test (no provider calls):
 python scripts/validate_m0_fence_external_qualification.py --self-test
 ```
 
-Do not commit qualification plans, provider account identifiers, trust-key inventories, private keys, credentials or raw provider evidence. Keep the trust-key inventory outside the provider/evidence-store trust boundary and use a restricted evidence directory.
+Do not commit qualification plans, provider account identifiers, trust-key inventories, private keys, credentials or raw provider evidence. Keep the trust-key inventory outside the provider/evidence-store trust boundary and outside the materialized evidence root. Deliver its expected SHA-256 pin through a separate trusted channel; do not calculate and accept the pin from the same untrusted file at verification time. Use a restricted evidence directory.
 
 ## Output boundary
 
