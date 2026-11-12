@@ -170,9 +170,13 @@ def verify_external_attestations(
         require(envelope["signerIdentity"] == key_record["signerIdentity"],
                 f"{name} signer identity is not independently pinned")
         require(envelope["keyId"] == key_record["keyId"], f"{name} signing key ID is not pinned")
-        if name == "independentVerifier":
-            require(envelope["signerIdentity"] == plan["identities"]["independentVerifier"],
-                    "independent-verifier attestation signer differs from the pinned verifier principal")
+        signer_identity_role = {
+            "providerApproval": "providerApprovalAuthority",
+            "independentVerifier": "independentVerifier",
+            "evidenceStoreRetention": "evidenceRetentionAuthority",
+        }[name]
+        require(envelope["signerIdentity"] == plan["identities"][signer_identity_role],
+                f"{name} attestation signer differs from its separately pinned qualification principal")
 
         body = envelope["body"]
         require(body["attestationType"] == expected_type, f"{name} attestation type mismatch")
@@ -257,6 +261,7 @@ def validate_plan(
         "storageAdministrator", "accountOwner", "organizationAdministrator",
         "recoveryAdministrator", "sourceReader", "restoreOperator",
         "witnessReader", "collector", "independentVerifier",
+        "providerApprovalAuthority", "evidenceRetentionAuthority",
     )
     identities = plan.get("identities")
     require(isinstance(identities, dict), "identity inventory missing")
@@ -377,9 +382,9 @@ def self_test() -> None:
         fixed_now = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
         role_specs = (
-            ("PROVIDER_APPROVAL_AUTHORITY", "provider-approval-authority", "provider-approval-key-01"),
+            ("PROVIDER_APPROVAL_AUTHORITY", plan["identities"]["providerApprovalAuthority"], "provider-approval-key-01"),
             ("INDEPENDENT_VERIFIER", plan["identities"]["independentVerifier"], "independent-verifier-key-01"),
-            ("EVIDENCE_RETENTION_AUTHORITY", "evidence-retention-authority", "evidence-retention-key-01"),
+            ("EVIDENCE_RETENTION_AUTHORITY", plan["identities"]["evidenceRetentionAuthority"], "evidence-retention-key-01"),
         )
         private_by_role: dict[str, Ed25519PrivateKey] = {}
         trust_keys: dict[str, Any] = {"profile": TRUST_KEY_PROFILE, "keys": []}
@@ -447,6 +452,7 @@ def self_test() -> None:
             ("audit provider mismatch", lambda p: p["stages"]["audit_provenance"].update({"provider": "other-provider"})),
             ("malformed approval expiry", lambda p: p["run"].update({"approvalExpiresAt": "not-a-date"})),
             ("unknown plan property", lambda p: p.update({"unrecognized": True})),
+            ("approval signer principal substitution", lambda p: p["externalAttestations"]["providerApproval"]["envelope"].update({"signerIdentity": p["identities"]["independentVerifier"]})),
         )
         for label, mutate in negative:
             candidate = copy.deepcopy(plan)
@@ -532,7 +538,7 @@ def self_test() -> None:
         else:
             raise AssertionError("tampered signed attestation evidence bytes accepted")
 
-        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 22 fail-closed checks)")
+        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 23 fail-closed checks)")
         print("Ed25519 signatures verified against an independent trust-key inventory.")
         print("Synthetic only: no provider calls, production keys, destructive tests or production approval.")
 
