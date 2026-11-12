@@ -1,4 +1,5 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { describe, expect, it } from "vitest";
 import { PostgresExecutionIntakeRepository } from "./execution-intake-repository";
 import {
   ExecutionSourceComparisonNotFoundError,
@@ -23,7 +24,7 @@ describe.skipIf(!databaseUrl)("PostgresExecutionSourceComparisonRepository Postg
       runtimeVersion: "25",
       sourceCode: "public class Main { int value = 1; }",
       correlationId: "source-compare-base",
-    }, `source-compare-base-${crypto.randomUUID()}`);
+    }, `source-compare-base-${randomUUID()}`);
 
     const target = await intake.create({
       principal: { tenantId, userId: actorId, roles: ["STUDENT"] },
@@ -33,7 +34,7 @@ describe.skipIf(!databaseUrl)("PostgresExecutionSourceComparisonRepository Postg
       runtimeVersion: "25",
       sourceCode: "public class Main { int value = 2; }",
       correlationId: "source-compare-target",
-    }, `source-compare-target-${crypto.randomUUID()}`);
+    }, `source-compare-target-${randomUUID()}`);
 
     const foreign = await intake.create({
       principal: { tenantId, userId: otherActorId, roles: ["STUDENT"] },
@@ -43,7 +44,7 @@ describe.skipIf(!databaseUrl)("PostgresExecutionSourceComparisonRepository Postg
       runtimeVersion: "25",
       sourceCode: "public class Main { int value = 3; }",
       correlationId: "source-compare-foreign",
-    }, `source-compare-foreign-${crypto.randomUUID()}`);
+    }, `source-compare-foreign-${randomUUID()}`);
 
     const result = await comparison.getComparableAttemptSources(
       tenantId, actorId, base.attemptId, target.attemptId,
