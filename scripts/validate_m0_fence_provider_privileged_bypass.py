@@ -87,7 +87,7 @@ def parse_time(value: str) -> datetime:
 def validate_preflight(scope: dict[str, Any], expected_account: str, run_id: str) -> None:
     required = {
         "account_id", "environment", "disposable_account", "production",
-        "destructive_tests_approved", "approval_expires_at", "storage_admin_principal_id",
+        "destructive_tests_approved", "approval_id", "approved_run_id", "approval_expires_at", "storage_admin_principal_id",
         "account_owner_principal_id", "organization_admin_principal_id",
         "recovery_admin_principal_id", "independent_verifier_principal_id",
     }
