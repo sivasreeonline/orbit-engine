@@ -275,13 +275,10 @@ func (sandbox *DockerSandbox) RunCase(
 	}
 
 	switch {
-	case request.Language == protocol.LanguageJava && exitCode == 86:
+	case exitCode == 86 && !compiled:
 		observation.Status = SandboxCompileError
 		observation.CompilationStatus = CompilationFailed
-	case request.Language == protocol.LanguagePython && exitCode == 86:
-		observation.Status = SandboxCompileError
-		observation.CompilationStatus = CompilationFailed
-	case exitCode == 87:
+	case exitCode == 87 && !compiled:
 		return observation, ErrDockerCommandFailed
 	case exitCode == 0:
 		if !compiled {
