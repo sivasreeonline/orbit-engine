@@ -14,6 +14,8 @@ import {
   type PostgresExecutionSourceSnapshotRepository,
 } from "./db/execution-source-snapshot-repository";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+import type { PostgresExecutionSourceComparisonRepository } from "./db/execution-source-comparison-repository";
+import { ExecutionSourceComparisonConflictError, ExecutionSourceComparisonNotFoundError } from "./db/execution-source-comparison-repository";
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
@@ -62,7 +64,7 @@ interface HarnessOptions {
   auth?: AuthenticationResult;
   repository?: Partial<ProblemRepository>;
   evidenceRepository?: ExecutionEvidenceReadRepository;
-  sourceSnapshotRepository?: Pick<PostgresExecutionSourceSnapshotRepository, "getAttemptSourceSnapshot">;
+  sourceSnapshotRepository?: Pick<PostgresExecutionSourceSnapshotRepository, "getAttemptSourceSnapshot">;\n  sourceComparisonRepository?: Pick<PostgresExecutionSourceComparisonRepository, "getComparableAttemptSources">;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -477,6 +479,112 @@ describe("M1 API control plane", () => {
       authenticated.principal.userId,
       executionId,
     );
+  });
+
+
+  it("returns a bounded diff for two comparable owned snapshots", async () => {
+    const baseAttemptId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
+    const targetAttemptId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2";
+    const getComparableAttemptSources = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _baseAttemptId: string,
+      _targetAttemptId: string,
+    ) => ({
+      base: {
+        attemptId: baseAttemptId,
+        sourceSha256: "a".repeat(64),
+        sourceByteLength: "8",
+        sourceCode: "old();\\n",
+      },
+      target: {
+        attemptId: targetAttemptId,
+        sourceSha256: "b".repeat(64),
+        sourceByteLength: "8",
+        sourceCode: "new();\\n",
+      },
+    }));
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const response = await handler(makeRequest(
+      `/api/v1/attempts/${targetAttemptId}/diff?baseAttemptId=${baseAttemptId}`,
+    ));
+    const body = await readJson<{
+      data: {
+        base: { attemptId: string; sourceSha256: string };
+        target: { attemptId: string; sourceSha256: string };
+        diff: { operations: Array<{ kind: string; text: string }> };
+      };
+    }>(response);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(getComparableAttemptSources).toHaveBeenCalledWith(
+      authenticated.principal.tenantId,
+      authenticated.principal.userId,
+      baseAttemptId,
+      targetAttemptId,
+    );
+    expect(body.data.diff.operations.map((item) => item.kind)).toEqual(["DELETE", "INSERT"]);
+    expect(JSON.stringify(body)).not.toContain("sourceCode");
+  });
+
+  it("rejects malformed or identical attempt IDs before repository access", async () => {
+    const getComparableAttemptSources = vi.fn(async () => {
+      throw new Error("must not be called");
+    });
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const invalid = await handler(makeRequest(
+      "/api/v1/attempts/not-a-uuid/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+    const duplicate = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+
+    expect(invalid.status).toBe(400);
+    expect(duplicate.status).toBe(400);
+    expect(getComparableAttemptSources).not.toHaveBeenCalled();
+  });
+
+  it("returns a non-disclosing 404 for missing or out-of-scope comparison attempts", async () => {
+    const getComparableAttemptSources = vi.fn(async (): Promise<never> => {
+      throw new ExecutionSourceComparisonNotFoundError();
+    });
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+
+    expect(response.status).toBe(404);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "ATTEMPT_COMPARISON_NOT_FOUND", retryable: false },
+    });
+  });
+
+  it("rejects attempts from different problem versions or runtimes", async () => {
+    const getComparableAttemptSources = vi.fn(async (): Promise<never> => {
+      throw new ExecutionSourceComparisonConflictError();
+    });
+    const { handler } = makeHarness({
+      sourceComparisonRepository: { getComparableAttemptSources },
+    });
+
+    const response = await handler(makeRequest(
+      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2/diff?baseAttemptId=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    ));
+
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "ATTEMPTS_NOT_COMPARABLE", retryable: false },
+    });
   });
 
   it("returns 404 for unknown routes", async () => {
