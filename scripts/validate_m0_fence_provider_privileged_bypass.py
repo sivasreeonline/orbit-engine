@@ -236,6 +236,8 @@ class FixtureAdapter:
             "disposable_account": True,
             "production": False,
             "destructive_tests_approved": True,
+            "approval_id": "fixture-approval-001",
+            "approved_run_id": "fixture-run-0001",
             "approval_expires_at": "2999-01-01T00:00:00Z",
             "storage_admin_principal_id": "fixture-storage-admin",
             "account_owner_principal_id": "fixture-account-owner",
