@@ -23,6 +23,16 @@ describe.skipIf(!databaseUrl)("Postgres execution attempt timeline integration",
       correlationId: "timeline-owned",
     }, `timeline-owned-${randomUUID()}`);
 
+    const ownedSubmit = await intake.create({
+      principal: { tenantId, userId: actorId, roles: ["STUDENT"] },
+      action: "SUBMIT",
+      problemSlug: "two-sum",
+      language: "java",
+      runtimeVersion: "25",
+      sourceCode: "public class Main { int value = 10; }",
+      correlationId: "timeline-owned-submit",
+    }, `timeline-owned-submit-${randomUUID()}`);
+
     const otherAttempt = await intake.create({
       principal: { tenantId, userId: otherActorId, roles: ["STUDENT"] },
       action: "SUBMIT",
@@ -64,16 +74,18 @@ describe.skipIf(!databaseUrl)("Postgres execution attempt timeline integration",
       tenantId, actorId, "two-sum", 100,
     );
 
-    expect(timeline).toHaveLength(1);
-    expect(timeline[0]?.attemptId).toBe(ownedAttempt.attemptId);
-    expect(timeline[0]?.events.map((event) => event.eventId)).toEqual([
-      firstEventId, secondEventId,
-    ]);
-    expect(timeline[0]?.events.map((event) => event.sequenceId)).toEqual(
-      [...timeline[0]!.events.map((event) => event.sequenceId)].sort((a, b) => Number(a) - Number(b)),
+    expect(timeline).toHaveLength(2);
+    const runEntry = timeline.find((entry) => entry.attemptId === ownedAttempt.attemptId);
+    const submitEntry = timeline.find((entry) => entry.attemptId === ownedSubmit.attemptId);
+    expect(runEntry?.action).toBe("RUN");
+    expect(submitEntry?.action).toBe("SUBMIT");
+    expect(runEntry?.events.map((event) => event.eventId)).toEqual([firstEventId, secondEventId]);
+    expect(runEntry?.events.map((event) => event.sequenceId)).toEqual(
+      [...runEntry!.events.map((event) => event.sequenceId)].sort((a, b) => Number(a) - Number(b)),
     );
-    expect(timeline[0]?.events.map((event) => event.eventType)).toEqual([
+    expect(runEntry?.events.map((event) => event.eventType)).toEqual([
       "ATTEMPT_ACCEPTED", "JOB_QUEUED",
     ]);
+    expect(submitEntry?.events).toEqual([]);
   });
 });
