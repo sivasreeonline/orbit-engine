@@ -253,9 +253,14 @@ class AWSDynamoDBWitnessAdapter:
             raise AppendConflict("checkpoint predecessor differs from expected digest")
         _require(isinstance(expected_digest, str) and SHA256.fullmatch(expected_digest) is not None,
                  "expected predecessor digest must be lowercase SHA-256")
-        _require(isinstance(value.checkpoint_digest, str)
-                 and SHA256.fullmatch(value.checkpoint_digest) is not None,
-                 "checkpoint digest must be lowercase SHA-256")
+        if not isinstance(value.checkpoint_digest, str) or SHA256.fullmatch(value.checkpoint_digest) is None:
+            detail = repr(value.checkpoint_digest)
+            raise ValueError(
+                "checkpoint digest must be lowercase SHA-256 "
+                f"(type={type(value.checkpoint_digest).__name__}, length="
+                f"{len(value.checkpoint_digest) if isinstance(value.checkpoint_digest, str) else 'n/a'}, "
+                f"value={detail})"
+            )
         _require(isinstance(value.operation_id, str) and 1 <= len(value.operation_id) <= 256
                  and bool(value.operation_id.strip()), "operation ID must be a non-empty string of at most 256 characters")
         _require(isinstance(idempotency_key, str) and 1 <= len(idempotency_key) <= 256
