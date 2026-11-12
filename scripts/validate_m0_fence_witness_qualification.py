@@ -10,10 +10,12 @@ import argparse
 import copy
 import json
 from pathlib import Path
+import tempfile
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 from validate_m0_fence_evidence_manifest import validate_manifest as validate_evidence_manifest
+from verify_m0_fence_evidence_artifact_bytes import verify_artifact_files
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "docs/schemas/m0-fence-witness-qualification-record.schema.json"
@@ -107,8 +109,12 @@ def validate_record_manifest_binding(
     trusted_keys: list[dict[str, str]],
     *,
     allow_test_only: bool = False,
+    artifact_root: Path | None = None,
 ) -> None:
     digest = validate_evidence_manifest(manifest_envelope, trusted_keys, allow_test_only=allow_test_only)
+    if artifact_root is None:
+        raise ValueError("materialized artifact root is required for evidence qualification")
+    verify_artifact_files(manifest_envelope["manifestBody"], artifact_root)
     reference = record.get("evidenceManifest")
     if reference is None:
         raise ValueError("qualification record does not reference a signed evidence manifest")
@@ -180,7 +186,13 @@ def run_manifest_binding_fixture_tests() -> int:
         )),
         "redaction": artifact["redaction"],
     }]
-    validate_record_manifest_binding(record, envelope, vector["trustedKeys"], allow_test_only=True)
+    with tempfile.TemporaryDirectory(prefix="fence-qualification-fixture-") as directory:
+        artifact_root = Path(directory)
+        (artifact_root / artifact["artifactId"]).write_bytes(b"synthetic provider evidence fixture only\n")
+        validate_record_manifest_binding(
+            record, envelope, vector["trustedKeys"],
+            allow_test_only=True, artifact_root=artifact_root,
+        )
     rejected = 0
 
     wrong_provider = copy.deepcopy(record)
@@ -218,9 +230,10 @@ def main() -> None:
     parser.add_argument("--record", type=Path, default=TEMPLATE, help="qualification record JSON (defaults to blank repository template)")
     parser.add_argument("--evidence-manifest", type=Path, help="dual-signed evidence manifest envelope JSON")
     parser.add_argument("--trusted-keys", type=Path, help="independently provisioned trusted-key configuration JSON")
+    parser.add_argument("--artifact-root", type=Path, help="directory containing independently materialized evidence files")
     args = parser.parse_args()
-    if bool(args.evidence_manifest) != bool(args.trusted_keys):
-        parser.error("--evidence-manifest and --trusted-keys must be supplied together")
+    if len([value for value in (args.evidence_manifest, args.trusted_keys, args.artifact_root) if value]) not in (0, 3):
+        parser.error("--evidence-manifest, --trusted-keys and --artifact-root must be supplied together")
 
     schema = load_json(SCHEMA)
     record = load_json(args.record)
@@ -298,7 +311,10 @@ def main() -> None:
         trust_document = load_json(args.trusted_keys)
         if not isinstance(trust_document.get("keys"), list):
             raise SystemExit("trusted-key document must contain a keys array")
-        validate_record_manifest_binding(record, manifest_envelope, trust_document["keys"])
+        validate_record_manifest_binding(
+            record, manifest_envelope, trust_document["keys"],
+            artifact_root=args.artifact_root,
+        )
         print("Signed evidence manifest binding: PASS")
 
     print("FENCE-001 external witness qualification record: PASS")
