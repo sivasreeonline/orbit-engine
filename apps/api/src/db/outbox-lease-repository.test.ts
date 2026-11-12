@@ -81,6 +81,21 @@ describe("PostgresOutboxLeaseRepository", () => {
       .resolves.toBe(false);
   });
 
+  it("dead-letters malformed events only under the active lease", async () => {
+    const fake = fakeClient([{ id: outboxId }]);
+    const repository = new PostgresOutboxLeaseRepository(connection, () => fake.client);
+
+    await expect(repository.markDeadLetter(
+      outboxId, "publisher-1", leaseToken,
+    )).resolves.toBe(true);
+
+    const deadLetter = fake.calls[1];
+    expect(deadLetter?.text).toContain("delivery_state = 'DEAD_LETTER'");
+    expect(deadLetter?.text).toContain("lease_owner = $2 AND lease_token = $3::uuid");
+    expect(deadLetter?.text).toContain("lease_expires_at > now()");
+    expect(deadLetter?.text).not.toContain("published_at = now()");
+  });
+
   it("releases a failed delivery only for the active lease and caller-selected retry time", async () => {
     const fake = fakeClient([{ id: outboxId }]);
     const repository = new PostgresOutboxLeaseRepository(connection, () => fake.client);

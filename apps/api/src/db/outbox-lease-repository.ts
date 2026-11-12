@@ -154,6 +154,35 @@ export class PostgresOutboxLeaseRepository {
   }
 
   /**
+   * Permanently dead-letters a malformed/unsupported outbox event while the
+   * caller still owns the active lease. Sink outages must not use this path.
+   */
+  async markDeadLetter(
+    outboxId: string,
+    workerId: string,
+    leaseToken: string,
+  ): Promise<boolean> {
+    if (!this.connectionString) throw new DatabaseUnavailableError();
+    this.validateLeaseIdentity(outboxId, workerId, leaseToken);
+
+    return this.withClient(async (client) => {
+      const result = await client.query<UpdatedRow>(
+        [
+          "UPDATE execution_outbox",
+          "SET delivery_state = 'DEAD_LETTER',",
+          "    lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL",
+          "WHERE id = $1::uuid AND delivery_state = 'PENDING'",
+          "  AND lease_owner = $2 AND lease_token = $3::uuid",
+          "  AND lease_expires_at > now()",
+          "RETURNING id",
+        ].join("\n"),
+        [outboxId, workerId, leaseToken],
+      );
+      return result.rows.length === 1;
+    });
+  }
+
+  /**
    * Releases a failed delivery for a caller-selected retry time.
    * Retry delay and dead-letter policy remain outside this repository.
    */
