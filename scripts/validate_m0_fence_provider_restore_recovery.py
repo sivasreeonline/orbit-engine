@@ -339,7 +339,7 @@ class FixtureAdapter:
             "independent_verifier_principal_id": "fixture-verifier",
         }
         self.target = RestoreTarget("fixture-target-001", self.scope["account_id"],
-                                    "fixture-run-0001", True, True)
+                                    "fixture-run-0001", True, True, True)
         self.witness = HighWater(7, self.final_digest)
         self.monitors = (
             MonitorHead("monitor-a", "operator-a", "account-a", "domain-a", 7, self.final_digest),
