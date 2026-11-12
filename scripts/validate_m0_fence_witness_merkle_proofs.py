@@ -7,7 +7,6 @@ or authorize production witness use.
 """
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 from pathlib import Path
@@ -263,6 +262,10 @@ def run_negative_cases(entries: list[bytes], roots: dict[int, bytes]) -> int:
         not verify_inclusion(3, 7, leaf_hash(entries[3]), roots[7], inclusion + [b"x" * 32]),
         "overlong inclusion proof was accepted",
     )
+    require(
+        not verify_inclusion(3, 7, leaf_hash(entries[3]), roots[7], [b"x"]),
+        "malformed inclusion node length was accepted",
+    )
 
     consistency = consistency_proof(3, entries)
     altered_consistency = list(consistency)
@@ -276,12 +279,20 @@ def run_negative_cases(entries: list[bytes], roots: dict[int, bytes]) -> int:
         "substituted old tree head was accepted",
     )
     require(
+        not verify_consistency(3, 7, roots[3], roots[7], []),
+        "empty consistency proof was accepted for different tree sizes",
+    )
+    require(
         not verify_consistency(3, 7, roots[3], roots[7], consistency[:-1]),
         "truncated consistency proof was accepted",
     )
     require(
         not verify_consistency(3, 7, roots[3], roots[7], consistency + [b"x" * 32]),
         "overlong consistency proof was accepted",
+    )
+    require(
+        not verify_consistency(3, 7, roots[3], roots[7], [b"x"]),
+        "malformed consistency node length was accepted",
     )
     require(
         not verify_consistency(7, 3, roots[7], roots[3], []),
@@ -299,7 +310,7 @@ def run_negative_cases(entries: list[bytes], roots: dict[int, bytes]) -> int:
         not verify_consistency(3, 7, roots[3], forked_root, consistency),
         "a rewritten prefix was accepted as an append-only extension",
     )
-    return 11
+    return 12
 
 
 def exhaustive_model_checks(max_size: int = 40) -> tuple[int, int]:
