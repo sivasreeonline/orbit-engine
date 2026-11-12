@@ -80,7 +80,14 @@ async function apiGet<T>(path: string): Promise<T> {
     cache: "no-store",
     headers: { Accept: "application/json" },
   });
-  const body = await response.json() as ApiEnvelope<T>;
+  let body: ApiEnvelope<T>;
+  try {
+    body = await response.json() as ApiEnvelope<T>;
+  } catch {
+    throw new Error(response.ok
+      ? "The API returned an unreadable response."
+      : `The API request failed (${response.status}).`);
+  }
   if (!response.ok) {
     throw new Error(body.error?.message ?? `Request failed (${response.status})`);
   }
