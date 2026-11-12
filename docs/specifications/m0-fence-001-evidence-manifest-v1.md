@@ -45,3 +45,37 @@ The validator verifies manifest-level signatures and structural bindings. It doe
 `docs/test-vectors/fence-evidence-manifest-v1.json` contains deterministic test keys and signatures. It is marked `testOnly: true` and is accepted only by the harness's fixture path. External qualification mode rejects test-only manifests. Fixture private seeds are not included. No key in the fixture is trusted for production use.
 
 A valid manifest signature proves that the configured collector and verifier keys signed the manifest digest. It does not prove that the provider evidence is truthful, that the object store is immutable, or that either signer is independent. Production approval remains false until the full evidence package is independently reviewed.
+
+
+## Binding into the qualification record
+
+A completed qualification record must reference the independently signed manifest using `evidenceManifest.manifestId`, immutable `objectRef`, `objectVersion` and the verified manifest SHA-256. The qualification validator accepts an actual record and manifest with:
+
+```sh
+python scripts/validate_m0_fence_witness_qualification.py \
+  --record qualification-record.json \
+  --evidence-manifest evidence-manifest.json \
+  --trusted-keys /secure/trust/fence-evidence-keys.json
+```
+
+The validator verifies the manifest signatures first, then requires exact provider and adapter pin equality between the qualification record and signed manifest. Every evidence item attached to a `PASS` control must match an artifact by immutable object reference, version, SHA-256 and byte count; the artifact must explicitly include that WIT control and the same collector/verifier identities. A record cannot reach `READY_FOR_INDEPENDENT_REVIEW` without a manifest reference.
+
+This binding prevents a valid manifest for one provider, adapter build or test control from being substituted into another qualification record. It still does not establish that evidence bytes were truthfully collected or that external identities are genuinely independent; those claims require independent operational verification.
+
+
+## Qualification-record binding and fail-closed readiness
+
+The qualification record schema now includes an `evidenceManifest` reference containing the manifest ID, immutable object reference/version and SHA-256 digest. A record cannot reach `READY_FOR_INDEPENDENT_REVIEW` without this reference.
+
+The qualification validator supports a filled record and independently provisioned trust keys:
+
+```sh
+python scripts/validate_m0_fence_witness_qualification.py \
+  --record qualification-record.json \
+  --evidence-manifest evidence-manifest.json \
+  --trusted-keys /secure/trust/fence-evidence-keys.json
+```
+
+Every `PASS` control's evidence must match an artifact in the dual-signed manifest by object reference, version, SHA-256 and byte count. The artifact must list the exact WIT control and the same collector and independent-verifier identities. Provider account/region/service and adapter repository/commit/version/configuration digest must exactly match the signed manifest.
+
+The validator refuses a record containing `PASS` evidence or claiming review readiness if the signed manifest and trusted-key configuration are not supplied for verification. The fixture path runs positive and negative binding tests with test-only keys; external qualification mode rejects test-only manifests.

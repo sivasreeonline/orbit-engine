@@ -13,7 +13,8 @@
     "adapter",
     "monitors",
     "tests",
-    "productionApproval"
+    "productionApproval",
+    "evidenceManifest"
   ],
   "properties": {
     "profile": {
@@ -222,6 +223,37 @@
     },
     "productionApproval": {
       "const": false
+    },
+    "evidenceManifest": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "manifestId",
+        "objectRef",
+        "objectVersion",
+        "sha256"
+      ],
+      "properties": {
+        "manifestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
     }
   },
   "$defs": {
