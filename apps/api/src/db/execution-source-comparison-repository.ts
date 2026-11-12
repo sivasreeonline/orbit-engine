@@ -13,6 +13,13 @@ export class ExecutionSourceComparisonNotFoundError extends Error {
   }
 }
 
+export class ExecutionSourceComparisonLimitError extends Error {
+  constructor() {
+    super("execution_source_comparison_source_limit_exceeded");
+    this.name = "ExecutionSourceComparisonLimitError";
+  }
+}
+
 export class ExecutionSourceComparisonConflictError extends Error {
   constructor() {
     super("execution_source_comparison_not_eligible");
@@ -154,13 +161,13 @@ export class PostgresExecutionSourceComparisonRepository {
           "  b.runtime_version AS base_runtime_version, b.source_sha256 AS base_attempt_sha256,",
           "  bs.sha256 AS base_sha256,",
           "  bs.byte_length AS base_byte_length, bs.storage_kind AS base_storage_kind,",
-          "  bs.source_bytes AS base_source_bytes,",
+          "  CASE WHEN bs.byte_length <= $5 THEN bs.source_bytes ELSE NULL END AS base_source_bytes,"
           "  t.id AS target_attempt_id, t.problem_id AS target_problem_id,",
           "  t.problem_version_id AS target_problem_version_id, t.language AS target_language,",
           "  t.runtime_version AS target_runtime_version, t.source_sha256 AS target_attempt_sha256,",
           "  ts.sha256 AS target_sha256,",
           "  ts.byte_length AS target_byte_length, ts.storage_kind AS target_storage_kind,",
-          "  ts.source_bytes AS target_source_bytes",
+          "  CASE WHEN ts.byte_length <= $5 THEN ts.source_bytes ELSE NULL END AS target_source_bytes",
           "FROM execution_attempts AS b",
           "INNER JOIN source_snapshots AS bs ON bs.id = b.source_snapshot_id",
           "INNER JOIN execution_attempts AS t ON t.id = $2::uuid",
@@ -172,7 +179,7 @@ export class PostgresExecutionSourceComparisonRepository {
           "  AND ts.tenant_id = $3::uuid AND ts.actor_user_id = $4::uuid",
           "LIMIT 1",
         ].join("\n"),
-        [baseAttemptId, targetAttemptId, tenantId, actorUserId],
+        [baseAttemptId, targetAttemptId, tenantId, actorUserId, 128 * 1024],
       );
 
       const row = result.rows[0];
@@ -201,7 +208,7 @@ export class PostgresExecutionSourceComparisonRepository {
     } catch (error) {
       if (
         error instanceof ExecutionSourceComparisonNotFoundError ||
-        error instanceof ExecutionSourceComparisonConflictError ||
+        error instanceof ExecutionSourceComparisonConflictError ||\n        error instanceof ExecutionSourceComparisonLimitError ||
         error instanceof ExecutionSourceSnapshotIntegrityError ||
         error instanceof ExecutionSourceSnapshotUnavailableError ||
         error instanceof DatabaseUnavailableError ||
