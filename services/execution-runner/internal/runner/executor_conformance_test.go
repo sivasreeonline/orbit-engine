@@ -182,6 +182,26 @@ func TestRunRejectsHiddenTestBundleBeforeSandbox(t *testing.T) {
 	}
 }
 
+func TestSourceByteLengthMismatchFailsBeforeSandbox(t *testing.T) {
+	t.Parallel()
+	source := conformanceSource()
+	sandbox := &conformanceSandbox{}
+	executor := conformanceExecutor(t, &conformanceResolver{source: source, bundle: conformanceBundle()}, sandbox)
+	request := conformanceRequest(protocol.ActionRun, source)
+	request.SourceByteLength++
+
+	result, err := executor.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.InfrastructureErrorCode != "SOURCE_LENGTH_MISMATCH" || result.Verdict != VerdictNotEvaluated {
+		t.Fatalf("source length mismatch was not rejected: %+v", result)
+	}
+	if len(sandbox.requests) != 0 {
+		t.Fatal("sandbox started before source length verification")
+	}
+}
+
 func TestSourceHashMismatchFailsBeforeSandbox(t *testing.T) {
 	t.Parallel()
 	source := []byte("different source")
