@@ -1,0 +1,406 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sky High FENCE-001 externally signed qualification plan v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "testOnly",
+    "productionApproval",
+    "run",
+    "identities",
+    "providerPins",
+    "stages",
+    "externalAttestations",
+    "limitations",
+    "independentReviewStatus"
+  ],
+  "properties": {
+    "profile": {
+      "const": "sky-high-fence-external-qualification-plan-v2"
+    },
+    "testOnly": {
+      "const": false
+    },
+    "productionApproval": {
+      "const": false
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "accountId",
+        "approvalId",
+        "approvalExpiresAt",
+        "environment",
+        "production",
+        "disposable",
+        "sourceReadOnly",
+        "approvalRunId",
+        "operatorPinned",
+        "admissionEnabled",
+        "computeProvider"
+      ],
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "accountId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "approvalId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "approvalExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "environment": {
+          "const": "QUALIFICATION"
+        },
+        "production": {
+          "const": false
+        },
+        "disposable": {
+          "const": true
+        },
+        "sourceReadOnly": {
+          "const": true
+        },
+        "approvalRunId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "operatorPinned": {
+          "const": true
+        },
+        "admissionEnabled": {
+          "const": false
+        },
+        "computeProvider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "identities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "storageAdministrator",
+        "accountOwner",
+        "organizationAdministrator",
+        "recoveryAdministrator",
+        "sourceReader",
+        "restoreOperator",
+        "witnessReader",
+        "collector",
+        "independentVerifier"
+      ],
+      "properties": {
+        "storageAdministrator": {
+          "$ref": "#/$defs/identifier"
+        },
+        "accountOwner": {
+          "$ref": "#/$defs/identifier"
+        },
+        "organizationAdministrator": {
+          "$ref": "#/$defs/identifier"
+        },
+        "recoveryAdministrator": {
+          "$ref": "#/$defs/identifier"
+        },
+        "sourceReader": {
+          "$ref": "#/$defs/identifier"
+        },
+        "restoreOperator": {
+          "$ref": "#/$defs/identifier"
+        },
+        "witnessReader": {
+          "$ref": "#/$defs/identifier"
+        },
+        "collector": {
+          "$ref": "#/$defs/identifier"
+        },
+        "independentVerifier": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "providerPins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "witness",
+        "evidenceStore",
+        "compute"
+      ],
+      "properties": {
+        "witness": {
+          "$ref": "#/$defs/providerPin"
+        },
+        "evidenceStore": {
+          "$ref": "#/$defs/providerPin"
+        },
+        "compute": {
+          "$ref": "#/$defs/providerPin"
+        }
+      }
+    },
+    "stages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "witness",
+        "evidence_object_store",
+        "privileged_bypass",
+        "restore_recovery",
+        "audit_provenance"
+      ],
+      "properties": {
+        "witness": {
+          "$ref": "#/$defs/stageEvidence"
+        },
+        "evidence_object_store": {
+          "$ref": "#/$defs/stageEvidence"
+        },
+        "privileged_bypass": {
+          "$ref": "#/$defs/stageEvidence"
+        },
+        "restore_recovery": {
+          "$ref": "#/$defs/stageEvidence"
+        },
+        "audit_provenance": {
+          "$ref": "#/$defs/stageEvidence"
+        }
+      }
+    },
+    "externalAttestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providerApproval",
+        "independentVerifier",
+        "evidenceStoreRetention"
+      ],
+      "properties": {
+        "providerApproval": {
+          "$ref": "#/$defs/externalAttestation"
+        },
+        "independentVerifier": {
+          "$ref": "#/$defs/externalAttestation"
+        },
+        "evidenceStoreRetention": {
+          "$ref": "#/$defs/externalAttestation"
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    },
+    "independentReviewStatus": {
+      "enum": [
+        "NOT_STARTED",
+        "PENDING"
+      ]
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifactName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,200}$"
+    },
+    "providerPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "accountId",
+        "region",
+        "service",
+        "adapterDigest"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "accountId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "adapterDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "stageEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "runId",
+        "accountId",
+        "provider",
+        "artifact",
+        "sha256",
+        "byteCount"
+      ],
+      "properties": {
+        "status": {
+          "const": "PASS"
+        },
+        "runId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "accountId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "artifact": {
+          "$ref": "#/$defs/artifactName"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "byteCount": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "externalAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "envelope"
+      ],
+      "properties": {
+        "envelope": {
+          "$ref": "#/$defs/attestationEnvelope"
+        }
+      }
+    },
+    "attestationEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "role",
+        "signerIdentity",
+        "keyId",
+        "body",
+        "signatureBase64Url"
+      ],
+      "properties": {
+        "profile": {
+          "const": "sky-high-fence-external-qualification-attestation-v1"
+        },
+        "role": {
+          "enum": [
+            "PROVIDER_APPROVAL_AUTHORITY",
+            "INDEPENDENT_VERIFIER",
+            "EVIDENCE_RETENTION_AUTHORITY"
+          ]
+        },
+        "signerIdentity": {
+          "$ref": "#/$defs/identifier"
+        },
+        "keyId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "body": {
+          "$ref": "#/$defs/attestationBody"
+        },
+        "signatureBase64Url": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{86}$"
+        }
+      }
+    },
+    "attestationBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attestationType",
+        "runId",
+        "accountId",
+        "approvalId",
+        "issuedAt",
+        "expiresAt",
+        "evidenceArtifact",
+        "evidenceSha256",
+        "evidenceByteCount",
+        "scopeSha256"
+      ],
+      "properties": {
+        "attestationType": {
+          "enum": [
+            "PROVIDER_APPROVAL",
+            "INDEPENDENT_VERIFIER",
+            "EVIDENCE_STORE_RETENTION"
+          ]
+        },
+        "runId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "accountId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "approvalId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidenceArtifact": {
+          "$ref": "#/$defs/artifactName"
+        },
+        "evidenceSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "evidenceByteCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scopeSha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}
