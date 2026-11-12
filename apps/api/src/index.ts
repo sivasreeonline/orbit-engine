@@ -5,6 +5,7 @@ import { publishOutboxBatch } from "./db/outbox-publisher";
 import { PostgresProblemRepository } from "./db/problem-repository";
 import { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
 import { PostgresExecutionSourceSnapshotRepository } from "./db/execution-source-snapshot-repository";
+import { PostgresExecutionSourceComparisonRepository } from "./db/execution-source-comparison-repository";
 import type { Env } from "./env";
 
 const authenticator = new UnconfiguredAuthenticator();
@@ -29,11 +30,15 @@ export default {
     const sourceSnapshotRepository = new PostgresExecutionSourceSnapshotRepository(
       env.HYPERDRIVE?.connectionString,
     );
+    const sourceComparisonRepository = new PostgresExecutionSourceComparisonRepository(
+      env.HYPERDRIVE?.connectionString,
+    );
     const handler = buildApiHandler(env, {
       authenticator,
       repository,
       evidenceRepository,
       sourceSnapshotRepository,
+      sourceComparisonRepository,
     });
     return handler(request);
   },
