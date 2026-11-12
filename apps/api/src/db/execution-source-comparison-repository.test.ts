@@ -63,6 +63,13 @@ function fakeClient(rows: Record<string, unknown>[] = [], fail = false) {
 
 const connection = "postgres://test-user:test-password@localhost/test";
 
+const mismatches: Array<[string, Record<string, unknown>]> = [
+  ["different problem", { target_problem_id: "10000000-0000-4000-8000-000000000002" }],
+  ["different problem version", { target_problem_version_id: "11000000-0000-4000-8000-000000000002" }],
+  ["different language", { target_language: "python" }],
+  ["different runtime", { target_runtime_version: "3.14" }],
+];
+
 describe("PostgresExecutionSourceComparisonRepository", () => {
   it("returns both verified snapshots using one owner-scoped query", async () => {
     const row = await comparisonRow();
