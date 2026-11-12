@@ -101,10 +101,11 @@ def validate_binding(
     if body["auditReportSha256"] != report_digest:
         raise ValueError("binding does not reference the exact audit provenance report")
     provider = manifest_envelope["manifestBody"]["providerScope"]
-    if body["providerIdentity"] != {
+    expected_provider = {
         "provider": provider["name"], "accountId": provider["account"],
         "region": provider["region"], "service": provider["service"]
-    }:
+    }
+    if body["providerIdentity"] != expected_provider or report.get("providerIdentity") != expected_provider:
         raise ValueError("audit provenance provider scope differs from signed manifest provider scope")
     verifier_identity = next(
         item["signerIdentity"] for item in manifest_envelope["attestations"]
@@ -115,8 +116,13 @@ def validate_binding(
     manifest_artifacts = {item["artifactId"]: item for item in manifest_envelope["manifestBody"]["artifacts"]}
     mappings = body["artifactMappings"]
     sources = []
-    for group in ("pages", "authenticationEvidence", "events"):
-        sources.extend((group, item) for item in report.get(group, []))
+    sources.extend(("pages", item) for item in report.get("pages", []))
+    sources.extend(("authenticationEvidence", {
+        "artifact": item["authenticationEvidenceArtifact"],
+        "sha256": item["authenticationEvidenceSha256"],
+        "byteCount": item["authenticationEvidenceByteCount"]
+    }) for item in report.get("pages", []))
+    sources.extend(("events", item) for item in report.get("events", []))
     if len(mappings) != len(sources):
         raise ValueError("every audit page, authentication proof and event must have exactly one manifest mapping")
     by_source = {item["sourceGroup"] + ":" + item["sourceArtifact"]: item for item in mappings}
@@ -124,11 +130,7 @@ def validate_binding(
         raise ValueError("duplicate source artifact mapping")
     used_manifest_ids: set[str] = set()
     for group, source in sources:
-        source_name = source.get("rawResponseArtifact") if group == "pages" else (
-            source.get("authenticationEvidenceArtifact") if group == "authenticationEvidence" else source.get("artifact")
-        )
-        if group == "authenticationEvidence":
-            source_name = source["artifact"]
+        source_name = source["rawResponseArtifact"] if group == "pages" else source["artifact"]
         key = group + ":" + source_name
         mapping = by_source.get(key)
         if mapping is None:
