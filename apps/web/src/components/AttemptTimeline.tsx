@@ -180,7 +180,10 @@ export default function AttemptTimeline({ problemSlug }: AttemptTimelineProps) {
       const selected = selectedForDiff
         .map((id) => entries.find((entry) => entry.attemptId === id))
         .filter((entry): entry is TimelineEntry => Boolean(entry))
-        .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+        .sort((left, right) =>
+          Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+          left.attemptId.localeCompare(right.attemptId),
+        );
       if (selected.length !== 2) throw new Error("Select two attempts that are still in the loaded history.");
       const [baseAttempt, targetAttempt] = selected;
       const result = await apiGet<DiffPayload>(
