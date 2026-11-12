@@ -9,7 +9,6 @@ import {
 const executionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
 const attemptId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
 const leaseToken = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
-const eventId = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
 const connection = "postgres://test-user:test-password@localhost/test";
 
 const resultInput = {
@@ -70,13 +69,13 @@ describe("PostgresExecutionEvidenceRepository", () => {
 
     await expect(repository.recordResult({
       ...resultInput,
-      verdict: "NOT_EVALUATED",
+      testsPassed: 1,
     })).rejects.toThrow("accepted_verdict_requires_all_tests_to_pass");
 
     await expect(repository.recordResult({
       ...resultInput,
       infrastructureStatus: "FAILED",
-      infrastructureErrorCode: "RUNNER_UNAVAILABLE",
+      infrastructureErrorCode: "runner unavailable",
       verdict: "NOT_EVALUATED",
     })).rejects.toThrow("invalid_infrastructure_failure_outcome");
 
