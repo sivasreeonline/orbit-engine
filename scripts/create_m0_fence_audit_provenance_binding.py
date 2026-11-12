@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import rfc8785
 from jsonschema import Draft202012Validator
@@ -25,7 +24,7 @@ MAPPING_SCHEMA = ROOT / "docs/schemas/m0-fence-audit-provenance-artifact-mapping
 sys.path.insert(0, str(ROOT / "scripts"))
 from validate_m0_fence_evidence_manifest import validate_manifest  # noqa: E402
 from validate_m0_fence_audit_provenance_manifest_binding import (  # noqa: E402
-    sign_binding, verify_binding_signatures
+    sign_binding, validate_binding, verify_binding_signatures
 )
 
 
@@ -132,36 +131,176 @@ def build_binding(manifest: dict[str, Any], manifest_keys: list[dict[str, str]],
 
 
 def self_test() -> None:
+    """Exercise the real manifest/report/mapping/signing/verification path with ephemeral keys."""
+    import copy
+    import tempfile
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    import base64
+
+    vector = load_object(ROOT / "docs/test-vectors/fence-evidence-manifest-v1.json")
+
     def key_record(role: str, identity: str):
         private = Ed25519PrivateKey.generate()
-        public = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        public = private.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        )
         key_id = sha(public)
-        trusted = {"keyId":key_id,"identity":identity,"role":role,
-                   "publicKeyBase64Url":base64.urlsafe_b64encode(public).decode().rstrip("=")}
-        seed = private.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
-                                     serialization.NoEncryption())
-        signer = {"role":role,"identity":identity,"keyId":key_id,
-                  "privateKeyBase64Url":base64.urlsafe_b64encode(seed).decode().rstrip("=")}
-        return trusted, signer
-    collector_trust, collector_signer = key_record("COLLECTOR","collector-fixture")
-    verifier_trust, verifier_signer = key_record("INDEPENDENT_VERIFIER","verifier-fixture")
-    # The fixture exercises signer loading, role authorization and envelope creation.
-    import tempfile
-    with tempfile.TemporaryDirectory() as temporary:
-        root=Path(temporary)
-        c=root/"collector.json"; v=root/"verifier.json"
-        c.write_text(json.dumps(collector_signer)); v.write_text(json.dumps(verifier_signer))
-        keys=[collector_trust,verifier_trust]
-        envelope=sign_binding({"profile":"sky-high-fence-audit-provenance-binding-v1",
-            "schemaVersion":1,"manifestDigest":"a"*64,"auditReportSha256":"b"*64,
-            "providerIdentity":{"provider":"p","accountId":"a","region":"r","service":"s"},
-            "independentVerifierIdentity":"verifier-fixture",
-            "artifactMappings":[{"sourceGroup":"events","sourceArtifact":"e.bin","manifestArtifactId":"a-1"}]},
-            [load_signer(c,"COLLECTOR",keys),load_signer(v,"INDEPENDENT_VERIFIER",keys)])
-        verify_binding_signatures(envelope,keys)
-    print("FENCE-001 audit provenance binding generator self-test passed (ephemeral keys only)")
+        trusted = {
+            "keyId": key_id, "identity": identity, "role": role,
+            "publicKeyBase64Url": base64.urlsafe_b64encode(public).decode("ascii").rstrip("="),
+        }
+        seed = private.private_bytes(
+            serialization.Encoding.Raw, serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        )
+        signer = {
+            "role": role, "identity": identity, "keyId": key_id,
+            "privateKeyBase64Url": base64.urlsafe_b64encode(seed).decode("ascii").rstrip("="),
+        }
+        return private, trusted, signer
+
+    collector_private, collector_trust, collector_signer = key_record("COLLECTOR", "collector-fixture")
+    verifier_private, verifier_trust, verifier_signer = key_record("INDEPENDENT_VERIFIER", "verifier-fixture")
+    trusted_keys = [collector_trust, verifier_trust]
+
+    provider_identity = {
+        "provider": "fixture-provider", "accountId": "qualification-account",
+        "region": "fixture-region", "service": "audit-service",
+    }
+    sources = [
+        ("page-001.bin", b"fixture raw audit page", "RAW_PROVIDER_EXCHANGE", []),
+        ("auth-001.bin", b"fixture audit authentication proof", "CONTRACT_EVIDENCE", []),
+        ("event-001.bin", b"fixture provider audit event", "RAW_PROVIDER_EXCHANGE", ["request-001"]),
+    ]
+
+    body = copy.deepcopy(vector["manifestBody"])
+    body["testOnly"] = False
+    body["providerScope"] = {
+        "name": provider_identity["provider"], "account": provider_identity["accountId"],
+        "region": provider_identity["region"], "service": provider_identity["service"],
+    }
+    body["artifacts"] = []
+    artifact_ids = []
+    with tempfile.TemporaryDirectory(prefix="fence-generator-e2e-") as temporary:
+        root = Path(temporary)
+        for index, (source_name, data, artifact_type, request_ids) in enumerate(sources, start=1):
+            artifact_id = f"audit-fixture-{index}"
+            artifact_ids.append(artifact_id)
+            (root / artifact_id).write_bytes(data)
+            artifact = copy.deepcopy(vector["manifestBody"]["artifacts"][0])
+            artifact.update({
+                "artifactId": artifact_id,
+                "testIds": ["WIT-012", "WIT-014"],
+                "artifactType": artifact_type,
+                "objectRef": f"fixture://evidence/{index}",
+                "objectVersion": "immutable-v1",
+                "sha256": sha(data),
+                "byteCount": len(data),
+                "collectorIdentity": "collector-fixture",
+                "collectorKeyId": collector_trust["keyId"],
+                "independentVerifierIdentity": "verifier-fixture",
+                "verifierKeyId": verifier_trust["keyId"],
+                "providerRequestIds": request_ids,
+            })
+            body["artifacts"].append(artifact)
+
+        manifest_digest = sha(rfc8785.dumps(body))
+        manifest_prefix = b"SKYHIGH-FENCE-001-EVIDENCE-MANIFEST-V1\\x00"
+        manifest_attestations = []
+        for role, identity, private, trusted in (
+            ("COLLECTOR", "collector-fixture", collector_private, collector_trust),
+            ("INDEPENDENT_VERIFIER", "verifier-fixture", verifier_private, verifier_trust),
+        ):
+            payload = manifest_prefix + rfc8785.dumps({
+                "manifestDigest": manifest_digest, "role": role,
+                "signerIdentity": identity, "keyId": trusted["keyId"],
+            })
+            manifest_attestations.append({
+                "role": role, "signerIdentity": identity, "keyId": trusted["keyId"],
+                "signatureBase64Url": base64.urlsafe_b64encode(private.sign(payload)).decode("ascii").rstrip("="),
+            })
+        manifest = {
+            "manifestBody": body, "manifestDigest": manifest_digest,
+            "attestations": manifest_attestations,
+        }
+
+        report = {
+            "profile": "sky-high-fence-provider-audit-provenance-v1",
+            "testOnly": False,
+            "providerIdentity": provider_identity,
+            "independentVerifierPrincipalId": "verifier-fixture",
+            "qualificationStatus": "AUDIT_STREAM_AUTHENTICATED_AND_REQUESTS_CORRELATED",
+            "pages": [{
+                "rawResponseArtifact": "page-001.bin",
+                "rawResponseSha256": sha(sources[0][1]),
+                "rawResponseByteCount": len(sources[0][1]),
+                "authenticationEvidenceArtifact": "auth-001.bin",
+                "authenticationEvidenceSha256": sha(sources[1][1]),
+                "authenticationEvidenceByteCount": len(sources[1][1]),
+            }],
+            "events": [{
+                "artifact": "event-001.bin", "sha256": sha(sources[2][1]),
+                "byteCount": len(sources[2][1]), "providerRequestId": "request-001",
+            }],
+        }
+        mappings = [
+            {"sourceGroup": "pages", "sourceArtifact": "page-001.bin", "manifestArtifactId": artifact_ids[0]},
+            {"sourceGroup": "authenticationEvidence", "sourceArtifact": "auth-001.bin", "manifestArtifactId": artifact_ids[1]},
+            {"sourceGroup": "events", "sourceArtifact": "event-001.bin", "manifestArtifactId": artifact_ids[2]},
+        ]
+        collector_path = root / "collector-signing-key.json"
+        verifier_path = root / "verifier-signing-key.json"
+        collector_path.write_text(json.dumps(collector_signer), encoding="utf-8")
+        verifier_path.write_text(json.dumps(verifier_signer), encoding="utf-8")
+
+        envelope = build_binding(
+            manifest, trusted_keys, report, mappings, trusted_keys,
+            collector_path, verifier_path,
+        )
+        validate_binding(
+            manifest, trusted_keys, report, envelope, trusted_keys, root,
+        )
+
+        wrong_report = copy.deepcopy(report)
+        wrong_report["providerIdentity"]["accountId"] = "substituted-account"
+        try:
+            build_binding(
+                manifest, trusted_keys, wrong_report, mappings, trusted_keys,
+                collector_path, verifier_path,
+            )
+        except ValueError as error:
+            if "provider identity" not in str(error):
+                raise
+        else:
+            raise AssertionError("provider/account substitution was accepted")
+
+        missing_mapping = mappings[:-1]
+        try:
+            build_binding(
+                manifest, trusted_keys, report, missing_mapping, trusted_keys,
+                collector_path, verifier_path,
+            )
+        except ValueError as error:
+            if "map every page" not in str(error):
+                raise
+        else:
+            raise AssertionError("incomplete artifact mapping was accepted")
+
+        tampered_bytes = root / artifact_ids[2]
+        tampered_bytes.write_bytes(sources[2][1] + b"tamper")
+        try:
+            validate_binding(
+                manifest, trusted_keys, report, envelope, trusted_keys, root,
+            )
+        except ValueError as error:
+            if "materialized manifest artifact bytes" not in str(error):
+                raise
+        else:
+            raise AssertionError("tampered materialized evidence bytes were accepted")
+
+    print("FENCE-001 audit provenance binding generator end-to-end self-test passed")
+    print("Covered: ephemeral manifest signatures, report scope, exact source mapping, binding signatures, byte verification")
+    print("Negative cases rejected: provider substitution, missing mapping, tampered materialized bytes")
+    print("Scope: synthetic fixtures only; no external provider or production keys")
 
 
 def main() -> None:
