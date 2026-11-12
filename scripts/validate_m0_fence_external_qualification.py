@@ -55,6 +55,26 @@ def load_json(path: Path) -> dict[str, Any]:
     return data
 
 
+def load_json_with_sha256(path: Path) -> tuple[dict[str, Any], str]:
+    try:
+        raw = path.read_bytes()
+        data = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise PlanError(f"cannot load trust-key inventory {path}: {exc}") from exc
+    require(isinstance(data, dict), "trust-key inventory root must be an object")
+    return data, hashlib.sha256(raw).hexdigest()
+
+
+def require_trust_keys_outside_evidence_root(trust_keys_path: Path, evidence_root: Path) -> None:
+    trust_path = trust_keys_path.resolve()
+    root = evidence_root.resolve()
+    try:
+        trust_path.relative_to(root)
+    except ValueError:
+        return
+    raise PlanError("independent trust-key inventory must be stored outside the materialized evidence root")
+
+
 def validate_document_schema(document: dict[str, Any], schema_path: Path, label: str) -> None:
     try:
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
@@ -231,9 +251,15 @@ def validate_plan(
     plan: dict[str, Any],
     evidence_root: Path,
     trust_document: dict[str, Any],
+    actual_trust_keys_sha256: str,
+    expected_trust_keys_sha256: str,
     *,
     now: datetime | None = None,
 ) -> dict[str, Any]:
+    require(SHA256.fullmatch(expected_trust_keys_sha256 or "") is not None,
+            "independently pinned trust-key inventory SHA-256 is missing or malformed")
+    require(actual_trust_keys_sha256 == expected_trust_keys_sha256,
+            "trust-key inventory bytes do not match the independently pinned SHA-256")
     validate_plan_schema(plan)
     trusted_keys = validate_trust_keys(trust_document)
     now = now or datetime.now(timezone.utc)
@@ -333,6 +359,7 @@ def validate_plan(
         "profile": PROFILE, "runId": run_id, "accountId": account_id,
         "stageCount": len(STAGES), "stages": checked,
         "attestationSigners": attestation_signers,
+        "trustKeyInventorySha256": actual_trust_keys_sha256,
         "result": "READY_FOR_INDEPENDENT_REVIEW",
         "independentReviewStatus": review, "productionApproval": False,
         "hostAdmissionEnabled": False, "limitations": plan["limitations"],
@@ -341,7 +368,9 @@ def validate_plan(
 
 def self_test() -> None:
     with tempfile.TemporaryDirectory() as temp:
-        root = Path(temp)
+        temp_root = Path(temp)
+        root = temp_root / "evidence"
+        root.mkdir()
         roles = (
             "storageAdministrator", "accountOwner", "organizationAdministrator",
             "recoveryAdministrator", "sourceReader", "restoreOperator",
@@ -399,6 +428,24 @@ def self_test() -> None:
                 "publicKeySha256": hashlib.sha256(public_raw).hexdigest(), "status": "ACTIVE",
             })
 
+        trust_bytes = canonical_json(trust_keys, "fixture trust-key inventory") + b"\n"
+        trust_path = temp_root / "independent-trust-keys.json"
+        trust_path.write_bytes(trust_bytes)
+        loaded_trust_keys, trust_digest = load_json_with_sha256(trust_path)
+        require_trust_keys_outside_evidence_root(trust_path, root)
+        in_evidence_trust_path = root / "untrusted-trust-keys.json"
+        in_evidence_trust_path.write_bytes(trust_bytes)
+        try:
+            require_trust_keys_outside_evidence_root(in_evidence_trust_path, root)
+        except PlanError:
+            pass
+        else:
+            raise AssertionError("trust-key inventory inside evidence root accepted")
+
+        def validate_fixture(candidate: dict[str, Any], document: dict[str, Any] = loaded_trust_keys,
+                             actual_digest: str = trust_digest, expected_digest: str = trust_digest) -> dict[str, Any]:
+            return validate_plan(candidate, root, document, actual_digest, expected_digest, now=fixed_now)
+
         scope_digest = qualification_scope_digest(plan)
         attestation_specs = (
             ("providerApproval", "PROVIDER_APPROVAL_AUTHORITY", "PROVIDER_APPROVAL"),
@@ -433,8 +480,30 @@ def self_test() -> None:
             }
             plan["externalAttestations"][name] = {"envelope": envelope}
 
-        result = validate_plan(plan, root, trust_keys, now=fixed_now)
+        result = validate_fixture(plan)
         require(result["result"] == "READY_FOR_INDEPENDENT_REVIEW", "valid signed plan rejected")
+        try:
+            validate_plan(plan, root, loaded_trust_keys, trust_digest, "0" * 64, now=fixed_now)
+        except PlanError:
+            pass
+        else:
+            raise AssertionError("wrong out-of-band trust-key inventory pin accepted")
+
+        substituted_trust = copy.deepcopy(trust_keys)
+        substituted_public = Ed25519PrivateKey.generate().public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        substituted_trust["keys"][0]["publicKeyBase64Url"] = (
+            base64.urlsafe_b64encode(substituted_public).decode("ascii").rstrip("=")
+        )
+        substituted_trust["keys"][0]["publicKeySha256"] = hashlib.sha256(substituted_public).hexdigest()
+        substituted_digest = hashlib.sha256(
+            canonical_json(substituted_trust, "substituted trust-key fixture") + b"\n"
+        ).hexdigest()
+        try:
+            validate_plan(plan, root, substituted_trust, substituted_digest, trust_digest, now=fixed_now)
+        except PlanError:
+            pass
+        else:
+            raise AssertionError("replacement trust-key inventory accepted under the old pin")
         require(result["productionApproval"] is False, "approval state changed")
         require(set(result["attestationSigners"]) == set(EXPECTED_ATTESTATIONS),
                 "not all independent attestation roles were verified")
@@ -459,7 +528,7 @@ def self_test() -> None:
             candidate = copy.deepcopy(plan)
             mutate(candidate)
             try:
-                validate_plan(candidate, root, trust_keys, now=fixed_now)
+                validate_fixture(candidate)
             except PlanError:
                 continue
             raise AssertionError(f"fail-closed test accepted: {label}")
@@ -473,7 +542,7 @@ def self_test() -> None:
             candidate = copy.deepcopy(plan)
             mutate(candidate)
             try:
-                validate_plan(candidate, root, trust_keys, now=fixed_now)
+                validate_fixture(candidate)
             except PlanError:
                 continue
             raise AssertionError(f"cryptographic fail-closed test accepted: {label}")
@@ -488,7 +557,7 @@ def self_test() -> None:
             base64.urlsafe_b64encode(expired_signature).decode("ascii").rstrip("=")
         )
         try:
-            validate_plan(expired_attestation, root, trust_keys, now=fixed_now)
+            validate_fixture(expired_attestation)
         except PlanError:
             pass
         else:
@@ -497,7 +566,9 @@ def self_test() -> None:
         bad_fingerprint = copy.deepcopy(trust_keys)
         bad_fingerprint["keys"][0]["publicKeySha256"] = "0" * 64
         try:
-            validate_plan(plan, root, bad_fingerprint, now=fixed_now)
+            validate_fixture(plan, bad_fingerprint,
+                              hashlib.sha256(canonical_json(bad_fingerprint, "bad trust fixture") + b"\n").hexdigest(),
+                              hashlib.sha256(canonical_json(bad_fingerprint, "bad trust fixture") + b"\n").hexdigest())
         except PlanError:
             pass
         else:
@@ -506,7 +577,9 @@ def self_test() -> None:
         duplicate_signer = copy.deepcopy(trust_keys)
         duplicate_signer["keys"][1]["signerIdentity"] = duplicate_signer["keys"][0]["signerIdentity"]
         try:
-            validate_plan(plan, root, duplicate_signer, now=fixed_now)
+            validate_fixture(plan, duplicate_signer,
+                              hashlib.sha256(canonical_json(duplicate_signer, "duplicate signer trust fixture") + b"\n").hexdigest(),
+                              hashlib.sha256(canonical_json(duplicate_signer, "duplicate signer trust fixture") + b"\n").hexdigest())
         except PlanError:
             pass
         else:
@@ -515,7 +588,7 @@ def self_test() -> None:
         candidate = copy.deepcopy(plan)
         candidate["stages"]["evidence_object_store"]["sha256"] = "0" * 64
         try:
-            validate_plan(candidate, root, trust_keys, now=fixed_now)
+            validate_fixture(candidate)
         except PlanError:
             pass
         else:
@@ -523,7 +596,7 @@ def self_test() -> None:
 
         (root / "witness.evidence").write_bytes(b"tampered-stage")
         try:
-            validate_plan(plan, root, trust_keys, now=fixed_now)
+            validate_fixture(plan)
         except PlanError:
             pass
         else:
@@ -533,13 +606,13 @@ def self_test() -> None:
         (root / "witness.evidence").write_bytes(f"synthetic-stage:witness".encode())
         (root / "providerApproval.attestation").write_bytes(b"tampered-attestation")
         try:
-            validate_plan(plan, root, trust_keys, now=fixed_now)
+            validate_fixture(plan)
         except PlanError:
             pass
         else:
             raise AssertionError("tampered signed attestation evidence bytes accepted")
 
-        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 23 fail-closed checks)")
+        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 26 fail-closed checks)")
         print("Ed25519 signatures verified against an independent trust-key inventory.")
         print("Synthetic only: no provider calls, production keys, destructive tests or production approval.")
 
@@ -549,16 +622,22 @@ def main() -> None:
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--evidence-root", type=Path)
     parser.add_argument("--trust-keys", type=Path)
+    parser.add_argument("--expected-trust-keys-sha256")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
         self_test()
         return
-    if not args.plan or not args.evidence_root or not args.trust_keys or not args.output:
-        parser.error("--plan, --evidence-root, --trust-keys and --output are required outside --self-test")
-    trust_document = load_json(args.trust_keys)
-    result = validate_plan(load_json(args.plan), args.evidence_root, trust_document)
+    if (not args.plan or not args.evidence_root or not args.trust_keys
+            or not args.expected_trust_keys_sha256 or not args.output):
+        parser.error("--plan, --evidence-root, --trust-keys, --expected-trust-keys-sha256 and --output are required outside --self-test")
+    require_trust_keys_outside_evidence_root(args.trust_keys, args.evidence_root)
+    trust_document, actual_trust_keys_sha256 = load_json_with_sha256(args.trust_keys)
+    result = validate_plan(
+        load_json(args.plan), args.evidence_root, trust_document,
+        actual_trust_keys_sha256, args.expected_trust_keys_sha256,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.output.exists():
         raise SystemExit("refusing to overwrite existing qualification summary")
