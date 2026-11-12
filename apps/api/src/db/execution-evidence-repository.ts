@@ -217,6 +217,17 @@ function isoTimestamp(value: Date | string): string {
 }
 
 function validateEvent(input: AppendExecutionEvidenceEventInput): void {
+  const eventTypes: readonly string[] = [
+    "ATTEMPT_ACCEPTED", "JOB_QUEUED", "JOB_CLAIMED", "RUNNER_STARTED",
+    "COMPILATION_STARTED", "COMPILATION_FINISHED", "TEST_STARTED", "TEST_FINISHED",
+    "EXECUTION_FINISHED", "INFRASTRUCTURE_FAILED", "CANCELLED", "RETRY_SCHEDULED",
+  ];
+  const actorKinds: readonly string[] = ["STUDENT", "API", "QUEUE", "RUNNER", "JUDGE", "SYSTEM"];
+  const phaseStatuses: readonly string[] = ["STARTED", "SUCCEEDED", "FAILED", "SKIPPED", "CANCELLED"];
+  if (!eventTypes.includes(input.eventType) || !actorKinds.includes(input.actorKind) ||
+      (input.phaseStatus !== undefined && !phaseStatuses.includes(input.phaseStatus))) {
+    throw new Error("invalid_execution_evidence_event_type");
+  }
   if (!isUuid(input.eventId) || !isUuid(input.executionId) || !isUuid(input.attemptId)) {
     throw new Error("invalid_execution_evidence_identifier");
   }
@@ -230,6 +241,18 @@ function validateEvent(input: AppendExecutionEvidenceEventInput): void {
 }
 
 function validateResult(input: RecordExecutionResultInput): void {
+  const compilationStatuses: readonly string[] = ["NOT_STARTED", "SUCCEEDED", "FAILED"];
+  const verdicts: readonly string[] = [
+    "NOT_EVALUATED", "ACCEPTED", "WRONG_ANSWER", "COMPILATION_ERROR",
+    "RUNTIME_ERROR", "TIME_LIMIT_EXCEEDED", "MEMORY_LIMIT_EXCEEDED",
+    "OUTPUT_LIMIT_EXCEEDED", "INTERNAL_ERROR",
+  ];
+  const cleanupStatuses: readonly string[] = ["SUCCEEDED", "FAILED", "UNKNOWN"];
+  if (!compilationStatuses.includes(input.compilationStatus) ||
+      !verdicts.includes(input.verdict) ||
+      !cleanupStatuses.includes(input.cleanupStatus)) {
+    throw new Error("invalid_execution_result_classification");
+  }
   if (!isUuid(input.executionId) || !isUuid(input.attemptId) ||
       !isUuid(input.leaseToken)) {
     throw new Error("invalid_execution_result_identifier");
@@ -372,6 +395,18 @@ export class PostgresExecutionEvidenceRepository {
     return this.withClient(async (client) => {
       await client.query("BEGIN");
       try {
+        // Lock the job row first so concurrent completion retries serialize.
+        // A waiter then observes the committed result and returns an idempotent replay.
+        const job = await client.query<{ id: string }>(
+          [
+            "SELECT id FROM execution_jobs",
+            "WHERE id = $1::uuid AND attempt_id = $2::uuid",
+            "FOR UPDATE",
+          ].join("\\n"),
+          [input.executionId, input.attemptId],
+        );
+        if (job.rows.length !== 1) throw new ExecutionEvidenceNotFoundError();
+
         const existing = await client.query<ResultRow>(
           [
             "SELECT attempt_id, result_sha256",
