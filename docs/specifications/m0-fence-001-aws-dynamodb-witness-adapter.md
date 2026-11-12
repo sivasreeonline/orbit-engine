@@ -69,13 +69,14 @@ Required environment:
 | \`FENCE_AWS_DDB_REGION\` | Approved table Region |
 | \`FENCE_AWS_DDB_TABLE_NAME\` | Existing purpose-built witness test table |
 | \`FENCE_AWS_DDB_EXPECTED_TABLE_ARN\` | Exact table ARN |
+| `FENCE_AWS_DDB_EXPECTED_CALLER_ARN_PREFIX` | Approved STS assumed-role ARN prefix for the write principal, ending in `/` |
 | \`FENCE_AWS_DDB_QUALIFICATION_RUN_ID\` | Unique approved run ID |
 | \`FENCE_AWS_DDB_PREFLIGHT_REPORT\` | Local JSON output from the read-only AWS preflight |
 | \`FENCE_AWS_DDB_APPROVAL_FILE\` | Local approval file bound to that preflight report |
 
 Approval-file profile: \`sky-high-fence-aws-dynamodb-witness-write-approval-v1\`.
 
-The approval object must include \`profile\`, \`runId\`, \`accountId\`, \`region\`, \`tableArn\`, \`operation\`, \`preflightReportSha256\`, \`approvedBy\`, \`issuedAt\` and \`expiresAt\`. The approval validity window cannot exceed eight hours.
+The approval object must include `profile`, `runId`, `accountId`, `region`, `tableArn`, `expectedCallerArnPrefix`, `operation`, `preflightReportSha256`, `approvedBy`, `issuedAt` and `expiresAt`. The caller prefix must identify an assumed role in the pinned account and match the live STS caller ARN. The approval validity window cannot exceed eight hours.
 
 Do not create this approval file, set the live-write environment variable, or use an AWS credential profile until the account owner has approved the exact disposable table and test window. No credentials, approval files, account IDs or provider outputs belong in Git.
 
