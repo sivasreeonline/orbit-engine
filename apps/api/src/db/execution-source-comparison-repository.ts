@@ -184,6 +184,10 @@ export class PostgresExecutionSourceComparisonRepository {
 
       const row = result.rows[0];
       if (!row) throw new ExecutionSourceComparisonNotFoundError();
+      if (BigInt(row.base_byte_length) > 128n * 1024n ||
+          BigInt(row.target_byte_length) > 128n * 1024n) {
+        throw new ExecutionSourceComparisonLimitError();
+      }
       if (
         row.base_problem_id !== row.target_problem_id ||
         row.base_problem_version_id !== row.target_problem_version_id ||
