@@ -13,8 +13,7 @@ import importlib
 import json
 import os
 import re
-import tempfile
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
@@ -364,15 +363,15 @@ class FixtureAdapter:
 
     def fetch_verified_recovery_bundle(self, snapshot, *, witness_reader_principal_id, independent_verifier_principal_id):
         if self.scenario == "stale":
-            return RecoveryBundle(**{**asdict(self.bundle), "latest_read_status": "STALE"})
+            return replace(self.bundle, latest_read_status="STALE")
         if self.scenario == "rollback":
-            return RecoveryBundle(**{**asdict(self.bundle), "witness": HighWater(4, "4" * 64)})
+            return replace(self.bundle, witness=HighWater(4, "4" * 64))
         if self.scenario == "fork":
             bad = (self.bundle.checkpoints[0], Checkpoint(7, self.final_digest, "f" * 64, "checkpoint-007"))
-            return RecoveryBundle(**{**asdict(self.bundle), "checkpoints": bad})
+            return replace(self.bundle, checkpoints=bad)
         if self.scenario == "monitor-lag":
             stale = (self.monitors[0], MonitorHead("monitor-b", "operator-b", "account-b", "domain-b", 6, "6" * 64))
-            return RecoveryBundle(**{**asdict(self.bundle), "monitors": stale})
+            return replace(self.bundle, monitors=stale)
         return self.bundle
 
     def restore_and_replay(self, target, snapshot, bundle, *, restore_operator_principal_id):
