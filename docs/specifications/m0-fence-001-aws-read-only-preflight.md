@@ -106,3 +106,12 @@ The preflight does not:
 After the account owner supplies and approves the disposable account, Region, resource inventory and role boundary, the next engineering slices are: (1) DynamoDB witness adapter with durable idempotency records and strong reads; (2) S3 exact-version compliance adapter; (3) CloudTrail log/digest verifier; and only then (4) separately approved destructive bypass and restore tests.
 
 **Production approval remains false. Host admission remains disabled.**
+
+## 5. AWS documentation references
+
+- [DynamoDB TransactWriteItems API](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html) — atomic transaction limits and the 10-minute ClientRequestToken idempotency window.
+- [DynamoDB transaction behavior](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transaction-apis.html) — transaction conflict and retry guidance.
+- [S3 Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html) — exact-version compliance retention and the fact that later versions/delete markers can still be created.
+- [CloudTrail data events](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/logging-data-events-with-cloudtrail.html) — basic and advanced selectors for S3 objects and DynamoDB tables.
+- [DynamoDB CloudTrail data events](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/logging-using-cloudtrail.html) — DynamoDB TransactWriteItems is among the table data events that CloudTrail can record.
+- [CloudTrail digest structure](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-log-file-validation-digest-file-structure.html) — digest files contain file hashes and the previous digest signature.
