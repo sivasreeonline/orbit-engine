@@ -13,6 +13,7 @@ import importlib
 import json
 import os
 import re
+import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,6 +72,34 @@ class ProviderAuditVerifier(Protocol):
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def prepare_output_dir(output_dir: Path) -> None:
+    """Create or validate a fresh evidence directory before any provider API call."""
+    try:
+        mode = output_dir.lstat().st_mode
+    except FileNotFoundError:
+        try:
+            output_dir.mkdir(parents=True, exist_ok=False)
+        except FileExistsError as exc:
+            raise ValueError("audit evidence output directory changed during preflight") from exc
+        return
+    if stat.S_ISLNK(mode):
+        raise ValueError("audit evidence output directory must not be a symbolic link")
+    if not stat.S_ISDIR(mode):
+        raise ValueError("audit evidence output path must be a directory")
+    if next(output_dir.iterdir(), None) is not None:
+        raise ValueError("audit evidence output directory must be new or empty; refusing to overwrite prior evidence")
+
+
+def write_new_artifact(output_dir: Path, filename: str, content: bytes) -> None:
+    """Create one evidence file without following or replacing an existing path."""
+    path = output_dir / filename
+    try:
+        with path.open("xb") as artifact:
+            artifact.write(content)
+    except FileExistsError as exc:
+        raise ValueError(f"refusing to overwrite existing audit evidence artifact: {filename}") from exc
 
 
 def require_id(value: Any, field: str) -> str:
@@ -194,7 +223,7 @@ def run_contract(
     if verifier_id in {item["actor_principal_id"] for item in expected_requests.values()}:
         raise ValueError("independent audit verifier must not be a privileged mutation actor")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    prepare_output_dir(output_dir)
     cursor = initial_cursor
     expected_sequence = 1
     seen_events: set[str] = set()
@@ -214,9 +243,9 @@ def run_contract(
             raise ValueError("provider returned an empty audit page without a terminal event")
         page_digest = digest(page.raw_response)
         page_artifact = f"audit-page-{page_number:04d}.bin"
-        (output_dir / page_artifact).write_bytes(page.raw_response)
+        write_new_artifact(output_dir, page_artifact, page.raw_response)
         signature_artifact = f"audit-page-{page_number:04d}-authentication.bin"
-        (output_dir / signature_artifact).write_bytes(page.signature_evidence)
+        write_new_artifact(output_dir, signature_artifact, page.signature_evidence)
         page_records.append({
             "page": page_number, "cursorStart": page.cursor_start, "cursorEnd": page.cursor_end,
             "rawResponseArtifact": page_artifact, "rawResponseSha256": page_digest,
@@ -235,7 +264,7 @@ def run_contract(
             if total_events > MAX_EVENTS:
                 raise ValueError("provider audit stream exceeded the bounded event limit")
             artifact = f"audit-event-{total_events:06d}.bin"
-            (output_dir / artifact).write_bytes(event["raw_bytes"])
+            write_new_artifact(output_dir, artifact, event["raw_bytes"])
             event_records.append({
                 "eventId": event["event_id"], "providerRequestId": event["provider_request_id"],
                 "sequence": event["sequence"], "artifact": artifact,
@@ -274,8 +303,9 @@ def run_contract(
             "This report is not a dual-signed evidence manifest and does not authorize host admission or execution."
         ]
     }
-    (output_dir / "provider-audit-provenance-run.json").write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    write_new_artifact(
+        output_dir, "provider-audit-provenance-run.json",
+        (json.dumps(report, indent=2, sort_keys=True) + "\n").encode("utf-8"),
     )
     return report
 
@@ -283,6 +313,7 @@ def run_contract(
 class FixtureAdapter:
     def __init__(self, scenario: str = "success") -> None:
         self.scenario = scenario
+        self.fetch_calls = 0
         self.cursor = "cursor-0"
         self.sequence = 1
         self.request = {
@@ -295,6 +326,7 @@ class FixtureAdapter:
         }
 
     def fetch_page(self, cursor: str, *, verifier_principal_id: str) -> AuditPage:
+        self.fetch_calls += 1
         if cursor != self.cursor:
             raise ValueError("fixture cursor mismatch")
         event = {
@@ -351,6 +383,68 @@ def run_self_test() -> None:
                               root_hash, "independent-verifier", "cursor-0", attempts, Path(temporary))
         assert result["eventCount"] == 1
         assert result["qualificationStatus"] == "AUDIT_STREAM_AUTHENTICATED_AND_REQUESTS_CORRELATED"
+
+    # A rerun against the same directory must stop before making another
+    # provider request and must leave every previously collected byte intact.
+    with tempfile.TemporaryDirectory() as temporary:
+        output = Path(temporary)
+        first = run_contract(FixtureAdapter(), FixtureVerifier(), expected, "fixture-root",
+                             root_hash, "independent-verifier", "cursor-0", attempts, output)
+        report_path = output / "provider-audit-provenance-run.json"
+        page_path = output / "audit-page-0001.bin"
+        original_report = report_path.read_bytes()
+        original_page = page_path.read_bytes()
+        retry_adapter = FixtureAdapter()
+        try:
+            run_contract(retry_adapter, FixtureVerifier(), expected, "fixture-root",
+                         root_hash, "independent-verifier", "cursor-0", attempts, output)
+        except ValueError as error:
+            assert "new or empty" in str(error)
+        else:
+            raise AssertionError("non-empty evidence directory was accepted for a retry")
+        assert retry_adapter.fetch_calls == 0, "provider adapter was called before output-directory rejection"
+        assert report_path.read_bytes() == original_report
+        assert page_path.read_bytes() == original_page
+
+    # A pre-existing non-empty directory is rejected before collection.
+    with tempfile.TemporaryDirectory() as temporary:
+        output = Path(temporary) / "existing"
+        output.mkdir()
+        sentinel = output / "prior-evidence.bin"
+        sentinel.write_bytes(b"preserve-me")
+        blocked_adapter = FixtureAdapter()
+        try:
+            run_contract(blocked_adapter, FixtureVerifier(), expected, "fixture-root",
+                         root_hash, "independent-verifier", "cursor-0", attempts, output)
+        except ValueError as error:
+            assert "new or empty" in str(error)
+        else:
+            raise AssertionError("pre-existing evidence directory was accepted")
+        assert blocked_adapter.fetch_calls == 0
+        assert sentinel.read_bytes() == b"preserve-me"
+
+    # The requested output path itself may not be a symbolic link to a
+    # different directory, even when the link target is empty.
+    with tempfile.TemporaryDirectory() as temporary:
+        base = Path(temporary)
+        target = base / "target"
+        target.mkdir()
+        alias = base / "alias"
+        try:
+            alias.symlink_to(target, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pass
+        else:
+            blocked_adapter = FixtureAdapter()
+            try:
+                run_contract(blocked_adapter, FixtureVerifier(), expected, "fixture-root",
+                             root_hash, "independent-verifier", "cursor-0", attempts, alias)
+            except ValueError as error:
+                assert "symbolic link" in str(error)
+            else:
+                raise AssertionError("symbolic-link evidence directory was accepted")
+            assert blocked_adapter.fetch_calls == 0
+            assert list(target.iterdir()) == []
 
     for scenario, verifier_scenario, expected_error in (
         ("wrong-account", "success", "account_id"),
