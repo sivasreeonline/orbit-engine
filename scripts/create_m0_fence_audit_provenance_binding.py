@@ -24,7 +24,7 @@ MAPPING_SCHEMA = ROOT / "docs/schemas/m0-fence-audit-provenance-artifact-mapping
 sys.path.insert(0, str(ROOT / "scripts"))
 from validate_m0_fence_evidence_manifest import validate_manifest  # noqa: E402
 from validate_m0_fence_audit_provenance_manifest_binding import (  # noqa: E402
-    sign_binding, validate_binding, verify_binding_signatures
+    sign_binding, validate_audit_report, validate_binding, verify_binding_signatures
 )
 
 
@@ -95,6 +95,7 @@ def build_binding(manifest: dict[str, Any], manifest_keys: list[dict[str, str]],
     verifier_identity = manifest_signers["INDEPENDENT_VERIFIER"]
     if report.get("independentVerifierPrincipalId") != verifier_identity:
         raise ValueError("audit report verifier identity does not match signed evidence manifest")
+    validate_audit_report(report, expected_provider, verifier_identity)
 
     required_sources = []
     for page in report.get("pages", []):
