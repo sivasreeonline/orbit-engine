@@ -129,7 +129,7 @@ export class PostgresRunnerDispatchLeaseRepository {
           "      AND pending.available_at <= now()",
           "      AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= now())",
           "  )",
-          "  ORDER BY lane.last_served_at, lane.tenant_id, lane.actor_user_id",
+          "  ORDER BY lane.last_served_ticket, lane.tenant_id, lane.actor_user_id",
           "  LIMIT $1",
           "  FOR UPDATE OF lane SKIP LOCKED",
           "), candidate_dispatches AS (",
@@ -158,7 +158,8 @@ export class PostgresRunnerDispatchLeaseRepository {
           "    dispatch.delivery_attempts, dispatch.lease_token, dispatch.lease_expires_at",
           "), served AS (",
           "  UPDATE runner_dispatch_scheduler_lanes AS lane",
-          "  SET last_served_at = now(), updated_at = now()",
+          "  SET last_served_ticket = nextval('runner_dispatch_scheduler_ticket_seq'),",
+          "      last_served_at = clock_timestamp(), updated_at = now()",
           "  FROM claimed",
           "  INNER JOIN execution_attempts AS owner_attempt ON owner_attempt.id = claimed.attempt_id",
           "  WHERE lane.tenant_id = owner_attempt.tenant_id",
@@ -167,7 +168,7 @@ export class PostgresRunnerDispatchLeaseRepository {
           ")",
           "SELECT claimed.* FROM claimed",
           "CROSS JOIN (SELECT count(*) FROM served) AS scheduler_cursor_write",
-        ].join("\\n"),
+        ].join("\n"),
         [batchSize, workerId, leaseSeconds],
       );
 
