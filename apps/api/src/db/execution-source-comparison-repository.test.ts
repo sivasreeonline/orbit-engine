@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DatabaseUnavailableError } from "./database-errors";
 import {
   ExecutionSourceComparisonConflictError,
+  ExecutionSourceComparisonLimitError,
   ExecutionSourceComparisonNotFoundError,
   PostgresExecutionSourceComparisonRepository,
 } from "./execution-source-comparison-repository";
@@ -85,13 +86,14 @@ describe("PostgresExecutionSourceComparisonRepository", () => {
     expect(result.base.sourceCode).toBe("class Main {}\n");
     expect(result.target.sourceCode).toBe("class Main { int n; }\n");
     const query = fake.calls.find((call) => call.text.includes("FROM execution_attempts"));
-    expect(query?.values).toEqual([baseAttemptId, targetAttemptId, tenantId, actorUserId]);
+    expect(query?.values).toEqual([baseAttemptId, targetAttemptId, tenantId, actorUserId, 128 * 1024]);
     expect(query?.text).toContain("b.tenant_id = $3::uuid");
     expect(query?.text).toContain("b.actor_user_id = $4::uuid");
     expect(query?.text).toContain("t.tenant_id = $3::uuid");
     expect(query?.text).toContain("t.actor_user_id = $4::uuid");
     expect(query?.text).toContain("bs.tenant_id = $3::uuid");
     expect(query?.text).toContain("ts.actor_user_id = $4::uuid");
+    expect(query?.text).toContain("CASE WHEN bs.byte_length <= $5 THEN bs.source_bytes ELSE NULL END");
     expect(fake.ended()).toBe(true);
   });
 
@@ -128,6 +130,18 @@ describe("PostgresExecutionSourceComparisonRepository", () => {
     await expect(repository.getComparableAttemptSources(
       tenantId, actorUserId, baseAttemptId, targetAttemptId,
     )).rejects.toBeInstanceOf(ExecutionSourceSnapshotUnavailableError);
+  });
+
+  it("does not materialize source bytes above the database-side comparison cap", async () => {
+    const fake = fakeClient([await comparisonRow({
+      base_byte_length: 128 * 1024 + 1,
+      base_source_bytes: null,
+    })]);
+    const repository = new PostgresExecutionSourceComparisonRepository(connection, () => fake.client);
+
+    await expect(repository.getComparableAttemptSources(
+      tenantId, actorUserId, baseAttemptId, targetAttemptId,
+    )).rejects.toBeInstanceOf(ExecutionSourceComparisonLimitError);
   });
 
   it("rejects corrupted source bytes", async () => {
