@@ -346,6 +346,7 @@ def self_test() -> None:
             "storageAdministrator", "accountOwner", "organizationAdministrator",
             "recoveryAdministrator", "sourceReader", "restoreOperator",
             "witnessReader", "collector", "independentVerifier",
+            "providerApprovalAuthority", "evidenceRetentionAuthority",
         )
         stages: dict[str, Any] = {}
         for name in STAGES:
