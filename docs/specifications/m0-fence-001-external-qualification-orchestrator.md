@@ -2,7 +2,8 @@
 
 **Status:** Provider-neutral pre-review reconciliation contract. No provider is selected or qualified.
 **Command:** `scripts/validate_m0_fence_external_qualification.py`
-**Canonical plan schema:** `schemas/fence-001-external-qualification-plan-v1.schema.json` (JSON Schema Draft 2020-12)
+**Canonical plan schema:** `schemas/fence-001-external-qualification-plan-v2.schema.json` (JSON Schema Draft 2020-12)
+**Independent trust-key schema:** `schemas/fence-001-external-qualification-trust-keys-v1.schema.json`
 **Production status:** BLOCKED. This command never invokes provider adapters or performs destructive operations.
 
 ## Purpose
@@ -35,7 +36,11 @@ The plan must declare and independently substantiate:
 - Distinct storage administrator, account owner, organization administrator, recovery administrator, source reader, restore operator, witness reader, collector and independent verifier identities.
 - Independently verified provider-approval, verifier and evidence-retention attestations bound to the same run/account.
 
-The validator checks declarations and byte bindings. It cannot prove external attestations are truthful; their provenance, role separation and administrative/failure-domain independence must be reviewed separately. The audit-provenance stage is pinned to the same compute provider identity used for the privileged-bypass and restore/recovery stages.
+The three external attestations are no longer accepted as a self-asserted `verified=true` flag. Each must carry an Ed25519 signature over an RFC 8785 canonical body with a dedicated domain-separation prefix. The body binds the attestation type, run ID, account ID, approval ID, issue/expiry times, exact attestation evidence digest/byte count and a SHA-256 digest of the shared run/identity/provider-pin scope.
+
+Signatures are verified against a separate `--trust-keys` inventory. That inventory must be provisioned independently of the provider and evidence store; each of the three roles has a distinct active signer, key ID and Ed25519 public key. Public-key fingerprints are recomputed. CI creates ephemeral keys only; no production trust key or private key is committed.
+
+The validator still cannot prove that a trust authority's real-world governance or statement is truthful. Trust-key governance, signer independence and administrative/failure-domain separation require independent review. The audit-provenance stage is pinned to the same compute provider identity used for privileged-bypass and restore/recovery.
 
 ## Invocation
 
@@ -43,8 +48,9 @@ After the five real provider harnesses have been run against approved disposable
 
 ```powershell
 python scripts/validate_m0_fence_external_qualification.py `
-  --plan ./qualification-plan.json `
+  --plan ./qualification-plan-v2.json `
   --evidence-root ./materialized-qualification-evidence `
+  --trust-keys ./independently-provisioned-qualification-trust-keys.json `
   --output ./qualification-summary.json
 ```
 
@@ -54,7 +60,7 @@ Synthetic self-test (no provider calls):
 python scripts/validate_m0_fence_external_qualification.py --self-test
 ```
 
-Do not commit qualification plans, provider account identifiers, keys, credentials or raw provider evidence. Use a restricted evidence directory.
+Do not commit qualification plans, provider account identifiers, trust-key inventories, private keys, credentials or raw provider evidence. Keep the trust-key inventory outside the provider/evidence-store trust boundary and use a restricted evidence directory.
 
 ## Output boundary
 
