@@ -9,6 +9,8 @@ or evidence of independent failure domains.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import importlib
+import os
 from dataclasses import dataclass
 from threading import Lock
 from typing import Callable, Protocol, Sequence
@@ -104,6 +106,39 @@ def checkpoint(
         checkpoint_digest=digest_character * 64,
         previous_digest=previous_digest,
     )
+
+
+class LoseAcknowledgementOnce:
+    """Inject a lost response after the wrapped provider has committed."""
+
+    def __init__(self, delegate: WitnessAdapter):
+        self._delegate = delegate
+        self._lost = False
+
+    def append_if_current(
+        self,
+        value: Checkpoint,
+        *,
+        expected_generation: int,
+        expected_digest: str,
+        idempotency_key: str,
+    ) -> Receipt:
+        receipt = self._delegate.append_if_current(
+            value,
+            expected_generation=expected_generation,
+            expected_digest=expected_digest,
+            idempotency_key=idempotency_key,
+        )
+        if not self._lost:
+            self._lost = True
+            raise AmbiguousCommit("injected lost acknowledgement after provider append returned")
+        return receipt
+
+    def read_latest(self, scope: Scope) -> StoredCheckpoint | None:
+        return self._delegate.read_latest(scope)
+
+    def read_by_operation(self, scope: Scope, operation_id: str) -> StoredCheckpoint | None:
+        return self._delegate.read_by_operation(scope, operation_id)
 
 
 class InMemoryWitnessAdapter:
@@ -248,7 +283,7 @@ def run_conformance(adapter_factory: Callable[[], WitnessAdapter]) -> list[Confo
     case("exact idempotent retry", exact_retry_is_idempotent)
 
     def ambiguous_ack_retry() -> None:
-        adapter = InMemoryWitnessAdapter(lose_ack_once=True)
+        adapter = LoseAcknowledgementOnce(fresh())
         value = checkpoint(1, "operation-1", "1", ZERO_DIGEST)
         args = dict(expected_generation=0, expected_digest=ZERO_DIGEST, idempotency_key="lost-ack-key")
         try:
@@ -395,13 +430,30 @@ def run_conformance(adapter_factory: Callable[[], WitnessAdapter]) -> list[Confo
     return results
 
 
+def load_adapter_factory() -> tuple[Callable[[], WitnessAdapter], str]:
+    target = os.environ.get("FENCE_WITNESS_ADAPTER_FACTORY")
+    if not target:
+        return InMemoryWitnessAdapter, "IN_MEMORY_REFERENCE_FIXTURE"
+    module_name, separator, attribute = target.partition(":")
+    if not separator or not module_name or not attribute:
+        raise SystemExit("FENCE_WITNESS_ADAPTER_FACTORY must use module.path:factory_name")
+    module = importlib.import_module(module_name)
+    factory = getattr(module, attribute, None)
+    if not callable(factory):
+        raise SystemExit("configured witness adapter factory is not callable")
+    return factory, f"EXTERNAL_ADAPTER:{target}"
+
+
 def main() -> None:
-    results = run_conformance(InMemoryWitnessAdapter)
+    factory, mode = load_adapter_factory()
+    results = run_conformance(factory)
     failures = [item for item in results if not item.passed]
     for item in results:
         print(f"{'PASS' if item.passed else 'FAIL'} {item.name}: {item.detail}")
     print(f"Provider adapter contract cases: {len(results)}; passed: {len(results) - len(failures)}; failed: {len(failures)}")
-    print("Fixture: in-memory reference adapter only; not provider qualification or production evidence")
+    print(f"Execution mode: {mode}")
+    if mode == "IN_MEMORY_REFERENCE_FIXTURE":
+        print("NOT PROVIDER QUALIFICATION: fixture results are not external provider evidence")
     if failures:
         raise SystemExit(1)
 
