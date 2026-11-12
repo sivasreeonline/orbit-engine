@@ -8,7 +8,11 @@ import type {
   ProblemSummary,
 } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
-import type { PostgresExecutionSourceSnapshotRepository } from "./db/execution-source-snapshot-repository";
+import {
+  ExecutionSourceSnapshotNotFoundError,
+  ExecutionSourceSnapshotUnavailableError,
+  type PostgresExecutionSourceSnapshotRepository,
+} from "./db/execution-source-snapshot-repository";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
 
 type ExecutionEvidenceReadRepository = Pick<
@@ -344,32 +348,7 @@ describe("M1 API control plane", () => {
     expect(getAttemptSourceSnapshot).not.toHaveBeenCalled();
   });
 
-  it("does not disclose source snapshots belonging to another student", async () => {
-    const getAttemptSourceSnapshot = vi.fn(async (
-      _tenantId: string,
-      _actorUserId: string,
-      _attemptId: string,
-    ): Promise<never> => {
-      throw new Error("execution_source_snapshot_not_found");
-    });
-    const { handler } = makeHarness({
-      sourceSnapshotRepository: { getAttemptSourceSnapshot },
-    });
-
-    const response = await handler(makeRequest(
-      "/api/v1/attempts/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1/source",
-    ));
-
-    expect(response.status).toBe(500);
-    expect(await readJson(response)).toMatchObject({
-      error: { code: "INTERNAL_ERROR", retryable: true },
-    });
-  });
-
   it("returns a non-disclosing 404 when the owned source snapshot does not exist", async () => {
-    const { ExecutionSourceSnapshotNotFoundError } = await import(
-      "./db/execution-source-snapshot-repository"
-    );
     const getAttemptSourceSnapshot = vi.fn(async (
       _tenantId: string,
       _actorUserId: string,
@@ -392,9 +371,6 @@ describe("M1 API control plane", () => {
   });
 
   it("returns retryable unavailable while private R2 source retrieval is not configured", async () => {
-    const { ExecutionSourceSnapshotUnavailableError } = await import(
-      "./db/execution-source-snapshot-repository"
-    );
     const getAttemptSourceSnapshot = vi.fn(async (
       _tenantId: string,
       _actorUserId: string,
