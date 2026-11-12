@@ -114,7 +114,7 @@ def run_fixture_tests() -> tuple[int, int]:
     reject(lambda d: d["bypassAttempts"][0].update(result="ALLOWED"), "DENIED")
     reject(lambda d: d["bypassAttempts"][0].update(actorPrincipalId="collector-principal"), "designated storageAdmin")
     reject(lambda d: d["bypassAttempts"][0].update(auditAcquiredByPrincipalId="collector-principal"), "independent verifier")
-    reject(lambda d: d["bypassAttempts"].pop(), "missing privileged bypass attempts")
+    reject(lambda d: d["bypassAttempts"].pop(), "is too short")
     reject(lambda d: d["privilegedPrincipals"].update(accountOwner=d["topology"]["verifier"]["principalId"]), "overlaps a privileged bypass principal")
     return len(validated), negatives
 
