@@ -93,3 +93,12 @@ Each result must retain raw signed receipts and provider evidence, hash every ar
 The provider adapter is not qualified unless all required tests pass against the real provider, every evidence artifact is immutable and independently verified, and provider semantics match the contract. Any ambiguous or unavailable consistency guarantee blocks qualification. An eventual-consistency read is not silently promoted to strongly consistent. A successful cryptographic receipt verification does not override an append/read consistency failure.
 
 This harness does not alter production admission or execution authorization. Production approval remains false until the full FENCE-001 qualification record is independently reviewed and every mandatory trust boundary is satisfied.
+
+
+## AWS DynamoDB adapter implementation
+
+The first concrete provider adapter is `scripts/aws_dynamodb_witness_adapter.py`. It implements the existing `WitnessAdapter` interface and writes four distinct records in one DynamoDB transaction: the new immutable generation, the operation-ID lookup, the durable idempotency-key binding and the current high-water record. The head item uses conditional writes to make the predecessor compare-and-append decision atomic.
+
+Authoritative reads use strongly consistent base-table `GetItem` calls. The adapter intentionally avoids GSI/stream reads for the witness high-water. It checks the durable idempotency item before a retry and deliberately omits the optional 10-minute native transaction-token cache. Long-lived retry safety comes from the idempotency record, operation record and conditional high-water update committed atomically.
+
+The local test path uses AWS-published DynamoDB Local. It can validate SDK wiring and the contract against the local API implementation. It is not evidence that the managed AWS service, IAM policies, failure domains, durability or production controls are qualified. Only the separately approved live account run and independently verified evidence can satisfy external FENCE-001 qualification.
