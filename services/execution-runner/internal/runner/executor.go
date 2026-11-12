@@ -21,15 +21,15 @@ var (
 )
 
 const (
-	maximumSourceBytes = 200 * 1024
-	maximumTestCases   = 1000
-	maximumTestBytes   = 64 * 1024
-	maximumBundleBytes = 4 * 1024 * 1024
-	maximumCPUQuota    = int64(2000)
-	maximumMemoryBytes = int64(1024 * 1024 * 1024)
-	maximumWallMillis  = int64(30_000)
+	maximumSourceBytes  = 200 * 1024
+	maximumTestCases    = 1000
+	maximumTestBytes    = 64 * 1024
+	maximumBundleBytes  = 4 * 1024 * 1024
+	maximumCPUQuota     = int64(2000)
+	maximumMemoryBytes  = int64(1024 * 1024 * 1024)
+	maximumWallMillis   = int64(30_000)
 	maximumProcessCount = int64(128)
-	maximumOutputBytes = int64(1024 * 1024)
+	maximumOutputBytes  = int64(1024 * 1024)
 )
 
 var (
@@ -167,7 +167,7 @@ func (executor *SandboxExecutor) Execute(
 
 	result := Result{
 		ExecutionID:          request.ExecutionID,
-		SourceSHA256:          actualSourceDigest,
+		SourceSHA256:         actualSourceDigest,
 		InfrastructureStatus: InfrastructureSucceeded,
 		CompilationStatus:    CompilationNotStarted,
 		Verdict:              VerdictAccepted,
@@ -452,7 +452,7 @@ func (executor *SandboxExecutor) infrastructureFailure(
 	now := time.Now().UTC()
 	result := Result{
 		ExecutionID:             request.ExecutionID,
-		SourceSHA256:             strings.ToLower(request.SourceSHA256),
+		SourceSHA256:            strings.ToLower(request.SourceSHA256),
 		InfrastructureStatus:    InfrastructureFailed,
 		InfrastructureErrorCode: code,
 		CompilationStatus:       CompilationNotStarted,
