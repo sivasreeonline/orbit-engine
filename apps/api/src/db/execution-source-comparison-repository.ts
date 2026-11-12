@@ -161,7 +161,7 @@ export class PostgresExecutionSourceComparisonRepository {
           "  b.runtime_version AS base_runtime_version, b.source_sha256 AS base_attempt_sha256,",
           "  bs.sha256 AS base_sha256,",
           "  bs.byte_length AS base_byte_length, bs.storage_kind AS base_storage_kind,",
-          "  CASE WHEN bs.byte_length <= $5 THEN bs.source_bytes ELSE NULL END AS base_source_bytes",
+          "  CASE WHEN bs.byte_length <= $5 THEN bs.source_bytes ELSE NULL END AS base_source_bytes",,
           "  t.id AS target_attempt_id, t.problem_id AS target_problem_id,",
           "  t.problem_version_id AS target_problem_version_id, t.language AS target_language,",
           "  t.runtime_version AS target_runtime_version, t.source_sha256 AS target_attempt_sha256,",
@@ -212,7 +212,8 @@ export class PostgresExecutionSourceComparisonRepository {
     } catch (error) {
       if (
         error instanceof ExecutionSourceComparisonNotFoundError ||
-        error instanceof ExecutionSourceComparisonConflictError ||\n        error instanceof ExecutionSourceComparisonLimitError ||
+        error instanceof ExecutionSourceComparisonConflictError ||
+        error instanceof ExecutionSourceComparisonLimitError ||
         error instanceof ExecutionSourceSnapshotIntegrityError ||
         error instanceof ExecutionSourceSnapshotUnavailableError ||
         error instanceof DatabaseUnavailableError ||
