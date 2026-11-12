@@ -159,11 +159,13 @@ def validate_trust_keys(trust_document: dict[str, Any]) -> dict[str, dict[str, A
 
 
 def qualification_scope_digest(plan: dict[str, Any]) -> str:
-    scope = {
-        "run": plan["run"],
-        "identities": plan["identities"],
-        "providerPins": plan["providerPins"],
-    }
+    # Exclude externalAttestations to avoid a signature cycle. Everything else
+    # that defines the qualification decision and evidence package is signed.
+    scope_fields = (
+        "profile", "testOnly", "productionApproval", "run", "identities",
+        "providerPins", "stages", "limitations", "independentReviewStatus",
+    )
+    scope = {field: plan[field] for field in scope_fields}
     return hashlib.sha256(canonical_json(scope, "qualification scope")).hexdigest()
 
 
@@ -547,6 +549,25 @@ def self_test() -> None:
                 continue
             raise AssertionError(f"cryptographic fail-closed test accepted: {label}")
 
+        # Even a fully re-hashed replacement for one stage must invalidate
+        # the independent signatures because the complete evidence inventory
+        # is part of the signed qualification scope.
+        stage_scope_substitution = copy.deepcopy(plan)
+        original_witness_bytes = b"synthetic-stage:witness"
+        substituted_witness_bytes = b"substituted-stage-evidence"
+        (root / "witness.evidence").write_bytes(substituted_witness_bytes)
+        stage_scope_substitution["stages"]["witness"]["sha256"] = hashlib.sha256(substituted_witness_bytes).hexdigest()
+        stage_scope_substitution["stages"]["witness"]["byteCount"] = len(substituted_witness_bytes)
+        try:
+            validate_fixture(stage_scope_substitution)
+        except PlanError as error:
+            require("scope digest mismatch" in str(error),
+                    f"stage evidence substitution failed for an unexpected reason: {error}")
+        else:
+            raise AssertionError("rehash of substituted stage evidence did not invalidate signed scope")
+        finally:
+            (root / "witness.evidence").write_bytes(original_witness_bytes)
+
         expired_attestation = copy.deepcopy(plan)
         expired_body = expired_attestation["externalAttestations"]["providerApproval"]["envelope"]["body"]
         expired_body["expiresAt"] = "2000-01-01T00:00:00Z"
@@ -612,7 +633,7 @@ def self_test() -> None:
         else:
             raise AssertionError("tampered signed attestation evidence bytes accepted")
 
-        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 26 fail-closed checks)")
+        print("FENCE-001 external qualification orchestrator: PASS (1 positive + 27 fail-closed checks)")
         print("Ed25519 signatures verified against an independent trust-key inventory.")
         print("Synthetic only: no provider calls, production keys, destructive tests or production approval.")
 
