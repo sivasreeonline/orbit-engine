@@ -127,6 +127,9 @@ jobs:
       - name: Verify FENCE-001 independent monitor gossip reference model
         run: python ../../scripts/validate_m0_independent_monitor_gossip.py
 
+      - name: Validate FENCE-001 monitor gossip envelope schema and semantic bindings
+        run: python ../../scripts/validate_m0_fence_monitor_gossip_envelope.py
+
       - name: Configure PostgreSQL client wrappers
         run: |
           set -euo pipefail
