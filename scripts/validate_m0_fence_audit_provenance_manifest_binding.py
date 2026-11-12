@@ -168,6 +168,10 @@ def validate_binding(
         data = file_path.read_bytes()
         if len(data) != artifact["byteCount"] or sha(data) != artifact["sha256"]:
             raise ValueError("materialized manifest artifact bytes do not match signed digest and byte count")
+    manifest_signers = {item["role"]: item["signerIdentity"] for item in manifest_envelope["attestations"]}
+    for attestation in binding["attestations"]:
+        if attestation["signerIdentity"] != manifest_signers[attestation["role"]]:
+            raise ValueError("audit binding attestation signer differs from the corresponding signed manifest signer")
     return verify_binding_signatures(binding, binding_keys)
 
 
