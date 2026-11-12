@@ -75,6 +75,7 @@ describe("LocalExecutionOutboxDispatcher", () => {
       claimed: 1, acknowledged: 0, rejected: 1, fenced: 0,
     });
     expect(outbox.markPublished).not.toHaveBeenCalled();
+    expect(outbox.markDeadLetter).not.toHaveBeenCalled();
   });
 
   it("rejects payloads containing source or other unexpected fields", async () => {
@@ -98,7 +99,6 @@ describe("LocalExecutionOutboxDispatcher", () => {
     expect(outbox.markDeadLetter).toHaveBeenCalledWith(
       item.id, configuration.workerId, item.leaseToken,
     );
-    expect(outbox.markDeadLetter).not.toHaveBeenCalled();
   });
 
   it("reports a stale lease as fenced when acknowledgement loses the race", async () => {
