@@ -254,7 +254,6 @@ func (sandbox *DockerSandbox) RunCase(
 	}
 	if output.Exceeded() {
 		observation.Status = SandboxOutputLimit
-		observation.CompilationStatus = CompilationNotStarted
 		return observation, nil
 	}
 	if errors.Is(runContext.Err(), context.DeadlineExceeded) {
@@ -282,11 +281,15 @@ func (sandbox *DockerSandbox) RunCase(
 	case exitCode == 87:
 		return observation, ErrDockerCommandFailed
 	case exitCode == 0:
+		if !compiled {
+			return observation, ErrDockerCommandFailed
+		}
 		observation.Status = SandboxSucceeded
-		observation.CompilationStatus = CompilationSucceeded
 	default:
+		if !compiled {
+			return observation, ErrDockerCommandFailed
+		}
 		observation.Status = SandboxRuntimeError
-		observation.CompilationStatus = CompilationSucceeded
 	}
 	return observation, nil
 }
@@ -371,7 +374,7 @@ func runtimeScript(language protocol.Language, runtimeVersion string) string {
 			"case \"$java_version\" in *'version \"" + runtimeVersion + "'*) ;; *) exit 87 ;; esac",
 			"mkdir -p /tmp/classes || exit 87",
 			"if javac -J-XX:MaxRAMPercentage=50 -proc:none -d /tmp/classes /workspace/Main.java; then",
-			"  printf '" + compileSuccessMarker + "'"
+			"  printf '" + compileSuccessMarker + "',
 			"  exec java -XX:MaxRAMPercentage=75 -Djava.io.tmpdir=/tmp -cp /tmp/classes Main",
 			"else",
 			"  exit 86",
@@ -384,7 +387,7 @@ func runtimeScript(language protocol.Language, runtimeVersion string) string {
 			"python_version=\"$(python3 --version 2>&1)\" || exit 87",
 			"case \"$python_version\" in 'Python " + runtimeVersion + "'*) ;; *) exit 87 ;; esac",
 			"python3 -I -B -c 'import pathlib; compile(pathlib.Path(\"/workspace/main.py\").read_bytes(), \"/workspace/main.py\", \"exec\")' || exit 86",
-			"printf '" + compileSuccessMarker + "'"
+			"printf '" + compileSuccessMarker + "',
 			"exec python3 -I -B /workspace/main.py",
 		}, "\n")
 	default:
