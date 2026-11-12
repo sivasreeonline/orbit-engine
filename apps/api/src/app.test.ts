@@ -64,7 +64,8 @@ interface HarnessOptions {
   auth?: AuthenticationResult;
   repository?: Partial<ProblemRepository>;
   evidenceRepository?: ExecutionEvidenceReadRepository;
-  sourceSnapshotRepository?: Pick<PostgresExecutionSourceSnapshotRepository, "getAttemptSourceSnapshot">;\n  sourceComparisonRepository?: Pick<PostgresExecutionSourceComparisonRepository, "getComparableAttemptSources">;
+  sourceSnapshotRepository?: Pick<PostgresExecutionSourceSnapshotRepository, "getAttemptSourceSnapshot">;
+  sourceComparisonRepository?: Pick<PostgresExecutionSourceComparisonRepository, "getComparableAttemptSources">;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -494,14 +495,14 @@ describe("M1 API control plane", () => {
       base: {
         attemptId: baseAttemptId,
         sourceSha256: "a".repeat(64),
-        sourceByteLength: "8",
-        sourceCode: "old();\\n",
+        sourceByteLength: "7",
+        sourceCode: "old();\n",
       },
       target: {
         attemptId: targetAttemptId,
         sourceSha256: "b".repeat(64),
         sourceByteLength: "8",
-        sourceCode: "new();\\n",
+        sourceCode: "new();\n",
       },
     }));
     const { handler } = makeHarness({
