@@ -5,6 +5,8 @@ All endpoints are versioned under /api/v1. Require platform authentication and t
 ## Endpoints
 - GET /problems — browse published problems.
 - GET /problems/{problemId} — fetch sanitized problem details.
+- GET /problems/{problemId}/attempts — list the authenticated student's immutable Run/Submit history for the problem.
+- GET /executions/{executionId}/events — retrieve the authenticated student's append-only lifecycle events for one execution.
 - POST /problems/{problemId}/runs — create a Run attempt.
 - POST /problems/{problemId}/submissions — create an official Submit attempt.
 - GET /submissions/{submissionId} — status and sanitized result.
@@ -17,6 +19,12 @@ All endpoints are versioned under /api/v1. Require platform authentication and t
 Fields: problemVersionId, language, runtimeVersion, sourceCode, idempotencyKey.
 The server determines action from endpoint and test suite. Client must not select hidden test cases, test bundle, runtime image digest or resource limits.
 Return 202 Accepted with submissionId/executionId, QUEUED state, status URL and correlation ID.
+
+## Evidence history response
+
+Attempt history is filtered by the authenticated tenant and student identity. It may expose attempt action, language/runtime, source hash and byte length, execution state, verdict dimensions, test aggregates and bounded resource metrics. It must not expose source bytes through the history response, hidden test inputs/expected outputs, secrets or unrestricted runner diagnostics.
+
+Lifecycle event reads are scoped by the same authenticated tenant/student pair. Event sequence, event type, trusted actor kind, phase status, safe machine code and duration are available; arbitrary free-form event payloads are not accepted.
 
 ## Status response
 Include state, createdAt, updatedAt, terminal verdict when available, public test aggregate, runtime/memory aggregate and sanitized output. Never include hidden input/expected output or internal secrets.
