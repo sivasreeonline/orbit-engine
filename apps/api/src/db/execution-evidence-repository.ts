@@ -634,7 +634,7 @@ export class PostgresExecutionEvidenceRepository {
           "INNER JOIN problems AS p ON p.id = ea.problem_id",
           "LEFT JOIN execution_result_records AS rr ON rr.execution_id = ej.id",
           "LEFT JOIN execution_evidence_events AS ee",
-          "  ON ee.execution_id = ej.id",
+          "  ON ee.execution_id = ej.id AND ee.attempt_id = ea.id",
           "  AND ee.tenant_id = ea.tenant_id AND ee.actor_user_id = ea.actor_user_id",
           "WHERE ea.tenant_id = $1::uuid AND ea.actor_user_id = $2::uuid",
           "  AND p.slug = $3",
@@ -665,7 +665,8 @@ export class PostgresExecutionEvidenceRepository {
             typeof value.actorKind !== "string" ||
             !(value.phaseStatus === null || typeof value.phaseStatus === "string") ||
             !(value.safeCode === null || typeof value.safeCode === "string") ||
-            !(value.durationMs === null || typeof value.durationMs === "string")
+            !(value.durationMs === null || typeof value.durationMs === "string") ||
+            !(typeof value.createdAt === "string" || value.createdAt instanceof Date)
           ) {
             throw new Error("invalid_execution_timeline_event");
           }
