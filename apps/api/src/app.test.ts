@@ -501,7 +501,7 @@ describe("M1 API control plane", () => {
       target: {
         attemptId: targetAttemptId,
         sourceSha256: "b".repeat(64),
-        sourceByteLength: "8",
+        sourceByteLength: "7",
         sourceCode: "new();\n",
       },
     }));
