@@ -476,6 +476,14 @@ def create_adapter() -> DynamoDBWitnessAdapter:
     client = session.client("dynamodb")
     description = client.describe_table(TableName=table_name).get("Table", {})
     expected_table_arn = f"arn:aws:dynamodb:{region}:{expected_account}:table/{table_name}"
-    if description.get("TableArn") != expected_table_arn or description.get("TableStatus") != "ACTIVE":
-        raise RuntimeError("live AWS witness table ARN, Region or ACTIVE state does not match the pinned scope")
+    key_schema = {(item.get("AttributeName"), item.get("KeyType")) for item in description.get("KeySchema", [])}
+    expected_key_schema = {("PK", "HASH"), ("SK", "RANGE")}
+    if (
+        description.get("TableArn") != expected_table_arn
+        or description.get("TableStatus") != "ACTIVE"
+        or key_schema != expected_key_schema
+    ):
+        raise RuntimeError(
+            "live AWS witness table ARN, Region, ACTIVE state or PK/SK schema does not match the pinned adapter contract"
+        )
     return DynamoDBWitnessAdapter(client, table_name)
