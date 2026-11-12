@@ -177,9 +177,14 @@ export default function AttemptTimeline({ problemSlug }: AttemptTimelineProps) {
     setDetailError(null);
     setSelectedSnapshot(null);
     try {
-      const [baseAttemptId, targetAttemptId] = selectedForDiff;
+      const selected = selectedForDiff
+        .map((id) => entries.find((entry) => entry.attemptId === id))
+        .filter((entry): entry is TimelineEntry => Boolean(entry))
+        .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+      if (selected.length !== 2) throw new Error("Select two attempts that are still in the loaded history.");
+      const [baseAttempt, targetAttempt] = selected;
       const result = await apiGet<DiffPayload>(
-        `/api/v1/attempts/${encodeURIComponent(targetAttemptId!)}/diff?baseAttemptId=${encodeURIComponent(baseAttemptId!)}`,
+        `/api/v1/attempts/${encodeURIComponent(targetAttempt!.attemptId)}/diff?baseAttemptId=${encodeURIComponent(baseAttempt!.attemptId)}`,
       );
       setDiff(result);
     } catch (cause) {
