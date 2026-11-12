@@ -94,8 +94,6 @@ def values_cover(values: list[str], target: str, *, prefix: bool = False) -> boo
             return True
         if prefix and target.startswith(value):
             return True
-        if prefix and value.startswith(target):
-            return True
     return False
 
 
@@ -120,11 +118,20 @@ def basic_selector_covers(selectors: list[dict[str, Any]], resource_type: str,
 def advanced_selector_covers(selectors: list[dict[str, Any]], resource_type: str,
                              resource_arn: str, *, prefix: bool = False) -> bool:
     for selector in selectors:
-        fields = {
-            item.get("Field"): item
-            for item in selector.get("FieldSelectors", [])
-            if isinstance(item, dict) and isinstance(item.get("Field"), str)
-        }
+        raw_fields = [item for item in selector.get("FieldSelectors", [])
+                      if isinstance(item, dict) and isinstance(item.get("Field"), str)]
+        fields: dict[str, dict[str, Any]] = {}
+        duplicate_field = False
+        for item in raw_fields:
+            field_name = item["Field"]
+            if field_name in fields:
+                duplicate_field = True
+                break
+            fields[field_name] = item
+        if duplicate_field:
+            # Duplicate field predicates require semantic composition; do not
+            # claim coverage until the provider selector is unambiguous.
+            continue
         category = fields.get("eventCategory")
         resource = fields.get("resources.type")
         if not category or "Data" not in category.get("Equals", []):
@@ -278,9 +285,11 @@ def inspect_aws(config: dict[str, Any], session: Any) -> dict[str, Any]:
         retention_days = default_retention.get("Days", 0)
         retention_years = default_retention.get("Years", 0)
         duration_days = (retention_days or 0) + (retention_years or 0) * 365
+        exactly_one_duration = (bool(retention_days) != bool(retention_years))
         lock_ok = (
             lock.get("ObjectLockEnabled") == "Enabled"
             and default_retention.get("Mode") == "COMPLIANCE"
+            and exactly_one_duration
             and duration_days >= 7
         )
         add_check(checks, "AWS-EVIDENCE-003", "PASS" if lock_ok else "BLOCK",
@@ -350,15 +359,15 @@ def inspect_aws(config: dict[str, Any], session: Any) -> dict[str, Any]:
             try:
                 status = cloudtrail.get_trail_status(Name=trail_arn)
                 logging_ok = status.get("IsLogging") is True
-                no_digest_error = not status.get("LatestDigestDeliveryError")
-                add_check(checks, "AWS-AUDIT-005", "PASS" if logging_ok and no_digest_error else "BLOCK",
+                no_delivery_errors = not status.get("LatestDeliveryError") and not status.get("LatestDigestDeliveryError")
+                add_check(checks, "AWS-AUDIT-005", "PASS" if logging_ok and no_delivery_errors else "BLOCK",
                           {"isLogging": status.get("IsLogging"),
                            "latestDeliveryError": status.get("LatestDeliveryError"),
                            "latestDigestDeliveryError": status.get("LatestDigestDeliveryError"),
                            "latestDigestDeliveryTime": status.get("LatestDigestDeliveryTime")},
                           "CloudTrail is logging and reports no latest digest-delivery error."
-                          if logging_ok and no_digest_error
-                          else "CloudTrail must be actively logging and have no latest digest-delivery error.")
+                          if logging_ok and no_delivery_errors
+                          else "CloudTrail must be actively logging with no latest log or digest delivery errors.")
                 if not status.get("LatestDigestDeliveryTime"):
                     add_check(checks, "AWS-AUDIT-006", "WARN",
                               {"latestDigestDeliveryTime": None},
@@ -589,7 +598,7 @@ def self_test() -> None:
     else:
         raise AssertionError("malformed caller ARN prefix was accepted")
 
-    print("FENCE-001 AWS read-only preflight self-test: PASS (1 valid fixture + 4 fail-closed checks)")
+    print("FENCE-001 AWS read-only preflight self-test: PASS (1 valid fixture + 6 fail-closed cases)")
     print("Synthetic clients only; no AWS SDK credentials, account calls, resource mutations or production approval.")
 
 
