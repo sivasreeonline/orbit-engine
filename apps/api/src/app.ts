@@ -9,6 +9,7 @@ import {
 } from "./db/execution-source-snapshot-repository";
 import {
   ExecutionSourceComparisonConflictError,
+  ExecutionSourceComparisonLimitError,
   ExecutionSourceComparisonNotFoundError,
   type PostgresExecutionSourceComparisonRepository,
 } from "./db/execution-source-comparison-repository";
@@ -387,7 +388,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
             allowedOrigins,
           );
         }
-        if (error instanceof SourceDiffLimitError) {
+        if (error instanceof SourceDiffLimitError || error instanceof ExecutionSourceComparisonLimitError) {
           return errorResponse(
             "SOURCE_COMPARISON_LIMIT_EXCEEDED",
             "The selected source snapshots exceed the comparison limits.",
