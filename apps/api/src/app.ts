@@ -171,13 +171,13 @@ export function createApiHandler(dependencies: ApiDependencies) {
 
     const isProblemList = request.method === "GET" && path === "/api/v1/problems";
     const problemMatch = request.method === "GET"
-      ? path.match(/^\\/api\\/v1\\/problems\\/([^/]+)$/)
+      ? path.match(/^\/api\/v1\/problems\/([^/]+)$/)
       : null;
     const attemptHistoryMatch = request.method === "GET"
-      ? path.match(/^\\/api\\/v1\\/problems\\/([^/]+)\\/attempts$/)
+      ? path.match(/^\/api\/v1\/problems\/([^/]+)\/attempts$/)
       : null;
     const executionEventsMatch = request.method === "GET"
-      ? path.match(/^\\/api\\/v1\\/executions\\/([^/]+)\\/events$/)
+      ? path.match(/^\/api\/v1\/executions\/([^/]+)\/events$/)
       : null;
 
     if (!isProblemList && !problemMatch && !attemptHistoryMatch && !executionEventsMatch) {
