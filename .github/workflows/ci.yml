@@ -133,6 +133,9 @@ jobs:
       - name: Verify FENCE-001 monitor gossip replay state machine
         run: python ../../scripts/validate_m0_monitor_gossip_replay_state.py
 
+      - name: Verify FENCE-001 witness provider adapter conformance harness
+        run: python ../../scripts/validate_m0_witness_provider_adapter_conformance.py
+
       - name: Configure PostgreSQL client wrappers
         run: |
           set -euo pipefail
