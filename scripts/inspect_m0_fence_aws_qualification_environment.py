@@ -510,11 +510,14 @@ class FakeClient:
                     read_only,
                 ]},
             ]}
+        s3_prefix = f"arn:aws:s3:::{self.config['evidenceBucketName']}/"
+        if self.scenario == "s3-prefix-only":
+            s3_prefix += "restricted-prefix/"
         return {
             "EventSelectors": [{
                 "ReadWriteType": "All",
                 "DataResources": [
-                    {"Type": "AWS::S3::Object", "Values": [f"arn:aws:s3:::{self.config['evidenceBucketName']}/"]},
+                    {"Type": "AWS::S3::Object", "Values": [s3_prefix]},
                     {"Type": "AWS::DynamoDB::Table", "Values": [table_arn]},
                 ],
             }]
@@ -580,6 +583,11 @@ def self_test() -> None:
             and "AWS-AUDIT-008" in read_only_advanced["blockers"],
             "read-only-only advanced selectors were accepted as write-event coverage")
 
+    narrow_s3_selector = inspect_aws(config, FakeSession(config, "s3-prefix-only"))
+    require("AWS-AUDIT-007" in narrow_s3_selector["blockers"]
+            and "AWS-AUDIT-008" not in narrow_s3_selector["blockers"],
+            "a narrow S3 prefix selector was incorrectly treated as whole-bucket coverage")
+
     bad_selectors = FakeSession(config)
     bad_selectors.clients["cloudtrail"].get_event_selectors = lambda **kwargs: {"EventSelectors": []}
     selector_report = inspect_aws(config, bad_selectors)
@@ -598,7 +606,7 @@ def self_test() -> None:
     else:
         raise AssertionError("malformed caller ARN prefix was accepted")
 
-    print("FENCE-001 AWS read-only preflight self-test: PASS (1 valid fixture + 6 fail-closed cases)")
+    print("FENCE-001 AWS read-only preflight self-test: PASS (1 valid fixture + 7 fail-closed cases)")
     print("Synthetic clients only; no AWS SDK credentials, account calls, resource mutations or production approval.")
 
 
