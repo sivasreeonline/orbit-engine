@@ -201,10 +201,6 @@ class DynamoDBWitnessAdapter:
         if prior_idempotency is not None:
             return self._require_same_idempotent_record(
                 prior_idempotency, checkpoint_json, idempotency_hash, prior_idempotency_item
-            ).__class__(
-                **_receipt_document(self._require_same_idempotent_record(
-                    prior_idempotency, checkpoint_json, idempotency_hash, prior_idempotency_item
-                ))
             )
 
         prior_operation_item = self._get(scope, f"OP#{value.operation_id}")
@@ -419,6 +415,15 @@ def create_adapter() -> DynamoDBWitnessAdapter:
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "local"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "local"),
         )
+        import time
+        for attempt in range(40):
+            try:
+                client.list_tables(Limit=1)
+                break
+            except BotoCoreError:
+                if attempt == 39:
+                    raise RuntimeError("DynamoDB Local endpoint did not become ready")
+                time.sleep(0.5)
         table_name = f"{prefix}-{uuid.uuid4().hex[:16]}"
         _create_local_table(client, table_name)
         return DynamoDBWitnessAdapter(client, table_name)
@@ -434,7 +439,12 @@ def create_adapter() -> DynamoDBWitnessAdapter:
     table_name = os.getenv("FENCE_AWS_WITNESS_TABLE_NAME", "")
     qualification_run = os.getenv("FENCE_AWS_WITNESS_QUALIFICATION_RUN_ID", "")
     approval_id = os.getenv("FENCE_AWS_WITNESS_APPROVAL_ID", "")
+    approval_run_id = os.getenv("FENCE_AWS_WITNESS_APPROVAL_RUN_ID", "")
     approval_expiry = os.getenv("FENCE_AWS_WITNESS_APPROVAL_EXPIRES_AT", "")
+    qualification_environment = os.getenv("FENCE_AWS_WITNESS_ENVIRONMENT", "")
+    disposable = os.getenv("FENCE_AWS_WITNESS_DISPOSABLE", "")
+    production = os.getenv("FENCE_AWS_WITNESS_PRODUCTION", "")
+    admission_enabled = os.getenv("FENCE_AWS_WITNESS_ADMISSION_ENABLED", "")
     if not ACCOUNT_ID.fullmatch(expected_account):
         raise RuntimeError("a pinned 12-digit qualification account ID is required")
     if not expected_arn_prefix.startswith(f"arn:aws:sts::{expected_account}:assumed-role/")             or not expected_arn_prefix.endswith("/"):
@@ -443,6 +453,14 @@ def create_adapter() -> DynamoDBWitnessAdapter:
         raise RuntimeError("a pre-provisioned qualification witness table is required")
     if not SAFE_ID.fullmatch(qualification_run) or not SAFE_ID.fullmatch(approval_id):
         raise RuntimeError("a run ID and approval ID are required")
+    if approval_run_id != qualification_run:
+        raise RuntimeError("the qualification approval must be bound to this exact run ID")
+    if (qualification_environment, disposable, production, admission_enabled) != (
+        "QUALIFICATION", "true", "false", "false"
+    ):
+        raise RuntimeError(
+            "live writes require QUALIFICATION, disposable=true, production=false and admissionEnabled=false"
+        )
     try:
         expiry = datetime.fromisoformat(approval_expiry.replace("Z", "+00:00"))
     except ValueError as exc:
