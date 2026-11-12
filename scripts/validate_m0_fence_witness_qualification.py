@@ -6,12 +6,14 @@ verify external evidence, or authorize production use.
 """
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
+from validate_m0_fence_evidence_manifest import validate_manifest as validate_evidence_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "docs/schemas/m0-fence-witness-qualification-record.schema.json"
@@ -85,6 +87,8 @@ def semantic_errors(record: dict[str, Any]) -> list[str]:
         reviewer = record.get("independentSecurityReviewer")
         if reviewer is None:
             errors.append("READY_FOR_INDEPENDENT_REVIEW requires a named independent security reviewer")
+        if record.get("evidenceManifest") is None:
+            errors.append("READY_FOR_INDEPENDENT_REVIEW requires a signed evidence manifest reference")
     if record.get("productionApproval") is not False:
         errors.append("productionApproval must remain false in this qualification record")
     return errors
@@ -97,9 +101,60 @@ def expect_rejected(label: str, record: dict[str, Any], schema_validator: Draft2
         raise AssertionError(f"negative qualification case unexpectedly passed: {label}")
 
 
+def validate_record_manifest_binding(
+    record: dict[str, Any],
+    manifest_envelope: dict[str, Any],
+    trusted_keys: list[dict[str, str]],
+) -> None:
+    digest = validate_evidence_manifest(manifest_envelope, trusted_keys, allow_test_only=False)
+    reference = record.get("evidenceManifest")
+    if reference is None:
+        raise ValueError("qualification record does not reference a signed evidence manifest")
+    body = manifest_envelope["manifestBody"]
+    if reference["manifestId"] != body["manifestId"] or reference["sha256"] != digest:
+        raise ValueError("qualification record manifest identity/digest does not match verified manifest")
+    if record.get("provider") is None or record.get("adapter") is None:
+        raise ValueError("manifest binding requires pinned provider and adapter in qualification record")
+    provider = record["provider"]
+    scope = body["providerScope"]
+    if any(provider[field] != scope[field] for field in ("name", "account", "region", "service")):
+        raise ValueError("qualification provider scope differs from signed evidence manifest")
+    adapter = record["adapter"]
+    manifest_adapter = body["adapter"]
+    if any(adapter[field] != manifest_adapter[field] for field in ("repository", "commit", "version", "configurationDigest")):
+        raise ValueError("qualification adapter pin differs from signed evidence manifest")
+
+    artifact_index = {
+        (item["objectRef"], item["objectVersion"], item["sha256"], item["byteCount"]): item
+        for item in body["artifacts"]
+    }
+    for test in record.get("tests", []):
+        if test.get("status") != "PASS":
+            continue
+        for evidence in test.get("evidence", []):
+            key = (evidence["objectRef"], evidence["objectVersion"], evidence["sha256"], evidence["byteCount"])
+            artifact = artifact_index.get(key)
+            if artifact is None:
+                raise ValueError(f"{test['id']}: PASS evidence is absent from signed manifest")
+            if test["id"] not in artifact["testIds"]:
+                raise ValueError(f"{test['id']}: manifest artifact is not bound to this qualification control")
+            if evidence["collectorIdentity"] != artifact["collectorIdentity"]:
+                raise ValueError(f"{test['id']}: evidence collector differs from manifest")
+            if evidence["independentVerifierIdentity"] != artifact["independentVerifierIdentity"]:
+                raise ValueError(f"{test['id']}: independent verifier differs from manifest")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--record", type=Path, default=TEMPLATE, help="qualification record JSON (defaults to blank repository template)")
+    parser.add_argument("--evidence-manifest", type=Path, help="dual-signed evidence manifest envelope JSON")
+    parser.add_argument("--trusted-keys", type=Path, help="independently provisioned trusted-key configuration JSON")
+    args = parser.parse_args()
+    if bool(args.evidence_manifest) != bool(args.trusted_keys):
+        parser.error("--evidence-manifest and --trusted-keys must be supplied together")
+
     schema = load_json(SCHEMA)
-    record = load_json(TEMPLATE)
+    record = load_json(args.record)
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     schema_errors = list(validator.iter_errors(record))
@@ -156,6 +211,14 @@ def main() -> None:
     reviewer_errors = semantic_errors(same_reviewer)
     if not any("collector and independent verifier must differ" in error for error in reviewer_errors):
         raise AssertionError("same collector/verifier identity was not specifically rejected")
+
+    if args.evidence_manifest:
+        manifest_envelope = load_json(args.evidence_manifest)
+        trust_document = load_json(args.trusted_keys)
+        if not isinstance(trust_document.get("keys"), list):
+            raise SystemExit("trusted-key document must contain a keys array")
+        validate_record_manifest_binding(record, manifest_envelope, trust_document["keys"])
+        print("Signed evidence manifest binding: PASS")
 
     print("FENCE-001 external witness qualification record: PASS")
     print(f"Mandatory test inventory: {len(EXPECTED_IDS)} unique controls")
