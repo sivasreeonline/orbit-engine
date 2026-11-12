@@ -225,8 +225,7 @@ func (executor *SandboxExecutor) Execute(
 				startedAt,
 			), nil
 		}
-		if observation.PeakMemoryBytes != nil &&
-			(observation.PeakMemoryBytes == nil || *observation.PeakMemoryBytes < 0) {
+		if observation.PeakMemoryBytes != nil && *observation.PeakMemoryBytes < 0 {
 			return executor.infrastructureFailure(
 				request,
 				runtimeDigest,
