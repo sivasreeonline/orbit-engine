@@ -7,6 +7,12 @@ import {
   ExecutionSourceSnapshotUnavailableError,
   type PostgresExecutionSourceSnapshotRepository,
 } from "./db/execution-source-snapshot-repository";
+import {
+  ExecutionSourceComparisonConflictError,
+  ExecutionSourceComparisonNotFoundError,
+  type PostgresExecutionSourceComparisonRepository,
+} from "./db/execution-source-comparison-repository";
+import { diffSourceSnapshots, SourceDiffLimitError } from "./db/execution-source-diff";
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
@@ -23,7 +29,8 @@ interface ApiDependencies {
   readonly authenticator: Authenticator;
   readonly repository: ProblemRepository;
   readonly evidenceRepository?: ExecutionEvidenceReadRepository;
-  readonly sourceSnapshotRepository?: ExecutionSourceSnapshotReadRepository;\n  readonly sourceComparisonRepository?: Pick<PostgresExecutionSourceComparisonRepository, "getComparableAttemptSources">;
+  readonly sourceSnapshotRepository?: ExecutionSourceSnapshotReadRepository;
+  readonly sourceComparisonRepository?: Pick<PostgresExecutionSourceComparisonRepository, "getComparableAttemptSources">;
   readonly allowedOrigins?: string;
 }
 
@@ -195,7 +202,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
       ? path.match(/^\/api\/v1\/attempts\/([^/]+)\/source$/)
       : null;
     const attemptDiffMatch = request.method === "GET"
-      ? path.match(/^\\/api\\/v1\\/attempts\\/([^/]+)\\/diff$/)
+      ? path.match(/^\/api\/v1\/attempts\/([^/]+)\/diff$/)
       : null;
 
     if (!isProblemList && !problemMatch && !attemptHistoryMatch && !executionEventsMatch && !attemptSourceMatch && !attemptDiffMatch) {
