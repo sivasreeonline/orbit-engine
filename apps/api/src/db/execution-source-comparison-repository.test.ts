@@ -139,6 +139,17 @@ describe("PostgresExecutionSourceComparisonRepository", () => {
     )).rejects.toBeInstanceOf(ExecutionSourceSnapshotIntegrityError);
   });
 
+  it("rejects disagreement between attempt metadata and snapshot digest", async () => {
+    const fake = fakeClient([await comparisonRow({
+      base_attempt_sha256: "c".repeat(64),
+    })]);
+    const repository = new PostgresExecutionSourceComparisonRepository(connection, () => fake.client);
+
+    await expect(repository.getComparableAttemptSources(
+      tenantId, actorUserId, baseAttemptId, targetAttemptId,
+    )).rejects.toBeInstanceOf(ExecutionSourceSnapshotIntegrityError);
+  });
+
   it("maps database failures to a generic retryable error", async () => {
     const fake = fakeClient([], true);
     const repository = new PostgresExecutionSourceComparisonRepository(connection, () => fake.client);
