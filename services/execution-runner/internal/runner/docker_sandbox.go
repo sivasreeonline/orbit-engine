@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -211,8 +210,8 @@ func (sandbox *DockerSandbox) RunCase(
 		runContext,
 		containerID,
 		bytes.NewReader(request.StandardInput),
-		output,
-		output,
+		output.StdoutWriter(),
+		output.StderrWriter(),
 	)
 	elapsed := time.Since(startedAt)
 
@@ -234,8 +233,8 @@ func (sandbox *DockerSandbox) RunCase(
 
 	cleanupSucceeded := removeErr == nil && removeWorkspaceErr == nil
 	observation := SandboxObservation{
-		StandardOutput:   output.Bytes(),
-		StandardError:    nil,
+		StandardOutput:   output.StdoutBytes(),
+		StandardError:    output.StderrBytes(),
 		ElapsedMillis:    elapsed.Milliseconds(),
 		CleanupSucceeded: cleanupSucceeded,
 	}
@@ -372,27 +371,48 @@ func runtimeScript(language protocol.Language) string {
 
 type boundedOutput struct {
 	mu       sync.Mutex
-	buffer   bytes.Buffer
+	stdout   bytes.Buffer
+	stderr   bytes.Buffer
+	total    int64
 	maximum  int64
 	exceeded bool
 	cancel   context.CancelFunc
+}
+
+type boundedStream struct {
+	parent   *boundedOutput
+	isStderr bool
 }
 
 func newBoundedOutput(maximum int64, cancel context.CancelFunc) *boundedOutput {
 	return &boundedOutput{maximum: maximum, cancel: cancel}
 }
 
-func (writer *boundedOutput) Write(value []byte) (int, error) {
+func (writer *boundedOutput) StdoutWriter() io.Writer {
+	return boundedStream{parent: writer}
+}
+
+func (writer *boundedOutput) StderrWriter() io.Writer {
+	return boundedStream{parent: writer, isStderr: true}
+}
+
+func (stream boundedStream) Write(value []byte) (int, error) {
+	writer := stream.parent
 	writer.mu.Lock()
 	defer writer.mu.Unlock()
 	originalLength := len(value)
-	remaining := writer.maximum - int64(writer.buffer.Len())
+	remaining := writer.maximum - writer.total
 	if remaining > 0 {
 		toWrite := value
 		if int64(len(toWrite)) > remaining {
 			toWrite = toWrite[:remaining]
 		}
-		_, _ = writer.buffer.Write(toWrite)
+		if stream.isStderr {
+			_, _ = writer.stderr.Write(toWrite)
+		} else {
+			_, _ = writer.stdout.Write(toWrite)
+		}
+		writer.total += int64(len(toWrite))
 	}
 	if int64(originalLength) > remaining && !writer.exceeded {
 		writer.exceeded = true
@@ -401,10 +421,16 @@ func (writer *boundedOutput) Write(value []byte) (int, error) {
 	return originalLength, nil
 }
 
-func (writer *boundedOutput) Bytes() []byte {
+func (writer *boundedOutput) StdoutBytes() []byte {
 	writer.mu.Lock()
 	defer writer.mu.Unlock()
-	return append([]byte(nil), writer.buffer.Bytes()...)
+	return append([]byte(nil), writer.stdout.Bytes()...)
+}
+
+func (writer *boundedOutput) StderrBytes() []byte {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return append([]byte(nil), writer.stderr.Bytes()...)
 }
 
 func (writer *boundedOutput) Exceeded() bool {
@@ -413,6 +439,3 @@ func (writer *boundedOutput) Exceeded() bool {
 	return writer.exceeded
 }
 
-func memoryFlag(bytes int64) string {
-	return fmt.Sprintf("%d", bytes)
-}
