@@ -51,6 +51,7 @@ export default {
       runnerStartRepository,
       runnerHeartbeatRepository,
       runnerArtifactRepository,
+      runnerCompletionRepository: evidenceRepository,
       runtimeVersions: {
         java: env.JAVA_RUNTIME_VERSION ?? "",
         python: env.PYTHON_RUNTIME_VERSION ?? "",
