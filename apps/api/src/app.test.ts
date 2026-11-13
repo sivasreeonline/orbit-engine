@@ -916,7 +916,7 @@ describe("authenticated runner acceptance endpoint", () => {
     expect(response.status).toBe(400);
     expect(findActivePublicKey).not.toHaveBeenCalled();
   });
-
+});
 
 describe("Continuous editor evidence API", () => {
   it("creates an explicitly noticed evidence session for the authenticated owner", async () => {
