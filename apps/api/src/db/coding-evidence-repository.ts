@@ -214,12 +214,6 @@ function validateEvidenceRecord(record: CodingEvidenceRecordInput, sessionId: st
         snapshot.sourceByteLength !== byteLength || byteLength > 256 * 1024) {
       throw new InvalidCodingEvidenceInputError("editor_code_snapshot_size_invalid");
     }
-    const expectedEventType = snapshot.kind === "RUN" ? "RUN_REQUESTED"
-      : snapshot.kind === "SUBMIT" ? "SUBMIT_REQUESTED"
-        : snapshot.kind === "CONTEXT_CHANGE" ? "EDITOR_CONTEXT_CHANGED"
-          : snapshot.kind === "SESSION_START" ? "SESSION_STARTED"
-            : snapshot.kind === "SESSION_END" ? "SESSION_ENDED"
-              : "CODE_SNAPSHOT_CREATED";
     if (event.eventType !== "CODE_SNAPSHOT_CREATED") {
       throw new InvalidCodingEvidenceInputError("editor_code_snapshot_event_mismatch");
     }
