@@ -2,6 +2,7 @@ package runnerauth
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -10,16 +11,16 @@ import (
 )
 
 type sharedFixture struct {
-	KeyID                string `json:"keyId"`
-	Method               string `json:"method"`
-	Path                 string `json:"path"`
-	Timestamp            string `json:"timestamp"`
-	Nonce                string `json:"nonce"`
-	BodyUTF8             string `json:"bodyUtf8"`
-	BodySHA256            string `json:"bodySha256"`
-	CanonicalUTF8        string `json:"canonicalUtf8"`
-	PublicKeyBase64URL   string `json:"publicKeyBase64Url"`
-	SignatureBase64URL   string `json:"signatureBase64Url"`
+	KeyID              string `json:"keyId"`
+	Method             string `json:"method"`
+	Path               string `json:"path"`
+	Timestamp          string `json:"timestamp"`
+	Nonce              string `json:"nonce"`
+	BodyUTF8           string `json:"bodyUtf8"`
+	BodySHA256         string `json:"bodySha256"`
+	CanonicalUTF8      string `json:"canonicalUtf8"`
+	PublicKeyBase64URL string `json:"publicKeyBase64Url"`
+	SignatureBase64URL string `json:"signatureBase64Url"`
 }
 
 func loadSharedFixture(t *testing.T) sharedFixture {
