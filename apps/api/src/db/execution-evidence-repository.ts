@@ -101,6 +101,16 @@ export interface ExecutionAttemptHistoryEntry {
   readonly resultSha256: string | null;
 }
 
+export interface ExecutionQueueStatus {
+  readonly executionId: string;
+  readonly attemptId: string;
+  readonly action: "RUN" | "SUBMIT";
+  readonly executionState: string;
+  readonly dispatchState: "PENDING" | "DELIVERED" | "DEAD_LETTER" | null;
+  readonly submittedAt: string;
+  readonly updatedAt: string;
+}
+
 export interface ExecutionEvidenceEvent {
   readonly sequenceId: string;
   readonly eventId: string;
@@ -153,6 +163,16 @@ export class StaleExecutionLeaseError extends Error {
     super("execution_result_rejected_for_stale_or_invalid_lease");
     this.name = "StaleExecutionLeaseError";
   }
+}
+
+interface QueueStatusRow extends Record<string, unknown> {
+  readonly execution_id: string;
+  readonly attempt_id: string;
+  readonly action: "RUN" | "SUBMIT";
+  readonly execution_state: string;
+  readonly dispatch_state: "PENDING" | "DELIVERED" | "DEAD_LETTER" | null;
+  readonly submitted_at: Date | string;
+  readonly updated_at: Date | string;
 }
 
 interface EventRow extends Record<string, unknown> {
@@ -583,6 +603,51 @@ export class PostgresExecutionEvidenceRepository {
         peakMemoryBytes: row.peak_memory_bytes === null ? null : String(row.peak_memory_bytes),
         resultSha256: row.result_sha256?.trim() ?? null,
       }));
+    });
+  }
+
+  /**
+   * Returns only safe lifecycle metadata for the authenticated owner.
+   * A missing row deliberately covers both unknown IDs and another student's
+   * execution, preventing identifier probing across tenant boundaries.
+   */
+  async getExecutionQueueStatus(
+    tenantId: string,
+    actorUserId: string,
+    executionId: string,
+  ): Promise<ExecutionQueueStatus | null> {
+    if (!this.connectionString) throw new DatabaseUnavailableError();
+    if (!isUuid(tenantId) || !isUuid(actorUserId) || !isUuid(executionId)) {
+      throw new Error("invalid_execution_queue_status_scope");
+    }
+
+    return this.withClient(async (client) => {
+      const result = await client.query<QueueStatusRow>(
+        [
+          "SELECT ej.id AS execution_id, ea.id AS attempt_id, ea.action,",
+          "  ej.state AS execution_state, rdo.delivery_state AS dispatch_state,",
+          "  ej.created_at AS submitted_at, ej.updated_at",
+          "FROM execution_jobs AS ej",
+          "INNER JOIN execution_attempts AS ea ON ea.id = ej.attempt_id",
+          "LEFT JOIN runner_dispatch_outbox AS rdo ON rdo.execution_id = ej.id",
+          "WHERE ej.id = $1::uuid",
+          "  AND ea.tenant_id = $2::uuid",
+          "  AND ea.actor_user_id = $3::uuid",
+          "LIMIT 1",
+        ].join("\n"),
+        [executionId, tenantId, actorUserId],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        executionId: row.execution_id,
+        attemptId: row.attempt_id,
+        action: row.action,
+        executionState: row.execution_state,
+        dispatchState: row.dispatch_state,
+        submittedAt: isoTimestamp(row.submitted_at),
+        updatedAt: isoTimestamp(row.updated_at),
+      };
     });
   }
 

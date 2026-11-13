@@ -186,6 +186,69 @@ describe("PostgresExecutionEvidenceRepository", () => {
     expect(fake.calls.at(-1)?.text).toBe("ROLLBACK");
   });
 
+  it("reads safe queue status using tenant and student ownership predicates", async () => {
+    const submittedAt = new Date("2026-11-13T01:00:00.000Z");
+    const updatedAt = new Date("2026-11-13T01:00:02.000Z");
+    const fake = makeClient((text) => {
+      if (text.includes("FROM execution_jobs AS ej")) {
+        return [{
+          execution_id: executionId,
+          attempt_id: attemptId,
+          action: "RUN",
+          execution_state: "QUEUED",
+          dispatch_state: "PENDING",
+          submitted_at: submittedAt,
+          updated_at: updatedAt,
+        }];
+      }
+      return [];
+    });
+    const repository = new PostgresExecutionEvidenceRepository(
+      connection,
+      () => fake.client,
+    );
+
+    const status = await repository.getExecutionQueueStatus(
+      "30000000-0000-4000-8000-000000000001",
+      "20000000-0000-4000-8000-000000000001",
+      executionId,
+    );
+
+    expect(status).toEqual({
+      executionId,
+      attemptId,
+      action: "RUN",
+      executionState: "QUEUED",
+      dispatchState: "PENDING",
+      submittedAt: submittedAt.toISOString(),
+      updatedAt: updatedAt.toISOString(),
+    });
+    const query = fake.calls.find((call) => call.text.includes("FROM execution_jobs AS ej"));
+    expect(query?.text).toContain("ea.tenant_id = $2::uuid");
+    expect(query?.text).toContain("ea.actor_user_id = $3::uuid");
+    expect(query?.text).not.toMatch(/source_bytes|source_code|hidden_tests|expected_output/i);
+    expect(query?.values).toEqual([
+      executionId,
+      "30000000-0000-4000-8000-000000000001",
+      "20000000-0000-4000-8000-000000000001",
+    ]);
+    expect(fake.ended()).toBe(true);
+  });
+
+  it("returns no queue status when the execution is not owned by the requested student", async () => {
+    const fake = makeClient(() => []);
+    const repository = new PostgresExecutionEvidenceRepository(
+      connection,
+      () => fake.client,
+    );
+
+    await expect(repository.getExecutionQueueStatus(
+      "30000000-0000-4000-8000-000000000001",
+      "20000000-0000-4000-8000-000000000001",
+      executionId,
+    )).resolves.toBeNull();
+  });
+
   it("fails closed when database configuration is absent", async () => {
     const repository = new PostgresExecutionEvidenceRepository(undefined);
     await expect(repository.listProblemAttemptHistory(
