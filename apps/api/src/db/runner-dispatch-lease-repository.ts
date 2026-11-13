@@ -20,6 +20,9 @@ interface PgDispatchClient {
 }
 type PgClientFactory = (connectionString: string) => PgDispatchClient;
 
+const MAX_RUNNING_LEASE_RECOVERIES = 3;
+const MAX_EXHAUSTED_RECOVERY_SWEEP = 100;
+
 const defaultClientFactory: PgClientFactory = (connectionString) =>
   new Client({
     connectionString,
