@@ -157,7 +157,7 @@ func TestSandboxArtifactExecutorKeepsHiddenFixturesOutOfCompletionPayload(t *tes
 	}
 	// The terminal completion contract carries only the aggregate. It cannot
 	// expose any per-case identifier, input, expected output, stdout or stderr.
-	completion := completionInputFromResult(result)
+	completion := result
 	encodedBytes, err := json.Marshal(completion)
 	if err != nil {
 		t.Fatal(err)
