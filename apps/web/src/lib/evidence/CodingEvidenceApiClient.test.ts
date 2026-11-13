@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { CapturedEvidence } from "./EditorEvidenceCollector";
 import {
   CodingEvidenceApiClient,
-  CodingEvidenceApiError,
   CodingEvidenceSyncQueue,
 } from "./CodingEvidenceApiClient";
 
@@ -168,7 +167,7 @@ describe("CodingEvidenceApiClient", () => {
 
     await expect(client.createSession({
       problemSlug: "two-sum", language: "java", noticeVersion: "notice-v1",
-    })).rejects.toMatchObject<CodingEvidenceApiError>({
+    })).rejects.toMatchObject({
       status: 503,
       code: "AUTH_PROVIDER_NOT_CONFIGURED",
       retryable: false,
