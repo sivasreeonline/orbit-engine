@@ -229,6 +229,7 @@ export class EditorEvidenceCollector {
     const source = this.sourceCode;
     const changesSincePreviousSnapshot = this.pendingChangeCount;
     const capturedAtMs = this.now();
+    const changesSincePreviousSnapshot = this.pendingChangeCount;
     const sourceBytes = new TextEncoder().encode(source);
     const snapshotId = this.createId();
     const contentSha256 = await sha256(source);
@@ -247,9 +248,9 @@ export class EditorEvidenceCollector {
       capturedAt: new Date(capturedAtMs).toISOString(),
     });
     this.latestSnapshot = snapshot;
-    this.lastSnapshotAt = capturedAtMs;
-    this.pendingChangeCount = 0;
-    this.dirty = false;
+    this.lastSnapshotAt = this.now();
+    this.pendingChangeCount = Math.max(0, this.pendingChangeCount - changesSincePreviousSnapshot);
+    this.dirty = this.sourceCode !== source;
     this.emit({
       eventType: "CODE_SNAPSHOT_CREATED",
       snapshotId,
