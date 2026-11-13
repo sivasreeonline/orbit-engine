@@ -46,7 +46,7 @@ jobs:
       - name: Print gofmt changes for acceptance journal
         run: |
           gofmt -w .
-          git diff -- services/execution-runner/internal/acceptancejournal/journal.go
+          git diff -- internal/acceptancejournal/journal.go
 
       - name: Vet
         run: go vet ./...
