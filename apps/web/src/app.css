@@ -2451,3 +2451,102 @@ button:focus-visible, a:focus-visible, select:focus-visible {
 @media (max-width: 420px) {
   .brand-logo { width: 122px; height: 36px; }
 }
+
+
+/* Explicit, privacy-transparent editor evidence capture */
+.evidence-capture-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 0 18px;
+  border: 1px solid rgba(0, 194, 255, 0.2);
+  border-radius: 14px;
+  background: linear-gradient(120deg, rgba(16, 42, 86, 0.5), rgba(17, 23, 34, 0.92));
+  padding: 15px 17px;
+}
+.evidence-capture-panel.is-active {
+  border-color: rgba(0, 194, 255, 0.42);
+  background: linear-gradient(120deg, rgba(8, 125, 216, 0.16), rgba(17, 23, 34, 0.96));
+}
+.evidence-capture-copy { min-width: 0; }
+.evidence-capture-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  color: #eaf4ff;
+  font-size: 12px;
+}
+.evidence-capture-indicator {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.evidence-capture-panel.is-active .evidence-capture-indicator {
+  background: #35d49a;
+  box-shadow: 0 0 0 4px rgba(53, 212, 154, 0.12);
+}
+.evidence-capture-preview-tag {
+  border: 1px solid rgba(255, 214, 0, 0.27);
+  border-radius: 999px;
+  background: rgba(255, 214, 0, 0.08);
+  color: #f6df61;
+  padding: 3px 7px;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.6px;
+}
+.evidence-capture-copy p {
+  max-width: 920px;
+  margin: 6px 0 0;
+  color: #aebacc;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.evidence-capture-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+.evidence-capture-stats span {
+  border: 1px solid rgba(0, 194, 255, 0.16);
+  border-radius: 999px;
+  color: #a9dff0;
+  padding: 4px 8px;
+  font-size: 9px;
+  font-weight: 750;
+}
+.evidence-capture-button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  border: 1px solid rgba(0, 194, 255, 0.38);
+  border-radius: 9px;
+  background: rgba(8, 125, 216, 0.16);
+  color: #dff6ff;
+  padding: 0 13px;
+  font-size: 10px;
+  font-weight: 800;
+}
+.evidence-capture-button:hover { background: rgba(8, 125, 216, 0.28); }
+.evidence-capture-button.is-stop {
+  border-color: rgba(255, 214, 0, 0.3);
+  background: rgba(255, 214, 0, 0.08);
+  color: #f6e6a0;
+}
+.evidence-capture-error {
+  margin: -9px 0 16px;
+  color: #ffb7b7;
+  font-size: 11px;
+}
+@media (max-width: 680px) {
+  .evidence-capture-panel {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .evidence-capture-button { width: 100%; }
+}
