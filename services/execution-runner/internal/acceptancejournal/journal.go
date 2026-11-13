@@ -36,12 +36,12 @@ type Receipt struct {
 }
 
 type journalEvent struct {
-	Version       int        `json:"version"`
-	Type          string     `json:"type"`
-	Receipt       *Receipt   `json:"receipt,omitempty"`
-	AcceptanceID  string     `json:"acceptanceId,omitempty"`
-	EventID       string     `json:"eventId,omitempty"`
-	ConfirmedAt   *time.Time `json:"confirmedAt,omitempty"`
+	Version      int        `json:"version"`
+	Type         string     `json:"type"`
+	Receipt      *Receipt   `json:"receipt,omitempty"`
+	AcceptanceID string     `json:"acceptanceId,omitempty"`
+	EventID      string     `json:"eventId,omitempty"`
+	ConfirmedAt  *time.Time `json:"confirmedAt,omitempty"`
 }
 
 type Confirmation struct {
