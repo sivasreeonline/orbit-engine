@@ -5,7 +5,7 @@ import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidenc
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
   "listProblemAttemptHistory" | "listExecutionEvents"
->;
+> & Partial<Pick<PostgresExecutionEvidenceRepository, "getExecutionQueueStatus">>;
 import type { Env } from "./env";
 
 interface ApiDependencies {
@@ -179,8 +179,12 @@ export function createApiHandler(dependencies: ApiDependencies) {
     const executionEventsMatch = request.method === "GET"
       ? path.match(/^\/api\/v1\/executions\/([^/]+)\/events$/)
       : null;
+    const executionStatusMatch = request.method === "GET"
+      ? path.match(/^\/api\/v1\/executions\/([^/]+)\/status$/)
+      : null;
 
-    if (!isProblemList && !problemMatch && !attemptHistoryMatch && !executionEventsMatch) {
+    if (!isProblemList && !problemMatch && !attemptHistoryMatch &&
+        !executionEventsMatch && !executionStatusMatch) {
       return errorResponse(
         "NOT_FOUND",
         "The requested API route does not exist.",
@@ -333,6 +337,48 @@ export function createApiHandler(dependencies: ApiDependencies) {
           origin,
           allowedOrigins,
         );
+      }
+    }
+
+    if (executionStatusMatch) {
+      if (!dependencies.evidenceRepository?.getExecutionQueueStatus) {
+        return errorResponse("QUEUE_STATUS_NOT_CONFIGURED",
+          "Execution status is temporarily unavailable.", 503, true,
+          requestId, origin, allowedOrigins);
+      }
+
+      let executionId: string;
+      try {
+        executionId = decodeURIComponent(executionStatusMatch[1] ?? "");
+      } catch {
+        executionId = "";
+      }
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(executionId)) {
+        return errorResponse("INVALID_EXECUTION_ID",
+          "The execution identifier is invalid.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const status = await dependencies.evidenceRepository.getExecutionQueueStatus(
+          principal.tenantId, principal.userId, executionId,
+        );
+        if (!status) {
+          return errorResponse("EXECUTION_NOT_FOUND",
+            "The requested execution was not found.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        return jsonResponse({ data: status }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("DATABASE_UNAVAILABLE",
+            "Execution status is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("execution_queue_status_read_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "Execution status could not be loaded.", 500, true,
+          requestId, origin, allowedOrigins);
       }
     }
 
