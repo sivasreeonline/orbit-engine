@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,10 +26,6 @@ type fakeDockerCLI struct {
 	created        bool
 	removed        bool
 	stdin          []byte
-	copyErr        error
-	copySourcePath string
-	copyDestination string
-	stagedSource   []byte
 }
 
 func (fake *fakeDockerCLI) Create(_ context.Context, args []string) (string, error) {
@@ -45,37 +40,6 @@ func (fake *fakeDockerCLI) Create(_ context.Context, args []string) (string, err
 	return fake.containerID, nil
 }
 
-func (fake *fakeDockerCLI) CopyInto(
-	ctx context.Context,
-	id string,
-	sourcePath string,
-	destination string,
-) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if id != fake.containerID ||
-		(destination != "/workspace/Main.java" && destination != "/workspace/main.py") {
-		return ErrDockerCommandFailed
-	}
-	parentInfo, err := os.Stat(filepath.Dir(sourcePath))
-	if err != nil || parentInfo.Mode().Perm() != 0o700 {
-		return errors.New("host source parent is not private")
-	}
-	sourceInfo, err := os.Stat(sourcePath)
-	if err != nil || sourceInfo.Mode().Perm() != 0o444 {
-		return errors.New("host source file is not read-only")
-	}
-	content, err := os.ReadFile(sourcePath)
-	if err != nil {
-		return err
-	}
-	fake.copySourcePath = sourcePath
-	fake.copyDestination = destination
-	fake.stagedSource = append([]byte(nil), content...)
-	return fake.copyErr
-}
-
 func (fake *fakeDockerCLI) StartAttached(
 	ctx context.Context,
 	id string,
@@ -85,12 +49,6 @@ func (fake *fakeDockerCLI) StartAttached(
 ) (int, error) {
 	if id != fake.containerID {
 		return 0, ErrDockerCommandFailed
-	}
-	if fake.copySourcePath == "" || fake.copyDestination == "" {
-		return 0, errors.New("source was not copied into the container")
-	}
-	if _, err := os.Stat(fake.copySourcePath); !os.IsNotExist(err) {
-		return 0, errors.New("host source staging remained present during execution")
 	}
 	var err error
 	fake.stdin, err = io.ReadAll(stdin)
@@ -206,7 +164,8 @@ func TestDockerCreateArgumentsApplyRequiredIsolationPolicy(t *testing.T) {
 			}
 		}
 	}
-	if !strings.Contains(workspaceTmpfs, "noexec,nosuid,nodev") {
+	if !strings.Contains(workspaceTmpfs, "noexec,nosuid,nodev") ||
+		!strings.Contains(workspaceTmpfs, "uid=65532,gid=65532,mode=0700") {
 		t.Errorf("workspace tmpfs lacks restrictive mount options: %q", workspaceTmpfs)
 	}
 	if tmpfsCount != 2 {
@@ -248,15 +207,9 @@ func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *tes
 	if !observation.CleanupSucceeded || !fake.removed {
 		t.Fatalf("sandbox cleanup did not complete: %+v", observation)
 	}
-	if string(fake.stdin) != string(request.StandardInput) {
-		t.Fatalf("stdin = %q, want %q", fake.stdin, request.StandardInput)
-	}
-	if fake.copyDestination != "/workspace/Main.java" ||
-		string(fake.stagedSource) != string(request.SourceBytes) {
-		t.Fatalf("source was not copied to the fixed private container path: destination=%q", fake.copyDestination)
-	}
-	if _, err := os.Stat(fake.copySourcePath); !os.IsNotExist(err) {
-		t.Fatal("private host source staging was not removed before execution")
+	wantStdin := append(append([]byte(nil), request.SourceBytes...), request.StandardInput...)
+	if string(fake.stdin) != string(wantStdin) {
+		t.Fatalf("stdin = %q, want source bytes followed by test input %q", fake.stdin, wantStdin)
 	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -265,9 +218,8 @@ func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *tes
 	if len(entries) != 0 {
 		t.Fatalf("temporary source workspace was not removed: %v", entries)
 	}
-	mount := argumentAfter(fake.createArgs, "--mount")
-	if !strings.Contains(mount, ",dst=/workspace,readonly") {
-		t.Fatalf("source mount does not remain read-only: %q", mount)
+	if containsArgument(fake.createArgs, "--mount") {
+		t.Fatalf("host source path unexpectedly passed to Docker: %v", fake.createArgs)
 	}
 }
 
@@ -426,7 +378,7 @@ func TestBoundedOutputCombinesStreamsAndCancelsOnOverflow(t *testing.T) {
 func TestRuntimeScriptsVerifyPinnedVersionsAndExposeCompileBoundary(t *testing.T) {
 	t.Parallel()
 
-	javaScript := runtimeScript(protocol.LanguageJava, "25")
+	javaScript := runtimeScript(protocol.LanguageJava, "25", len(dockerSandboxTestRequest().SourceBytes))
 	for _, expected := range []string{
 		"java -version",
 		"javac ",
@@ -438,11 +390,16 @@ func TestRuntimeScriptsVerifyPinnedVersionsAndExposeCompileBoundary(t *testing.T
 			t.Errorf("Java runtime script missing %q: %s", expected, javaScript)
 		}
 	}
+	if !strings.Contains(javaScript, "dd bs=1 count=") ||
+		!strings.Contains(javaScript, "of=/workspace/Main.java") ||
+		!strings.Contains(javaScript, "chmod 0444 /workspace/Main.java") {
+		t.Fatalf("Java wrapper does not stage exact source bytes into private tmpfs: %s", javaScript)
+	}
 	if strings.Index(javaScript, "printf '") > strings.Index(javaScript, "exec java ") {
 		t.Fatal("Java compile marker must be emitted before the program starts")
 	}
 
-	pythonScript := runtimeScript(protocol.LanguagePython, "3.14")
+	pythonScript := runtimeScript(protocol.LanguagePython, "3.14", 64)
 	for _, expected := range []string{
 		"python3 --version",
 		"python3 -I -B -c",
@@ -452,6 +409,11 @@ func TestRuntimeScriptsVerifyPinnedVersionsAndExposeCompileBoundary(t *testing.T
 		if !strings.Contains(pythonScript, expected) {
 			t.Errorf("Python runtime script missing %q: %s", expected, pythonScript)
 		}
+	}
+	if !strings.Contains(pythonScript, "dd bs=1 count=64") ||
+		!strings.Contains(pythonScript, "of=/workspace/main.py") ||
+		!strings.Contains(pythonScript, "chmod 0444 /workspace/main.py") {
+		t.Fatalf("Python wrapper does not stage exact source bytes into private tmpfs: %s", pythonScript)
 	}
 	if strings.Index(pythonScript, "printf '") > strings.Index(pythonScript, "exec python3 -I -B /workspace/main.py") {
 		t.Fatal("Python compile marker must be emitted before the program starts")
@@ -491,37 +453,8 @@ func TestSandboxRejectsUntrustedRuntimeAndImageTokens(t *testing.T) {
 
 	request = dockerSandboxTestRequest()
 	request.ImageRef = "--privileged@sha256:" + strings.Repeat("a", 64)
-	if _, err := dockerCreateArguments(request, filepath.Join(t.TempDir(), "workspace")); err == nil {
+	if _, err := dockerCreateArguments(request); err == nil {
 		t.Fatal("flag-like image reference was accepted")
 	}
 }
 
-
-func TestDockerSandboxCopyFailureAbortsExecutionAndCleansContainerAndHostSource(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	fake := &fakeDockerCLI{
-		copyErr: errors.New("docker cp failed"),
-	}
-	sandbox, err := NewDockerSandbox(fake, root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
-	if !errors.Is(err, ErrDockerCommandFailed) {
-		t.Fatalf("RunCase error = %v, want ErrDockerCommandFailed", err)
-	}
-	if !fake.created || !fake.removed {
-		t.Fatalf("copy failure did not clean up the created container: %+v", fake)
-	}
-	if fake.startExitCode != 0 || fake.copyDestination == "" {
-		t.Fatal("execution should not start after a failed source copy")
-	}
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("private host source staging remains after copy failure: %v", entries)
-	}
-}
