@@ -25,7 +25,7 @@ The JSON request is bounded to 256 KiB while being read, not merely checked afte
 
 The API calls the existing transactional intake repository. It persists the immutable source snapshot, attempt, queued job, intake outbox event and idempotency reservation in one database transaction.
 
-A successful response is HTTP 202 and includes the execution ID, attempt ID, action, initial QUEUED state, replay indicator and status URL. Repeating the same idempotency key with the same request returns the original execution; reusing it for a different request returns 409.
+A successful response is HTTP 202 and includes the execution ID, attempt ID, action, accepted indicator, replay indicator and status URL. The response does not assert a current execution state because an idempotent replay may refer to work that has already advanced. The client should use the status URL to read the current state. Repeating the same idempotency key with the same request returns the original execution; reusing it for a different request returns 409.
 
 The intake outbox publisher remains an at-least-once publisher. Consumers must remain idempotent. A 202 means the request is durably accepted into the database; it does not mean a runner has started or code has executed.
 
