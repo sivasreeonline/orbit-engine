@@ -96,11 +96,12 @@ BEGIN
   FROM execution_jobs
   WHERE id = NEW.execution_id;
 
-  SELECT execution_id, attempt_id, event_type, actor_kind, phase_status, safe_code
+  SELECT evidence.execution_id, evidence.attempt_id, evidence.event_type,
+    evidence.actor_kind, evidence.phase_status, evidence.safe_code
   INTO event_execution_id, event_attempt_id, event_type, event_actor_kind,
     event_phase_status, event_safe_code
-  FROM execution_evidence_events
-  WHERE event_id = NEW.event_id;
+  FROM execution_evidence_events AS evidence
+  WHERE evidence.event_id = NEW.event_id;
 
   IF dispatch_execution_id IS DISTINCT FROM NEW.execution_id
     OR dispatch_attempt_id IS DISTINCT FROM NEW.attempt_id
