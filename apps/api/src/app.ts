@@ -12,6 +12,9 @@ type ExecutionEvidenceReadRepository = Pick<
   "listProblemAttemptHistory" | "listExecutionEvents"
 > & Partial<Pick<PostgresExecutionEvidenceRepository, "getExecutionQueueStatus">>;
 import type { Env } from "./env";
+import type { PostgresRunnerIdentityRepository } from "./db/runner-identity-repository";
+import type { PostgresRunnerDispatchLeaseRepository } from "./db/runner-dispatch-lease-repository";
+import { authenticateRunnerRequest } from "./services/runner-request-authenticator";
 
 type ExecutionIntakeRepository = {
   create(input: CreateExecutionInput, idempotencyKey: string): Promise<{
@@ -26,6 +29,8 @@ interface ApiDependencies {
   readonly repository: ProblemRepository;
   readonly evidenceRepository?: ExecutionEvidenceReadRepository;
   readonly executionIntakeRepository?: ExecutionIntakeRepository;
+  readonly runnerIdentityRepository?: Pick<PostgresRunnerIdentityRepository, "findActivePublicKey" | "consumeNonce">;
+  readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner">;
   readonly runtimeVersions?: { readonly java: string; readonly python: string };
   readonly allowedOrigins?: string;
 }
@@ -110,6 +115,35 @@ function errorResponse(
 
 class RequestBodyTooLargeError extends Error {}
 class InvalidRequestBodyError extends Error {}
+
+async function readRawBody(request: Request, maximumBytes: number): Promise<Uint8Array> {
+  const reader = request.body?.getReader();
+  if (!reader) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      total += next.value.byteLength;
+      if (total > maximumBytes) {
+        await reader.cancel();
+        throw new RequestBodyTooLargeError();
+      }
+      chunks.push(next.value);
+    }
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) throw error;
+    throw new InvalidRequestBodyError();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
 
 async function readJsonBody(request: Request, maximumBytes: number): Promise<unknown> {
   const reader = request.body?.getReader();
@@ -221,6 +255,102 @@ export function createApiHandler(dependencies: ApiDependencies) {
           origin,
           allowedOrigins,
         );
+      }
+    }
+
+    if (request.method === "POST" && path === "/internal/v1/runner/claim") {
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerDispatchLeaseRepository) {
+        return errorResponse(
+          "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Runner dispatch is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner claim request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let claimBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 1024);
+        claimBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner claim request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner claim request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      if (!isRecord(claimBody) ||
+          Object.keys(claimBody).length !== 1 ||
+          Object.keys(claimBody).some((key) => key !== "requestedSlots") ||
+          !Number.isInteger(claimBody.requestedSlots) ||
+          (claimBody.requestedSlots as number) < 1 ||
+          (claimBody.requestedSlots as number) > 4) {
+        return errorResponse("INVALID_RUNNER_CLAIM",
+          "The runner claim must contain requestedSlots from 1 to 4.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const leases = await dependencies.runnerDispatchLeaseRepository.claimFairBatchForRunner(
+          authenticatedRunner.runnerId,
+          Math.min(claimBody.requestedSlots as number, 2),
+          2,
+          120,
+        );
+        return jsonResponse({
+          data: leases.map((lease) => ({
+            dispatchId: lease.id,
+            executionId: lease.executionId,
+            attemptId: lease.attemptId,
+            protocolVersion: lease.protocolVersion,
+            correlationId: lease.correlationId,
+            deliveryAttempt: lease.deliveryAttempts,
+            leaseToken: lease.leaseToken,
+            leaseExpiresAt: lease.leaseExpiresAt,
+          })),
+          meta: {
+            claimed: leases.length,
+            maxActiveLeasesPerRunner: 2,
+            leaseDurationSeconds: 120,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Runner dispatch is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_claim_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "Runner dispatch could not be claimed.", 500, true,
+          requestId, origin, allowedOrigins);
       }
     }
 
