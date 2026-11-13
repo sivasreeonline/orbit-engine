@@ -105,7 +105,7 @@ Student source is not written to a host temporary file or bind-mounted from the 
 
 The execution adapter currently uses exact-byte output comparison. The artifact contract does not yet carry a versioned comparison mode, so whitespace-normalizing comparison is deliberately not inferred.
 
-**This remains a draft, not a live sandbox proof.** The Docker CLI and execution contract tests use fakes. CI does not start Docker or run a gVisor container. Runtime images have not been built, signed or qualified. Peak-memory sampling is not implemented. The sandbox adapter is disabled unless its caller explicitly sets `Enabled: true`, and it is not wired into the health-only command. Do not set that flag for student workloads until the real Linux/runsc and adversarial gates below pass.
+**This remains a draft, not a live sandbox proof.** The Docker CLI and execution contract tests use fakes. CI does not start Docker or run a gVisor container. Runtime images have not been built, signed or qualified. Peak-memory sampling is not implemented. The sandbox adapter is disabled unless its caller explicitly sets `Enabled: true`; enabling it also requires a successful Docker/runsc/image preflight. It is not wired into the health-only command. Do not set that flag for student workloads until the real Linux/runsc and adversarial gates below pass.
 
 ## M0 next gates
 1. Add reviewed machine key loading/permissions and a single-process journal owner.
