@@ -95,8 +95,8 @@ describe.skipIf(!databaseUrl)("PostgresCodingEvidenceRepository PostgreSQL integ
       created.sessionId, 2, "SESSION_START", "public class Main {}",
     );
     const checkpoint = makeEvent(created.sessionId, 3, "CHECKPOINT_RECORDED", {
-      snapshotId: initialSnapshot.snapshot?.snapshotId,
-      contentSha256: initialSnapshot.snapshot?.contentSha256,
+      snapshotId: initialSnapshot.snapshot!.snapshotId,
+      contentSha256: initialSnapshot.snapshot!.contentSha256,
       metadata: { unchangedSincePreviousSnapshot: true },
     });
     const initialBatch = [start, initialSnapshot, checkpoint];
@@ -147,8 +147,8 @@ describe.skipIf(!databaseUrl)("PostgresCodingEvidenceRepository PostgreSQL integ
       created.sessionId, 6, "RUN", "public class Main { public static void main(String[] args) {} }",
     );
     const runRequested = makeEvent(created.sessionId, 7, "RUN_REQUESTED", {
-      snapshotId: runSnapshot.snapshot?.snapshotId,
-      contentSha256: runSnapshot.snapshot?.contentSha256,
+      snapshotId: runSnapshot.snapshot!.snapshotId,
+      contentSha256: runSnapshot.snapshot!.contentSha256,
     });
     const runResult = await repository.appendBatch({
       principal, sessionId: created.sessionId, events: [runSnapshot, runRequested],
