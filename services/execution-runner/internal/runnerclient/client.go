@@ -143,17 +143,22 @@ func New(config Config) (*Client, error) {
 		}
 	}
 
-	httpClient := config.HTTPClient
-	if httpClient == nil {
-		httpClient = &http.Client{
-			Timeout: defaultRequestTimeout,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-			},
-			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
+	httpClient := &http.Client{
+		Timeout: defaultRequestTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		},
+	}
+	if config.HTTPClient != nil {
+		copyOfClient := *config.HTTPClient
+		httpClient = &copyOfClient
+		if httpClient.Timeout == 0 {
+			httpClient.Timeout = defaultRequestTimeout
 		}
+	}
+	// Signed runner requests must never be redirected to a different origin.
+	httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
 	}
 
 	now := config.Now
