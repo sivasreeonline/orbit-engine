@@ -206,6 +206,9 @@ func (sandbox *DockerSandbox) RunCase(
 	parent context.Context,
 	request SandboxRequest,
 ) (SandboxObservation, error) {
+	if sandbox == nil || sandbox.cli == nil {
+		return SandboxObservation{}, ErrSandboxNotConfigured
+	}
 	if err := validateSandboxRequest(request); err != nil {
 		return SandboxObservation{}, err
 	}
