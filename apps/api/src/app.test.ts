@@ -10,6 +10,10 @@ import type {
 import { DatabaseUnavailableError } from "./db/database-errors";
 import type { ActiveRunnerPublicKey } from "./db/runner-identity-repository";
 import type { RunnerDispatchLease } from "./db/runner-dispatch-lease-repository";
+import type {
+  RecordRunnerAcceptanceInput,
+  RecordedRunnerAcceptance,
+} from "./db/runner-acceptance-repository";
 import { canonicalRunnerRequestMessage } from "./security/runner-request-signature";
 import { RUNNER_AUTH_HEADERS } from "./services/runner-request-authenticator";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
@@ -77,6 +81,9 @@ interface HarnessOptions {
       runnerId: string, requestedSlots: number, maxActiveLeases: number, leaseSeconds: number,
     ): Promise<RunnerDispatchLease[]>;
   };
+  runnerAcceptanceRepository?: {
+    record(input: RecordRunnerAcceptanceInput): Promise<RecordedRunnerAcceptance>;
+  };
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -107,6 +114,9 @@ function makeHarness(options: HarnessOptions = {}) {
       : {}),
     ...(options.runnerDispatchLeaseRepository
       ? { runnerDispatchLeaseRepository: options.runnerDispatchLeaseRepository }
+      : {}),
+    ...(options.runnerAcceptanceRepository
+      ? { runnerAcceptanceRepository: options.runnerAcceptanceRepository }
       : {}),
     allowedOrigins: allowedOrigin,
   });
@@ -775,5 +785,122 @@ describe("authenticated runner claim endpoint", () => {
     expect(response.status).toBe(400);
     expect(findActivePublicKey).not.toHaveBeenCalled();
     expect(claimFairBatchForRunner).not.toHaveBeenCalled();
+  });
+});
+
+describe("authenticated runner acceptance endpoint", () => {
+  const runnerId = "40000000-0000-4000-8000-000000000001";
+  const receipt = {
+    acceptanceId: "90000000-0000-4000-8000-000000000001",
+    dispatchId: "50000000-0000-4000-8000-000000000001",
+    executionId: "60000000-0000-4000-8000-000000000001",
+    attemptId: "70000000-0000-4000-8000-000000000001",
+    leaseToken: "80000000-0000-4000-8000-000000000001",
+  };
+
+  function encodeBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).split("+").join("-").split("/").join("_").replace(/=+$/g, "");
+  }
+
+  async function signedAcceptanceRequest(bodyValue: Record<string, string>) {
+    const now = new Date();
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const nonce = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+    const bodyText = JSON.stringify(bodyValue);
+    const body = new TextEncoder().encode(bodyText);
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "Ed25519" }, true, ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const message = await canonicalRunnerRequestMessage({
+      keyId: "runner-accept-key",
+      method: "POST",
+      path: "/internal/v1/runner/accept",
+      timestamp,
+      nonce,
+      body,
+    });
+    const signature = new Uint8Array(await crypto.subtle.sign(
+      "Ed25519", keyPair.privateKey, new Uint8Array(message),
+    ));
+    return {
+      request: new Request("https://api.skyhigh.example/internal/v1/runner/accept", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [RUNNER_AUTH_HEADERS.keyId]: "runner-accept-key",
+          [RUNNER_AUTH_HEADERS.timestamp]: timestamp,
+          [RUNNER_AUTH_HEADERS.nonce]: nonce,
+          [RUNNER_AUTH_HEADERS.signature]: encodeBase64Url(signature),
+        },
+        body: bodyText,
+      }),
+      publicKey,
+    };
+  }
+
+  it("persists a signed acceptance receipt and returns its durable event", async () => {
+    const signed = await signedAcceptanceRequest(receipt);
+    const record = vi.fn(async (input: RecordRunnerAcceptanceInput) => ({
+      dispatchId: input.dispatchId,
+      acceptanceId: input.acceptanceId,
+      eventId: "a0000000-0000-4000-8000-000000000001",
+      acceptedAt: "2026-11-13T08:00:00.000Z",
+      replayed: false,
+    }));
+    const { handler, authenticator } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-accept-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerAcceptanceRepository: { record },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      data: {
+        accepted: true,
+        replayed: false,
+        dispatchId: receipt.dispatchId,
+        acceptanceId: receipt.acceptanceId,
+        eventId: "a0000000-0000-4000-8000-000000000001",
+      },
+    });
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      ...receipt,
+      runnerId,
+      keyId: "runner-accept-key",
+      receiptSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+    }));
+  });
+
+  it("rejects additional acceptance fields before key lookup", async () => {
+    const findActivePublicKey = vi.fn(async () => null);
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey,
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerAcceptanceRepository: {
+        record: vi.fn(async () => {
+          throw new Error("should_not_be_called");
+        }),
+      },
+    });
+    const response = await handler(makeRequest("/internal/v1/runner/accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...receipt, sourceCode: "must never be accepted" }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(findActivePublicKey).not.toHaveBeenCalled();
   });
 });
