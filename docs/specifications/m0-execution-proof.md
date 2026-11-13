@@ -55,7 +55,7 @@ The Docker command contract requests:
 - private non-executable tmpfs mounts for `/workspace` and `/tmp`;
 - forced container removal on success, timeout, cancellation, output overflow and errors.
 
-Student source is not written to the runner host filesystem. The runner streams the exact source bytes first over the attached container stdin. A fixed wrapper consumes exactly the trusted byte length into `/workspace`, verifies the byte count and makes the file read-only. The remaining stdin bytes are then passed to the student program as its testcase input. Source contents are never interpolated into shell arguments and no host bind mount is used.
+Student source is not written to the runner host filesystem. The runner streams the exact source bytes first over the attached container stdin. A fixed wrapper consumes exactly the trusted byte length into `/workspace`, verifies the byte count, makes the file read-only and locks the workspace directory. The remaining stdin bytes are then passed to the student program as its testcase input. Source contents are never interpolated into shell arguments and no host bind mount is used.
 
 The current comparator is exact-byte comparison. The artifact contract does not yet include a versioned comparison-mode field; do not infer whitespace normalization.
 
