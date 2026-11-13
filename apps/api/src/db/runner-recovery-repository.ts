@@ -165,7 +165,7 @@ export class PostgresRunnerRecoveryRepository {
                 "UPDATE execution_jobs",
                 "SET state = 'QUEUED', state_version = state_version + 1,",
                 "    retry_count = retry_count + 1,",
-                "    available_at = clock_timestamp() + make_interval(secs => $4),",
+                "    available_at = date_trunc('milliseconds', clock_timestamp() + make_interval(secs => $4)),",
                 "    started_at = NULL, completed_at = NULL, updated_at = clock_timestamp(),",
                 "    lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL",
                 "WHERE id = $1::uuid AND attempt_id = $2::uuid",
