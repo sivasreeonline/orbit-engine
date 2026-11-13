@@ -151,7 +151,7 @@ func (j *Journal) Confirm(acceptanceID, eventID string, confirmedAt time.Time) (
 	}
 	confirmedAt = confirmedAt.UTC()
 	if existing, ok := j.confirmations[acceptanceID]; ok {
-		if existing.EventID != eventID || !existing.ConfirmedAt.Equal(confirmedAt) {
+		if existing.EventID != eventID {
 			return false, ErrConflict
 		}
 		return true, nil
@@ -172,6 +172,25 @@ func (j *Journal) Confirm(acceptanceID, eventID string, confirmedAt time.Time) (
 		ConfirmedAt:  confirmedAt,
 	}
 	return false, nil
+}
+
+// Find returns the prepared receipt for a dispatch lease generation. It lets
+// the runner recover the original acceptanceId after a restart or redelivery.
+func (j *Journal) Find(dispatchID, leaseToken string) (Receipt, bool, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if err := j.ensureOpen(); err != nil {
+		return Receipt{}, false, err
+	}
+	if !isUUID(dispatchID) || !isUUID(leaseToken) {
+		return Receipt{}, false, errors.New("invalid acceptance lease identity")
+	}
+	acceptanceID, ok := j.leaseIndex[dispatchID+":"+leaseToken]
+	if !ok {
+		return Receipt{}, false, nil
+	}
+	receipt, ok := j.receipts[acceptanceID]
+	return receipt, ok, nil
 }
 
 // Pending returns prepared receipts whose durable control-plane confirmation
@@ -337,8 +356,7 @@ func applyEvent(j *Journal, event journalEvent) error {
 			ConfirmedAt: event.ConfirmedAt.UTC(),
 		}
 		if existing, ok := j.confirmations[event.AcceptanceID]; ok {
-			if existing.EventID != confirmation.EventID ||
-				!existing.ConfirmedAt.Equal(confirmation.ConfirmedAt) {
+			if existing.EventID != confirmation.EventID {
 				return ErrConflict
 			}
 			return nil
@@ -371,8 +389,7 @@ func sameReceipt(left, right Receipt) bool {
 		left.DispatchID == right.DispatchID &&
 		left.ExecutionID == right.ExecutionID &&
 		left.AttemptID == right.AttemptID &&
-		left.LeaseToken == right.LeaseToken &&
-		left.PreparedAt.Equal(right.PreparedAt)
+		left.LeaseToken == right.LeaseToken
 }
 
 func isUUID(value string) bool {
