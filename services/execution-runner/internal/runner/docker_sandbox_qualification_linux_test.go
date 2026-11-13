@@ -91,6 +91,12 @@ if Path("/var/run/docker.sock").exists():
     print("DOCKER_SOCKET_PRESENT")
     raise SystemExit(5)
 print("DOCKER_SOCKET_ABSENT")
+try:
+    Path("/workspace/escape.txt").write_text("escape")
+    print("WORKSPACE_WRITABLE")
+    raise SystemExit(6)
+except OSError:
+    print("WORKSPACE_READ_ONLY")
 `,
 		},
 		{
@@ -100,8 +106,10 @@ print("DOCKER_SOCKET_ABSENT")
 			image: runtimes.JavaImageRef,
 			sourceName: "Main.java",
 			source: `import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
@@ -124,6 +132,25 @@ public class Main {
       .findFirst().orElse("");
     System.out.println(java.util.Arrays.asList(rootMount.split(",")).contains("ro")
       ? "ROOT_MOUNT_RO" : "ROOT_MOUNT_RW");
+    try {
+      InetAddress.getAllByName("example.com");
+      System.out.println("DNS_OPEN");
+      System.exit(4);
+    } catch (UnknownHostException expected) {
+      System.out.println("DNS_BLOCKED");
+    }
+    if (Files.exists(Path.of("/var/run/docker.sock"))) {
+      System.out.println("DOCKER_SOCKET_PRESENT");
+      System.exit(5);
+    }
+    System.out.println("DOCKER_SOCKET_ABSENT");
+    try {
+      Files.writeString(Path.of("/workspace/escape.txt"), "escape");
+      System.out.println("WORKSPACE_WRITABLE");
+      System.exit(6);
+    } catch (IOException expected) {
+      System.out.println("WORKSPACE_READ_ONLY");
+    }
   }
 }`,
 		},
@@ -150,12 +177,15 @@ public class Main {
 				t.Fatalf("sandbox did not finish and clean up: %+v", observation)
 			}
 			output := string(observation.StandardOutput)
-			for _, expected := range []string{"65532", "NETWORK_BLOCKED", "DNS_BLOCKED", "DOCKER_SOCKET_ABSENT", "ROOT_MOUNT_RO"} {
+			for _, expected := range []string{"65532", "NETWORK_BLOCKED", "DNS_BLOCKED", "DOCKER_SOCKET_ABSENT", "ROOT_MOUNT_RO", "WORKSPACE_READ_ONLY"} {
 				if !strings.Contains(output, expected) {
 					t.Errorf("output %q does not contain isolation proof %q", output, expected)
 				}
 			}
-			if strings.Contains(output, "NETWORK_OPEN") || strings.Contains(output, "ROOT_MOUNT_RW") {
+			if strings.Contains(output, "NETWORK_OPEN") || strings.Contains(output, "DNS_OPEN") ||
+				strings.Contains(output, "DOCKER_SOCKET_PRESENT") ||
+				strings.Contains(output, "ROOT_MOUNT_RW") ||
+				strings.Contains(output, "WORKSPACE_WRITABLE") {
 				t.Fatalf("isolation boundary was violated: %q", output)
 			}
 		})
