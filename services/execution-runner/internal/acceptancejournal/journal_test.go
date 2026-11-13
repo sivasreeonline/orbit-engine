@@ -372,3 +372,23 @@ func TestJournalDoesNotReleaseLockWhoseOwnerRecordChanged(t *testing.T) {
 		t.Fatalf("journal was reopened after uncertain ownership release: %v", err)
 	}
 }
+
+
+func TestJournalLockCanonicalizesRelativePathAliases(t *testing.T) {
+	directory := t.TempDir()
+	aliasedPath := filepath.Join(directory, "created", "..", "acceptance.jsonl")
+	canonicalPath := filepath.Join(directory, "acceptance.jsonl")
+
+	first, err := Open(aliasedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+
+	if second, err := Open(canonicalPath); !errors.Is(err, ErrJournalLocked) {
+		if second != nil {
+			_ = second.Close()
+		}
+		t.Fatalf("canonical path alias bypassed the journal lock: %v", err)
+	}
+}
