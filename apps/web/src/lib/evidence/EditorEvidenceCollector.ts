@@ -52,6 +52,8 @@ export interface EditorEvidenceCollectorOptions {
   readonly sessionId?: string;
   /** Server's last accepted sequence; newly captured events continue from this value. */
   readonly initialSequence?: number;
+  /** Defaults to true for preview/debugging; set false when a sync queue owns records. */
+  readonly retainRecords?: boolean;
   readonly onRecord?: (record: CapturedEvidence) => void;
   readonly now?: () => number;
   readonly createId?: () => string;
@@ -102,6 +104,9 @@ export class EditorEvidenceCollector {
   private readonly scheduleTimer: NonNullable<EditorEvidenceCollectorOptions["setTimer"]>;
   private readonly cancelTimer: NonNullable<EditorEvidenceCollectorOptions["clearTimer"]>;
   private readonly records: CapturedEvidence[] = [];
+  private readonly retainRecords: boolean;
+  private eventCount = 0;
+  private snapshotCount = 0;
   private readonly sessionIdValue: string;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sequence = 0;
@@ -124,6 +129,7 @@ export class EditorEvidenceCollector {
     this.createId = options.createId ?? defaultCreateId;
     this.scheduleTimer = options.setTimer ?? ((callback, delayMs) => setTimeout(callback, delayMs));
     this.cancelTimer = options.clearTimer ?? ((timer) => clearTimeout(timer));
+    this.retainRecords = options.retainRecords ?? true;
     this.sourceCode = options.initialSource;
     this.language = options.language;
     this.sessionIdValue = options.sessionId ?? this.createId();
@@ -212,8 +218,8 @@ export class EditorEvidenceCollector {
   getSummary(): EditorEvidenceSummary {
     return Object.freeze({
       sessionId: this.sessionId,
-      eventCount: this.records.length,
-      snapshotCount: this.records.filter((record) => record.snapshot !== undefined).length,
+      eventCount: this.eventCount,
+      snapshotCount: this.snapshotCount,
       lastSnapshotAt: new Date(this.lastSnapshotAt).toISOString(),
       lastCheckpointAt: new Date(this.lastCheckpointAt).toISOString(),
       pendingChangeCount: this.pendingChangeCount,
@@ -316,7 +322,9 @@ export class EditorEvidenceCollector {
       event,
       ...(snapshot ? { snapshot } : {}),
     });
-    this.records.push(record);
+    this.eventCount += 1;
+    if (snapshot) this.snapshotCount += 1;
+    if (this.retainRecords) this.records.push(record);
     this.options.onRecord?.(record);
   }
 
