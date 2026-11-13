@@ -244,7 +244,7 @@ export class PostgresRunnerHeartbeatRepository {
 
         const expiryResult = await client.query<ExpiryRow>(
           [
-            "SELECT now() + make_interval(secs => $1)::interval AS lease_expires_at",
+            "SELECT clock_timestamp() + make_interval(secs => $1) AS lease_expires_at",
           ].join("\n"),
           [RENEWED_LEASE_SECONDS],
         );
@@ -271,7 +271,7 @@ export class PostgresRunnerHeartbeatRepository {
             "SET lease_expires_at = $5::timestamptz",
             "WHERE id = $1::uuid AND execution_id = $2::uuid AND attempt_id = $3::uuid",
             "  AND delivery_state = 'PENDING' AND lease_owner = $4",
-            "  AND lease_token = $6::uuid AND lease_expires_at > now()",
+            "  AND lease_token = $6::uuid AND lease_expires_at > clock_timestamp()",
             "RETURNING id",
           ].join("\n"),
           [
@@ -287,7 +287,7 @@ export class PostgresRunnerHeartbeatRepository {
             "SET lease_expires_at = $5::timestamptz, updated_at = now()",
             "WHERE id = $1::uuid AND attempt_id = $2::uuid AND state = 'RUNNING'",
             "  AND lease_owner = $3 AND lease_token = $4::uuid",
-            "  AND lease_expires_at > now()",
+            "  AND lease_expires_at > clock_timestamp()",
             "RETURNING id",
           ].join("\n"),
           [
