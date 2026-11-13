@@ -65,7 +65,7 @@ The current comparator is exact-byte comparison. The artifact contract does not 
 - CI does not run Docker, gVisor, student programs or a real Linux sandbox.
 - Runtime images have not been built, signed or verified on a target Linux host.
 - Peak-memory sampling is not implemented; OOM classification is not measured peak memory.
-- The sandbox adapter requires an explicit enable flag and is not wired into `cmd/runner`. The default command remains loopback-only and health-only.
+- The sandbox adapter requires an explicit enable flag and a successful local preflight (Docker daemon, registered `runsc` runtime and both digest-pinned runtime images already present). Preflight never pulls images and does not establish runtime isolation. It is not wired into `cmd/runner`; the default command remains loopback-only and health-only.
 - No production execution or student-facing Run/Submit release is authorized by these tests.
 
 Before enabling the adapter for any real workload, run the full adversarial test matrix on a disposable, supported Linux host with a pinned Docker/OCI engine and a verified `runsc` installation. Independently review network denial, host filesystem isolation, UID mapping, resource enforcement, timeout/process-tree termination, output limits, container cleanup and peak-memory telemetry. Record host/runtime/image digests and measured concurrency. Keep the worker disabled until those results pass review.
