@@ -19,7 +19,8 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - No endpoint accepts source code or starts a process.
 - The acceptance journal stores only opaque IDs, lease identity and receipt lifecycle metadata; it never stores source code, hidden tests or execution artifacts.
 - A single runner process must own a journal file. Journal files are created with owner-only permissions (0600), and incomplete trailing records are truncated during recovery.
-- No Docker, containerd, gVisor or host command is invoked.
+- The default `cmd/runner` health process never invokes Docker, containerd, gVisor or host execution commands.
+- The sandbox adapter is an injectable library component and is not constructed by `cmd/runner`.
 - The unconfigured executor always returns `ErrSandboxNotConfigured`.
 - The HTTP server refuses non-loopback bind addresses until an authenticated private transport is implemented.
 - Student source code is referenced by an opaque artifact ID and SHA-256 digest; it is not included in the runner request body.
@@ -89,11 +90,29 @@ This coordinator is a library operation, not a polling daemon. It claims at most
 
 The `cmd/runner` entry point remains health-only and loopback-bound. It does not construct a runner identity, open the acceptance journal for production work, start the coordinator, or execute student code. The coordinator is not yet connected to a real OCI/gVisor executor.
 
+## Draft artifact-backed runsc sandbox adapter
+
+The Go library now includes `SandboxArtifactExecutor`, which adapts the authenticated `ExecutionArtifact` returned by the runner client into the existing execution contract. It rechecks source integrity, binds fixtures to the exact execution/attempt/problem version and uses separately configured resource limits.
+
+The `DockerSandbox` adapter creates a fresh container per testcase with:
+- the `runsc` runtime, network and IPC disabled, read-only root filesystem;
+- a non-root UID/GID (65532:65532), all Linux capabilities dropped and no-new-privileges;
+- bounded memory/swap, CPU quota, PID count, wall time and combined stdout/stderr;
+- a non-executable, nodev/nosuid `/workspace` tmpfs and bounded `/tmp` tmpfs;
+- forced container removal after completion, timeout, cancellation or output overflow.
+
+Student source is not written to a host temporary file or bind-mounted from the host. The runner sends the source bytes first over the container's attached stdin; a fixed wrapper consumes exactly the known source-byte count into `/workspace`, verifies the byte count, makes the file and workspace directory read-only, then leaves the remaining stdin stream for the testcase input. Student source is never interpolated into shell text.
+
+The execution adapter currently uses exact-byte output comparison. The artifact contract does not yet carry a versioned comparison mode, so whitespace-normalizing comparison is deliberately not inferred.
+
+**This remains a draft, not a live sandbox proof.** The Docker CLI and execution contract tests use fakes. CI does not start Docker or run a gVisor container. Runtime images have not been built, signed or qualified. Peak-memory sampling is not implemented. The sandbox adapter is disabled unless its caller explicitly sets `Enabled: true`; enabling it also requires a successful Docker/runsc/image preflight. It is not wired into the health-only command. Do not set that flag for student workloads until the real Linux/runsc and adversarial gates below pass.
+
 ## M0 next gates
 1. Add reviewed machine key loading/permissions and a single-process journal owner.
 2. Integrate claim → accept → start → heartbeat → artifact retrieval → execute → complete in a bounded runner lifecycle with backoff, cancellation and graceful shutdown.
 3. Select a supported Linux host and architecture.
-4. Select OCI engine and validate gVisor compatibility.
-5. Implement and qualify the ephemeral sandbox lifecycle behind the Executor interface.
-6. Enforce network denial, non-root identity, CPU, memory, PID, wall-clock, filesystem and output limits.
-7. Add cleanup attestation and adversarial tests; keep execution disabled until the full sandbox/security review passes.
+4. Provision a disposable supported Linux host with a pinned Docker/OCI engine and install/verify the exact `runsc` runtime.
+5. Build, sign and pin Java/Python runtime images; verify their digests and runtime versions on the host.
+6. Run real Java/Python smoke tests and the full adversarial matrix: network/DNS, host filesystem traversal, process exhaustion, memory exhaustion, infinite loops, output floods, cancellation and cleanup failures.
+7. Verify container cleanup and lease-loss cancellation under real process execution; implement measured peak-memory sampling.
+8. Complete an independent security review and cleanup attestation design. Keep the adapter disabled until all gates pass.
