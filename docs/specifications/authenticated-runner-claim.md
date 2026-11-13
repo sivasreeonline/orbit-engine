@@ -30,6 +30,8 @@ These are conservative initial control-plane limits, not measured execution thro
 
 ## Response
 
+The runner and execution-job lease owner is the authenticated runner machine ID. The shared lease token is subsequently required by the start/result lifecycle, so the execution-job repository and dispatch scheduler cannot drift into separate lease identities.
+
 Each returned dispatch contains only:
 - dispatch ID;
 - execution ID and attempt ID;
