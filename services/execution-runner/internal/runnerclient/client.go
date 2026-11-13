@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/binary"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -20,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/acceptancejournal"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerauth"
@@ -28,7 +31,14 @@ import (
 const (
 	claimPath             = "/internal/v1/runner/claim"
 	acceptPath            = "/internal/v1/runner/accept"
+	startPath             = "/internal/v1/runner/start"
+	heartbeatPath         = "/internal/v1/runner/heartbeat"
+	artifactPath          = "/internal/v1/runner/artifact"
 	maxResponseBytes      = 64 << 10
+	maxArtifactResponseBytes = 2 << 20
+	maxArtifactSourceBytes   = 256 << 10
+	maxArtifactTestBytes     = 1 << 20
+	maxArtifactTestCases     = 200
 	maxActiveLeases       = 2
 	leaseDurationSeconds  = 120
 	defaultRequestTimeout = 10 * time.Second
@@ -74,6 +84,48 @@ type AcceptanceResult struct {
 	Replayed     bool
 }
 
+type StartResult struct {
+	DispatchID string
+	ExecutionID string
+	AttemptID string
+	EventID string
+	StartedAt time.Time
+	Replayed bool
+}
+
+type HeartbeatResult struct {
+	HeartbeatID string
+	DispatchID string
+	ExecutionID string
+	LeaseExpiresAt time.Time
+	Replayed bool
+}
+
+type ArtifactTestCase struct {
+	TestCaseID string `json:"testCaseId"`
+	Sequence int `json:"sequence"`
+	Visibility string `json:"visibility"`
+	Input string `json:"input"`
+	ExpectedOutput string `json:"expectedOutput"`
+}
+
+type ExecutionArtifact struct {
+	ExecutionID string `json:"executionId"`
+	AttemptID string `json:"attemptId"`
+	ProblemVersionID string `json:"problemVersionId"`
+	ProblemSlug string `json:"problemSlug"`
+	ProblemTitle string `json:"problemTitle"`
+	Action string `json:"action"`
+	Language string `json:"language"`
+	RuntimeVersion string `json:"runtimeVersion"`
+	SourceArtifactID string `json:"sourceArtifactId"`
+	SourceSHA256 string `json:"sourceSha256"`
+	SourceCode string `json:"sourceCode"`
+	TestBundleID string `json:"testBundleId"`
+	TestBundleSHA256 string `json:"testBundleSha256"`
+	TestCases []ArtifactTestCase `json:"testCases"`
+}
+
 type RemoteError struct {
 	StatusCode int
 	Code       string
@@ -116,6 +168,55 @@ type acceptanceResponse struct {
 		EventID      string `json:"eventId"`
 		AcceptedAt   string `json:"acceptedAt"`
 	} `json:"data"`
+}
+
+type startRequest struct {
+	DispatchID string `json:"dispatchId"`
+	ExecutionID string `json:"executionId"`
+	AttemptID string `json:"attemptId"`
+	LeaseToken string `json:"leaseToken"`
+}
+
+type startResponse struct {
+	Data struct {
+		Started bool `json:"started"`
+		Replayed bool `json:"replayed"`
+		DispatchID string `json:"dispatchId"`
+		ExecutionID string `json:"executionId"`
+		AttemptID string `json:"attemptId"`
+		EventID string `json:"eventId"`
+		StartedAt string `json:"startedAt"`
+	} `json:"data"`
+}
+
+type heartbeatRequest struct {
+	HeartbeatID string `json:"heartbeatId"`
+	DispatchID string `json:"dispatchId"`
+	ExecutionID string `json:"executionId"`
+	AttemptID string `json:"attemptId"`
+	LeaseToken string `json:"leaseToken"`
+}
+
+type heartbeatResponse struct {
+	Data struct {
+		Renewed bool `json:"renewed"`
+		Replayed bool `json:"replayed"`
+		HeartbeatID string `json:"heartbeatId"`
+		DispatchID string `json:"dispatchId"`
+		ExecutionID string `json:"executionId"`
+		LeaseExpiresAt string `json:"leaseExpiresAt"`
+	} `json:"data"`
+}
+
+type artifactRequest struct {
+	DispatchID string `json:"dispatchId"`
+	ExecutionID string `json:"executionId"`
+	AttemptID string `json:"attemptId"`
+	LeaseToken string `json:"leaseToken"`
+}
+
+type artifactResponse struct {
+	Data ExecutionArtifact `json:"data"`
 }
 
 type errorResponse struct {
@@ -322,7 +423,239 @@ func (c *Client) acceptPrepared(
 	}, nil
 }
 
+// StartDispatch durably transitions an accepted lease to RUNNING. The operation
+// is idempotent for the same dispatch and fencing token, so callers may safely
+// retry after a lost acknowledgement.
+func (c *Client) StartDispatch(ctx context.Context, dispatch Dispatch) (StartResult, error) {
+	if !validDispatch(dispatch) {
+		return StartResult{}, errors.New("valid dispatch is required")
+	}
+	body, err := json.Marshal(startRequest{
+		DispatchID: dispatch.DispatchID,
+		ExecutionID: dispatch.ExecutionID,
+		AttemptID: dispatch.AttemptID,
+		LeaseToken: dispatch.LeaseToken,
+	})
+	if err != nil {
+		return StartResult{}, fmt.Errorf("encode runner start: %w", err)
+	}
+	var response startResponse
+	if err := c.postSignedJSON(ctx, startPath, body, &response); err != nil {
+		return StartResult{}, err
+	}
+	data := response.Data
+	if !data.Started || data.DispatchID != dispatch.DispatchID ||
+		data.ExecutionID != dispatch.ExecutionID || data.AttemptID != dispatch.AttemptID ||
+		!uuidPattern.MatchString(data.EventID) {
+		return StartResult{}, errors.New("runner start response does not match the dispatch")
+	}
+	startedAt, err := time.Parse(time.RFC3339Nano, data.StartedAt)
+	if err != nil {
+		return StartResult{}, errors.New("runner start response has an invalid timestamp")
+	}
+	return StartResult{
+		DispatchID: data.DispatchID,
+		ExecutionID: data.ExecutionID,
+		AttemptID: data.AttemptID,
+		EventID: data.EventID,
+		StartedAt: startedAt.UTC(),
+		Replayed: data.Replayed,
+	}, nil
+}
+
+// NewHeartbeatID creates an idempotency key for one lease renewal. Keep this
+// identifier and reuse it if the acknowledgement is lost; use a new ID only
+// for the next scheduled renewal.
+func (c *Client) NewHeartbeatID() (string, error) {
+	return c.newUUID()
+}
+
+// RenewLease renews the dispatch and execution-job lease together. Reuse the
+// same heartbeatID when retrying the same logical heartbeat after a timeout.
+func (c *Client) RenewLease(
+	ctx context.Context,
+	dispatch Dispatch,
+	heartbeatID string,
+) (HeartbeatResult, error) {
+	if !validDispatch(dispatch) || !uuidPattern.MatchString(heartbeatID) {
+		return HeartbeatResult{}, errors.New("valid dispatch and heartbeat ID are required")
+	}
+	body, err := json.Marshal(heartbeatRequest{
+		HeartbeatID: heartbeatID,
+		DispatchID: dispatch.DispatchID,
+		ExecutionID: dispatch.ExecutionID,
+		AttemptID: dispatch.AttemptID,
+		LeaseToken: dispatch.LeaseToken,
+	})
+	if err != nil {
+		return HeartbeatResult{}, fmt.Errorf("encode runner heartbeat: %w", err)
+	}
+	var response heartbeatResponse
+	if err := c.postSignedJSON(ctx, heartbeatPath, body, &response); err != nil {
+		return HeartbeatResult{}, err
+	}
+	data := response.Data
+	if !data.Renewed || data.HeartbeatID != heartbeatID ||
+		data.DispatchID != dispatch.DispatchID || data.ExecutionID != dispatch.ExecutionID {
+		return HeartbeatResult{}, errors.New("runner heartbeat response does not match the lease")
+	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, data.LeaseExpiresAt)
+	if err != nil || !expiresAt.After(c.now()) {
+		return HeartbeatResult{}, errors.New("runner heartbeat response has an invalid or expired lease timestamp")
+	}
+	if expiresAt.After(c.now().Add(3 * time.Minute)) {
+		return HeartbeatResult{}, errors.New("runner heartbeat response exceeds the bounded renewal horizon")
+	}
+	return HeartbeatResult{
+		HeartbeatID: data.HeartbeatID,
+		DispatchID: data.DispatchID,
+		ExecutionID: data.ExecutionID,
+		LeaseExpiresAt: expiresAt.UTC(),
+		Replayed: data.Replayed,
+	}, nil
+}
+
+// FetchArtifact retrieves source and the action-scoped test bundle only after
+// the control plane confirms this runner's accepted, started and active lease.
+// The method independently verifies all source and test-bundle integrity data.
+func (c *Client) FetchArtifact(
+	ctx context.Context,
+	dispatch Dispatch,
+) (ExecutionArtifact, error) {
+	if !validDispatch(dispatch) || !dispatch.LeaseExpiresAt.After(c.now()) {
+		return ExecutionArtifact{}, errors.New("valid unexpired dispatch is required")
+	}
+	body, err := json.Marshal(artifactRequest{
+		DispatchID: dispatch.DispatchID,
+		ExecutionID: dispatch.ExecutionID,
+		AttemptID: dispatch.AttemptID,
+		LeaseToken: dispatch.LeaseToken,
+	})
+	if err != nil {
+		return ExecutionArtifact{}, fmt.Errorf("encode runner artifact request: %w", err)
+	}
+	var response artifactResponse
+	if err := c.postSignedJSONWithLimit(ctx, artifactPath, body, &response, maxArtifactResponseBytes); err != nil {
+		return ExecutionArtifact{}, err
+	}
+	artifact := response.Data
+	if err := validateArtifact(dispatch, artifact); err != nil {
+		return ExecutionArtifact{}, err
+	}
+	return artifact, nil
+}
+
+func validateArtifact(dispatch Dispatch, artifact ExecutionArtifact) error {
+	if artifact.ExecutionID != dispatch.ExecutionID ||
+		artifact.AttemptID != dispatch.AttemptID ||
+		!uuidPattern.MatchString(artifact.ProblemVersionID) ||
+		!regexp.MustCompile("^[a-z0-9]+(?:-[a-z0-9]+)*$").MatchString(artifact.ProblemSlug) ||
+		len(artifact.ProblemSlug) > 64 ||
+		strings.TrimSpace(artifact.ProblemTitle) == "" || len(artifact.ProblemTitle) > 160 {
+		return errors.New("runner artifact identity or problem metadata is invalid")
+	}
+	if artifact.Action != "RUN" && artifact.Action != "SUBMIT" {
+		return errors.New("runner artifact action is invalid")
+	}
+	if artifact.Language != "java" && artifact.Language != "python" {
+		return errors.New("runner artifact language is invalid")
+	}
+	if artifact.RuntimeVersion == "" || len(artifact.RuntimeVersion) > 32 ||
+		strings.TrimSpace(artifact.RuntimeVersion) != artifact.RuntimeVersion ||
+		!uuidPattern.MatchString(artifact.SourceArtifactID) {
+		return errors.New("runner artifact runtime or source identity is invalid")
+	}
+	if !isSHA256(artifact.SourceSHA256) || !isSHA256(artifact.TestBundleSHA256) {
+		return errors.New("runner artifact digest is invalid")
+	}
+	sourceBytes := []byte(artifact.SourceCode)
+	if !utf8.Valid(sourceBytes) || len(sourceBytes) > maxArtifactSourceBytes {
+		return errors.New("runner artifact source is invalid or exceeds its size limit")
+	}
+	sourceDigest := sha256.Sum256(sourceBytes)
+	if hex.EncodeToString(sourceDigest[:]) != artifact.SourceSHA256 {
+		return errors.New("runner artifact source hash mismatch")
+	}
+	if len(artifact.TestCases) < 1 || len(artifact.TestCases) > maxArtifactTestCases {
+		return errors.New("runner artifact test case count is invalid")
+	}
+	lastSequence := 0
+	totalTestBytes := 0
+	for _, testCase := range artifact.TestCases {
+		if !uuidPattern.MatchString(testCase.TestCaseID) ||
+			testCase.Sequence <= lastSequence ||
+			(testCase.Visibility != "PUBLIC" && testCase.Visibility != "HIDDEN") {
+			return errors.New("runner artifact contains an invalid or unordered test case")
+		}
+		if artifact.Action == "RUN" && testCase.Visibility != "PUBLIC" {
+			return errors.New("RUN artifact must not contain hidden test cases")
+		}
+		if !utf8.ValidString(testCase.Input) || !utf8.ValidString(testCase.ExpectedOutput) {
+			return errors.New("runner artifact test case contains invalid UTF-8")
+		}
+		totalTestBytes += len([]byte(testCase.Input)) + len([]byte(testCase.ExpectedOutput))
+		if totalTestBytes > maxArtifactTestBytes {
+			return errors.New("runner artifact test bundle exceeds its size limit")
+		}
+		lastSequence = testCase.Sequence
+	}
+	bundleDigest := sha256.Sum256(canonicalTestBundleBytes(artifact.TestCases))
+	bundleHash := hex.EncodeToString(bundleDigest[:])
+	if bundleHash != artifact.TestBundleSHA256 {
+		return errors.New("runner artifact test bundle hash mismatch")
+	}
+	expectedBundleID := artifact.ProblemVersionID + "-" + strings.ToLower(artifact.Action) + "-" + bundleHash[:16]
+	if artifact.TestBundleID != expectedBundleID {
+		return errors.New("runner artifact test bundle ID does not match its digest")
+	}
+	return nil
+}
+
+func isSHA256(value string) bool {
+	if len(value) != 64 || strings.ToLower(value) != value {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
+}
+
+func appendLengthPrefixed(target *bytes.Buffer, value []byte) {
+	var length [4]byte
+	binary.BigEndian.PutUint32(length[:], uint32(len(value)))
+	target.Write(length[:])
+	target.Write(value)
+}
+
+// canonicalTestBundleBytes mirrors the versioned API encoding: length-prefixed
+// magic and case IDs, big-endian u32 sequence/count, visibility byte 1=PUBLIC
+// or 2=HIDDEN, then length-prefixed UTF-8 input and expected output.
+func canonicalTestBundleBytes(testCases []ArtifactTestCase) []byte {
+	var buffer bytes.Buffer
+	appendLengthPrefixed(&buffer, []byte("SKYHIGH-TEST-BUNDLE-V1"))
+	var count [4]byte
+	binary.BigEndian.PutUint32(count[:], uint32(len(testCases)))
+	buffer.Write(count[:])
+	for _, testCase := range testCases {
+		appendLengthPrefixed(&buffer, []byte(testCase.TestCaseID))
+		var sequence [4]byte
+		binary.BigEndian.PutUint32(sequence[:], uint32(testCase.Sequence))
+		buffer.Write(sequence[:])
+		if testCase.Visibility == "PUBLIC" {
+			buffer.WriteByte(1)
+		} else {
+			buffer.WriteByte(2)
+		}
+		appendLengthPrefixed(&buffer, []byte(testCase.Input))
+		appendLengthPrefixed(&buffer, []byte(testCase.ExpectedOutput))
+	}
+	return buffer.Bytes()
+}
+
 func (c *Client) postSignedJSON(ctx context.Context, path string, body []byte, output any) error {
+	return c.postSignedJSONWithLimit(ctx, path, body, output, maxResponseBytes)
+}
+
+func (c *Client) postSignedJSONWithLimit(ctx context.Context, path string, body []byte, output any, responseLimit int64) error {
 	nonceBytes, err := c.randomBytes(32)
 	if err != nil {
 		return fmt.Errorf("create signed request nonce: %w", err)
@@ -357,11 +690,11 @@ func (c *Client) postSignedJSON(ctx context.Context, path string, body []byte, o
 	}
 	defer response.Body.Close()
 
-	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
 	if err != nil {
 		return fmt.Errorf("read runner response: %w", err)
 	}
-	if len(responseBody) > maxResponseBytes {
+	if int64(len(responseBody)) > responseLimit {
 		return errors.New("runner response exceeds the configured size limit")
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
