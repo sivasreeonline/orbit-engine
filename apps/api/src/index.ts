@@ -9,6 +9,7 @@ import { PostgresRunnerIdentityRepository } from "./db/runner-identity-repositor
 import { PostgresRunnerDispatchLeaseRepository } from "./db/runner-dispatch-lease-repository";
 import { PostgresRunnerAcceptanceRepository } from "./db/runner-acceptance-repository";
 import { PostgresRunnerStartRepository } from "./db/runner-start-repository";
+import { PostgresRunnerHeartbeatRepository } from "./db/runner-heartbeat-repository";
 import { consumeRunnerDispatchBatch } from "./services/runner-dispatch-queue-consumer";
 import { PostgresExecutionIntakeRepository } from "./db/execution-intake-repository";
 import type { Env } from "./env";
@@ -36,6 +37,7 @@ export default {
     const runnerDispatchLeaseRepository = new PostgresRunnerDispatchLeaseRepository(connectionString);
     const runnerAcceptanceRepository = new PostgresRunnerAcceptanceRepository(connectionString);
     const runnerStartRepository = new PostgresRunnerStartRepository(connectionString);
+    const runnerHeartbeatRepository = new PostgresRunnerHeartbeatRepository(connectionString);
     const handler = buildApiHandler(env, {
       authenticator,
       repository,
@@ -45,6 +47,7 @@ export default {
       runnerDispatchLeaseRepository,
       runnerAcceptanceRepository,
       runnerStartRepository,
+      runnerHeartbeatRepository,
       runtimeVersions: {
         java: env.JAVA_RUNTIME_VERSION ?? "",
         python: env.PYTHON_RUNTIME_VERSION ?? "",
