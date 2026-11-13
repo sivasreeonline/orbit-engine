@@ -683,3 +683,224 @@ func TestFetchArtifactRejectsExpiredDispatchAndOversizedResponse(t *testing.T) {
 		t.Fatal("oversized artifact response was accepted")
 	}
 }
+
+
+func testCompletionInput() CompletionInput {
+	peakMemory := int64(4_194_304)
+	return CompletionInput{
+		InfrastructureStatus: "SUCCEEDED",
+		CompilationStatus: "SUCCEEDED",
+		Verdict: "ACCEPTED",
+		CleanupStatus: "SUCCEEDED",
+		TestsTotal: 4,
+		TestsPassed: 4,
+		ElapsedMs: 75,
+		PeakMemoryBytes: &peakMemory,
+		RunnerVersion: "go-runner-test",
+		RuntimeImageDigest: strings.Repeat("a", 64),
+		ResultSHA256: strings.Repeat("b", 64),
+		StartedAt: fixedRunnerTime().Add(-75 * time.Millisecond),
+		CompletedAt: fixedRunnerTime(),
+	}
+}
+
+func TestCompleteExecutionSignsAllowlistedResultAndReplaysIdempotently(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	result := testCompletionInput()
+	var calls atomic.Int32
+	var firstBody string
+	var firstNonce string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != completionPath || request.Method != http.MethodPost {
+			t.Fatalf("unexpected completion request: %s %s", request.Method, request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verifyTestRequest(t, request, body)
+
+		call := calls.Add(1)
+		if call == 1 {
+			firstBody = string(body)
+			firstNonce = request.Header.Get("X-SkyHigh-Runner-Nonce")
+		} else {
+			if string(body) != firstBody {
+				t.Fatalf("completion body changed across replay: first=%s next=%s", firstBody, body)
+			}
+			if request.Header.Get("X-SkyHigh-Runner-Nonce") == firstNonce {
+				t.Fatal("completion replay must use a fresh signed nonce")
+			}
+		}
+
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		expectedFields := []string{
+			"dispatchId", "executionId", "attemptId", "leaseToken",
+			"infrastructureStatus", "compilationStatus", "verdict", "cleanupStatus",
+			"testsTotal", "testsPassed", "elapsedMs", "peakMemoryBytes",
+			"runnerVersion", "runtimeImageDigest", "resultSha256", "startedAt", "completedAt",
+		}
+		if len(payload) != len(expectedFields) {
+			t.Fatalf("completion request contains an unexpected field set: %#v", payload)
+		}
+		for _, field := range expectedFields {
+			if _, ok := payload[field]; !ok {
+				t.Fatalf("completion request is missing %q: %#v", field, payload)
+			}
+		}
+		for _, forbidden := range []string{
+			"source", "sourceCode", "hiddenTests", "expectedOutput", "stdout", "stderr", "stackTrace",
+		} {
+			if _, exists := payload[forbidden]; exists {
+				t.Fatalf("completion request contains forbidden field %q", forbidden)
+			}
+		}
+		if payload["dispatchId"] != dispatch.DispatchID ||
+			payload["executionId"] != dispatch.ExecutionID ||
+			payload["attemptId"] != dispatch.AttemptID ||
+			payload["leaseToken"] != dispatch.LeaseToken ||
+			payload["resultSha256"] != result.ResultSHA256 {
+			t.Fatalf("completion identity does not match dispatch/result: %#v", payload)
+		}
+
+		writeJSON(t, writer, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"completed": true,
+				"replayed": call > 1,
+				"executionId": dispatch.ExecutionID,
+				"attemptId": dispatch.AttemptID,
+				"state": "COMPLETED",
+				"resultSha256": result.ResultSHA256,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	first, err := client.CompleteExecution(context.Background(), dispatch, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Replayed || first.State != "COMPLETED" ||
+		first.ExecutionID != dispatch.ExecutionID || first.ResultSHA256 != result.ResultSHA256 {
+		t.Fatalf("unexpected first completion result: %#v", first)
+	}
+
+	replay, err := client.CompleteExecution(context.Background(), dispatch, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replay.Replayed || replay.State != first.State ||
+		replay.ResultSHA256 != first.ResultSHA256 {
+		t.Fatalf("unexpected idempotent completion replay: %#v", replay)
+	}
+}
+
+func TestCompleteExecutionSupportsInfrastructureFailureWithoutStudentVerdict(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	result := testCompletionInput()
+	result.InfrastructureStatus = "FAILED"
+	result.InfrastructureErrorCode = "RUNNER_LEASE_EXPIRED"
+	result.CompilationStatus = "NOT_STARTED"
+	result.Verdict = "NOT_EVALUATED"
+	result.TestsTotal = 0
+	result.TestsPassed = 0
+	result.ElapsedMs = 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verifyTestRequest(t, request, body)
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["infrastructureStatus"] != "FAILED" ||
+			payload["infrastructureErrorCode"] != "RUNNER_LEASE_EXPIRED" ||
+			payload["verdict"] != "NOT_EVALUATED" {
+			t.Fatalf("infrastructure expiry must not be submitted as a student verdict: %#v", payload)
+		}
+		writeJSON(t, writer, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"completed": true,
+				"replayed": false,
+				"executionId": dispatch.ExecutionID,
+				"attemptId": dispatch.AttemptID,
+				"state": "FAILED_INFRASTRUCTURE",
+				"resultSha256": result.ResultSHA256,
+			},
+		})
+	}))
+	defer server.Close()
+
+	completed, err := newTestClient(t, server).CompleteExecution(
+		context.Background(), dispatch, result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.State != "FAILED_INFRASTRUCTURE" || completed.Replayed {
+		t.Fatalf("unexpected infrastructure completion: %#v", completed)
+	}
+}
+
+func TestCompleteExecutionRejectsInvalidInputBeforeNetworkRequest(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		writeJSON(t, writer, http.StatusOK, map[string]any{"data": map[string]any{}})
+	}))
+	defer server.Close()
+
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	invalid := testCompletionInput()
+	invalid.Verdict = "NOT_EVALUATED"
+	if _, err := newTestClient(t, server).CompleteExecution(
+		context.Background(), dispatch, invalid,
+	); err == nil {
+		t.Fatal("invalid successful-infrastructure result was accepted")
+	}
+	if calls.Load() != 0 {
+		t.Fatal("invalid completion input was sent to the control plane")
+	}
+
+	invalid = testCompletionInput()
+	invalid.TestsPassed = 3
+	if _, err := newTestClient(t, server).CompleteExecution(
+		context.Background(), dispatch, invalid,
+	); err == nil {
+		t.Fatal("ACCEPTED verdict with a failing test was accepted")
+	}
+	if calls.Load() != 0 {
+		t.Fatal("invalid completion input was sent to the control plane")
+	}
+}
+
+func TestCompleteExecutionRejectsMismatchedAcknowledgement(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	result := testCompletionInput()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, writer, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"completed": true,
+				"replayed": false,
+				"executionId": dispatch.ExecutionID,
+				"attemptId": dispatch.AttemptID,
+				"state": "COMPLETED",
+				"resultSha256": strings.Repeat("c", 64),
+			},
+		})
+	}))
+	defer server.Close()
+
+	if _, err := newTestClient(t, server).CompleteExecution(
+		context.Background(), dispatch, result,
+	); err == nil {
+		t.Fatal("completion acknowledgement with a different result digest was accepted")
+	}
+}
