@@ -11,7 +11,7 @@ function isValidRequest(request: RunnerSignedRequest): boolean {
   return /^[A-Za-z0-9._:-]{1,128}$/.test(request.keyId) &&
     /^[A-Z]{3,10}$/.test(request.method) &&
     request.path.startsWith("/") &&
-    !/[\\r\\n\\s]/.test(request.path) &&
+    !/[\r\n\s]/.test(request.path) &&
     /^[1-9][0-9]{9}$/.test(request.timestamp) &&
     /^[A-Za-z0-9_-]{43}$/.test(request.nonce) &&
     request.body instanceof Uint8Array &&
