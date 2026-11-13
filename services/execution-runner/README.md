@@ -55,7 +55,7 @@ The local journal is a write-ahead record for the future runner protocol:
 3. After receiving the durable API acknowledgement, append a `CONFIRMED` event and fsync again.
 4. After a restart, retry every prepared-but-unconfirmed receipt using the same acceptanceId and receipt body, but a fresh signed HTTP nonce.
 
-The journal is append-only JSONL with a 64 MiB initial size ceiling. It rejects malformed complete records and only truncates an incomplete final line left by a crash. It is not yet wired to the HTTP client or claim loop.
+The journal is append-only JSONL with a 64 MiB initial size ceiling. It rejects malformed complete records and only truncates an incomplete final line left by a crash. A definitive signed `409 RUNNER_LEASE_STALE` response appends an `ABANDONED` event for that exact acceptance receipt; the record remains auditable but is excluded from future retries. Transport failures, 5xx responses and other unknown errors are never treated as abandonment.
 
 ## Current runner control-plane client
 
