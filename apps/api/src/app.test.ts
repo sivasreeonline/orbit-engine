@@ -13,7 +13,7 @@ import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidenc
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
   "listProblemAttemptHistory" | "listExecutionEvents"
->;
+> & Partial<Pick<PostgresExecutionEvidenceRepository, "getExecutionQueueStatus">>;
 
 const allowedOrigin = "https://app.skyhigh.example";
 
