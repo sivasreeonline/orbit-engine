@@ -1,10 +1,10 @@
 package acceptancejournal
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
