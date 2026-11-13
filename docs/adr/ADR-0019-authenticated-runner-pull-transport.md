@@ -60,7 +60,9 @@ A signed request should bind:
 
 The control plane must reject invalid signatures, expired timestamps, revoked keys and reused nonces. Nonce consumption and the protected operation must be coordinated so replay cannot claim a second job. Key rotation should allow a short overlap window with explicit revocation.
 
-**Algorithm compatibility gate:** evaluate Ed25519 support in the Cloudflare Workers Web Crypto runtime and Go standard library together before locking the wire format. Do not substitute a shared global secret or invent an algorithm fallback if compatibility is incomplete. P-256 is the fallback candidate only after a tested cross-runtime signing/verification spike.
+**Recommended algorithm:** Ed25519. Cloudflare Workers documents standard Ed25519 Web Crypto support for signing, verification and raw key import/export, and Go provides Ed25519 in its standard crypto library. Use the standard `Ed25519` Web Crypto algorithm (not the legacy non-standard `NODE-ED25519` variant). A cross-runtime test-vector spike must still prove identical canonical request bytes, raw public-key encoding and 64-byte signature encoding before the protocol is locked. Do not substitute a shared global secret or add an algorithm fallback without a new ADR review.
+
+References: [Cloudflare Workers Web Crypto support matrix](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/) and [Go crypto/ed25519](https://pkg.go.dev/crypto/ed25519).
 
 No runner identity table, keys, certificates, secrets or accounts are created by this ADR.
 
