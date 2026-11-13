@@ -914,3 +914,175 @@ describe("authenticated runner acceptance endpoint", () => {
     expect(findActivePublicKey).not.toHaveBeenCalled();
   });
 });
+
+
+describe("authenticated runner start endpoint", () => {
+  const runnerId = "40000000-0000-4000-8000-000000000001";
+  const startReceipt = {
+    dispatchId: "50000000-0000-4000-8000-000000000001",
+    executionId: "60000000-0000-4000-8000-000000000001",
+    attemptId: "70000000-0000-4000-8000-000000000001",
+    leaseToken: "80000000-0000-4000-8000-000000000001",
+  };
+
+  function encodeBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).split("+").join("-").split("/").join("_").replace(/=+$/g, "");
+  }
+
+  async function signedStartRequest(bodyValue: Record<string, string>) {
+    const now = new Date();
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const nonce = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+    const bodyText = JSON.stringify(bodyValue);
+    const body = new TextEncoder().encode(bodyText);
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "Ed25519" }, true, ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const message = await canonicalRunnerRequestMessage({
+      keyId: "runner-start-key",
+      method: "POST",
+      path: "/internal/v1/runner/start",
+      timestamp,
+      nonce,
+      body,
+    });
+    const signature = new Uint8Array(await crypto.subtle.sign(
+      "Ed25519", keyPair.privateKey, new Uint8Array(message),
+    ));
+    return {
+      request: new Request("https://api.skyhigh.example/internal/v1/runner/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [RUNNER_AUTH_HEADERS.keyId]: "runner-start-key",
+          [RUNNER_AUTH_HEADERS.timestamp]: timestamp,
+          [RUNNER_AUTH_HEADERS.nonce]: nonce,
+          [RUNNER_AUTH_HEADERS.signature]: encodeBase64Url(signature),
+        },
+        body: bodyText,
+      }),
+      publicKey,
+    };
+  }
+
+  it("authenticates the machine and returns the durable lease-fenced start receipt", async () => {
+    const signed = await signedStartRequest(startReceipt);
+    const start = vi.fn(async (input: RecordRunnerStartInput) => ({
+      dispatchId: input.dispatchId,
+      executionId: input.executionId,
+      attemptId: input.attemptId,
+      eventId: "a1000000-0000-4000-8000-000000000001",
+      startedAt: "2026-11-13T08:30:00.000Z",
+      replayed: false,
+    }));
+    const findActivePublicKey = vi.fn(async () => ({
+      keyId: "runner-start-key",
+      runnerId,
+      publicKey: signed.publicKey,
+    }));
+    const consumeNonce = vi.fn(async () => true);
+    const { handler, authenticator } = makeHarness({
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
+      runnerStartRepository: { start },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      data: {
+        started: true,
+        replayed: false,
+        ...startReceipt,
+        eventId: "a1000000-0000-4000-8000-000000000001",
+      },
+    });
+    expect(start).toHaveBeenCalledWith({
+      ...startReceipt,
+      runnerId,
+      keyId: "runner-start-key",
+    });
+    expect(findActivePublicKey).toHaveBeenCalledOnce();
+    expect(consumeNonce).toHaveBeenCalledOnce();
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+  });
+
+  it("rejects extra fields before public-key lookup", async () => {
+    const signedBody = { ...startReceipt, sourceCode: "source must never be sent to start" };
+    const findActivePublicKey = vi.fn(async () => null);
+    const start = vi.fn(async () => {
+      throw new Error("must_not_start");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey,
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerStartRepository: { start },
+    });
+
+    const response = await handler(makeRequest("/internal/v1/runner/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedBody),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_RUNNER_START", retryable: false },
+    });
+    expect(findActivePublicKey).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("rejects a replayed nonce before attempting to start work", async () => {
+    const signed = await signedStartRequest(startReceipt);
+    const start = vi.fn(async () => {
+      throw new Error("must_not_start");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-start-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => false),
+      },
+      runnerStartRepository: { start },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(401);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_AUTHENTICATION_FAILED" },
+    });
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("requires a durable acceptance receipt before changing job state", async () => {
+    const signed = await signedStartRequest(startReceipt);
+    const start = vi.fn(async () => {
+      throw new Error("runner_start_acceptance_required");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-start-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerStartRepository: { start },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INTERNAL_ERROR" },
+    });
+    expect(start).toHaveBeenCalledOnce();
+  });
+});
