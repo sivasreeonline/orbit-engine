@@ -68,11 +68,17 @@ func Open(path string) (*Journal, error) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, fmt.Errorf("create acceptance journal directory: %w", err)
 	}
+	if err := syncDirectory(directory); err != nil {
+		return nil, fmt.Errorf("sync acceptance journal directory: %w", err)
+	}
+	created := false
 	if info, err := os.Lstat(path); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 			return nil, errors.New("acceptance journal path must be a regular file, not a symlink")
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else if errors.Is(err, os.ErrNotExist) {
+		created = true
+	} else {
 		return nil, fmt.Errorf("inspect acceptance journal: %w", err)
 	}
 
@@ -83,6 +89,16 @@ func Open(path string) (*Journal, error) {
 	if err := file.Chmod(0o600); err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("secure acceptance journal permissions: %w", err)
+	}
+	if created {
+		if err := file.Sync(); err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("sync new acceptance journal file: %w", err)
+		}
+		if err := syncDirectory(directory); err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("sync acceptance journal directory entry: %w", err)
+		}
 	}
 
 	journal := &Journal{
