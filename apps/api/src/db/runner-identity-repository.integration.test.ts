@@ -64,8 +64,8 @@ describe.skipIf(!databaseUrl)("runner identity repository PostgreSQL integration
 
       const expiry = new Date(Date.now() + 5 * 60 * 1000);
       const results = await Promise.all([
-        repository.consumeNonce(keyId, nonce, expiry),
-        repository.consumeNonce(keyId, nonce, expiry),
+        repository.consumeNonce(keyId, nonce, new Date(), expiry),
+        repository.consumeNonce(keyId, nonce, new Date(), expiry),
       ]);
       expect(results.filter(Boolean)).toHaveLength(1);
       expect(results.filter((value) => !value)).toHaveLength(1);
