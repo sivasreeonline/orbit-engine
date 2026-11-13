@@ -255,3 +255,32 @@ print("FORKS", len(children))
 		t.Fatalf("pids limit was not enforced; forked %d children", forkCount)
 	}
 }
+
+func TestRunscMemoryPressureIsContainedAndCleanedUp(t *testing.T) {
+	sandbox, runtimes := qualificationRuntime(t)
+	request := SandboxRequest{
+		ExecutionID:    "runsc_qualification_memory",
+		Language:       protocol.LanguagePython,
+		RuntimeVersion: runtimes.PythonVersion,
+		ImageRef:       runtimes.PythonImageRef,
+		SourceName:     "main.py",
+		SourceBytes: []byte(`import time
+chunks = []
+while True:
+    # Touch each page so the cgroup accounts for the allocation.
+    chunks.append(bytearray(8 * 1024 * 1024))
+    time.sleep(0.02)
+`),
+		Limits: qualificationLimits(),
+	}
+	request.Limits.MemoryBytes = 96 * 1024 * 1024
+	request.Limits.WallTimeMillis = 10000
+
+	observation, err := sandbox.RunCase(context.Background(), request)
+	if err != nil {
+		t.Fatalf("memory-pressure workload: %v; observation=%+v", err, observation)
+	}
+	if observation.Status != SandboxMemoryLimit || !observation.CleanupSucceeded {
+		t.Fatalf("memory pressure was not contained and cleaned up: %+v", observation)
+	}
+}
