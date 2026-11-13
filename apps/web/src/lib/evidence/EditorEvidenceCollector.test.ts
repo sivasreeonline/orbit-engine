@@ -32,6 +32,29 @@ afterEach(() => {
 });
 
 describe("EditorEvidenceCollector", () => {
+  it("can avoid retaining full snapshots while still streaming records to the sync owner", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-13T05:00:00.000Z"));
+    const observed: CapturedEvidence[] = [];
+    const collector = await EditorEvidenceCollector.start({
+      ...problem,
+      createId: createIds(),
+      retainRecords: false,
+      onRecord: (record) => observed.push(record),
+    });
+
+    expect(collector.getRecords()).toHaveLength(0);
+    expect(observed).toHaveLength(2);
+    expect(collector.getSummary()).toMatchObject({
+      eventCount: 2,
+      snapshotCount: 1,
+      active: true,
+    });
+    await collector.close();
+    expect(collector.getSummary().eventCount).toBe(3);
+    expect(collector.getRecords()).toHaveLength(0);
+  });
+
   it("uses a server-issued session ID and starts at the server-confirmed sequence", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-13T05:00:00.000Z"));
