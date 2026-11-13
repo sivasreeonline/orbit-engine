@@ -79,10 +79,10 @@ BEGIN
   FROM execution_result_records AS result_record
   WHERE result_record.execution_id = NEW.execution_id;
 
-  SELECT execution_id, attempt_id, event_type, actor_kind
+  SELECT evidence.execution_id, evidence.attempt_id, evidence.event_type, evidence.actor_kind
   INTO event_execution_id, event_attempt_id, event_type, event_actor_kind
-  FROM execution_evidence_events
-  WHERE event_id = NEW.event_id;
+  FROM execution_evidence_events AS evidence
+  WHERE evidence.event_id = NEW.event_id;
 
   IF dispatch_execution_id IS DISTINCT FROM NEW.execution_id
     OR dispatch_attempt_id IS DISTINCT FROM NEW.attempt_id
