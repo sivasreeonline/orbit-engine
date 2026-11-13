@@ -20,7 +20,6 @@ func TestDockerCreateArgumentsRejectHostAccessAndPrivilegeEscalation(t *testing.
 		"--privileged",
 		"--device",
 		"--device=",
-		"--device=",
 		"--volume",
 		"--volume=",
 		"-v",
