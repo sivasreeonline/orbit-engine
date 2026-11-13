@@ -565,3 +565,24 @@ func TestSandboxRejectsUntrustedRuntimeAndImageTokens(t *testing.T) {
 	}
 }
 
+
+
+func TestDockerSandboxRunCaseRejectsNilSandbox(t *testing.T) {
+	t.Parallel()
+
+	var sandbox *DockerSandbox
+	_, err := sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(err, ErrSandboxNotConfigured) {
+		t.Fatalf("RunCase error = %v, want ErrSandboxNotConfigured", err)
+	}
+}
+
+func TestDockerSandboxRunCaseRejectsMissingCLI(t *testing.T) {
+	t.Parallel()
+
+	sandbox := &DockerSandbox{}
+	_, err := sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(err, ErrSandboxNotConfigured) {
+		t.Fatalf("RunCase error = %v, want ErrSandboxNotConfigured", err)
+	}
+}
