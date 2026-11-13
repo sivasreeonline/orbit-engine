@@ -12,6 +12,7 @@ const databaseUrl = process.env.DATABASE_URL;
 const tenantId = "30000000-0000-4000-8000-000000000001";
 
 async function claimSpecificExecution(
+  client: Client,
   dispatches: PostgresRunnerDispatchLeaseRepository,
   runnerId: string,
   executionId: string,
@@ -24,13 +25,7 @@ async function claimSpecificExecution(
     const target = claimed.find((item) => item.executionId === executionId);
     for (const lease of claimed) {
       if (lease.executionId === executionId) continue;
-      const released = await dispatches.releaseForRetry(
-        lease.id,
-        runnerId,
-        lease.leaseToken,
-        new Date(Date.now() - 1_000),
-      );
-      if (!released) throw new Error("RECOVERY_TEST_UNRELATED_LEASE_RELEASE_FAILED");
+      await releaseUnrelatedClaim(client, runnerId, lease);
     }
     if (target) return target;
     if (claimed.length === 0) break;
@@ -38,7 +33,12 @@ async function claimSpecificExecution(
   throw new Error("RECOVERY_TEST_TARGET_DISPATCH_NOT_CLAIMED");
 }
 
-async function createStartedDispatch(runnerId: string, actorId: string, keyId: string) {
+async function createStartedDispatch(
+  client: Client,
+  runnerId: string,
+  actorId: string,
+  keyId: string,
+) {
   const intake = new PostgresExecutionIntakeRepository(databaseUrl);
   const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
   const dispatches = new PostgresRunnerDispatchLeaseRepository(databaseUrl);
@@ -57,7 +57,7 @@ async function createStartedDispatch(runnerId: string, actorId: string, keyId: s
     protocolVersion: "v1",
   });
 
-  const dispatch = await claimSpecificExecution(dispatches, runnerId, created.executionId);
+  const dispatch = await claimSpecificExecution(client, dispatches, runnerId, created.executionId);
   await acceptAndStart(runnerId, keyId, created.executionId, created.attemptId, dispatch);
   return { created, dispatch, dispatches };
 }
@@ -120,6 +120,49 @@ async function makeAvailableNow(client: Client, dispatchId: string, executionId:
   );
 }
 
+async function releaseUnrelatedClaim(
+  client: Client,
+  runnerId: string,
+  lease: { id: string; executionId: string; attemptId: string; leaseToken: string },
+) {
+  const availableAt = new Date(Date.now() - 1_000).toISOString();
+  await client.query("BEGIN");
+  try {
+    const job = await client.query(
+      [
+        "UPDATE execution_jobs",
+        "SET state = 'QUEUED', state_version = state_version + 1,",
+        "    available_at = $5::timestamptz, updated_at = clock_timestamp(),",
+        "    started_at = NULL, lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL",
+        "WHERE id = $1::uuid AND attempt_id = $2::uuid",
+        "  AND state = 'CLAIMED' AND lease_owner = $3 AND lease_token = $4::uuid",
+        "  AND lease_expires_at > clock_timestamp()",
+        "RETURNING id",
+      ].join("\n"),
+      [lease.executionId, lease.attemptId, runnerId, lease.leaseToken, availableAt],
+    );
+    const dispatch = await client.query(
+      [
+        "UPDATE runner_dispatch_outbox",
+        "SET available_at = $6::timestamptz,",
+        "    lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL",
+        "WHERE id = $1::uuid AND execution_id = $2::uuid AND attempt_id = $3::uuid",
+        "  AND delivery_state = 'PENDING' AND lease_owner = $4 AND lease_token = $5::uuid",
+        "  AND lease_expires_at > clock_timestamp()",
+        "RETURNING id",
+      ].join("\n"),
+      [lease.id, lease.executionId, lease.attemptId, runnerId, lease.leaseToken, availableAt],
+    );
+    if (job.rows.length !== 1 || dispatch.rows.length !== 1) {
+      throw new Error("RECOVERY_TEST_PAIRED_LEASE_RELEASE_FAILED");
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  }
+}
+
 describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", () => {
   it("requeues twice under fresh lease generations and then records one terminal infrastructure failure", async () => {
     const runnerId = randomUUID();
@@ -140,7 +183,7 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
         [keyId, runnerId, randomBytes(32)],
       );
 
-      const first = await createStartedDispatch(runnerId, actorId, keyId);
+      const first = await createStartedDispatch(setup, runnerId, actorId, keyId);
       await expireLease(setup, first.dispatch.id, first.created.executionId, true);
 
       const firstRecoveryBatch = await recovery.recoverExpiredRunning({
@@ -163,7 +206,7 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
 
       await makeAvailableNow(setup, first.dispatch.id, first.created.executionId);
       const secondDispatch = await claimSpecificExecution(
-        dispatches, runnerId, first.created.executionId,
+        setup, dispatches, runnerId, first.created.executionId,
       );
       expect(secondDispatch!.leaseToken).not.toBe(first.dispatch.leaseToken);
       await acceptAndStart(
@@ -187,7 +230,7 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
 
       await makeAvailableNow(setup, first.dispatch.id, first.created.executionId);
       const thirdDispatch = await claimSpecificExecution(
-        dispatches, runnerId, first.created.executionId,
+        setup, dispatches, runnerId, first.created.executionId,
       );
       expect(thirdDispatch!.leaseToken).not.toBe(secondDispatch!.leaseToken);
       await acceptAndStart(
@@ -285,7 +328,7 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
         "INSERT INTO runner_machine_keys (key_id, runner_id, public_key) VALUES ($1, $2, $3)",
         [keyId, runnerId, randomBytes(32)],
       );
-      const execution = await createStartedDispatch(runnerId, actorId, keyId);
+      const execution = await createStartedDispatch(setup, runnerId, actorId, keyId);
       await expireLease(setup, execution.dispatch.id, execution.created.executionId);
 
       const [first, second] = await Promise.all([
