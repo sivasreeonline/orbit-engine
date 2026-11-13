@@ -50,7 +50,8 @@ export async function canonicalRunnerRequestMessage(
   request: RunnerSignedRequest,
 ): Promise<Uint8Array> {
   if (!isValidRequest(request)) throw new Error("invalid_runner_signed_request");
-  const digest = await crypto.subtle.digest("SHA-256", request.body);
+  const bodyBytes = new Uint8Array(request.body);
+  const digest = await crypto.subtle.digest("SHA-256", bodyBytes);
   const canonical = [
     "SKYHIGH-RUNNER-REQUEST-V1",
     request.keyId,
@@ -77,14 +78,17 @@ export async function verifyRunnerRequestSignature(
     const signature = decodeBase64Url(signatureBase64Url);
     if (signature.byteLength !== 64) return false;
     const message = await canonicalRunnerRequestMessage(request);
+    const publicKeyBytes = new Uint8Array(rawPublicKey);
+    const signatureBytes = new Uint8Array(signature);
+    const messageBytes = new Uint8Array(message);
     const publicKey = await crypto.subtle.importKey(
       "raw",
-      rawPublicKey,
+      publicKeyBytes,
       "Ed25519",
       false,
       ["verify"],
     );
-    return await crypto.subtle.verify("Ed25519", publicKey, signature, message);
+    return await crypto.subtle.verify("Ed25519", publicKey, signatureBytes, messageBytes);
   } catch {
     return false;
   }
