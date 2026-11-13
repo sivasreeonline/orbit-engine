@@ -22,8 +22,8 @@ The request is authenticated with the Ed25519 machine headers defined in `runner
 - The server caps the effective request at 2 slots.
 - A runner may hold at most 2 unexpired active dispatch leases across all of its keys.
 - Lease duration is currently 120 seconds.
-- The repository serializes concurrent polls for the same runner with a transaction-scoped PostgreSQL advisory lock.
-- The active-lease count is read in a separate READ COMMITTED statement after acquiring the lock, preventing concurrent polls from both spending the same remaining capacity.
+- The repository serializes the short fair-scheduler transaction with a PostgreSQL advisory lock so concurrent runner hosts observe committed lane cursors in a deterministic order.
+- It also acquires a per-runner advisory lock and reads that runner's active-lease count in a separate READ COMMITTED statement, preventing concurrent polls from spending the same remaining capacity.
 - Eligible jobs are selected through the existing fair per-student scheduler, with at most one job per student lane in a claim batch.
 
 These are conservative initial control-plane limits, not measured execution throughput. They must be revisited after local integration and load testing.
