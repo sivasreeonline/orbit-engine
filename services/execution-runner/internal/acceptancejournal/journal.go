@@ -23,6 +23,7 @@ const (
 var (
 	ErrConflict    = errors.New("acceptance journal conflict")
 	ErrNotFound    = errors.New("acceptance receipt not found")
+	ErrAbandoned   = errors.New("acceptance receipt was abandoned after lease fencing")
 	ErrJournalFull = errors.New("acceptance journal reached its configured size limit")
 )
 
@@ -42,12 +43,20 @@ type journalEvent struct {
 	AcceptanceID string     `json:"acceptanceId,omitempty"`
 	EventID      string     `json:"eventId,omitempty"`
 	ConfirmedAt  *time.Time `json:"confirmedAt,omitempty"`
+	ReasonCode   string     `json:"reasonCode,omitempty"`
+	AbandonedAt  *time.Time `json:"abandonedAt,omitempty"`
 }
 
 type Confirmation struct {
 	AcceptanceID string
 	EventID      string
 	ConfirmedAt  time.Time
+}
+
+type Abandonment struct {
+	AcceptanceID string
+	ReasonCode   string
+	AbandonedAt  time.Time
 }
 
 type Journal struct {
@@ -57,6 +66,7 @@ type Journal struct {
 	receipts      map[string]Receipt
 	leaseIndex    map[string]string
 	confirmations map[string]Confirmation
+	abandonments  map[string]Abandonment
 	closed        bool
 }
 
@@ -107,6 +117,7 @@ func Open(path string) (*Journal, error) {
 		receipts:      make(map[string]Receipt),
 		leaseIndex:    make(map[string]string),
 		confirmations: make(map[string]Confirmation),
+		abandonments:  make(map[string]Abandonment),
 	}
 	if err := journal.recoverLocked(); err != nil {
 		_ = file.Close()
@@ -165,6 +176,9 @@ func (j *Journal) Confirm(acceptanceID, eventID string, confirmedAt time.Time) (
 	if _, ok := j.receipts[acceptanceID]; !ok {
 		return false, ErrNotFound
 	}
+	if _, abandoned := j.abandonments[acceptanceID]; abandoned {
+		return false, ErrAbandoned
+	}
 	confirmedAt = confirmedAt.UTC()
 	if existing, ok := j.confirmations[acceptanceID]; ok {
 		if existing.EventID != eventID {
@@ -209,6 +223,64 @@ func (j *Journal) Find(dispatchID, leaseToken string) (Receipt, bool, error) {
 	return receipt, ok, nil
 }
 
+// IsAbandoned reports whether the control plane definitively fenced a
+// prepared acceptance receipt. The original PREPARED record remains immutable.
+func (j *Journal) IsAbandoned(acceptanceID string) (bool, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if err := j.ensureOpen(); err != nil {
+		return false, err
+	}
+	if !isUUID(acceptanceID) {
+		return false, errors.New("invalid acceptance ID")
+	}
+	_, ok := j.abandonments[acceptanceID]
+	return ok, nil
+}
+
+// Abandon permanently excludes a prepared receipt from retry after an
+// authenticated RUNNER_LEASE_STALE response. Other errors must never call this
+// method; temporary transport failures remain pending and retryable.
+func (j *Journal) Abandon(acceptanceID, reasonCode string, abandonedAt time.Time) (bool, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if err := j.ensureOpen(); err != nil {
+		return false, err
+	}
+	if !isUUID(acceptanceID) || reasonCode != "RUNNER_LEASE_STALE" || abandonedAt.IsZero() {
+		return false, errors.New("invalid acceptance abandonment")
+	}
+	if _, ok := j.receipts[acceptanceID]; !ok {
+		return false, ErrNotFound
+	}
+	if _, confirmed := j.confirmations[acceptanceID]; confirmed {
+		return false, ErrConflict
+	}
+	abandonedAt = abandonedAt.UTC()
+	if existing, ok := j.abandonments[acceptanceID]; ok {
+		if existing.ReasonCode != reasonCode {
+			return false, ErrConflict
+		}
+		return true, nil
+	}
+	event := journalEvent{
+		Version: formatVersion,
+		Type: "ABANDONED",
+		AcceptanceID: acceptanceID,
+		ReasonCode: reasonCode,
+		AbandonedAt: &abandonedAt,
+	}
+	if err := j.appendLocked(event); err != nil {
+		return false, err
+	}
+	j.abandonments[acceptanceID] = Abandonment{
+		AcceptanceID: acceptanceID,
+		ReasonCode: reasonCode,
+		AbandonedAt: abandonedAt,
+	}
+	return false, nil
+}
+
 // Pending returns prepared receipts whose durable control-plane confirmation
 // has not yet been journaled. The caller may safely retry each with a fresh
 // signed HTTP nonce and the same acceptanceId/body.
@@ -220,7 +292,9 @@ func (j *Journal) Pending() ([]Receipt, error) {
 	}
 	pending := make([]Receipt, 0, len(j.receipts))
 	for id, receipt := range j.receipts {
-		if _, confirmed := j.confirmations[id]; !confirmed {
+		_, confirmed := j.confirmations[id]
+		_, abandoned := j.abandonments[id]
+		if !confirmed && !abandoned {
 			pending = append(pending, receipt)
 		}
 	}
@@ -378,6 +452,31 @@ func applyEvent(j *Journal, event journalEvent) error {
 			return nil
 		}
 		j.confirmations[event.AcceptanceID] = confirmation
+	case "ABANDONED":
+		if event.Receipt != nil || !isUUID(event.AcceptanceID) ||
+			event.EventID != "" || event.ConfirmedAt != nil ||
+			event.ReasonCode != "RUNNER_LEASE_STALE" ||
+			event.AbandonedAt == nil || event.AbandonedAt.IsZero() {
+			return errors.New("invalid ABANDONED journal event")
+		}
+		if _, ok := j.receipts[event.AcceptanceID]; !ok {
+			return ErrNotFound
+		}
+		if _, confirmed := j.confirmations[event.AcceptanceID]; confirmed {
+			return ErrConflict
+		}
+		abandonment := Abandonment{
+			AcceptanceID: event.AcceptanceID,
+			ReasonCode: event.ReasonCode,
+			AbandonedAt: event.AbandonedAt.UTC(),
+		}
+		if existing, ok := j.abandonments[event.AcceptanceID]; ok {
+			if existing.ReasonCode != abandonment.ReasonCode {
+				return ErrConflict
+			}
+			return nil
+		}
+		j.abandonments[event.AcceptanceID] = abandonment
 	default:
 		return errors.New("unknown acceptance journal event type")
 	}
