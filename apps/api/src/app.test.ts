@@ -328,7 +328,7 @@ describe("M1 API control plane", () => {
         executionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
         attemptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
         action: "RUN",
-        executionState: "QUEUED",
+        accepted: true,
         replayed: false,
         statusUrl: "/api/v1/executions/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1/status",
       },
@@ -374,6 +374,33 @@ describe("M1 API control plane", () => {
     expect(response.status).toBe(400);
     expect(await readJson(response)).toMatchObject({
       error: { code: "INVALID_EXECUTION_REQUEST", retryable: false },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-JSON media types before reading the request body", async () => {
+    const create = vi.fn(async () => ({
+      executionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      attemptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      replayed: false,
+    }));
+    const { handler } = makeHarness({
+      executionIntakeRepository: { create },
+      runtimeVersions: { java: "25", python: "3.14" },
+    });
+
+    const response = await handler(makeRequest("/api/v1/executions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/jsonp",
+        "Idempotency-Key": "student-run-004",
+      },
+      body: "{}",
+    }));
+
+    expect(response.status).toBe(415);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "UNSUPPORTED_MEDIA_TYPE", retryable: false },
     });
     expect(create).not.toHaveBeenCalled();
   });
