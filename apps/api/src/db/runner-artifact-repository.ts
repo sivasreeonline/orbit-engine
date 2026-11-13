@@ -248,8 +248,6 @@ export class PostgresRunnerArtifactRepository {
             "  ON started.dispatch_id = dispatch.id AND started.lease_token = dispatch.lease_token",
             "WHERE dispatch.id = $1::uuid AND dispatch.execution_id = $2::uuid",
             "  AND dispatch.attempt_id = $3::uuid AND job.attempt_id = $3::uuid",
-            "  AND accepted.runner_id = $4::uuid AND accepted.key_id = $5",
-            "  AND started.runner_id = $4::uuid AND started.key_id = $5",
             "FOR UPDATE OF dispatch, job",
           ].join("\n"),
           [
@@ -340,6 +338,22 @@ export class PostgresRunnerArtifactRepository {
           expectedOutput: testCase.expectedOutput,
         })));
         const testBundleSha256 = await sha256(new TextEncoder().encode(canonicalTestBundle));
+
+        const finalLeaseCheck = await client.query<{ execution_id: string }>(
+          [
+            "SELECT job.id AS execution_id",
+            "FROM runner_dispatch_outbox AS dispatch",
+            "INNER JOIN execution_jobs AS job ON job.id = dispatch.execution_id",
+            "WHERE dispatch.id = $1::uuid AND dispatch.execution_id = $2::uuid",
+            "  AND dispatch.attempt_id = $3::uuid AND job.attempt_id = $3::uuid",
+            "  AND dispatch.delivery_state = 'PENDING' AND dispatch.lease_owner = $4",
+            "  AND dispatch.lease_token = $5::uuid AND dispatch.lease_expires_at > clock_timestamp()",
+            "  AND job.state = 'RUNNING' AND job.lease_owner = $4",
+            "  AND job.lease_token = $5::uuid AND job.lease_expires_at > clock_timestamp()",
+          ].join("\\n"),
+          [input.dispatchId, input.executionId, input.attemptId, input.runnerId, input.leaseToken],
+        );
+        if (finalLeaseCheck.rows.length !== 1) throw new RunnerArtifactStaleLeaseError();
 
         await client.query("COMMIT");
         return {
