@@ -904,3 +904,101 @@ func TestCompleteExecutionRejectsMismatchedAcknowledgement(t *testing.T) {
 		t.Fatal("completion acknowledgement with a different result digest was accepted")
 	}
 }
+
+
+func TestRetryPendingAbandonsOnlyStaleLeaseAndContinuesWithNewerReceipts(t *testing.T) {
+	journal, err := acceptancejournal.Open(t.TempDir() + "/acceptance.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+
+	preparedAt := fixedRunnerTime()
+	stale := acceptancejournal.Receipt{
+		AcceptanceID: "90000000-0000-4000-8000-000000000011",
+		DispatchID: "50000000-0000-4000-8000-000000000011",
+		ExecutionID: "60000000-0000-4000-8000-000000000011",
+		AttemptID: "70000000-0000-4000-8000-000000000011",
+		LeaseToken: "80000000-0000-4000-8000-000000000011",
+		PreparedAt: preparedAt,
+	}
+	current := acceptancejournal.Receipt{
+		AcceptanceID: "90000000-0000-4000-8000-000000000012",
+		DispatchID: "50000000-0000-4000-8000-000000000012",
+		ExecutionID: "60000000-0000-4000-8000-000000000012",
+		AttemptID: "70000000-0000-4000-8000-000000000012",
+		LeaseToken: "80000000-0000-4000-8000-000000000012",
+		PreparedAt: preparedAt.Add(time.Second),
+	}
+	if _, err := journal.Prepare(stale); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.Prepare(current); err != nil {
+		t.Fatal(err)
+	}
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != acceptPath {
+			t.Fatalf("unexpected acceptance path: %s", request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verifyTestRequest(t, request, body)
+		var payload acceptanceRequest
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		switch calls.Add(1) {
+		case 1:
+			if payload.AcceptanceID != stale.AcceptanceID {
+				t.Fatalf("first pending receipt = %s, want stale receipt %s", payload.AcceptanceID, stale.AcceptanceID)
+			}
+			writeJSON(t, writer, http.StatusConflict, map[string]any{
+				"error": map[string]any{"code": "RUNNER_LEASE_STALE"},
+			})
+		case 2:
+			if payload.AcceptanceID != current.AcceptanceID {
+				t.Fatalf("second pending receipt = %s, want current receipt %s", payload.AcceptanceID, current.AcceptanceID)
+			}
+			writeJSON(t, writer, http.StatusOK, map[string]any{
+				"data": map[string]any{
+					"accepted": true,
+					"replayed": false,
+					"dispatchId": current.DispatchID,
+					"acceptanceId": current.AcceptanceID,
+					"eventId": "a0000000-0000-4000-8000-000000000012",
+					"acceptedAt": fixedRunnerTime().Add(2 * time.Second).Format(time.RFC3339Nano),
+				},
+			})
+		default:
+			t.Fatalf("unexpected acceptance request number %d", calls.Load())
+		}
+	}))
+	defer server.Close()
+
+	results, err := newTestClient(t, server).RetryPending(context.Background(), journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].AcceptanceID != current.AcceptanceID {
+		t.Fatalf("unexpected pending receipt results: %#v", results)
+	}
+	abandoned, err := journal.IsAbandoned(stale.AcceptanceID)
+	if err != nil || !abandoned {
+		t.Fatalf("stale receipt was not durably abandoned: abandoned=%v err=%v", abandoned, err)
+	}
+	abandoned, err = journal.IsAbandoned(current.AcceptanceID)
+	if err != nil || abandoned {
+		t.Fatalf("current receipt was incorrectly abandoned: abandoned=%v err=%v", abandoned, err)
+	}
+	pending, err := journal.Pending()
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("stale receipt blocked the queue or current receipt remained pending: pending=%d err=%v", len(pending), err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("acceptance calls = %d, want 2", calls.Load())
+	}
+}
