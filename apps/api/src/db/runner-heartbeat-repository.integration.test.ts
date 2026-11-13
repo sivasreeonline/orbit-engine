@@ -122,11 +122,13 @@ describe.skipIf(!databaseUrl)("runner heartbeat PostgreSQL integration", () => {
       );
       expect(persisted.rows[0]).toMatchObject({
         job_state: "RUNNING",
-        dispatch_expiry: second.leaseExpiresAt,
-        job_expiry: second.leaseExpiresAt,
         heartbeat_count: "2",
         runner_id: runnerId,
       });
+      expect(new Date(persisted.rows[0]!.dispatch_expiry).toISOString())
+        .toBe(second.leaseExpiresAt);
+      expect(new Date(persisted.rows[0]!.job_expiry).toISOString())
+        .toBe(second.leaseExpiresAt);
 
       await expect(setup.query(
         "DELETE FROM runner_dispatch_lease_heartbeats WHERE heartbeat_id = $1::uuid",
@@ -259,7 +261,10 @@ describe.skipIf(!databaseUrl)("runner heartbeat PostgreSQL integration", () => {
         leaseToken: dispatch.leaseToken,
         runnerId,
         keyId,
-      })).rejects.toThrow("DatabaseUnavailableError");
+      })).rejects.toMatchObject({
+        name: "DatabaseUnavailableError",
+        message: "database_unavailable",
+      });
     } finally {
       await setup.end();
     }
