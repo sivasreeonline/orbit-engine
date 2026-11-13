@@ -1,5 +1,7 @@
 import { Client } from "pg";
-import type { Language, Principal } from "../contracts";
+import type { Principal } from "../contracts";
+
+type CodingLanguage = "java" | "python";
 import { DatabaseUnavailableError } from "./database-errors";
 
 export type CodingEvidenceEventType =
@@ -23,7 +25,7 @@ export interface CreateCodingEvidenceSessionInput {
   readonly principal: Principal;
   readonly problemId: string;
   readonly problemVersionId: string;
-  readonly language: Language;
+  readonly language: CodingLanguage;
   readonly noticeVersion: string;
 }
 
@@ -39,7 +41,7 @@ export interface CodingEvidenceEventInput {
   readonly sequence: number;
   readonly eventType: CodingEvidenceEventType;
   readonly occurredAt: string;
-  readonly language: Language;
+  readonly language: CodingLanguage;
   readonly snapshotId?: string;
   readonly contentSha256?: string;
   readonly metadata?: Readonly<Record<string, string | number | boolean>>;
@@ -50,7 +52,7 @@ export interface EditorCodeSnapshotInput {
   readonly sessionId: string;
   readonly sequence: number;
   readonly kind: EditorSnapshotKind;
-  readonly language: Language;
+  readonly language: CodingLanguage;
   readonly sourceCode: string;
   readonly sourceByteLength: number;
   readonly contentSha256: string;
@@ -121,7 +123,7 @@ function isUuid(value: string): boolean {
   return uuidPattern.test(value);
 }
 
-function isLanguage(value: string): value is Language {
+function isLanguage(value: string): value is CodingLanguage {
   return value === "java" || value === "python";
 }
 
@@ -218,8 +220,7 @@ function validateEvidenceRecord(record: CodingEvidenceRecordInput, sessionId: st
           : snapshot.kind === "SESSION_START" ? "SESSION_STARTED"
             : snapshot.kind === "SESSION_END" ? "SESSION_ENDED"
               : "CODE_SNAPSHOT_CREATED";
-    if (event.eventType !== "CODE_SNAPSHOT_CREATED" &&
-        event.eventType !== expectedEventType) {
+    if (event.eventType !== "CODE_SNAPSHOT_CREATED") {
       throw new InvalidCodingEvidenceInputError("editor_code_snapshot_event_mismatch");
     }
   } else if (
@@ -384,6 +385,7 @@ export class PostgresCodingEvidenceRepository {
           throw new Error("coding_evidence_session_sequence_corrupt");
         }
         let sessionEnded = session.status === "ENDED";
+        let newlyEnded = false;
         let accepted = 0;
         let replayed = 0;
         const sequenceGaps: number[] = [];
@@ -493,7 +495,10 @@ export class PostgresCodingEvidenceRepository {
 
           lastSequence = event.sequence;
           accepted += 1;
-          if (event.eventType === "SESSION_ENDED") sessionEnded = true;
+          if (event.eventType === "SESSION_ENDED") {
+            sessionEnded = true;
+            newlyEnded = true;
+          }
         }
 
         await client.query(
@@ -501,10 +506,10 @@ export class PostgresCodingEvidenceRepository {
             "UPDATE coding_evidence_sessions",
             "SET last_sequence = $4, last_received_at = now(),",
             "    status = CASE WHEN $5 THEN 'ENDED' ELSE status END,",
-            "    ended_at = CASE WHEN $5 THEN now() ELSE ended_at END",
+            "    ended_at = CASE WHEN $6 THEN now() ELSE ended_at END",
             "WHERE id = $1::uuid AND tenant_id = $2::uuid AND actor_user_id = $3::uuid",
           ].join("\n"),
-          [input.sessionId, input.principal.tenantId, input.principal.userId, lastSequence, sessionEnded],
+          [input.sessionId, input.principal.tenantId, input.principal.userId, lastSequence, sessionEnded, newlyEnded],
         );
         await client.query("COMMIT");
         return {
