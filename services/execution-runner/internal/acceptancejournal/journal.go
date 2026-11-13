@@ -67,6 +67,7 @@ type Journal struct {
 	leaseIndex    map[string]string
 	confirmations map[string]Confirmation
 	abandonments  map[string]Abandonment
+	lock          *journalLock
 	closed        bool
 }
 
@@ -81,6 +82,17 @@ func Open(path string) (*Journal, error) {
 	if err := syncDirectory(directory); err != nil {
 		return nil, fmt.Errorf("sync acceptance journal directory: %w", err)
 	}
+	ownership, err := acquireJournalLock(path)
+	if err != nil {
+		return nil, err
+	}
+	releaseOwnership := true
+	defer func() {
+		if releaseOwnership {
+			_ = ownership.Release()
+		}
+	}()
+
 	created := false
 	if info, err := os.Lstat(path); err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
@@ -118,11 +130,13 @@ func Open(path string) (*Journal, error) {
 		leaseIndex:    make(map[string]string),
 		confirmations: make(map[string]Confirmation),
 		abandonments:  make(map[string]Abandonment),
+		lock:          ownership,
 	}
 	if err := journal.recoverLocked(); err != nil {
 		_ = file.Close()
 		return nil, err
 	}
+	releaseOwnership = false
 	return journal, nil
 }
 
@@ -317,11 +331,17 @@ func (j *Journal) Close() error {
 		return nil
 	}
 	j.closed = true
-	if err := j.file.Sync(); err != nil {
-		_ = j.file.Close()
-		return fmt.Errorf("sync acceptance journal on close: %w", err)
+	syncErr := j.file.Sync()
+	closeErr := j.file.Close()
+	var releaseErr error
+	if j.lock != nil {
+		releaseErr = j.lock.Release()
 	}
-	return j.file.Close()
+	return errors.Join(
+		wrapIfErr("sync acceptance journal on close", syncErr),
+		wrapIfErr("close acceptance journal", closeErr),
+		wrapIfErr("release acceptance journal ownership lock", releaseErr),
+	)
 }
 
 func (j *Journal) appendLocked(event journalEvent) error {
