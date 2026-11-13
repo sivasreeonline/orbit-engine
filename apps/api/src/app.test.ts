@@ -8,6 +8,10 @@ import type {
   ProblemSummary,
 } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
+import type { ActiveRunnerPublicKey } from "./db/runner-identity-repository";
+import type { RunnerDispatchLease } from "./db/runner-dispatch-lease-repository";
+import { canonicalRunnerRequestMessage } from "./security/runner-request-signature";
+import { RUNNER_AUTH_HEADERS } from "./services/runner-request-authenticator";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
 import type { CreateExecutionInput } from "./db/execution-intake-repository";
 
@@ -64,6 +68,15 @@ interface HarnessOptions {
     }>;
   };
   runtimeVersions?: { readonly java: string; readonly python: string };
+  runnerIdentityRepository?: {
+    findActivePublicKey(keyId: string, now: Date): Promise<ActiveRunnerPublicKey | null>;
+    consumeNonce(keyId: string, nonce: string, now: Date, expiresAt: Date): Promise<boolean>;
+  };
+  runnerDispatchLeaseRepository?: {
+    claimFairBatchForRunner(
+      runnerId: string, requestedSlots: number, maxActiveLeases: number, leaseSeconds: number,
+    ): Promise<RunnerDispatchLease[]>;
+  };
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -89,6 +102,12 @@ function makeHarness(options: HarnessOptions = {}) {
       ? { executionIntakeRepository: options.executionIntakeRepository }
       : {}),
     ...(options.runtimeVersions ? { runtimeVersions: options.runtimeVersions } : {}),
+    ...(options.runnerIdentityRepository
+      ? { runnerIdentityRepository: options.runnerIdentityRepository }
+      : {}),
+    ...(options.runnerDispatchLeaseRepository
+      ? { runnerDispatchLeaseRepository: options.runnerDispatchLeaseRepository }
+      : {}),
     allowedOrigins: allowedOrigin,
   });
 
@@ -609,5 +628,151 @@ describe("M1 API control plane", () => {
       error: { code: "NOT_FOUND", retryable: false },
     });
     expect(authenticator.authenticate).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("authenticated runner claim endpoint", () => {
+  const runnerId = "40000000-0000-4000-8000-000000000001";
+  const dispatch: RunnerDispatchLease = {
+    id: "50000000-0000-4000-8000-000000000001",
+    executionId: "60000000-0000-4000-8000-000000000001",
+    attemptId: "70000000-0000-4000-8000-000000000001",
+    protocolVersion: "v1",
+    correlationId: "test-runner-claim",
+    deliveryAttempts: 1,
+    leaseToken: "80000000-0000-4000-8000-000000000001",
+    leaseExpiresAt: "2026-11-13T08:16:00.000Z",
+  };
+
+  function encodeBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+  }
+
+  async function signedClaimRequest(requestedSlots: number): Promise<{
+    request: Request;
+    publicKey: Uint8Array;
+    nonce: string;
+    now: Date;
+  }> {
+    const now = new Date();
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const nonceBytes = crypto.getRandomValues(new Uint8Array(32));
+    const nonce = encodeBase64Url(nonceBytes);
+    const bodyText = JSON.stringify({ requestedSlots });
+    const body = new TextEncoder().encode(bodyText);
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "Ed25519" }, true, ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const signedMessage = await canonicalRunnerRequestMessage({
+      keyId: "runner-test-key",
+      method: "POST",
+      path: "/internal/v1/runner/claim",
+      timestamp,
+      nonce,
+      body,
+    });
+    const signature = new Uint8Array(await crypto.subtle.sign(
+      "Ed25519", keyPair.privateKey, signedMessage,
+    ));
+    return {
+      request: new Request("https://api.skyhigh.example/internal/v1/runner/claim", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [RUNNER_AUTH_HEADERS.keyId]: "runner-test-key",
+          [RUNNER_AUTH_HEADERS.timestamp]: timestamp,
+          [RUNNER_AUTH_HEADERS.nonce]: nonce,
+          [RUNNER_AUTH_HEADERS.signature]: encodeBase64Url(signature),
+        },
+        body: bodyText,
+      }),
+      publicKey,
+      nonce,
+      now,
+    };
+  }
+
+  it("authenticates the machine and claims only within the configured active lease cap", async () => {
+    const signed = await signedClaimRequest(4);
+    const findActivePublicKey = vi.fn(async () => ({
+      keyId: "runner-test-key",
+      runnerId,
+      publicKey: signed.publicKey,
+    }));
+    const consumeNonce = vi.fn(async () => true);
+    const claimFairBatchForRunner = vi.fn(async () => [dispatch]);
+    const { handler, authenticator } = makeHarness({
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
+      runnerDispatchLeaseRepository: { claimFairBatchForRunner },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      data: [{
+        dispatchId: dispatch.id,
+        executionId: dispatch.executionId,
+        attemptId: dispatch.attemptId,
+        leaseToken: dispatch.leaseToken,
+      }],
+      meta: {
+        claimed: 1,
+        maxActiveLeasesPerRunner: 2,
+        leaseDurationSeconds: 120,
+      },
+    });
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+    expect(findActivePublicKey).toHaveBeenCalledWith("runner-test-key", expect.any(Date));
+    expect(consumeNonce).toHaveBeenCalledOnce();
+    expect(claimFairBatchForRunner).toHaveBeenCalledWith(runnerId, 2, 2, 120);
+  });
+
+  it("rejects a replayed nonce before dispatch claim", async () => {
+    const signed = await signedClaimRequest(1);
+    const claimFairBatchForRunner = vi.fn(async () => [dispatch]);
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-test-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => false),
+      },
+      runnerDispatchLeaseRepository: { claimFairBatchForRunner },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(401);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_AUTHENTICATION_FAILED" },
+    });
+    expect(claimFairBatchForRunner).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed claim capacity before key lookup", async () => {
+    const findActivePublicKey = vi.fn(async () => null);
+    const claimFairBatchForRunner = vi.fn(async () => []);
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey,
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerDispatchLeaseRepository: { claimFairBatchForRunner },
+    });
+
+    const response = await handler(makeRequest("/internal/v1/runner/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestedSlots: 99 }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(findActivePublicKey).not.toHaveBeenCalled();
+    expect(claimFairBatchForRunner).not.toHaveBeenCalled();
   });
 });
