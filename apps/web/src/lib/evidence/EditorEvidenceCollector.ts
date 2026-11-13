@@ -48,6 +48,10 @@ export interface EditorEvidenceCollectorOptions {
   readonly problemVersion: string;
   readonly language: EvidenceLanguage;
   readonly initialSource: string;
+  /** Supplied by the authenticated API when a server-owned session already exists. */
+  readonly sessionId?: string;
+  /** Server's last accepted sequence; newly captured events continue from this value. */
+  readonly initialSequence?: number;
   readonly onRecord?: (record: CapturedEvidence) => void;
   readonly now?: () => number;
   readonly createId?: () => string;
@@ -97,6 +101,7 @@ export class EditorEvidenceCollector {
   private readonly scheduleTimer: NonNullable<EditorEvidenceCollectorOptions["setTimer"]>;
   private readonly cancelTimer: NonNullable<EditorEvidenceCollectorOptions["clearTimer"]>;
   private readonly records: CapturedEvidence[] = [];
+  private readonly sessionIdValue: string;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sequence = 0;
   private active = true;
@@ -120,6 +125,15 @@ export class EditorEvidenceCollector {
     this.cancelTimer = options.clearTimer ?? ((timer) => clearTimeout(timer));
     this.sourceCode = options.initialSource;
     this.language = options.language;
+    this.sessionIdValue = options.sessionId ?? this.createId();
+    if (!uuidPattern.test(this.sessionIdValue)) {
+      throw new Error("invalid_evidence_session_id");
+    }
+    const initialSequence = options.initialSequence ?? 0;
+    if (!Number.isSafeInteger(initialSequence) || initialSequence < 0) {
+      throw new Error("invalid_evidence_initial_sequence");
+    }
+    this.sequence = initialSequence;
     this.lastSnapshotAt = this.now();
     this.lastCheckpointAt = this.now();
   }
@@ -229,9 +243,7 @@ export class EditorEvidenceCollector {
   }
 
   private get sessionId(): string {
-    const sessionStarted = this.records.find((record) => record.event.eventType === "SESSION_STARTED");
-    if (!sessionStarted) throw new Error("session_start_event_missing");
-    return sessionStarted.event.sessionId;
+    return this.sessionIdValue;
   }
 
   private async captureSnapshot(kind: SnapshotKind, allowClosing = false): Promise<EditorEvidenceSnapshot> {
@@ -288,7 +300,7 @@ export class EditorEvidenceCollector {
     const event: EditorEvidenceEvent = Object.freeze({
       schemaVersion: 1,
       eventId: this.createId(),
-      sessionId: this.records[0]?.event.sessionId ?? this.createId(),
+      sessionId: this.sessionIdValue,
       sequence: this.sequence,
       eventType: fields.eventType,
       occurredAt: new Date(this.now()).toISOString(),
