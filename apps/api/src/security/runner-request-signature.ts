@@ -12,7 +12,7 @@ function isValidRequest(request: RunnerSignedRequest): boolean {
     /^[A-Z]{3,10}$/.test(request.method) &&
     request.path.startsWith("/") &&
     !/[\\r\\n\\s]/.test(request.path) &&
-    /^[1-9][0-9]{9,12}$/.test(request.timestamp) &&
+    /^[1-9][0-9]{9}$/.test(request.timestamp) &&
     /^[A-Za-z0-9_-]{43}$/.test(request.nonce) &&
     request.body instanceof Uint8Array &&
     request.body.byteLength <= 256 * 1024;
