@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -393,5 +395,291 @@ func TestRequestBodyIsStableAcrossEncoding(t *testing.T) {
 	})
 	if !reflect.DeepEqual(first, second) {
 		t.Fatal("same receipt identity must produce the same signed body")
+	}
+}
+
+
+func testArtifact(action string) ExecutionArtifact {
+	source := "public class Main {\n  public static void main(String[] args) { System.out.println(42); }\n}\n"
+	sourceDigest := sha256.Sum256([]byte(source))
+	cases := []ArtifactTestCase{
+		{
+			TestCaseID: "a3000000-0000-4000-8000-000000000001",
+			Sequence: 1,
+			Visibility: "PUBLIC",
+			Input: "4 9\n2 7 11 15",
+			ExpectedOutput: "0 1\n",
+		},
+	}
+	if action == "SUBMIT" {
+		cases = append(cases, ArtifactTestCase{
+			TestCaseID: "a3000000-0000-4000-8000-000000000002",
+			Sequence: 2,
+			Visibility: "HIDDEN",
+			Input: "3 6\n1 5 9",
+			ExpectedOutput: "0 1\n",
+		})
+	}
+	bundleDigest := sha256.Sum256(canonicalTestBundleBytes(cases))
+	bundleHash := hex.EncodeToString(bundleDigest[:])
+	return ExecutionArtifact{
+		ExecutionID: "60000000-0000-4000-8000-000000000001",
+		AttemptID: "70000000-0000-4000-8000-000000000001",
+		ProblemVersionID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+		ProblemSlug: "two-sum",
+		ProblemTitle: "Two Sum",
+		Action: action,
+		Language: "java",
+		RuntimeVersion: "25",
+		SourceArtifactID: "a2000000-0000-4000-8000-000000000001",
+		SourceSHA256: hex.EncodeToString(sourceDigest[:]),
+		SourceCode: source,
+		TestBundleID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1-" + strings.ToLower(action) + "-" + bundleHash[:16],
+		TestBundleSHA256: bundleHash,
+		TestCases: cases,
+	}
+}
+
+func TestStartDispatchSignsRequestAndValidatesDurableReceipt(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != startPath {
+			t.Fatalf("unexpected start path: %s", request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verifyTestRequest(t, request, body)
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		expected := []string{"dispatchId", "executionId", "attemptId", "leaseToken"}
+		if len(payload) != len(expected) {
+			t.Fatalf("unexpected start request fields: %#v", payload)
+		}
+		for _, key := range expected {
+			if _, ok := payload[key]; !ok {
+				t.Fatalf("missing start request field %s", key)
+			}
+		}
+		if _, ok := payload["sourceCode"]; ok {
+			t.Fatal("source code must never be included in start request")
+		}
+		writeJSON(t, writer, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"started": true,
+				"replayed": false,
+				"dispatchId": dispatch.DispatchID,
+				"executionId": dispatch.ExecutionID,
+				"attemptId": dispatch.AttemptID,
+				"eventId": "a1000000-0000-4000-8000-000000000001",
+				"startedAt": fixedRunnerTime().Format(time.RFC3339Nano),
+			},
+		})
+	}))
+	defer server.Close()
+
+	result, err := newTestClient(t, server).StartDispatch(context.Background(), dispatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.DispatchID != dispatch.DispatchID ||
+		result.EventID != "a1000000-0000-4000-8000-000000000001" ||
+		result.Replayed {
+		t.Fatalf("unexpected start result: %#v", result)
+	}
+}
+
+func TestStartDispatchRejectsMismatchedAcknowledgement(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, writer, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"started": true, "replayed": false,
+				"dispatchId": "50000000-0000-4000-8000-000000000099",
+				"executionId": dispatch.ExecutionID,
+				"attemptId": dispatch.AttemptID,
+				"eventId": "a1000000-0000-4000-8000-000000000001",
+				"startedAt": fixedRunnerTime().Format(time.RFC3339Nano),
+			},
+		})
+	}))
+	defer server.Close()
+
+	if _, err := newTestClient(t, server).StartDispatch(context.Background(), dispatch); err == nil {
+		t.Fatal("mismatched start acknowledgement was accepted")
+	}
+}
+
+func TestRenewLeaseSignsStableHeartbeatAndValidatesExpiry(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	heartbeatID := "95000000-0000-4000-8000-000000000001"
+	var firstBody string
+	var firstNonce string
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != heartbeatPath {
+			t.Fatalf("unexpected heartbeat path: %s", request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verifyTestRequest(t, request, body)
+		if calls.Add(1) == 1 {
+			firstBody = string(body)
+			firstNonce = request.Header.Get("X-SkyHigh-Runner-Nonce")
+		} else if string(body) != firstBody {
+			t.Fatal("same logical heartbeat must retain the exact request body")
+		} else if request.Header.Get("X-SkyHigh-Runner-Nonce") == firstNonce {
+			t.Fatal("heartbeat retry must use a fresh request nonce")
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload) != 5 || payload["heartbeatId"] != heartbeatID {
+			t.Fatalf("unexpected heartbeat request fields: %#v", payload)
+		}
+		writeJSON(t, writer, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"renewed": true,
+				"replayed": calls.Load() > 1,
+				"heartbeatId": heartbeatID,
+				"dispatchId": dispatch.DispatchID,
+				"executionId": dispatch.ExecutionID,
+				"leaseExpiresAt": fixedRunnerTime().Add(120 * time.Second).Format(time.RFC3339Nano),
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	result, err := client.RenewLease(context.Background(), dispatch, heartbeatID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Replayed || !result.LeaseExpiresAt.After(fixedRunnerTime()) {
+		t.Fatalf("unexpected first heartbeat result: %#v", result)
+	}
+	replay, err := client.RenewLease(context.Background(), dispatch, heartbeatID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replay.Replayed || replay.LeaseExpiresAt != result.LeaseExpiresAt {
+		t.Fatalf("unexpected heartbeat replay: %#v", replay)
+	}
+}
+
+func TestRenewLeaseRejectsOutOfBoundsExpiry(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, writer, http.StatusOK, map[string]any{
+			"data": map[string]any{
+				"renewed": true, "replayed": false,
+				"heartbeatId": "95000000-0000-4000-8000-000000000001",
+				"dispatchId": dispatch.DispatchID,
+				"executionId": dispatch.ExecutionID,
+				"leaseExpiresAt": fixedRunnerTime().Add(10 * time.Minute).Format(time.RFC3339Nano),
+			},
+		})
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(t, server).RenewLease(
+		context.Background(), dispatch, "95000000-0000-4000-8000-000000000001",
+	)
+	if err == nil {
+		t.Fatal("unbounded heartbeat expiry was accepted")
+	}
+}
+
+func TestFetchArtifactVerifiesSignedRequestSourceAndCrossLanguageBundleDigest(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	artifact := testArtifact("SUBMIT")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != artifactPath {
+			t.Fatalf("unexpected artifact path: %s", request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verifyTestRequest(t, request, body)
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		expected := []string{"dispatchId", "executionId", "attemptId", "leaseToken"}
+		if len(payload) != len(expected) {
+			t.Fatalf("unexpected artifact request fields: %#v", payload)
+		}
+		if _, ok := payload["sourceCode"]; ok {
+			t.Fatal("runner must retrieve source only after the signed artifact request")
+		}
+		writeJSON(t, writer, http.StatusOK, map[string]any{"data": artifact})
+	}))
+	defer server.Close()
+
+	result, err := newTestClient(t, server).FetchArtifact(context.Background(), dispatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != "SUBMIT" || len(result.TestCases) != 2 ||
+		result.TestCases[1].Visibility != "HIDDEN" {
+		t.Fatalf("SUBMIT artifact did not contain its action-scoped hidden test bundle: %#v", result)
+	}
+}
+
+func TestFetchArtifactRejectsSourceTamperingAndHiddenRunTests(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+
+	t.Run("source hash mismatch", func(t *testing.T) {
+		artifact := testArtifact("RUN")
+		artifact.SourceCode += "// changed"
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writeJSON(t, writer, http.StatusOK, map[string]any{"data": artifact})
+		}))
+		defer server.Close()
+		if _, err := newTestClient(t, server).FetchArtifact(context.Background(), dispatch); err == nil {
+			t.Fatal("tampered source code was accepted")
+		}
+	})
+
+	t.Run("hidden test in RUN", func(t *testing.T) {
+		artifact := testArtifact("RUN")
+		artifact.TestCases[0].Visibility = "HIDDEN"
+		digest := sha256.Sum256(canonicalTestBundleBytes(artifact.TestCases))
+		artifact.TestBundleSHA256 = hex.EncodeToString(digest[:])
+		artifact.TestBundleID = artifact.ProblemVersionID + "-run-" + artifact.TestBundleSHA256[:16]
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writeJSON(t, writer, http.StatusOK, map[string]any{"data": artifact})
+		}))
+		defer server.Close()
+		if _, err := newTestClient(t, server).FetchArtifact(context.Background(), dispatch); err == nil {
+			t.Fatal("RUN artifact containing hidden tests was accepted")
+		}
+	})
+}
+
+func TestFetchArtifactRejectsExpiredDispatchAndOversizedResponse(t *testing.T) {
+	expired := testDispatch(fixedRunnerTime().Add(-time.Second))
+	expiredServer := httptest.NewServer(http.NotFoundHandler())
+	defer expiredServer.Close()
+	client := newTestClient(t, expiredServer)
+	if _, err := client.FetchArtifact(context.Background(), expired); err == nil {
+		t.Fatal("expired dispatch was accepted for artifact retrieval")
+	}
+
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+		_, _ = writer.Write(bytes.Repeat([]byte("x"), maxArtifactResponseBytes+1))
+	}))
+	defer server.Close()
+	if _, err := newTestClient(t, server).FetchArtifact(context.Background(), dispatch); err == nil {
+		t.Fatal("oversized artifact response was accepted")
 	}
 }
