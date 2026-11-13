@@ -13,10 +13,7 @@ import (
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerclient"
 )
 
-var (
-	ErrSandboxNotConfigured = errors.New("sandbox executor is not configured")
-	ErrLeaseWindowTooShort  = errors.New("runner lease does not have enough time remaining for completion")
-)
+var ErrLeaseWindowTooShort = errors.New("runner lease does not have enough time remaining for completion")
 
 type ControlPlane interface {
 	RetryPending(context.Context, *acceptancejournal.Journal) ([]runnerclient.AcceptanceResult, error)
