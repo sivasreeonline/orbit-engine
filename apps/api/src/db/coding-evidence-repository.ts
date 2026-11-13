@@ -1,8 +1,8 @@
 import { Client } from "pg";
 import type { Principal } from "../contracts";
+import { DatabaseUnavailableError } from "./database-errors";
 
 type CodingLanguage = "java" | "python";
-import { DatabaseUnavailableError } from "./database-errors";
 
 export type CodingEvidenceEventType =
   | "SESSION_STARTED"
