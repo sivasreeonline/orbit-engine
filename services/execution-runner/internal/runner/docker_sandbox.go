@@ -18,7 +18,48 @@ import (
 
 var (
 	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
-	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}package runner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+)
+
+var (
+	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
+)
+	imageIDPattern         = regexp.MustCompile(`^sha256:[0-9a-f]{64}package runner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+)
+
+var (
+	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
+)
 )
 
 const compileSuccessMarker = "__SKYHIGH_COMPILE_OK__\n"
@@ -83,59 +124,7 @@ func (cli OSCommandDockerCLI) Preflight(ctx context.Context, imageRefs []string)
 		seen[imageRef] = struct{}{}
 		inspect := exec.CommandContext(ctx, cli.binary(), "image", "inspect", "--format", "{{.Id}}", imageRef)
 		imageID, err := inspect.Output()
-		if err != nil || !regexp.MustCompile(`^sha256:[0-9a-f]{64}package runner
-
-import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
-
-	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
-)
-
-var (
-	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
-	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
-)
-
-const compileSuccessMarker = "__SKYHIGH_COMPILE_OK__\n"
-
-type DockerContainerState struct {
-	Status    string `json:"Status"`
-	ExitCode  int    `json:"ExitCode"`
-	OOMKilled bool   `json:"OOMKilled"`
-}
-
-// DockerCLI isolates the Docker command boundary so policy and lifecycle
-// behavior can be tested without running untrusted code on the host.
-type DockerCLI interface {
-	Preflight(context.Context, []string) error
-	Create(context.Context, []string) (string, error)
-	StartAttached(context.Context, string, io.Reader, io.Writer, io.Writer) (int, error)
-	Inspect(context.Context, string) (DockerContainerState, error)
-	Remove(context.Context, string) error
-}
-
-type OSCommandDockerCLI struct {
-	Binary string
-}
-
-func (cli OSCommandDockerCLI) binary() string {
-	if cli.Binary != "" {
-		return cli.Binary
-	}
-	return "docker"
-}
-
-).MatchString(strings.TrimSpace(string(imageID))) {
+		if err != nil || !imageIDPattern.MatchString(strings.TrimSpace(string(imageID))) {
 			return ErrDockerCommandFailed
 		}
 	}
