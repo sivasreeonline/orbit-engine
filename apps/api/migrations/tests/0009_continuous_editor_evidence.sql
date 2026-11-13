@@ -9,6 +9,8 @@ DECLARE
   session_id uuid;
   source_id uuid := '33333333-3333-4333-8333-333333333333';
   editor_snapshot_id uuid := '44444444-4444-4444-8444-444444444444';
+  later_source_id uuid := '88888888-8888-4888-8888-888888888888';
+  later_snapshot_id uuid := '99999999-9999-4999-8999-999999999999';
   blocked boolean := false;
 BEGIN
   SELECT problem.id INTO problem_id
@@ -101,6 +103,25 @@ BEGIN
     RAISE EXCEPTION 'Editor code snapshot deletion was not rejected';
   END IF;
 
+  INSERT INTO source_snapshots (
+    id, tenant_id, actor_user_id, sha256, byte_length,
+    storage_kind, source_bytes
+  )
+  VALUES (
+    later_source_id, tenant, actor,
+    '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+    5, 'DATABASE', convert_to('hello', 'UTF8')
+  );
+
+  INSERT INTO editor_code_snapshots (
+    id, session_id, source_snapshot_id, sequence,
+    snapshot_kind, language, captured_at
+  )
+  VALUES (
+    later_snapshot_id, session_id, later_source_id, 4,
+    'PERIODIC', 'java', now()
+  );
+
   blocked := false;
   BEGIN
     INSERT INTO coding_evidence_events (
@@ -108,14 +129,25 @@ BEGIN
       language, snapshot_id, payload_sha256
     )
     VALUES (
-      '77777777-7777-4777-8777-777777777777', session_id, 1,
-      'CHECKPOINT_RECORDED', now(), 'java', editor_snapshot_id, repeat('c', 64)
+      '77777777-7777-4777-8777-777777777777', session_id, 3,
+      'CHECKPOINT_RECORDED', now(), 'java', later_snapshot_id, repeat('c', 64)
     );
   EXCEPTION WHEN SQLSTATE '23514' THEN
     blocked := true;
   END;
   IF NOT blocked THEN
     RAISE EXCEPTION 'An event referencing a later snapshot sequence was accepted';
+  END IF;
+
+  blocked := false;
+  BEGIN
+    UPDATE source_snapshots SET source_bytes = convert_to('other', 'UTF8')
+    WHERE id = source_id;
+  EXCEPTION WHEN SQLSTATE '55000' THEN
+    blocked := true;
+  END;
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'A referenced source snapshot was mutable';
   END IF;
 
   RAISE NOTICE 'Continuous editor evidence migration invariants passed';
