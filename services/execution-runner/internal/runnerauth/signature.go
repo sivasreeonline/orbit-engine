@@ -8,6 +8,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -49,14 +50,14 @@ func CanonicalMessage(request SignedRequest) ([]byte, error) {
 	if !keyIDPattern.MatchString(request.KeyID) ||
 		!methodPattern.MatchString(request.Method) ||
 		!strings.HasPrefix(request.Path, "/") ||
-		strings.ContainsAny(request.Path, "\r\n ") ||
+		strings.IndexFunc(request.Path, unicode.IsSpace) >= 0 ||
 		!timestampPattern.MatchString(request.Timestamp) ||
 		!noncePattern.MatchString(request.Nonce) ||
 		len(request.Body) > maxSignedBodyBytes {
 		return nil, ErrInvalidSignedRequest
 	}
 
-	nonce, err := base64.RawURLEncoding.DecodeString(request.Nonce)
+	nonce, err := base64.RawURLEncoding.Strict().DecodeString(request.Nonce)
 	if err != nil || len(nonce) != 32 {
 		return nil, ErrInvalidSignedRequest
 	}
@@ -91,7 +92,7 @@ func VerifyRequest(publicKey ed25519.PublicKey, request SignedRequest, encodedSi
 		encodedSignature == "" || strings.Contains(encodedSignature, "=") {
 		return false
 	}
-	signature, err := base64.RawURLEncoding.DecodeString(encodedSignature)
+	signature, err := base64.RawURLEncoding.Strict().DecodeString(encodedSignature)
 	if err != nil || len(signature) != ed25519.SignatureSize {
 		return false
 	}
