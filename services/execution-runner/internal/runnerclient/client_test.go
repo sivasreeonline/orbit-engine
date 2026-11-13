@@ -666,7 +666,9 @@ func TestFetchArtifactRejectsSourceTamperingAndHiddenRunTests(t *testing.T) {
 
 func TestFetchArtifactRejectsExpiredDispatchAndOversizedResponse(t *testing.T) {
 	expired := testDispatch(fixedRunnerTime().Add(-time.Second))
-	client := newTestClient(t, httptest.NewServer(http.NotFoundHandler()))
+	expiredServer := httptest.NewServer(http.NotFoundHandler())
+	defer expiredServer.Close()
+	client := newTestClient(t, expiredServer)
 	if _, err := client.FetchArtifact(context.Background(), expired); err == nil {
 		t.Fatal("expired dispatch was accepted for artifact retrieval")
 	}
