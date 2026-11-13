@@ -14,6 +14,9 @@ import type {
   RecordRunnerAcceptanceInput,
   RecordedRunnerAcceptance,
 } from "./db/runner-acceptance-repository";
+import {
+  RunnerStartNotAcceptedError,
+} from "./db/runner-start-repository";
 import type {
   RecordRunnerStartInput,
   RecordedRunnerStart,
@@ -1065,7 +1068,7 @@ describe("authenticated runner start endpoint", () => {
   it("requires a durable acceptance receipt before changing job state", async () => {
     const signed = await signedStartRequest(startReceipt);
     const start = vi.fn(async () => {
-      throw new Error("runner_start_acceptance_required");
+      throw new RunnerStartNotAcceptedError();
     });
     const { handler } = makeHarness({
       runnerIdentityRepository: {
@@ -1081,7 +1084,7 @@ describe("authenticated runner start endpoint", () => {
 
     expect(response.status).toBe(409);
     expect(await readJson(response)).toMatchObject({
-      error: { code: "INTERNAL_ERROR" },
+      error: { code: "RUNNER_ACCEPTANCE_REQUIRED", retryable: false },
     });
     expect(start).toHaveBeenCalledOnce();
   });
