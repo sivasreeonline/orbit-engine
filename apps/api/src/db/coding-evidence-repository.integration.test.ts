@@ -157,8 +157,8 @@ describe.skipIf(!databaseUrl)("PostgresCodingEvidenceRepository PostgreSQL integ
     expect(runResult.lastSequence).toBe(7);
 
     const ended = makeEvent(created.sessionId, 8, "SESSION_ENDED", {
-      snapshotId: runSnapshot.snapshot?.snapshotId,
-      contentSha256: runSnapshot.snapshot?.contentSha256,
+      snapshotId: runSnapshot.snapshot!.snapshotId,
+      contentSha256: runSnapshot.snapshot!.contentSha256,
     });
     const endResult = await repository.appendBatch({
       principal, sessionId: created.sessionId, events: [ended],
