@@ -102,4 +102,98 @@ describe.skipIf(!databaseUrl)("fair runner dispatch scheduler PostgreSQL integra
       ),
     ));
   }, 20_000);
+
+  it("serializes concurrent runner polls and enforces the per-runner active lease cap", async () => {
+    const intake = new PostgresExecutionIntakeRepository(databaseUrl);
+    const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
+    const leases = new PostgresRunnerDispatchLeaseRepository(databaseUrl);
+    const runnerId = randomUUID();
+    const secondActorId = randomUUID();
+    const actors = [firstActorId, secondActorId];
+
+    const leftovers = await leases.claimBatch("runner-capacity-cleanup", 100, 60);
+    await Promise.all(leftovers.map((item) =>
+      leases.markDeadLetter(item.id, "runner-capacity-cleanup", item.leaseToken),
+    ));
+
+    for (const actorId of actors) {
+      for (let index = 0; index < 2; index += 1) {
+        const created = await intake.create({
+          principal: { tenantId, userId: actorId, roles: ["STUDENT"] },
+          action: "RUN",
+          problemSlug: "two-sum",
+          language: "java",
+          runtimeVersion: "25",
+          sourceCode: `public class Main { // capacity-${runnerId}-${actorId}-${index} }\n`,
+          correlationId: `runner-capacity-${randomUUID()}`,
+        }, `runner-capacity-${randomUUID()}`);
+        await handoff.record({
+          executionId: created.executionId,
+          attemptId: created.attemptId,
+          protocolVersion: "v1",
+        });
+      }
+    }
+
+    const [firstPoll, concurrentPoll] = await Promise.all([
+      leases.claimFairBatchForRunner(runnerId, 2, 2, 60),
+      leases.claimFairBatchForRunner(runnerId, 2, 2, 60),
+    ]);
+    const combined = [...firstPoll, ...concurrentPoll];
+    expect(combined.length).toBe(2);
+    expect(new Set(combined.map((item) => item.id)).size).toBe(2);
+
+    const thirdPoll = await leases.claimFairBatchForRunner(runnerId, 2, 2, 60);
+    expect(thirdPoll).toHaveLength(0);
+
+    const verifier = new Client({ connectionString: databaseUrl });
+    try {
+      await verifier.connect();
+      const persisted = await verifier.query<{
+        execution_state: string;
+        job_lease_owner: string;
+        job_lease_token: string;
+        dispatch_lease_token: string;
+        claim_events: string;
+      }>(
+        `SELECT job.state AS execution_state,
+                job.lease_owner AS job_lease_owner,
+                job.lease_token::text AS job_lease_token,
+                dispatch.lease_token::text AS dispatch_lease_token,
+                (SELECT count(*)::text
+                 FROM execution_evidence_events AS event
+                 WHERE event.execution_id = job.id
+                   AND event.event_type = 'JOB_CLAIMED'
+                   AND event.actor_kind = 'RUNNER') AS claim_events
+         FROM runner_dispatch_outbox AS dispatch
+         INNER JOIN execution_jobs AS job ON job.id = dispatch.execution_id
+         WHERE dispatch.id = ANY($1::uuid[])`,
+        [combined.map((item) => item.id)],
+      );
+      expect(persisted.rows).toHaveLength(2);
+      for (const row of persisted.rows) {
+        expect(row.execution_state).toBe("CLAIMED");
+        expect(row.job_lease_owner).toBe(runnerId);
+        expect(row.job_lease_token).toBe(row.dispatch_lease_token);
+        expect(Number(row.claim_events)).toBe(1);
+      }
+
+      await verifier.query(
+        `UPDATE execution_jobs
+         SET state = 'QUEUED', state_version = state_version + 1,
+             lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+             updated_at = now()
+         WHERE id IN (
+           SELECT execution_id FROM runner_dispatch_outbox WHERE id = ANY($1::uuid[])
+         )`,
+        [combined.map((item) => item.id)],
+      );
+    } finally {
+      await verifier.end();
+    }
+
+    await Promise.all(combined.map((item) =>
+      leases.markDeadLetter(item.id, runnerId, item.leaseToken),
+    ));
+  }, 20_000);
 });

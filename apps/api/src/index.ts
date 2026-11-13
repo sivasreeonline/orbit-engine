@@ -5,6 +5,8 @@ import { publishOutboxBatch } from "./db/outbox-publisher";
 import { PostgresProblemRepository } from "./db/problem-repository";
 import { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
 import { PostgresRunnerDispatchHandoffRepository } from "./db/runner-dispatch-handoff-repository";
+import { PostgresRunnerIdentityRepository } from "./db/runner-identity-repository";
+import { PostgresRunnerDispatchLeaseRepository } from "./db/runner-dispatch-lease-repository";
 import { consumeRunnerDispatchBatch } from "./services/runner-dispatch-queue-consumer";
 import { PostgresExecutionIntakeRepository } from "./db/execution-intake-repository";
 import type { Env } from "./env";
@@ -28,11 +30,15 @@ export default {
     const connectionString = env.HYPERDRIVE?.connectionString;
     const evidenceRepository = new PostgresExecutionEvidenceRepository(connectionString);
     const executionIntakeRepository = new PostgresExecutionIntakeRepository(connectionString);
+    const runnerIdentityRepository = new PostgresRunnerIdentityRepository(connectionString);
+    const runnerDispatchLeaseRepository = new PostgresRunnerDispatchLeaseRepository(connectionString);
     const handler = buildApiHandler(env, {
       authenticator,
       repository,
       evidenceRepository,
       executionIntakeRepository,
+      runnerIdentityRepository,
+      runnerDispatchLeaseRepository,
       runtimeVersions: {
         java: env.JAVA_RUNTIME_VERSION ?? "",
         python: env.PYTHON_RUNTIME_VERSION ?? "",
