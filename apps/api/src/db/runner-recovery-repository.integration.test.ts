@@ -139,7 +139,29 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
       await makeAvailableNow(setup, first.dispatch.id, first.created.executionId);
       const secondClaim = await dispatches.claimFairBatchForRunner(runnerId, 1, 2, 120);
       const secondDispatch = secondClaim.find((item) => item.executionId === first.created.executionId);
-      expect(secondDispatch).toBeDefined();
+      if (!secondDispatch) {
+        const diagnostics = await setup.query(
+          [
+            "SELECT job.state AS job_state, job.available_at::text AS job_available_at,",
+            "  job.lease_owner AS job_owner, job.lease_token::text AS job_token,",
+            "  dispatch.delivery_state, dispatch.available_at::text AS dispatch_available_at,",
+            "  dispatch.lease_owner AS dispatch_owner, dispatch.lease_token::text AS dispatch_token,",
+            "  (SELECT count(*) FROM runner_dispatch_scheduler_lanes AS lane",
+            "   WHERE lane.tenant_id = attempt.tenant_id AND lane.actor_user_id = attempt.actor_user_id) AS lane_count,",
+            "  (SELECT count(*) FROM runner_dispatch_outbox AS active",
+            "   WHERE active.lease_owner = $2 AND active.delivery_state = 'PENDING'",
+            "     AND active.lease_expires_at > clock_timestamp()) AS runner_active_count,",
+            "  job.available_at <= clock_timestamp() AS job_available,",
+            "  dispatch.available_at <= clock_timestamp() AS dispatch_available",
+            "FROM execution_jobs AS job",
+            "INNER JOIN runner_dispatch_outbox AS dispatch ON dispatch.execution_id = job.id",
+            "INNER JOIN execution_attempts AS attempt ON attempt.id = job.attempt_id",
+            "WHERE job.id = $1::uuid",
+          ].join("\\n"),
+          [first.created.executionId, runnerId],
+        );
+        throw new Error("RECOVERY_RECLAIM_DIAGNOSTICS " + JSON.stringify(diagnostics.rows[0]));
+      }
       expect(secondDispatch!.leaseToken).not.toBe(first.dispatch.leaseToken);
       await acceptAndStart(
         runnerId, keyId, first.created.executionId, first.created.attemptId, secondDispatch!,
