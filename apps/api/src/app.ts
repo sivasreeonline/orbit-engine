@@ -30,6 +30,14 @@ import {
   RunnerStartStaleLeaseError,
   RunnerStartUnauthorizedError,
 } from "./db/runner-start-repository";
+import type { PostgresRunnerHeartbeatRepository } from "./db/runner-heartbeat-repository";
+import {
+  RunnerHeartbeatConflictError,
+  RunnerHeartbeatNotFoundError,
+  RunnerHeartbeatNotStartedError,
+  RunnerHeartbeatStaleLeaseError,
+  RunnerHeartbeatUnauthorizedError,
+} from "./db/runner-heartbeat-repository";
 
 type ExecutionIntakeRepository = {
   create(input: CreateExecutionInput, idempotencyKey: string): Promise<{
@@ -48,6 +56,7 @@ interface ApiDependencies {
   readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner">;
   readonly runnerAcceptanceRepository?: Pick<PostgresRunnerAcceptanceRepository, "record">;
   readonly runnerStartRepository?: Pick<PostgresRunnerStartRepository, "start">;
+  readonly runnerHeartbeatRepository?: Pick<PostgresRunnerHeartbeatRepository, "renew">;
   readonly runtimeVersions?: { readonly java: string; readonly python: string };
   readonly allowedOrigins?: string;
 }
@@ -511,6 +520,126 @@ export function createApiHandler(dependencies: ApiDependencies) {
         console.error("runner_start_failed", { correlationId: requestId });
         return errorResponse("INTERNAL_ERROR",
           "The runner dispatch could not be started.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
+
+    if (request.method === "POST" && path === "/internal/v1/runner/heartbeat") {
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerHeartbeatRepository) {
+        return errorResponse(
+          "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Runner lease renewal is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner heartbeat request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let heartbeatBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 2048);
+        heartbeatBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner heartbeat request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner heartbeat request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const heartbeatFields = [
+        "heartbeatId", "dispatchId", "executionId", "attemptId", "leaseToken",
+      ];
+      if (!isRecord(heartbeatBody) ||
+          Object.keys(heartbeatBody).length !== heartbeatFields.length ||
+          Object.keys(heartbeatBody).some((key) => !heartbeatFields.includes(key)) ||
+          heartbeatFields.some((key) => typeof heartbeatBody[key] !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+              .test(heartbeatBody[key] as string))) {
+        return errorResponse("INVALID_RUNNER_HEARTBEAT",
+          "The runner heartbeat contains invalid identifiers or fields.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const renewed = await dependencies.runnerHeartbeatRepository.renew({
+          heartbeatId: heartbeatBody.heartbeatId as string,
+          dispatchId: heartbeatBody.dispatchId as string,
+          executionId: heartbeatBody.executionId as string,
+          attemptId: heartbeatBody.attemptId as string,
+          leaseToken: heartbeatBody.leaseToken as string,
+          runnerId: authenticatedRunner.runnerId,
+          keyId: authenticatedRunner.keyId,
+        });
+        return jsonResponse({
+          data: {
+            renewed: true,
+            replayed: renewed.replayed,
+            heartbeatId: renewed.heartbeatId,
+            dispatchId: renewed.dispatchId,
+            executionId: renewed.executionId,
+            leaseExpiresAt: renewed.leaseExpiresAt,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof RunnerHeartbeatUnauthorizedError) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner identity is no longer authorized.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerHeartbeatNotFoundError) {
+          return errorResponse("RUNNER_DISPATCH_NOT_FOUND",
+            "The dispatch does not match this heartbeat.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerHeartbeatNotStartedError) {
+          return errorResponse("RUNNER_START_REQUIRED",
+            "The dispatch must be durably started before its lease can be renewed.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerHeartbeatStaleLeaseError) {
+          return errorResponse("RUNNER_LEASE_STALE",
+            "The runner lease has expired or no longer belongs to this runner.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerHeartbeatConflictError) {
+          return errorResponse("RUNNER_HEARTBEAT_CONFLICT",
+            "The heartbeat identifier was reused for a different lease.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Runner lease renewal is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_heartbeat_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The runner lease could not be renewed.", 500, true,
           requestId, origin, allowedOrigins);
       }
     }
