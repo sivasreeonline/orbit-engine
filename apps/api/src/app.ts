@@ -22,6 +22,14 @@ import {
   RunnerAcceptanceUnauthorizedError,
 } from "./db/runner-acceptance-repository";
 import { authenticateRunnerRequest } from "./services/runner-request-authenticator";
+import type { PostgresCodingEvidenceRepository, CodingEvidenceRecordInput } from "./db/coding-evidence-repository";
+import {
+  CodingEvidenceConflictError,
+  CodingEvidenceSequenceConflictError,
+  CodingEvidenceSessionClosedError,
+  CodingEvidenceSessionNotFoundError,
+  InvalidCodingEvidenceInputError,
+} from "./db/coding-evidence-repository";
 
 type ExecutionIntakeRepository = {
   create(input: CreateExecutionInput, idempotencyKey: string): Promise<{
@@ -39,6 +47,7 @@ interface ApiDependencies {
   readonly runnerIdentityRepository?: Pick<PostgresRunnerIdentityRepository, "findActivePublicKey" | "consumeNonce">;
   readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner">;
   readonly runnerAcceptanceRepository?: Pick<PostgresRunnerAcceptanceRepository, "record">;
+  readonly codingEvidenceRepository?: Pick<PostgresCodingEvidenceRepository, "createSession" | "appendBatch">;
   readonly runtimeVersions?: { readonly java: string; readonly python: string };
   readonly allowedOrigins?: string;
 }
@@ -484,6 +493,10 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
     }
 
+    const isEvidenceSessionCreate = request.method === "POST" && path === "/api/v1/evidence/sessions";
+    const evidenceEventsMatch = request.method === "POST"
+      ? path.match(/^\/api\/v1\/evidence\/sessions\/([^/]+)\/events$/)
+      : null;
     const isExecutionCreate = request.method === "POST" && path === "/api/v1/executions";
     const isProblemList = request.method === "GET" && path === "/api/v1/problems";
     const problemMatch = request.method === "GET"
@@ -499,7 +512,8 @@ export function createApiHandler(dependencies: ApiDependencies) {
       ? path.match(/^\/api\/v1\/executions\/([^/]+)\/status$/)
       : null;
 
-    if (!isExecutionCreate && !isProblemList && !problemMatch && !attemptHistoryMatch &&
+    if (!isExecutionCreate && !isEvidenceSessionCreate && !evidenceEventsMatch &&
+        !isProblemList && !problemMatch && !attemptHistoryMatch &&
         !executionEventsMatch && !executionStatusMatch) {
       return errorResponse(
         "NOT_FOUND",
@@ -562,6 +576,177 @@ export function createApiHandler(dependencies: ApiDependencies) {
         origin,
         allowedOrigins,
       );
+    }
+
+    if (isEvidenceSessionCreate) {
+      if (!dependencies.codingEvidenceRepository) {
+        return errorResponse("CODING_EVIDENCE_NOT_CONFIGURED",
+          "Coding evidence capture is temporarily unavailable.", 503, true,
+          requestId, origin, allowedOrigins);
+      }
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The evidence session request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+      let body: unknown;
+      try {
+        body = await readJsonBody(request, 4096);
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The evidence session request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The evidence session request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+      if (!isRecord(body) || Object.keys(body).length !== 3 ||
+          Object.keys(body).some((key) => !["problemSlug", "language", "noticeVersion"].includes(key)) ||
+          typeof body.problemSlug !== "string" || !isValidSlug(body.problemSlug) ||
+          (body.language !== "java" && body.language !== "python") ||
+          typeof body.noticeVersion !== "string" ||
+          !/^[A-Za-z0-9._-]{1,32}$/.test(body.noticeVersion)) {
+        return errorResponse("INVALID_EVIDENCE_SESSION",
+          "The evidence session requires a valid problemSlug, language and noticeVersion.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const session = await dependencies.codingEvidenceRepository.createSession({
+          principal,
+          problemSlug: body.problemSlug,
+          language: body.language,
+          noticeVersion: body.noticeVersion,
+        });
+        return jsonResponse({
+          data: {
+            sessionId: session.sessionId,
+            startedAt: session.startedAt,
+            lastSequence: session.lastSequence,
+            capturePolicy: {
+              changedSnapshotIntervalSeconds: 120,
+              checkpointIntervalSeconds: 300,
+            },
+          },
+        }, 201, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof CodingEvidenceSessionNotFoundError) {
+          return errorResponse("PROBLEM_NOT_FOUND",
+            "The requested published problem was not found.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof InvalidCodingEvidenceInputError) {
+          return errorResponse("INVALID_EVIDENCE_SESSION",
+            "The evidence session request is invalid.", 400, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("DATABASE_UNAVAILABLE",
+            "The evidence session could not be created right now.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("coding_evidence_session_create_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The evidence session could not be created.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
+
+    if (evidenceEventsMatch) {
+      if (!dependencies.codingEvidenceRepository) {
+        return errorResponse("CODING_EVIDENCE_NOT_CONFIGURED",
+          "Coding evidence synchronization is temporarily unavailable.", 503, true,
+          requestId, origin, allowedOrigins);
+      }
+      const sessionId = evidenceEventsMatch[1] ?? "";
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId)) {
+        return errorResponse("INVALID_EVIDENCE_SESSION_ID",
+          "The evidence session identifier is invalid.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The evidence batch request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+      let body: unknown;
+      try {
+        body = await readJsonBody(request, 2 * 1024 * 1024);
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The evidence batch exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The evidence batch must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+      if (!isRecord(body) || Object.keys(body).length !== 1 ||
+          Object.keys(body)[0] !== "events" || !Array.isArray(body.events) ||
+          body.events.length < 1 || body.events.length > 20) {
+        return errorResponse("INVALID_EVIDENCE_BATCH",
+          "The evidence batch must contain between 1 and 20 events.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const result = await dependencies.codingEvidenceRepository.appendBatch({
+          principal,
+          sessionId,
+          events: body.events as CodingEvidenceRecordInput[],
+        });
+        return jsonResponse({
+          data: {
+            accepted: result.accepted,
+            replayed: result.replayed,
+            sequenceGaps: result.sequenceGaps,
+            lastSequence: result.lastSequence,
+            sessionEnded: result.sessionEnded,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof CodingEvidenceSessionNotFoundError) {
+          return errorResponse("EVIDENCE_SESSION_NOT_FOUND",
+            "The evidence session was not found for this student.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof CodingEvidenceSessionClosedError) {
+          return errorResponse("EVIDENCE_SESSION_CLOSED",
+            "The evidence session has already ended.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof CodingEvidenceConflictError) {
+          return errorResponse("EVIDENCE_EVENT_CONFLICT",
+            "An event identifier was reused with different evidence.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof CodingEvidenceSequenceConflictError) {
+          return errorResponse("EVIDENCE_SEQUENCE_CONFLICT",
+            "The evidence sequence conflicts with previously received events.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof InvalidCodingEvidenceInputError) {
+          return errorResponse("INVALID_EVIDENCE_BATCH",
+            "The evidence batch contains invalid event or snapshot data.", 400, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("DATABASE_UNAVAILABLE",
+            "The evidence batch could not be saved right now.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("coding_evidence_batch_append_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The evidence batch could not be saved.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
     }
 
     if (isExecutionCreate) {
