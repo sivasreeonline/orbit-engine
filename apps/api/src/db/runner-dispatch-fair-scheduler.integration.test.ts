@@ -102,4 +102,52 @@ describe.skipIf(!databaseUrl)("fair runner dispatch scheduler PostgreSQL integra
       ),
     ));
   }, 20_000);
+
+  it("serializes concurrent runner polls and enforces the per-runner active lease cap", async () => {
+    const intake = new PostgresExecutionIntakeRepository(databaseUrl);
+    const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
+    const leases = new PostgresRunnerDispatchLeaseRepository(databaseUrl);
+    const runnerId = randomUUID();
+    const secondActorId = randomUUID();
+    const actors = [firstActorId, secondActorId];
+
+    const leftovers = await leases.claimBatch("runner-capacity-cleanup", 100, 60);
+    await Promise.all(leftovers.map((item) =>
+      leases.markDeadLetter(item.id, "runner-capacity-cleanup", item.leaseToken),
+    ));
+
+    for (const actorId of actors) {
+      for (let index = 0; index < 2; index += 1) {
+        const created = await intake.create({
+          principal: { tenantId, userId: actorId, roles: ["STUDENT"] },
+          action: "RUN",
+          problemSlug: "two-sum",
+          language: "java",
+          runtimeVersion: "25",
+          sourceCode: `public class Main { // capacity-${runnerId}-${actorId}-${index} }\n`,
+          correlationId: `runner-capacity-${randomUUID()}`,
+        }, `runner-capacity-${randomUUID()}`);
+        await handoff.record({
+          executionId: created.executionId,
+          attemptId: created.attemptId,
+          protocolVersion: "v1",
+        });
+      }
+    }
+
+    const [firstPoll, concurrentPoll] = await Promise.all([
+      leases.claimFairBatchForRunner(runnerId, 2, 2, 60),
+      leases.claimFairBatchForRunner(runnerId, 2, 2, 60),
+    ]);
+    const combined = [...firstPoll, ...concurrentPoll];
+    expect(combined.length).toBe(2);
+    expect(new Set(combined.map((item) => item.id)).size).toBe(2);
+
+    const thirdPoll = await leases.claimFairBatchForRunner(runnerId, 2, 2, 60);
+    expect(thirdPoll).toHaveLength(0);
+
+    await Promise.all(combined.map((item) =>
+      leases.markDeadLetter(item.id, runnerId, item.leaseToken),
+    ));
+  }, 20_000);
 });
