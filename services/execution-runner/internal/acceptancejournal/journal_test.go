@@ -295,3 +295,80 @@ func TestAbandonmentRejectsUnknownReasonsAndConfirmedReceipts(t *testing.T) {
 		t.Fatalf("confirmed receipt was abandonable: %v", err)
 	}
 }
+
+
+func TestJournalHasSingleProcessOwnershipUntilClose(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "acceptance.jsonl")
+	first, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if second, err := Open(path); !errors.Is(err, ErrJournalLocked) {
+		if second != nil {
+			_ = second.Close()
+		}
+		t.Fatalf("second journal owner was not rejected: %v", err)
+	}
+
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("journal ownership lock remains after clean close: %v", err)
+	}
+
+	second, err := Open(path)
+	if err != nil {
+		t.Fatalf("journal could not be reopened after clean ownership release: %v", err)
+	}
+	if err := second.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStaleJournalLockFailsClosedWithoutAutomaticRemoval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "acceptance.jsonl")
+	lockPath := path + ".lock"
+	if err := os.Mkdir(lockPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lockPath, "owner.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if journal, err := Open(path); !errors.Is(err, ErrJournalLocked) {
+		if journal != nil {
+			_ = journal.Close()
+		}
+		t.Fatalf("stale lock did not fail closed: %v", err)
+	}
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("stale lock was automatically removed: %v", err)
+	}
+}
+
+func TestJournalDoesNotReleaseLockWhoseOwnerRecordChanged(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "acceptance.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerPath := filepath.Join(path+".lock", "owner.json")
+	if err := os.WriteFile(ownerPath, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := journal.Close(); err == nil {
+		t.Fatal("changed lock owner record was released")
+	}
+	if _, err := os.Stat(path + ".lock"); err != nil {
+		t.Fatalf("changed ownership lock was removed: %v", err)
+	}
+	if second, err := Open(path); !errors.Is(err, ErrJournalLocked) {
+		if second != nil {
+			_ = second.Close()
+		}
+		t.Fatalf("journal was reopened after uncertain ownership release: %v", err)
+	}
+}
