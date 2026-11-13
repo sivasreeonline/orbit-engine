@@ -129,7 +129,9 @@ type DockerSandbox struct {
 	cleanupTimeout time.Duration
 }
 
-func NewDockerSandbox(cli DockerCLI, _ string) (*DockerSandbox, error) {
+// NewDockerSandbox configures the OCI CLI adapter. Source bytes are streamed
+// into a container-owned tmpfs; no host scratch directory is required.
+func NewDockerSandbox(cli DockerCLI) (*DockerSandbox, error) {
 	if cli == nil {
 		return nil, ErrSandboxNotConfigured
 	}
