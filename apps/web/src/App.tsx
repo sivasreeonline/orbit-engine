@@ -1,14 +1,19 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 const CodeEditor = lazy(() => import("./components/CodeEditor"));
 import EditorActions from "./components/EditorActions";
 import ExecutionOutput, { type OutputTab } from "./components/ExecutionOutput";
 import ProblemDetails from "./components/ProblemDetails";
 import ProblemGuide from "./components/ProblemGuide";
 import AmbientDonuts from "./components/AmbientDonuts";
+import EvidenceCapturePanel from "./components/EvidenceCapturePanel";
 import { twoSumProblem, starterCode } from "./data/twoSumProblem";
 import { MockExecutionAdapter } from "./lib/execution/MockExecutionAdapter";
 import type { ExecutionAction, ExecutionFeedback } from "./lib/execution/ExecutionAdapter";
 import type { SupportedLanguage } from "./types/problem";
+import {
+  EditorEvidenceCollector,
+  type CapturedEvidence,
+} from "./lib/evidence/EditorEvidenceCollector";
 
 type FocusMode = "none" | "editor" | "problem";
 const mockAdapter = new MockExecutionAdapter();
@@ -37,6 +42,10 @@ export default function App() {
   const [outputTab, setOutputTab] = useState<OutputTab>("output");
   const [feedback, setFeedback] = useState<ExecutionFeedback | null>(null);
   const [pendingAction, setPendingAction] = useState<ExecutionAction | null>(null);
+  const [evidenceCaptureActive, setEvidenceCaptureActive] = useState(false);
+  const [evidenceStats, setEvidenceStats] = useState({ eventCount: 0, snapshotCount: 0 });
+  const [evidenceCaptureError, setEvidenceCaptureError] = useState<string | null>(null);
+  const evidenceCollector = useRef<EditorEvidenceCollector | null>(null);
   const sourceCode = sourceByLanguage[language];
 
   useEffect(() => {
@@ -49,16 +58,66 @@ export default function App() {
     }
   }, [theme]);
 
+  useEffect(() => () => {
+    void evidenceCollector.current?.close();
+  }, []);
+
+  function recordEvidence(record: CapturedEvidence) {
+    setEvidenceStats((current) => ({
+      eventCount: current.eventCount + 1,
+      snapshotCount: current.snapshotCount + (record.snapshot ? 1 : 0),
+    }));
+  }
+
+  async function startEvidenceCapture() {
+    if (evidenceCollector.current) return;
+    setEvidenceCaptureError(null);
+    setEvidenceStats({ eventCount: 0, snapshotCount: 0 });
+    try {
+      const collector = await EditorEvidenceCollector.start({
+        problemId: twoSumProblem.id,
+        problemVersion: "1",
+        language,
+        initialSource: sourceCode,
+        onRecord: recordEvidence,
+      });
+      evidenceCollector.current = collector;
+      setEvidenceCaptureActive(true);
+    } catch {
+      setEvidenceCaptureError("Evidence capture could not start. No code was uploaded or executed.");
+    }
+  }
+
+  async function stopEvidenceCapture() {
+    const collector = evidenceCollector.current;
+    if (!collector) return;
+    await collector.close();
+    const summary = collector.getSummary();
+    setEvidenceStats({
+      eventCount: summary.eventCount,
+      snapshotCount: summary.snapshotCount,
+    });
+    evidenceCollector.current = null;
+    setEvidenceCaptureActive(false);
+  }
+
   function toggleTheme() {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
   }
 
   function updateSource(value: string) {
+    evidenceCollector.current?.noteEditorChange(value);
     setSourceByLanguage((current) => ({ ...current, [language]: value }));
   }
 
+  function changeLanguage(nextLanguage: SupportedLanguage) {
+    const nextSource = sourceByLanguage[nextLanguage];
+    void evidenceCollector.current?.changeContext(nextLanguage, nextSource);
+    setLanguage(nextLanguage);
+  }
+
   function resetStarter() {
-    setSourceByLanguage((current) => ({ ...current, [language]: starterCode[language] }));
+    updateSource(starterCode[language]);
     setFeedback(null);
   }
 
@@ -67,6 +126,9 @@ export default function App() {
     setOutputTab("output");
     setFeedback(null);
     try {
+      if (evidenceCollector.current) {
+        await evidenceCollector.current.captureAttempt(action, sourceCode, language);
+      }
       const result = await mockAdapter.execute({
         problemId: twoSumProblem.id,
         problemVersion: "1",
@@ -178,6 +240,17 @@ export default function App() {
           </div>
         </section>
 
+        <EvidenceCapturePanel
+          active={evidenceCaptureActive}
+          eventCount={evidenceStats.eventCount}
+          snapshotCount={evidenceStats.snapshotCount}
+          onStart={() => void startEvidenceCapture()}
+          onStop={() => void stopEvidenceCapture()}
+        />
+        {evidenceCaptureError && (
+          <p className="evidence-capture-error" role="alert">{evidenceCaptureError}</p>
+        )}
+
         <div className={`workspace-grid ${focusMode === "none" ? "" : `focus-${focusMode}-mode`}`.trim()}>
           {focusMode !== "editor" && (
             <ProblemDetails
@@ -204,7 +277,7 @@ export default function App() {
                     <select
                       id="language-select"
                       value={language}
-                      onChange={(event) => setLanguage(event.target.value as SupportedLanguage)}
+                      onChange={(event) => changeLanguage(event.target.value as SupportedLanguage)}
                       aria-label="Programming language"
                     >
                       <option value="java">Java 25</option>
