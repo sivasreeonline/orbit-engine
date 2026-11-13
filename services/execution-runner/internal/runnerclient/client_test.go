@@ -247,8 +247,8 @@ func TestPendingReceiptSurvivesRestartAndRetriesWithFreshNonce(t *testing.T) {
 	var nonces []string
 	var mu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		body := make([]byte, request.ContentLength)
-		if _, err := request.Body.Read(body); err != nil {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
 			t.Fatal(err)
 		}
 		verifyTestRequest(t, request, body)
