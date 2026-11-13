@@ -66,6 +66,12 @@ A clean close flushes the journal, closes its file descriptor, verifies the lock
 
 The lock directory and owner record are created with owner-only permissions. Linux directory fsync is used to persist lock creation and release. Windows remains a local-development target only; its directory-sync helper is intentionally a no-op, and production runner durability remains Linux-only.
 
+## Machine identity private-key file
+
+The `runnerauth.LoadPrivateKeyFile` helper provides the strict Linux file-loading boundary for the runner's Ed25519 machine identity. The file contains the standard-base64 encoding of exactly one 64-byte Ed25519 private key, optionally followed by a single LF newline. It must be a regular non-symlink file, owned by the runner's effective user, have exactly one hard link, and grant no group/other permissions. Owner-read-only (0400) and owner-read/write (0600) modes are accepted. The loader opens without following symlinks, verifies the opened file matches the inspected path, and checks that the public half matches the seed.
+
+Provision the file through a trusted local secret-management process. Never commit it, print it, include it in diagnostics or pass the key contents through command-line arguments. Non-Linux builds deliberately return `ErrPrivateKeyFileUnsupported`; they do not weaken the production file checks. This helper is not yet wired into `cmd/runner`, which remains health-only.
+
 ## Current runner control-plane client
 
 The Go client exposes separate methods for:
