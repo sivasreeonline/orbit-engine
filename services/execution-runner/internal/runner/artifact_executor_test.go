@@ -268,3 +268,77 @@ func TestSandboxArtifactExecutorRequiresValidResourcePolicy(t *testing.T) {
 		t.Fatal("invalid resource policy was accepted")
 	}
 }
+
+
+type noPreflightSandbox struct {
+	inner *conformanceSandbox
+}
+
+func (sandbox noPreflightSandbox) RunCase(
+	ctx context.Context,
+	request SandboxRequest,
+) (SandboxObservation, error) {
+	return sandbox.inner.RunCase(ctx, request)
+}
+
+type failingPreflightSandbox struct {
+	inner *conformanceSandbox
+	err error
+}
+
+func (sandbox failingPreflightSandbox) Preflight(
+	context.Context,
+	RuntimeConfiguration,
+) error {
+	return sandbox.err
+}
+
+func (sandbox failingPreflightSandbox) RunCase(
+	ctx context.Context,
+	request SandboxRequest,
+) (SandboxObservation, error) {
+	return sandbox.inner.RunCase(ctx, request)
+}
+
+func TestEnabledArtifactExecutorRequiresSuccessfulRuntimePreflight(t *testing.T) {
+	t.Parallel()
+	runtime := adapterRuntimeConfig()
+	limits := adapterExecutionLimits()
+
+	_, err := NewSandboxArtifactExecutor(noPreflightSandbox{
+		inner: &conformanceSandbox{},
+	}, SandboxArtifactExecutorConfig{
+		Runtime: runtime,
+		Limits: limits,
+		Enabled: true,
+	})
+	if err == nil {
+		t.Fatal("enabled sandbox without a preflight was accepted")
+	}
+
+	_, err = NewSandboxArtifactExecutor(failingPreflightSandbox{
+		inner: &conformanceSandbox{},
+		err: ErrDockerCommandFailed,
+	}, SandboxArtifactExecutorConfig{
+		Runtime: runtime,
+		Limits: limits,
+		Enabled: true,
+	})
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("failed runsc/image preflight was ignored: %v", err)
+	}
+
+	executor, err := NewSandboxArtifactExecutor(noPreflightSandbox{
+		inner: &conformanceSandbox{},
+	}, SandboxArtifactExecutorConfig{
+		Runtime: runtime,
+		Limits: limits,
+		Enabled: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executor.Ready() {
+		t.Fatal("disabled sandbox passed readiness without preflight")
+	}
+}
