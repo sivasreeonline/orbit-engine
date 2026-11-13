@@ -59,6 +59,7 @@ DECLARE
   job_state varchar(24);
   job_attempt_id uuid;
   job_retry_count integer;
+  job_available_at timestamptz;
   job_lease_owner varchar(128);
   job_lease_token uuid;
   job_lease_expires_at timestamptz;
@@ -89,8 +90,8 @@ BEGIN
   FROM runner_dispatch_starts
   WHERE dispatch_id = NEW.dispatch_id AND lease_token = NEW.lease_token;
 
-  SELECT state, attempt_id, retry_count, lease_owner, lease_token, lease_expires_at
-  INTO job_state, job_attempt_id, job_retry_count, job_lease_owner,
+  SELECT state, attempt_id, retry_count, available_at, lease_owner, lease_token, lease_expires_at
+  INTO job_state, job_attempt_id, job_retry_count, job_available_at, job_lease_owner,
     job_lease_token, job_lease_expires_at
   FROM execution_jobs
   WHERE id = NEW.execution_id;
@@ -124,6 +125,7 @@ BEGIN
     IF job_state IS DISTINCT FROM 'QUEUED'
       OR dispatch_state IS DISTINCT FROM 'PENDING'
       OR dispatch_available_at IS DISTINCT FROM NEW.available_at
+      OR job_available_at IS DISTINCT FROM NEW.available_at
       OR event_type IS DISTINCT FROM 'RETRY_SCHEDULED'
       OR event_phase_status IS DISTINCT FROM 'SUCCEEDED'
       OR event_safe_code IS DISTINCT FROM 'RUNNER_LEASE_EXPIRED' THEN
