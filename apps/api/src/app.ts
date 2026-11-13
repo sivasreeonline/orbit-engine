@@ -616,19 +616,9 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
 
       try {
-        const problem = await dependencies.repository.getPublishedBySlug(
-          principal.tenantId,
-          body.problemSlug,
-        );
-        if (!problem) {
-          return errorResponse("PROBLEM_NOT_FOUND",
-            "The requested published problem was not found.", 404, false,
-            requestId, origin, allowedOrigins);
-        }
         const session = await dependencies.codingEvidenceRepository.createSession({
           principal,
-          problemId: problem.id,
-          problemVersionId: problem.problemVersionId,
+          problemSlug: body.problemSlug,
           language: body.language,
           noticeVersion: body.noticeVersion,
         });
@@ -644,6 +634,16 @@ export function createApiHandler(dependencies: ApiDependencies) {
           },
         }, 201, requestId, origin, allowedOrigins);
       } catch (error) {
+        if (error instanceof CodingEvidenceSessionNotFoundError) {
+          return errorResponse("PROBLEM_NOT_FOUND",
+            "The requested published problem was not found.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof InvalidCodingEvidenceInputError) {
+          return errorResponse("INVALID_EVIDENCE_SESSION",
+            "The evidence session request is invalid.", 400, false,
+            requestId, origin, allowedOrigins);
+        }
         if (error instanceof DatabaseUnavailableError) {
           return errorResponse("DATABASE_UNAVAILABLE",
             "The evidence session could not be created right now.", 503, true,
