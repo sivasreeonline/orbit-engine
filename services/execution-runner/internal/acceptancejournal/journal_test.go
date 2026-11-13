@@ -211,3 +211,87 @@ func TestInvalidReceiptAndMissingConfirmationFailClosed(t *testing.T) {
 		t.Fatalf("expected missing receipt error, got %v", err)
 	}
 }
+
+
+func TestAbandonedStaleReceiptRemainsAuditableButIsNotPending(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "acceptance.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := testReceipt()
+	if _, err := journal.Prepare(receipt); err != nil {
+		t.Fatal(err)
+	}
+	abandonedAt := time.Date(2026, 11, 13, 3, 2, 0, 0, time.UTC)
+	replayed, err := journal.Abandon(receipt.AcceptanceID, "RUNNER_LEASE_STALE", abandonedAt)
+	if err != nil || replayed {
+		t.Fatalf("first abandonment: replayed=%v err=%v", replayed, err)
+	}
+	replayed, err = journal.Abandon(receipt.AcceptanceID, "RUNNER_LEASE_STALE", abandonedAt.Add(time.Minute))
+	if err != nil || !replayed {
+		t.Fatalf("idempotent abandonment: replayed=%v err=%v", replayed, err)
+	}
+	if _, err := journal.Confirm(
+		receipt.AcceptanceID,
+		"a0000000-0000-4000-8000-000000000001",
+		abandonedAt,
+	); !errors.Is(err, ErrAbandoned) {
+		t.Fatalf("abandoned receipt must not be confirmed: %v", err)
+	}
+	if _, err := journal.Prepare(receipt); !errors.Is(err, ErrAbandoned) {
+		t.Fatalf("abandoned receipt must not be prepared again: %v", err)
+	}
+	pending, err := journal.Pending()
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("abandoned receipt still pending: pending=%d err=%v", len(pending), err)
+	}
+	abandoned, err := journal.IsAbandoned(receipt.AcceptanceID)
+	if err != nil || !abandoned {
+		t.Fatalf("receipt abandonment missing: abandoned=%v err=%v", abandoned, err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	journal, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+	abandoned, err = journal.IsAbandoned(receipt.AcceptanceID)
+	if err != nil || !abandoned {
+		t.Fatalf("abandonment did not survive restart: abandoned=%v err=%v", abandoned, err)
+	}
+	pending, err = journal.Pending()
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("recovered abandoned receipt became pending: pending=%d err=%v", len(pending), err)
+	}
+}
+
+func TestAbandonmentRejectsUnknownReasonsAndConfirmedReceipts(t *testing.T) {
+	journal, err := Open(filepath.Join(t.TempDir(), "acceptance.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+
+	receipt := testReceipt()
+	if _, err := journal.Prepare(receipt); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := journal.Abandon(receipt.AcceptanceID, "NETWORK_TIMEOUT", now); err == nil {
+		t.Fatal("temporary transport error was accepted as a terminal abandonment reason")
+	}
+	if _, err := journal.Confirm(
+		receipt.AcceptanceID,
+		"a0000000-0000-4000-8000-000000000001",
+		now,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.Abandon(receipt.AcceptanceID, "RUNNER_LEASE_STALE", now); !errors.Is(err, ErrConflict) {
+		t.Fatalf("confirmed receipt was abandonable: %v", err)
+	}
+}
