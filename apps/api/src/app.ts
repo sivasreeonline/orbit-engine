@@ -2,6 +2,16 @@ import type { Authenticator, ProblemRepository } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
 import {
+  ExecutionEvidenceConflictError,
+  ExecutionEvidenceNotFoundError,
+  RunnerCompletionConflictError,
+  RunnerCompletionNotAcceptedError,
+  RunnerCompletionNotStartedError,
+  RunnerCompletionUnauthorizedError,
+  StaleExecutionLeaseError,
+  type RecordRunnerExecutionResultInput,
+} from "./db/execution-evidence-repository";
+import {
   ExecutionProblemNotFoundError,
   IdempotencyConflictError,
   type CreateExecutionInput,
@@ -67,6 +77,7 @@ interface ApiDependencies {
   readonly runnerStartRepository?: Pick<PostgresRunnerStartRepository, "start">;
   readonly runnerHeartbeatRepository?: Pick<PostgresRunnerHeartbeatRepository, "renew">;
   readonly runnerArtifactRepository?: Pick<PostgresRunnerArtifactRepository, "fetch">;
+  readonly runnerCompletionRepository?: Pick<PostgresExecutionEvidenceRepository, "recordRunnerResult">;
   readonly runtimeVersions?: { readonly java: string; readonly python: string };
   readonly allowedOrigins?: string;
 }
@@ -530,6 +541,200 @@ export function createApiHandler(dependencies: ApiDependencies) {
         console.error("runner_start_failed", { correlationId: requestId });
         return errorResponse("INTERNAL_ERROR",
           "The runner dispatch could not be started.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
+
+    if (request.method === "POST" && path === "/internal/v1/runner/complete") {
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerCompletionRepository) {
+        return errorResponse(
+          "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Runner result submission is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner completion request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let completionBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 16 * 1024);
+        completionBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner completion request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner completion request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const requiredFields = [
+        "dispatchId", "executionId", "attemptId", "leaseToken",
+        "infrastructureStatus", "compilationStatus", "verdict", "cleanupStatus",
+        "testsTotal", "testsPassed", "elapsedMs", "runnerVersion",
+        "resultSha256", "startedAt", "completedAt",
+      ];
+      const optionalFields = [
+        "infrastructureErrorCode", "peakMemoryBytes", "runtimeImageDigest",
+      ];
+      const completionFields = [...requiredFields, ...optionalFields];
+      const identifiers = ["dispatchId", "executionId", "attemptId", "leaseToken"];
+      const numericFields = ["testsTotal", "testsPassed", "elapsedMs"];
+      const validNumber = (value: unknown): value is number =>
+        typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+      const compilations = ["NOT_STARTED", "SUCCEEDED", "FAILED"];
+      const verdicts = [
+        "NOT_EVALUATED", "ACCEPTED", "WRONG_ANSWER", "COMPILATION_ERROR",
+        "RUNTIME_ERROR", "TIME_LIMIT_EXCEEDED", "MEMORY_LIMIT_EXCEEDED",
+        "OUTPUT_LIMIT_EXCEEDED", "INTERNAL_ERROR",
+      ];
+      const cleanupStatuses = ["SUCCEEDED", "FAILED", "UNKNOWN"];
+      const validTimestamp = (value: unknown): value is string =>
+        typeof value === "string" && value.length <= 40 &&
+        Number.isFinite(Date.parse(value)) &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value);
+      const isValidCompletion = isRecord(completionBody) &&
+        requiredFields.every((field) => Object.hasOwn(completionBody, field)) &&
+        Object.keys(completionBody).every((field) => completionFields.includes(field)) &&
+        identifiers.every((field) => typeof completionBody[field] === "string" &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+            .test(completionBody[field] as string)) &&
+        (completionBody.infrastructureStatus === "SUCCEEDED" || completionBody.infrastructureStatus === "FAILED") &&
+        compilations.includes(String(completionBody.compilationStatus)) &&
+        verdicts.includes(String(completionBody.verdict)) &&
+        cleanupStatuses.includes(String(completionBody.cleanupStatus)) &&
+        numericFields.every((field) => validNumber(completionBody[field])) &&
+        completionBody.testsPassed <= completionBody.testsTotal &&
+        typeof completionBody.runnerVersion === "string" &&
+        /^[A-Za-z0-9._+-]{1,64}$/.test(completionBody.runnerVersion) &&
+        typeof completionBody.resultSha256 === "string" &&
+        /^[0-9a-f]{64}$/.test(completionBody.resultSha256) &&
+        validTimestamp(completionBody.startedAt) &&
+        validTimestamp(completionBody.completedAt) &&
+        Date.parse(completionBody.startedAt) <= Date.parse(completionBody.completedAt) &&
+        (completionBody.infrastructureErrorCode === undefined ||
+          (typeof completionBody.infrastructureErrorCode === "string" &&
+            /^[A-Z][A-Z0-9_]{0,63}$/.test(completionBody.infrastructureErrorCode))) &&
+        (completionBody.peakMemoryBytes === undefined || validNumber(completionBody.peakMemoryBytes)) &&
+        (completionBody.runtimeImageDigest === undefined ||
+          (typeof completionBody.runtimeImageDigest === "string" &&
+            /^[0-9a-f]{64}$/.test(completionBody.runtimeImageDigest)));
+
+      if (!isValidCompletion) {
+        return errorResponse("INVALID_RUNNER_COMPLETION",
+          "The runner completion request contains invalid or unsupported result fields.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const resultInput: RecordRunnerExecutionResultInput = {
+          dispatchId: completionBody.dispatchId as string,
+          executionId: completionBody.executionId as string,
+          attemptId: completionBody.attemptId as string,
+          leaseToken: completionBody.leaseToken as string,
+          leaseOwner: authenticatedRunner.runnerId,
+          keyId: authenticatedRunner.keyId,
+          infrastructureStatus: completionBody.infrastructureStatus as "SUCCEEDED" | "FAILED",
+          ...(completionBody.infrastructureErrorCode !== undefined
+            ? { infrastructureErrorCode: completionBody.infrastructureErrorCode as string }
+            : {}),
+          compilationStatus: completionBody.compilationStatus as RecordRunnerExecutionResultInput["compilationStatus"],
+          verdict: completionBody.verdict as RecordRunnerExecutionResultInput["verdict"],
+          cleanupStatus: completionBody.cleanupStatus as RecordRunnerExecutionResultInput["cleanupStatus"],
+          testsTotal: completionBody.testsTotal as number,
+          testsPassed: completionBody.testsPassed as number,
+          elapsedMs: completionBody.elapsedMs as number,
+          ...(completionBody.peakMemoryBytes !== undefined
+            ? { peakMemoryBytes: completionBody.peakMemoryBytes as number }
+            : {}),
+          runnerVersion: completionBody.runnerVersion as string,
+          ...(completionBody.runtimeImageDigest !== undefined
+            ? { runtimeImageDigest: completionBody.runtimeImageDigest as string }
+            : {}),
+          resultSha256: completionBody.resultSha256 as string,
+          startedAt: completionBody.startedAt as string,
+          completedAt: completionBody.completedAt as string,
+        };
+        const recorded = await dependencies.runnerCompletionRepository.recordRunnerResult({
+          ...resultInput,
+          dispatchId: completionBody.dispatchId as string,
+          keyId: authenticatedRunner.keyId,
+        });
+        return jsonResponse({
+          data: {
+            completed: true,
+            replayed: recorded.replayed,
+            executionId: recorded.executionId,
+            attemptId: recorded.attemptId,
+            state: recorded.state,
+            resultSha256: recorded.resultSha256,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof RunnerCompletionUnauthorizedError) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner identity is no longer authorized.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof ExecutionEvidenceNotFoundError) {
+          return errorResponse("RUNNER_DISPATCH_NOT_FOUND",
+            "The dispatch does not match this completion result.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerCompletionNotAcceptedError) {
+          return errorResponse("RUNNER_ACCEPTANCE_REQUIRED",
+            "The dispatch must have a durable acceptance receipt before completion.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerCompletionNotStartedError) {
+          return errorResponse("RUNNER_START_REQUIRED",
+            "The dispatch must have a durable start receipt before completion.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof StaleExecutionLeaseError) {
+          return errorResponse("RUNNER_LEASE_STALE",
+            "The runner lease has expired or no longer belongs to this runner.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerCompletionConflictError ||
+            error instanceof ExecutionEvidenceConflictError) {
+          return errorResponse("RUNNER_COMPLETION_CONFLICT",
+            "A different terminal result already exists for this execution lease.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Runner result submission is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_completion_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The runner result could not be saved.", 500, true,
           requestId, origin, allowedOrigins);
       }
     }
