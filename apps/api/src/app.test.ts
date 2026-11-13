@@ -341,6 +341,81 @@ describe("M1 API control plane", () => {
     expect(listProblemAttemptHistory).not.toHaveBeenCalled();
   });
 
+  it("returns safe execution queue status only for the authenticated student", async () => {
+    const executionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+    const getExecutionQueueStatus = vi.fn(async (
+      _tenantId: string,
+      _actorUserId: string,
+      _executionId: string,
+    ) => ({
+      executionId,
+      attemptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      action: "RUN" as const,
+      executionState: "QUEUED",
+      dispatchState: "PENDING" as const,
+      submittedAt: "2026-11-13T01:00:00.000Z",
+      updatedAt: "2026-11-13T01:00:00.000Z",
+    }));
+    const listProblemAttemptHistory = vi.fn(async (
+      _tenantId: string, _actorUserId: string, _problemSlug: string, _limit?: number,
+    ) => []);
+    const listExecutionEvents = vi.fn(async (
+      _tenantId: string, _actorUserId: string, _executionId: string,
+    ) => []);
+    const { handler } = makeHarness({
+      evidenceRepository: {
+        listProblemAttemptHistory, listExecutionEvents, getExecutionQueueStatus,
+      },
+    });
+
+    const response = await handler(makeRequest(
+      `/api/v1/executions/${executionId}/status`,
+    ));
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toEqual({
+      data: {
+        executionId,
+        attemptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+        action: "RUN",
+        executionState: "QUEUED",
+        dispatchState: "PENDING",
+        submittedAt: "2026-11-13T01:00:00.000Z",
+        updatedAt: "2026-11-13T01:00:00.000Z",
+      },
+    });
+    expect(getExecutionQueueStatus).toHaveBeenCalledWith(
+      authenticated.principal.tenantId,
+      authenticated.principal.userId,
+      executionId,
+    );
+  });
+
+  it("does not reveal whether an execution belongs to another student", async () => {
+    const executionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+    const getExecutionQueueStatus = vi.fn(async () => null);
+    const listProblemAttemptHistory = vi.fn(async (
+      _tenantId: string, _actorUserId: string, _problemSlug: string, _limit?: number,
+    ) => []);
+    const listExecutionEvents = vi.fn(async (
+      _tenantId: string, _actorUserId: string, _executionId: string,
+    ) => []);
+    const { handler } = makeHarness({
+      evidenceRepository: {
+        listProblemAttemptHistory, listExecutionEvents, getExecutionQueueStatus,
+      },
+    });
+
+    const response = await handler(makeRequest(
+      `/api/v1/executions/${executionId}/status`,
+    ));
+
+    expect(response.status).toBe(404);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "EXECUTION_NOT_FOUND", retryable: false },
+    });
+  });
+
   it("returns timeline events scoped to the authenticated student", async () => {
     const executionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
     const listProblemAttemptHistory = vi.fn(async (
