@@ -157,7 +157,7 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
             "INNER JOIN runner_dispatch_outbox AS dispatch ON dispatch.execution_id = job.id",
             "INNER JOIN execution_attempts AS attempt ON attempt.id = job.attempt_id",
             "WHERE job.id = $1::uuid",
-          ].join("\\n"),
+          ].join("\n"),
           [first.created.executionId, runnerId],
         );
         throw new Error("RECOVERY_RECLAIM_DIAGNOSTICS " + JSON.stringify(diagnostics.rows[0]));
