@@ -28,6 +28,13 @@ import type {
   RecordRunnerHeartbeatInput,
   RecordedRunnerHeartbeat,
 } from "./db/runner-heartbeat-repository";
+import {
+  RunnerArtifactNotStartedError,
+} from "./db/runner-artifact-repository";
+import type {
+  FetchRunnerArtifactInput,
+  RunnerExecutionArtifact,
+} from "./db/runner-artifact-repository";
 import { canonicalRunnerRequestMessage } from "./security/runner-request-signature";
 import { RUNNER_AUTH_HEADERS } from "./services/runner-request-authenticator";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
@@ -104,6 +111,9 @@ interface HarnessOptions {
   runnerHeartbeatRepository?: {
     renew(input: RecordRunnerHeartbeatInput): Promise<RecordedRunnerHeartbeat>;
   };
+  runnerArtifactRepository?: {
+    fetch(input: FetchRunnerArtifactInput): Promise<RunnerExecutionArtifact>;
+  };
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -143,6 +153,9 @@ function makeHarness(options: HarnessOptions = {}) {
       : {}),
     ...(options.runnerHeartbeatRepository
       ? { runnerHeartbeatRepository: options.runnerHeartbeatRepository }
+      : {}),
+    ...(options.runnerArtifactRepository
+      ? { runnerArtifactRepository: options.runnerArtifactRepository }
       : {}),
     allowedOrigins: allowedOrigin,
   });
@@ -1262,6 +1275,158 @@ describe("authenticated runner heartbeat endpoint", () => {
         consumeNonce: vi.fn(async () => true),
       },
       runnerHeartbeatRepository: { renew },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_START_REQUIRED", retryable: false },
+    });
+  });
+});
+
+
+describe("authenticated runner private artifact endpoint", () => {
+  const runnerId = "40000000-0000-4000-8000-000000000001";
+  const artifactRequest = {
+    dispatchId: "50000000-0000-4000-8000-000000000001",
+    executionId: "60000000-0000-4000-8000-000000000001",
+    attemptId: "70000000-0000-4000-8000-000000000001",
+    leaseToken: "80000000-0000-4000-8000-000000000001",
+  };
+
+  function encodeBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).split("+").join("-").split("/").join("_").replace(/=+$/g, "");
+  }
+
+  async function signedArtifactRequest(bodyValue: Record<string, string>) {
+    const now = new Date();
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const nonce = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+    const bodyText = JSON.stringify(bodyValue);
+    const body = new TextEncoder().encode(bodyText);
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "Ed25519" }, true, ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const message = await canonicalRunnerRequestMessage({
+      keyId: "runner-artifact-key",
+      method: "POST",
+      path: "/internal/v1/runner/artifact",
+      timestamp,
+      nonce,
+      body,
+    });
+    const signature = new Uint8Array(await crypto.subtle.sign(
+      "Ed25519", keyPair.privateKey, new Uint8Array(message),
+    ));
+    return {
+      request: new Request("https://api.skyhigh.example/internal/v1/runner/artifact", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [RUNNER_AUTH_HEADERS.keyId]: "runner-artifact-key",
+          [RUNNER_AUTH_HEADERS.timestamp]: timestamp,
+          [RUNNER_AUTH_HEADERS.nonce]: nonce,
+          [RUNNER_AUTH_HEADERS.signature]: encodeBase64Url(signature),
+        },
+        body: bodyText,
+      }),
+      publicKey,
+    };
+  }
+
+  it("returns private source and the action-scoped test bundle only to an authenticated runner", async () => {
+    const signed = await signedArtifactRequest(artifactRequest);
+    const artifact: RunnerExecutionArtifact = {
+      executionId: artifactRequest.executionId,
+      attemptId: artifactRequest.attemptId,
+      problemVersionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      problemSlug: "two-sum",
+      problemTitle: "Two Sum",
+      action: "SUBMIT",
+      language: "java",
+      runtimeVersion: "25",
+      sourceArtifactId: "a2000000-0000-4000-8000-000000000001",
+      sourceSha256: "a".repeat(64),
+      sourceCode: "public class Main {}",
+      testBundleId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1-submit-1234567890abcdef",
+      testBundleSha256: "b".repeat(64),
+      testCases: [{
+        testCaseId: "a3000000-0000-4000-8000-000000000001",
+        sequence: 1,
+        visibility: "HIDDEN",
+        input: "4 9\n2 7 11 15",
+        expectedOutput: "0 1",
+      }],
+    };
+    const fetchArtifact = vi.fn(async (_input: FetchRunnerArtifactInput) => artifact);
+    const findActivePublicKey = vi.fn(async () => ({
+      keyId: "runner-artifact-key", runnerId, publicKey: signed.publicKey,
+    }));
+    const consumeNonce = vi.fn(async () => true);
+    const { handler, authenticator } = makeHarness({
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
+      runnerArtifactRepository: { fetch: fetchArtifact },
+    });
+
+    const response = await handler(signed.request);
+    const body = await readJson<{ data: RunnerExecutionArtifact }>(response);
+
+    expect(response.status).toBe(200);
+    expect(body.data).toEqual(artifact);
+    expect(fetchArtifact).toHaveBeenCalledWith({
+      ...artifactRequest,
+      runnerId,
+      keyId: "runner-artifact-key",
+    });
+    expect(consumeNonce).toHaveBeenCalledOnce();
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+  });
+
+  it("rejects extra fields before machine key lookup", async () => {
+    const findActivePublicKey = vi.fn(async () => null);
+    const fetchArtifact = vi.fn(async () => {
+      throw new Error("must_not_fetch");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey,
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerArtifactRepository: { fetch: fetchArtifact },
+    });
+
+    const response = await handler(makeRequest("/internal/v1/runner/artifact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...artifactRequest, sourceCode: "must not be requested" }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_RUNNER_ARTIFACT_REQUEST", retryable: false },
+    });
+    expect(findActivePublicKey).not.toHaveBeenCalled();
+    expect(fetchArtifact).not.toHaveBeenCalled();
+  });
+
+  it("requires a durable start receipt before artifact retrieval", async () => {
+    const signed = await signedArtifactRequest(artifactRequest);
+    const fetchArtifact = vi.fn(async () => {
+      throw new RunnerArtifactNotStartedError();
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-artifact-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerArtifactRepository: { fetch: fetchArtifact },
     });
 
     const response = await handler(signed.request);
