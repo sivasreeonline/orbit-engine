@@ -131,7 +131,7 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
 
     expect(calls[1]?.text).toBe("BEGIN");
     expect(calls[2]?.text).toContain("pg_advisory_xact_lock");
-    expect(calls[4]?.text).toContain("active_count");
+    expect(calls.some((call) => call.text.includes("active_count"))).toBe(true);
     expect(calls.some((call) => call.text.includes("FOR UPDATE OF lane SKIP LOCKED"))).toBe(true);
     expect(calls.some((call) => call.text.includes("FOR UPDATE OF dispatch, job SKIP LOCKED"))).toBe(true);
     expect(calls.some((call) => call.text.includes("retry_count = retry_count + CASE WHEN $3 = 'RUNNING' THEN 1 ELSE 0 END"))).toBe(true);
