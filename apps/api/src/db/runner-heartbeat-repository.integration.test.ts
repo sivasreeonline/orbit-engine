@@ -134,6 +134,16 @@ describe.skipIf(!databaseUrl)("runner heartbeat PostgreSQL integration", () => {
         "DELETE FROM runner_dispatch_lease_heartbeats WHERE heartbeat_id = $1::uuid",
         [input.heartbeatId],
       )).rejects.toMatchObject({ code: "55000" });
+
+      await setup.query(
+        "UPDATE runner_dispatch_outbox SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE id = $1::uuid",
+        [dispatch.id],
+      );
+      await setup.query(
+        "UPDATE execution_jobs SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE id = $1::uuid",
+        [created.executionId],
+      );
+      await expect(heartbeat.renew(input)).rejects.toBeInstanceOf(RunnerHeartbeatStaleLeaseError);
       expect(created.executionId).toBe(second.executionId);
     } finally {
       await setup.end();
