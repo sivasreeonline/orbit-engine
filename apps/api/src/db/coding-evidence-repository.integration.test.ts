@@ -211,7 +211,7 @@ describe.skipIf(!databaseUrl)("PostgresCodingEvidenceRepository PostgreSQL integ
       expect(persisted.rows[0]).toEqual({
         status: "ENDED",
         last_sequence: "8",
-        event_count: "8",
+        event_count: "7",
         snapshot_count: "2",
         source_byte_length: String(Buffer.byteLength("public class Main {}", "utf8")),
       });
@@ -229,7 +229,7 @@ describe.skipIf(!databaseUrl)("PostgresCodingEvidenceRepository PostgreSQL integ
       language: "python",
       noticeVersion: "notice-v1",
     });
-    const start = makeEvent(created.sessionId, 1, "SESSION_STARTED");
+    const start = makeEvent(created.sessionId, 1, "SESSION_STARTED", { language: "python" });
     await repository.appendBatch({ principal, sessionId: created.sessionId, events: [start] });
 
     const record = makeSnapshotRecord(created.sessionId, 2, "SESSION_START", "print('hello')");
