@@ -196,6 +196,20 @@ export class PostgresRunnerStartRepository {
               existing.key_id !== input.keyId) {
             throw new RunnerStartConflictError();
           }
+
+          const replayNow = Date.now();
+          const dispatchExpiry = timestampMs(lease.dispatch_expires_at);
+          const jobExpiry = timestampMs(lease.job_expires_at);
+          if (lease.delivery_state !== "PENDING" ||
+              lease.dispatch_owner !== input.runnerId ||
+              lease.dispatch_token !== input.leaseToken ||
+              lease.job_state !== "RUNNING" ||
+              lease.job_owner !== input.runnerId ||
+              lease.job_token !== input.leaseToken ||
+              !Number.isFinite(dispatchExpiry) || dispatchExpiry <= replayNow ||
+              !Number.isFinite(jobExpiry) || jobExpiry <= replayNow) {
+            throw new RunnerStartStaleLeaseError();
+          }
           await client.query("COMMIT");
           return {
             dispatchId: input.dispatchId,

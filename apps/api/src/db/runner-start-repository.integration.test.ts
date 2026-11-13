@@ -133,6 +133,16 @@ describe.skipIf(!databaseUrl)("runner start receipt PostgreSQL integration", () 
         "UPDATE execution_evidence_events SET phase_status = 'FAILED' WHERE event_id = $1::uuid",
         [first.eventId],
       )).rejects.toMatchObject({ code: "55000" });
+
+      await setup.query(
+        "UPDATE runner_dispatch_outbox SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE id = $1::uuid",
+        [dispatch.id],
+      );
+      await setup.query(
+        "UPDATE execution_jobs SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE id = $1::uuid",
+        [created.executionId],
+      );
+      await expect(start.start(input)).rejects.toBeInstanceOf(RunnerStartStaleLeaseError);
     } finally {
       await setup.end();
     }
