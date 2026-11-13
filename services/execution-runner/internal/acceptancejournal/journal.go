@@ -79,6 +79,15 @@ func Open(path string) (*Journal, error) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, fmt.Errorf("create acceptance journal directory: %w", err)
 	}
+	absoluteDirectory, err := filepath.Abs(directory)
+	if err != nil {
+		return nil, fmt.Errorf("resolve acceptance journal directory: %w", err)
+	}
+	directory, err = filepath.EvalSymlinks(absoluteDirectory)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalize acceptance journal directory: %w", err)
+	}
+	path = filepath.Join(directory, filepath.Base(path))
 	if err := syncDirectory(directory); err != nil {
 		return nil, fmt.Errorf("sync acceptance journal directory: %w", err)
 	}
