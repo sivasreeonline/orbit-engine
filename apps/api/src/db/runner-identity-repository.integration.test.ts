@@ -39,6 +39,12 @@ describe.skipIf(!databaseUrl)("runner identity repository PostgreSQL integration
         [keyId],
       );
       await expect(repository.findActivePublicKey(keyId, new Date())).resolves.toBeNull();
+      await expect(repository.consumeNonce(
+        keyId,
+        nonce,
+        new Date(),
+        new Date(Date.now() + 5 * 60 * 1000),
+      )).resolves.toBe(false);
     } finally {
       await client.query("DELETE FROM runner_machine_keys WHERE runner_id = $1", [runnerId]).catch(() => undefined);
       await client.query("DELETE FROM runner_machines WHERE id = $1", [runnerId]).catch(() => undefined);
