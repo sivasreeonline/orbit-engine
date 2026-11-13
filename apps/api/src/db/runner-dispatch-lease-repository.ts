@@ -276,7 +276,7 @@ export class PostgresRunnerDispatchLeaseRepository {
           ")",
           "SELECT claimed.* FROM claimed",
           "CROSS JOIN (SELECT count(*) FROM served) AS scheduler_cursor_write",
-        ].join("\\n"),
+        ].join("\n"),
         [requestedSlots, maxActiveLeases, leaseSeconds, runnerId],
       );
       return result.rows.map((row) => ({
