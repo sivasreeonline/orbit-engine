@@ -303,7 +303,7 @@ func dockerCreateArguments(request SandboxRequest) ([]string, error) {
 		"--network=none",
 		"--ipc=none",
 		"--read-only",
-		"--tmpfs", "/workspace:rw,nosuid,nodev,noexec,size=" + tmpfsSize + ",uid=65532,gid=65532,mode=0700",
+		"--tmpfs", "/workspace:rw,noexec,nosuid,nodev,size=" + tmpfsSize + ",uid=65532,gid=65532,mode=0700",
 		"--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=" + tmpfsSize,
 		"--memory=" + memoryValue,
 		"--memory-swap=" + memoryValue,
