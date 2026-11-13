@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerclient"
@@ -32,6 +33,10 @@ type dispatchArtifactResolver struct {
 	artifact runnerclient.ExecutionArtifact
 }
 
+type sandboxPreflight interface {
+	Preflight(context.Context, RuntimeConfiguration) error
+}
+
 func NewSandboxArtifactExecutor(
 	sandbox Sandbox,
 	config SandboxArtifactExecutorConfig,
@@ -46,6 +51,17 @@ func NewSandboxArtifactExecutor(
 	// resolving any artifacts or creating a sandbox during construction.
 	if _, err := NewSandboxExecutor(emptyArtifactResolver{}, sandbox, config.Runtime); err != nil {
 		return nil, err
+	}
+	if config.Enabled {
+		preflight, ok := sandbox.(sandboxPreflight)
+		if !ok {
+			return nil, errors.New("enabled sandbox must provide a runtime preflight")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := preflight.Preflight(ctx, config.Runtime); err != nil {
+			return nil, fmt.Errorf("sandbox runtime preflight failed: %w", err)
+		}
 	}
 	return &SandboxArtifactExecutor{
 		sandbox: sandbox,
