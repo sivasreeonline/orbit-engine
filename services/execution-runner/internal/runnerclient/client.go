@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -365,7 +366,7 @@ func (c *Client) postSignedJSON(ctx context.Context, path string, body []byte, o
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		var apiError errorResponse
-		_ = decodeStrict(responseBody, &apiError)
+		_ = json.Unmarshal(responseBody, &apiError)
 		return &RemoteError{StatusCode: response.StatusCode, Code: apiError.Error.Code}
 	}
 	if err := decodeStrict(responseBody, output); err != nil {
@@ -407,8 +408,9 @@ func (c *Client) newUUID() (string, error) {
 	}
 	value[6] = (value[6] & 0x0f) | 0x40
 	value[8] = (value[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		value[0:4], value[4:6], value[6:8], value[8:10], value[10:16]), nil
+	encoded := hex.EncodeToString(value)
+	return encoded[0:8] + "-" + encoded[8:12] + "-" +
+		encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32], nil
 }
 
 func (c *Client) randomBytes(size int) ([]byte, error) {
