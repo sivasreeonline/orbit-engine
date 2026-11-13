@@ -134,7 +134,7 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
         retryCount: 1,
         resultSha256: null,
       });
-      expect(firstRecovery[0]!.availableAt).not.toBeNull();
+      expect(firstRecovery!.availableAt).not.toBeNull();
 
       await makeAvailableNow(setup, first.dispatch.id, first.created.executionId);
       const secondClaim = await dispatches.claimFairBatchForRunner(runnerId, 1, 2, 120);
@@ -183,7 +183,7 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
         action: "FAILED_INFRASTRUCTURE",
         retryCount: 2,
       });
-      expect(terminalRecovery[0]!.resultSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(terminalRecovery!.resultSha256).toMatch(/^[0-9a-f]{64}$/);
 
       const persisted = await setup.query<{
         job_state: string;
