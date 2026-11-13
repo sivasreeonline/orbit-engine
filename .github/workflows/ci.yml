@@ -286,6 +286,11 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0008_runner_dispatch_acceptance_receipts.sql
 
+      - name: Verify runner acceptance receipts and append-only evidence against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-acceptance-repository.integration.test.ts
+
       - name: Worker deployment dry run
         run: npx wrangler deploy --dry-run
 
