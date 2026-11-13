@@ -113,7 +113,14 @@ export class PostgresRunnerDispatchLeaseRepository {
     }
 
     return this.withClient(async (client) => {
-      const result = await client.query<ClaimedRow>(
+      await client.query("BEGIN");
+      try {
+        // Serialize the short scheduler transaction so competing pollers see
+        // the latest committed lane cursor before choosing the next student.
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('sky-high-runner-fair-scheduler', 0))",
+        );
+        const result = await client.query<ClaimedRow>(
         [
           "WITH candidate_lanes AS MATERIALIZED (",
           "  SELECT lane.tenant_id, lane.actor_user_id",
@@ -172,7 +179,8 @@ export class PostgresRunnerDispatchLeaseRepository {
         [batchSize, workerId, leaseSeconds],
       );
 
-      return result.rows.map((row) => ({
+        await client.query("COMMIT");
+        return result.rows.map((row) => ({
         id: row.id,
         executionId: row.execution_id,
         attemptId: row.attempt_id,
@@ -183,7 +191,11 @@ export class PostgresRunnerDispatchLeaseRepository {
         leaseExpiresAt: row.lease_expires_at instanceof Date
           ? row.lease_expires_at.toISOString()
           : new Date(row.lease_expires_at).toISOString(),
-      }));
+        }));
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      }
     });
   }
 
@@ -219,6 +231,11 @@ export class PostgresRunnerDispatchLeaseRepository {
     return this.withClient(async (client) => {
       await client.query("BEGIN");
       try {
+        // The global scheduler lock protects cross-runner lane ordering;
+        // the per-runner lock additionally protects this runner's capacity.
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('sky-high-runner-fair-scheduler', 0))",
+        );
         await client.query(
           "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
           [runnerId],
