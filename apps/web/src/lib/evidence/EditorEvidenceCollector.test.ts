@@ -64,9 +64,11 @@ describe("EditorEvidenceCollector", () => {
     expect(collector.getRecords().filter((record) => record.snapshot).length).toBe(1);
 
     await vi.advanceTimersByTimeAsync(119_999);
+    await collector.awaitScheduledWork();
     expect(collector.getRecords().filter((record) => record.snapshot).length).toBe(1);
 
     await vi.advanceTimersByTimeAsync(1);
+    await collector.awaitScheduledWork();
     const snapshots = collector.getRecords().filter((record) => record.snapshot);
     expect(snapshots).toHaveLength(2);
     expect(snapshots[1]?.snapshot?.kind).toBe("PERIODIC");
@@ -81,6 +83,7 @@ describe("EditorEvidenceCollector", () => {
     const collector = await startCollector();
 
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await collector.awaitScheduledWork();
     const snapshots = collector.getRecords().filter((record) => record.snapshot);
     const checkpoints = collector.getRecords().filter(
       (record) => record.event.eventType === "CHECKPOINT_RECORDED",
@@ -99,12 +102,14 @@ describe("EditorEvidenceCollector", () => {
 
     collector.noteEditorChange("class Main { int n = 1; }");
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    await collector.awaitScheduledWork();
     const periodic = collector.getRecords().find(
       (record) => record.snapshot?.kind === "PERIODIC",
     );
     expect(periodic?.snapshot).toBeDefined();
 
     await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+    await collector.awaitScheduledWork();
     const checkpoint = collector.getRecords().find(
       (record) => record.event.eventType === "CHECKPOINT_RECORDED",
     );
@@ -157,6 +162,7 @@ describe("EditorEvidenceCollector", () => {
     collector.noteEditorChange("class Main { int value = 1; }");
     collector.noteEditorChange(problem.initialSource);
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await collector.awaitScheduledWork();
 
     expect(collector.getRecords().filter((record) => record.snapshot)).toHaveLength(1);
     expect(collector.getSummary().pendingChangeCount).toBe(2);
@@ -186,8 +192,10 @@ describe("EditorEvidenceCollector", () => {
 
     collector.noteEditorChange("class Main { int x = 2; }");
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    await collector.awaitScheduledWork();
     await collector.captureAttempt("RUN", "class Main { int x = 2; }", "java");
     await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+    await collector.awaitScheduledWork();
     const sequences = collector.getRecords().map((record) => record.event.sequence);
     expect(sequences).toEqual(sequences.map((_, index) => index + 1));
     await collector.close();
