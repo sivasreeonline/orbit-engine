@@ -7,7 +7,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 ## Current capabilities
 - Loopback-only HTTP health endpoint: `GET /healthz`.
 - Local append-only acceptance journal with fsync-before-send semantics, restart recovery and pending-receipt replay support.
-- Outbound Ed25519-signed claim/accept/start/heartbeat/artifact HTTP client with strict bounded response validation.
+- Outbound Ed25519-signed claim/accept/start/heartbeat/artifact/completion HTTP client with strict bounded response validation.
 - Artifact responses are independently checked for source SHA-256, cross-language test-bundle digest, action scope, fixture visibility, ordering and size limits.
 - Readiness endpoint returns HTTP 503 until a sandbox executor is configured.
 - Versioned internal execution request types and strict structural validation.
@@ -65,14 +65,15 @@ The Go client exposes separate methods for:
 3. Request the lease-fenced `CLAIMED -> RUNNING` transition.
 4. Renew a started lease with a stable heartbeat ID (reuse the same ID after a lost acknowledgement).
 5. Fetch source and the action-scoped test bundle using the exact live dispatch lease.
+6. Submit an allowlisted aggregate terminal result against the same dispatch and lease.
 
-The client verifies the returned source hash and canonical test-bundle hash. It rejects hidden tests in a `RUN` artifact and permits hidden fixtures only for the trusted runner's `SUBMIT` artifact. The methods are individually testable and are not yet wired into a continuously polling process.
+The client verifies the returned source hash and canonical test-bundle hash. Completion retries preserve the result body and use a fresh signed nonce; the control plane returns the existing completion receipt when the result is identical. It rejects hidden tests in a `RUN` artifact and permits hidden fixtures only for the trusted runner's `SUBMIT` artifact. The methods are individually testable and are not yet wired into a continuously polling process.
 
 ## M0 next gates
 1. Add reviewed machine key loading/permissions and a single-process journal owner.
-2. Integrate claim → accept → start → heartbeat → artifact retrieval in a bounded runner lifecycle with backoff, cancellation and graceful shutdown.
+2. Integrate claim → accept → start → heartbeat → artifact retrieval → execute → complete in a bounded runner lifecycle with backoff, cancellation and graceful shutdown.
 3. Select a supported Linux host and architecture.
 4. Select OCI engine and validate gVisor compatibility.
-5. Implement ephemeral sandbox lifecycle behind the Executor interface.
+5. Implement and qualify the ephemeral sandbox lifecycle behind the Executor interface.
 6. Enforce network denial, non-root identity, CPU, memory, PID, wall-clock, filesystem and output limits.
-7. Add expired-RUNNING recovery, completion/result submission, cleanup attestation, adversarial tests and security review before enabling execution.
+7. Add cleanup attestation and adversarial tests; keep execution disabled until the full sandbox/security review passes.
