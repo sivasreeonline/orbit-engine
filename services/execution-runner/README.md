@@ -72,6 +72,19 @@ The `runnerauth.LoadPrivateKeyFile` helper provides the strict Linux file-loadin
 
 Provision the file through a trusted local secret-management process. Never commit it, print it, include it in diagnostics or pass the key contents through command-line arguments. Non-Linux builds deliberately return `ErrPrivateKeyFileUnsupported`; they do not weaken the production file checks. This helper is not yet wired into `cmd/runner`, which remains health-only.
 
+## Typed runner identity configuration
+
+The `internal/runnerconfig` package validates the environment contract for a future foreground runner mode:
+
+- `RUNNER_CONTROL_PLANE_URL`: an HTTPS origin; HTTP is accepted only for a loopback development endpoint.
+- `RUNNER_KEY_ID`: a bounded key identifier matching the signed-request protocol.
+- `RUNNER_PRIVATE_KEY_FILE`: an absolute path to a private key file accepted by the strict Linux `runnerauth.LoadPrivateKeyFile` loader.
+- `RUNNER_JOURNAL_PATH`: an absolute, non-root path for the append-only acceptance journal.
+
+All four settings are mandatory. The loader rejects credentialed URLs, URL paths, query strings, fragments, invalid key IDs and relative file paths. It never returns key contents in errors. Call `Config.Destroy()` when the configuration is no longer needed; it overwrites the in-memory private-key bytes and clears the reference.
+
+This package is a validated configuration boundary only. It does not start the worker, open the journal, contact the control plane or enable the sandbox. The `cmd/runner` process remains health-only until a separately reviewed foreground worker mode is implemented.
+
 ## Current runner control-plane client
 
 The Go client exposes separate methods for:
