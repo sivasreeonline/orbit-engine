@@ -11,6 +11,33 @@ import { PostgresRunnerRecoveryRepository } from "./runner-recovery-repository";
 const databaseUrl = process.env.DATABASE_URL;
 const tenantId = "30000000-0000-4000-8000-000000000001";
 
+async function claimSpecificExecution(
+  dispatches: PostgresRunnerDispatchLeaseRepository,
+  runnerId: string,
+  executionId: string,
+) {
+  // Fair scheduling may serve older lanes first. Release unrelated test
+  // leases immediately, advancing their lane cursors until the target lane
+  // is served; never assume the target wins the first fair poll.
+  for (let poll = 0; poll < 200; poll += 1) {
+    const claimed = await dispatches.claimFairBatchForRunner(runnerId, 1, 2, 120);
+    const target = claimed.find((item) => item.executionId === executionId);
+    for (const lease of claimed) {
+      if (lease.executionId === executionId) continue;
+      const released = await dispatches.releaseForRetry(
+        lease.id,
+        runnerId,
+        lease.leaseToken,
+        new Date(Date.now() - 1_000),
+      );
+      if (!released) throw new Error("RECOVERY_TEST_UNRELATED_LEASE_RELEASE_FAILED");
+    }
+    if (target) return target;
+    if (claimed.length === 0) break;
+  }
+  throw new Error("RECOVERY_TEST_TARGET_DISPATCH_NOT_CLAIMED");
+}
+
 async function createStartedDispatch(runnerId: string, actorId: string, keyId: string) {
   const intake = new PostgresExecutionIntakeRepository(databaseUrl);
   const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
@@ -30,9 +57,7 @@ async function createStartedDispatch(runnerId: string, actorId: string, keyId: s
     protocolVersion: "v1",
   });
 
-  const claimed = await dispatches.claimFairBatchForRunner(runnerId, 1, 2, 120);
-  const dispatch = claimed.find((item) => item.executionId === created.executionId);
-  if (!dispatch) throw new Error("RUNNER_RECOVERY_DISPATCH_NOT_CLAIMED");
+  const dispatch = await claimSpecificExecution(dispatches, runnerId, created.executionId);
   await acceptAndStart(runnerId, keyId, created.executionId, created.attemptId, dispatch);
   return { created, dispatch, dispatches };
 }
@@ -137,31 +162,9 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
       expect(firstRecovery!.availableAt).not.toBeNull();
 
       await makeAvailableNow(setup, first.dispatch.id, first.created.executionId);
-      const secondClaim = await dispatches.claimFairBatchForRunner(runnerId, 1, 2, 120);
-      const secondDispatch = secondClaim.find((item) => item.executionId === first.created.executionId);
-      if (!secondDispatch) {
-        const diagnostics = await setup.query(
-          [
-            "SELECT job.state AS job_state, job.available_at::text AS job_available_at,",
-            "  job.lease_owner AS job_owner, job.lease_token::text AS job_token,",
-            "  dispatch.delivery_state, dispatch.available_at::text AS dispatch_available_at,",
-            "  dispatch.lease_owner AS dispatch_owner, dispatch.lease_token::text AS dispatch_token,",
-            "  (SELECT count(*) FROM runner_dispatch_scheduler_lanes AS lane",
-            "   WHERE lane.tenant_id = attempt.tenant_id AND lane.actor_user_id = attempt.actor_user_id) AS lane_count,",
-            "  (SELECT count(*) FROM runner_dispatch_outbox AS active",
-            "   WHERE active.lease_owner = $2 AND active.delivery_state = 'PENDING'",
-            "     AND active.lease_expires_at > clock_timestamp()) AS runner_active_count,",
-            "  job.available_at <= clock_timestamp() AS job_available,",
-            "  dispatch.available_at <= clock_timestamp() AS dispatch_available",
-            "FROM execution_jobs AS job",
-            "INNER JOIN runner_dispatch_outbox AS dispatch ON dispatch.execution_id = job.id",
-            "INNER JOIN execution_attempts AS attempt ON attempt.id = job.attempt_id",
-            "WHERE job.id = $1::uuid",
-          ].join("\n"),
-          [first.created.executionId, runnerId],
-        );
-        throw new Error("RECOVERY_RECLAIM_DIAGNOSTICS " + JSON.stringify(diagnostics.rows[0]));
-      }
+      const secondDispatch = await claimSpecificExecution(
+        dispatches, runnerId, first.created.executionId,
+      );
       expect(secondDispatch!.leaseToken).not.toBe(first.dispatch.leaseToken);
       await acceptAndStart(
         runnerId, keyId, first.created.executionId, first.created.attemptId, secondDispatch!,
@@ -183,9 +186,9 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
       });
 
       await makeAvailableNow(setup, first.dispatch.id, first.created.executionId);
-      const thirdClaim = await dispatches.claimFairBatchForRunner(runnerId, 1, 2, 120);
-      const thirdDispatch = thirdClaim.find((item) => item.executionId === first.created.executionId);
-      expect(thirdDispatch).toBeDefined();
+      const thirdDispatch = await claimSpecificExecution(
+        dispatches, runnerId, first.created.executionId,
+      );
       expect(thirdDispatch!.leaseToken).not.toBe(secondDispatch!.leaseToken);
       await acceptAndStart(
         runnerId, keyId, first.created.executionId, first.created.attemptId, thirdDispatch!,
