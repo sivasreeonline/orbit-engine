@@ -37,7 +37,14 @@ import type {
 } from "./db/runner-artifact-repository";
 import { canonicalRunnerRequestMessage } from "./security/runner-request-signature";
 import { RUNNER_AUTH_HEADERS } from "./services/runner-request-authenticator";
-import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+import {
+  RunnerCompletionNotStartedError,
+} from "./db/execution-evidence-repository";
+import type {
+  PostgresExecutionEvidenceRepository,
+  RecordRunnerExecutionResultInput,
+  RecordedExecutionResult,
+} from "./db/execution-evidence-repository";
 import type { CreateExecutionInput } from "./db/execution-intake-repository";
 
 type ExecutionEvidenceReadRepository = Pick<
@@ -114,6 +121,9 @@ interface HarnessOptions {
   runnerArtifactRepository?: {
     fetch(input: FetchRunnerArtifactInput): Promise<RunnerExecutionArtifact>;
   };
+  runnerCompletionRepository?: {
+    recordRunnerResult(input: RecordRunnerExecutionResultInput): Promise<RecordedExecutionResult>;
+  };
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -156,6 +166,9 @@ function makeHarness(options: HarnessOptions = {}) {
       : {}),
     ...(options.runnerArtifactRepository
       ? { runnerArtifactRepository: options.runnerArtifactRepository }
+      : {}),
+    ...(options.runnerCompletionRepository
+      ? { runnerCompletionRepository: options.runnerCompletionRepository }
       : {}),
     allowedOrigins: allowedOrigin,
   });
@@ -1427,6 +1440,163 @@ describe("authenticated runner private artifact endpoint", () => {
         consumeNonce: vi.fn(async () => true),
       },
       runnerArtifactRepository: { fetch: fetchArtifact },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_START_REQUIRED", retryable: false },
+    });
+  });
+});
+
+
+describe("authenticated runner completion endpoint", () => {
+  const runnerId = "40000000-0000-4000-8000-000000000001";
+  const completionBody = {
+    dispatchId: "50000000-0000-4000-8000-000000000001",
+    executionId: "60000000-0000-4000-8000-000000000001",
+    attemptId: "70000000-0000-4000-8000-000000000001",
+    leaseToken: "80000000-0000-4000-8000-000000000001",
+    infrastructureStatus: "SUCCEEDED",
+    compilationStatus: "SUCCEEDED",
+    verdict: "ACCEPTED",
+    cleanupStatus: "SUCCEEDED",
+    testsTotal: 4,
+    testsPassed: 4,
+    elapsedMs: 125,
+    peakMemoryBytes: 4096,
+    runnerVersion: "go-runner-test",
+    runtimeImageDigest: "a".repeat(64),
+    resultSha256: "b".repeat(64),
+    startedAt: "2026-11-13T08:00:00.000Z",
+    completedAt: "2026-11-13T08:00:00.125Z",
+  };
+
+  function encodeBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).split("+").join("-").split("/").join("_").replace(/=+$/g, "");
+  }
+
+  async function signedCompletionRequest(bodyValue: Record<string, unknown>) {
+    const now = new Date();
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const nonce = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+    const bodyText = JSON.stringify(bodyValue);
+    const body = new TextEncoder().encode(bodyText);
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "Ed25519" }, true, ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const message = await canonicalRunnerRequestMessage({
+      keyId: "runner-complete-key",
+      method: "POST",
+      path: "/internal/v1/runner/complete",
+      timestamp,
+      nonce,
+      body,
+    });
+    const signature = new Uint8Array(await crypto.subtle.sign(
+      "Ed25519", keyPair.privateKey, new Uint8Array(message),
+    ));
+    return {
+      request: new Request("https://api.skyhigh.example/internal/v1/runner/complete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [RUNNER_AUTH_HEADERS.keyId]: "runner-complete-key",
+          [RUNNER_AUTH_HEADERS.timestamp]: timestamp,
+          [RUNNER_AUTH_HEADERS.nonce]: nonce,
+          [RUNNER_AUTH_HEADERS.signature]: encodeBase64Url(signature),
+        },
+        body: bodyText,
+      }),
+      publicKey,
+    };
+  }
+
+  it("authenticates the runner and stores a lease-bound terminal result", async () => {
+    const signed = await signedCompletionRequest(completionBody);
+    const recordRunnerResult = vi.fn(async (input: RecordRunnerExecutionResultInput) => ({
+      executionId: input.executionId,
+      attemptId: input.attemptId,
+      state: "COMPLETED" as const,
+      resultSha256: input.resultSha256,
+      replayed: false,
+    }));
+    const findActivePublicKey = vi.fn(async () => ({
+      keyId: "runner-complete-key", runnerId, publicKey: signed.publicKey,
+    }));
+    const consumeNonce = vi.fn(async () => true);
+    const { handler, authenticator } = makeHarness({
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
+      runnerCompletionRepository: { recordRunnerResult },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      data: {
+        completed: true,
+        replayed: false,
+        executionId: completionBody.executionId,
+        attemptId: completionBody.attemptId,
+        state: "COMPLETED",
+        resultSha256: completionBody.resultSha256,
+      },
+    });
+    expect(recordRunnerResult).toHaveBeenCalledWith({
+      ...completionBody,
+      leaseOwner: runnerId,
+      keyId: "runner-complete-key",
+    });
+    expect(consumeNonce).toHaveBeenCalledOnce();
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+  });
+
+  it("rejects extra terminal-result fields before machine-key lookup", async () => {
+    const findActivePublicKey = vi.fn(async () => null);
+    const recordRunnerResult = vi.fn(async () => {
+      throw new Error("must_not_record");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey,
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerCompletionRepository: { recordRunnerResult },
+    });
+
+    const response = await handler(makeRequest("/internal/v1/runner/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...completionBody, stdout: "must not be accepted" }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_RUNNER_COMPLETION", retryable: false },
+    });
+    expect(findActivePublicKey).not.toHaveBeenCalled();
+    expect(recordRunnerResult).not.toHaveBeenCalled();
+  });
+
+  it("does not complete a dispatch that has not reached RUNNER_STARTED", async () => {
+    const signed = await signedCompletionRequest(completionBody);
+    const recordRunnerResult = vi.fn(async () => {
+      throw new RunnerCompletionNotStartedError();
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-complete-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerCompletionRepository: { recordRunnerResult },
     });
 
     const response = await handler(signed.request);
