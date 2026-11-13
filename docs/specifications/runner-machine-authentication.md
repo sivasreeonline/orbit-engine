@@ -29,7 +29,7 @@ The signature covers the canonical request format defined in `runner-ed25519-req
 5. Atomically consume the nonce under the key ID.
 6. Return the authenticated runner ID and key ID to the protected handler.
 
-Nonce consumption occurs only after signature verification. Concurrent duplicate requests race on a database primary key; exactly one can consume the same nonce.
+Nonce consumption occurs only after signature verification. The nonce transaction locks and rechecks the machine/key active state, so a concurrent revocation cannot race between public-key lookup and nonce commit. Concurrent duplicate requests race on a database primary key; exactly one can consume the same nonce.
 
 ## Nonce retention
 
