@@ -83,13 +83,19 @@ async function acceptAndStart(runner: TestRunner, dispatch: {
 }
 
 async function expireLease(setup: Client, dispatchId: string, executionId: string) {
+  const expiry = await setup.query<{ expired_at: Date }>(
+    "SELECT clock_timestamp() - interval '5 seconds' AS expired_at",
+  );
+  const expiredAt = expiry.rows[0]?.expired_at;
+  if (!expiredAt) throw new Error("RECOVERY_TEST_EXPIRY_NOT_CREATED");
+
   await setup.query(
-    "UPDATE runner_dispatch_outbox SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE id = $1::uuid",
-    [dispatchId],
+    "UPDATE runner_dispatch_outbox SET lease_expires_at = $2::timestamptz WHERE id = $1::uuid",
+    [dispatchId, expiredAt],
   );
   await setup.query(
-    "UPDATE execution_jobs SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE id = $1::uuid",
-    [executionId],
+    "UPDATE execution_jobs SET lease_expires_at = $2::timestamptz WHERE id = $1::uuid",
+    [executionId, expiredAt],
   );
 }
 
