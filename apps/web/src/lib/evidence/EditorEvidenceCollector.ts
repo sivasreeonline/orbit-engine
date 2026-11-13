@@ -108,6 +108,7 @@ export class EditorEvidenceCollector {
   private lastCheckpointAt: number;
   private pendingChangeCount = 0;
   private totalChangeNotifications = 0;
+  private dirty = false;
   private disposed = false;
 
   private constructor(options: EditorEvidenceCollectorOptions) {
@@ -141,15 +142,18 @@ export class EditorEvidenceCollector {
     this.sourceCode = sourceCode;
     this.pendingChangeCount += 1;
     this.totalChangeNotifications += 1;
+    this.dirty = this.sourceCode !== this.latestSnapshot?.sourceCode;
     this.scheduleNext();
   }
 
   async changeContext(language: EvidenceLanguage, sourceCode: string): Promise<void> {
     if (!this.active || this.disposed) return;
     if (language === this.language && sourceCode === this.sourceCode) return;
+    if (this.dirty) {
+      await this.captureSnapshot("PERIODIC");
+    }
     this.language = language;
     this.sourceCode = sourceCode;
-    this.pendingChangeCount = 0;
     await this.captureSnapshot("CONTEXT_CHANGE");
     this.emit({
       eventType: "EDITOR_CONTEXT_CHANGED",
@@ -164,7 +168,7 @@ export class EditorEvidenceCollector {
     if (!this.active || this.disposed) {
       throw new Error("evidence_session_not_active");
     }
-    this.sourceCode = sourceCode;
+    this.noteEditorChange(sourceCode);
     this.language = language;
     const snapshot = await this.captureSnapshot(action);
     this.emit({
@@ -201,7 +205,7 @@ export class EditorEvidenceCollector {
       this.cancelTimer(this.timer);
       this.timer = null;
     }
-    if (this.latestSnapshot === null || this.sourceCode !== this.latestSnapshot.sourceCode) {
+    if (this.latestSnapshot === null || this.dirty) {
       await this.captureSnapshot("SESSION_END", true);
     }
     this.emit({
@@ -223,6 +227,7 @@ export class EditorEvidenceCollector {
       throw new Error("evidence_session_not_active");
     }
     const source = this.sourceCode;
+    const changesSincePreviousSnapshot = this.pendingChangeCount;
     const capturedAtMs = this.now();
     const sourceBytes = new TextEncoder().encode(source);
     const snapshotId = this.createId();
@@ -244,6 +249,7 @@ export class EditorEvidenceCollector {
     this.latestSnapshot = snapshot;
     this.lastSnapshotAt = capturedAtMs;
     this.pendingChangeCount = 0;
+    this.dirty = false;
     this.emit({
       eventType: "CODE_SNAPSHOT_CREATED",
       snapshotId,
@@ -251,7 +257,7 @@ export class EditorEvidenceCollector {
       metadata: {
         kind,
         sourceByteLength: sourceBytes.byteLength,
-        changeNotificationsSincePreviousSnapshot: this.pendingChangeCount,
+        changeNotificationsSincePreviousSnapshot: changesSincePreviousSnapshot,
       },
     }, snapshot);
     return snapshot;
@@ -296,7 +302,7 @@ export class EditorEvidenceCollector {
       this.timer = null;
     }
     const now = this.now();
-    const changeDue = this.pendingChangeCount > 0
+    const changeDue = this.dirty
       ? this.lastSnapshotAt + CHANGE_CAPTURE_INTERVAL_MS
       : Number.POSITIVE_INFINITY;
     const checkpointDue = this.lastCheckpointAt + CHECKPOINT_INTERVAL_MS;
@@ -312,7 +318,7 @@ export class EditorEvidenceCollector {
     this.processing = true;
     try {
       const now = this.now();
-      if (this.pendingChangeCount > 0 && now >= this.lastSnapshotAt + CHANGE_CAPTURE_INTERVAL_MS) {
+      if (this.dirty && now >= this.lastSnapshotAt + CHANGE_CAPTURE_INTERVAL_MS) {
         await this.captureSnapshot("PERIODIC");
       }
       if (this.active && now >= this.lastCheckpointAt + CHECKPOINT_INTERVAL_MS) {
