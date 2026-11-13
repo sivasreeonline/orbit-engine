@@ -40,11 +40,23 @@ DECLARE
   event_type varchar(32);
   event_actor_kind varchar(16);
   event_phase_status varchar(16);
+  dispatch_owner varchar(128);
+  dispatch_token uuid;
+  dispatch_expires_at timestamptz;
+  job_state varchar(16);
+  job_owner varchar(128);
+  job_token uuid;
+  job_expires_at timestamptz;
 BEGIN
-  SELECT execution_id, attempt_id
-  INTO expected_execution_id, expected_attempt_id
+  SELECT execution_id, attempt_id, lease_owner, lease_token, lease_expires_at
+  INTO expected_execution_id, expected_attempt_id, dispatch_owner, dispatch_token, dispatch_expires_at
   FROM runner_dispatch_outbox
   WHERE id = NEW.dispatch_id;
+
+  SELECT state, lease_owner, lease_token, lease_expires_at
+  INTO job_state, job_owner, job_token, job_expires_at
+  FROM execution_jobs
+  WHERE id = NEW.execution_id;
 
   SELECT runner_id, key_id
   INTO accepted_runner_id, accepted_key_id
@@ -62,6 +74,13 @@ BEGIN
     OR expected_attempt_id IS DISTINCT FROM NEW.attempt_id
     OR accepted_runner_id IS DISTINCT FROM NEW.runner_id
     OR accepted_key_id IS DISTINCT FROM NEW.key_id
+    OR dispatch_owner IS DISTINCT FROM NEW.runner_id::text
+    OR dispatch_token IS DISTINCT FROM NEW.lease_token
+    OR dispatch_expires_at IS NULL OR dispatch_expires_at <= now()
+    OR job_state IS DISTINCT FROM 'RUNNING'
+    OR job_owner IS DISTINCT FROM NEW.runner_id::text
+    OR job_token IS DISTINCT FROM NEW.lease_token
+    OR job_expires_at IS NULL OR job_expires_at <= now()
     OR event_execution_id IS DISTINCT FROM NEW.execution_id
     OR event_attempt_id IS DISTINCT FROM NEW.attempt_id
     OR event_type IS DISTINCT FROM 'RUNNER_STARTED'
