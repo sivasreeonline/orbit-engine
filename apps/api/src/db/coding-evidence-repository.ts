@@ -346,7 +346,15 @@ export class PostgresCodingEvidenceRepository {
         input.events.length < 1 || input.events.length > 20) {
       throw new InvalidCodingEvidenceInputError("invalid_coding_evidence_batch");
     }
-    for (const record of input.events) validateEvidenceRecord(record, input.sessionId);
+    for (const record of input.events) {
+      validateEvidenceRecord(record, input.sessionId);
+      if (record.snapshot) {
+        const sourceBytes = new TextEncoder().encode(record.snapshot.sourceCode);
+        if (await sha256Bytes(sourceBytes) !== record.snapshot.contentSha256) {
+          throw new InvalidCodingEvidenceInputError("editor_code_snapshot_hash_mismatch");
+        }
+      }
+    }
     for (let index = 1; index < input.events.length; index += 1) {
       const prior = input.events[index - 1]?.event.sequence ?? 0;
       const current = input.events[index]?.event.sequence ?? 0;
@@ -430,10 +438,7 @@ export class PostgresCodingEvidenceRepository {
           if (record.snapshot) {
             const snapshot = record.snapshot;
             const sourceBytes = new TextEncoder().encode(snapshot.sourceCode);
-            const sourceHash = await sha256Bytes(sourceBytes);
-            if (sourceHash !== snapshot.contentSha256) {
-              throw new InvalidCodingEvidenceInputError("editor_code_snapshot_hash_mismatch");
-            }
+            const sourceHash = snapshot.contentSha256;
 
             const sourceSnapshot = await client.query<InsertedIdRow>(
               [
