@@ -72,10 +72,41 @@ On success, one database transaction:
 
 The start receipt is idempotent for the same lease generation. Conflicting runner/key/attempt identity, missing acceptance, expired lease or invalid state fails closed. The response does not echo the lease token.
 
+### 4. Lease heartbeat
+
+`POST /internal/v1/runner/heartbeat`
+
+After a successful start, the runner renews the exact same lease generation using a fresh signed request and a stable heartbeat ID:
+
+```json
+{
+  "heartbeatId": "uuid",
+  "dispatchId": "uuid",
+  "executionId": "uuid",
+  "attemptId": "uuid",
+  "leaseToken": "uuid"
+}
+```
+
+The API derives runner and key identity from the Ed25519 signature. A heartbeat is accepted only if:
+- the runner/key remains active;
+- the exact dispatch and job lease still belong to that runner and share the same fencing token;
+- both current expiries are still in the future and match one another;
+- the job is `RUNNING`;
+- the exact lease generation has both durable acceptance and start receipts.
+
+The API extends both dispatch and job expiries together by a server-controlled 120 seconds and records an immutable heartbeat receipt. The expiry is calculated by PostgreSQL wall-clock time. The heartbeat ID is an idempotency key: retrying the same request after a lost acknowledgement returns the original recorded expiry and does not perform another renewal.
+
+A heartbeat cannot revive an expired lease, start an unstarted dispatch, switch runner identity, or change the fencing token. A stale lease is rejected and must not continue to execute.
+
+Heartbeats are operational lease records, not student-learning evidence events. They do not contain source code, hidden tests, output or program data.
+
 ## State and safety invariants
 
 - Claiming, accepting and starting are separate durable lifecycle checkpoints.
 - The runner's request nonce is one-time and bound to the registered key.
+- Heartbeat renewal extends both lease rows together under the same fencing identity; it never revives an expired lease.
+- Replaying a heartbeat ID returns its original acknowledgement without extending the lease again.
 - Lease tokens fence stale or competing runner instances.
 - Acceptance and start receipts are append-only.
 - Event IDs and receipt identities make retry responses stable without duplicating logical lifecycle evidence.
@@ -86,7 +117,7 @@ The start receipt is idempotent for the same lease generation. Conflicting runne
 
 This lifecycle does not yet provide:
 - private artifact retrieval scoped to the accepted execution/attempt;
-- lease heartbeat/renewal or runner liveness;
+- runner liveness detection beyond lease expiry;
 - recovery of expired `RUNNING` jobs;
 - execution completion, cancellation or result submission endpoints;
 - sandbox process startup or Java/Python execution.
