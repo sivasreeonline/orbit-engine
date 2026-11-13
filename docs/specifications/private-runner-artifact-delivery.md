@@ -50,6 +50,21 @@ The source is independently hashed and checked against both the immutable source
 
 This policy is enforced by the database query/repository, not by the browser or runner client. No student-facing endpoint returns hidden test cases or expected outputs.
 
+## Test-bundle digest format
+
+The test-bundle SHA-256 is independent of JavaScript/Go JSON escaping. Both services use the same versioned binary encoding:
+
+1. A 32-bit big-endian length followed by UTF-8 bytes for the magic string `SKYHIGH-TEST-BUNDLE-V1`.
+2. A 32-bit big-endian test-case count.
+3. For each case in ascending sequence order:
+   - 32-bit length + UTF-8 test-case UUID;
+   - 32-bit big-endian sequence number;
+   - one visibility byte (`1` = PUBLIC, `2` = HIDDEN);
+   - 32-bit length + UTF-8 input;
+   - 32-bit length + UTF-8 expected output.
+
+The SHA-256 is calculated over the complete byte sequence. This avoids JSON escaping differences between the TypeScript control plane and Go runner.
+
 ## Bounds and storage
 
 - Source: maximum 256 KiB.
