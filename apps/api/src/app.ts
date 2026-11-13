@@ -317,7 +317,9 @@ export function createApiHandler(dependencies: ApiDependencies) {
           "A valid Idempotency-Key header is required.", 400, false,
           requestId, origin, allowedOrigins);
       }
-      if (!(request.headers.get("Content-Type") ?? "").toLowerCase().includes("application/json")) {
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
         return errorResponse("UNSUPPORTED_MEDIA_TYPE",
           "The request body must use application/json.", 415, false,
           requestId, origin, allowedOrigins);
@@ -395,7 +397,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
             executionId: created.executionId,
             attemptId: created.attemptId,
             action,
-            executionState: "QUEUED",
+            accepted: true,
             replayed: created.replayed,
             statusUrl: `/api/v1/executions/${created.executionId}/status`,
           },
