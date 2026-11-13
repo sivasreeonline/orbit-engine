@@ -81,6 +81,16 @@ try:
         raise SystemExit(3)
 except OSError:
     print("NETWORK_BLOCKED")
+try:
+    socket.getaddrinfo("example.com", 443)
+    print("DNS_OPEN")
+    raise SystemExit(4)
+except OSError:
+    print("DNS_BLOCKED")
+if Path("/var/run/docker.sock").exists():
+    print("DOCKER_SOCKET_PRESENT")
+    raise SystemExit(5)
+print("DOCKER_SOCKET_ABSENT")
 `,
 		},
 		{
@@ -140,7 +150,7 @@ public class Main {
 				t.Fatalf("sandbox did not finish and clean up: %+v", observation)
 			}
 			output := string(observation.StandardOutput)
-			for _, expected := range []string{"65532", "NETWORK_BLOCKED", "ROOT_MOUNT_RO"} {
+			for _, expected := range []string{"65532", "NETWORK_BLOCKED", "DNS_BLOCKED", "DOCKER_SOCKET_ABSENT", "ROOT_MOUNT_RO"} {
 				if !strings.Contains(output, expected) {
 					t.Errorf("output %q does not contain isolation proof %q", output, expected)
 				}
