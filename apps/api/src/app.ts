@@ -733,6 +733,14 @@ export function createApiHandler(dependencies: ApiDependencies) {
             "Runner result submission is temporarily unavailable.", 503, true,
             requestId, origin, allowedOrigins);
         }
+        if (error instanceof Error &&
+            (error.message.startsWith("invalid_") ||
+             error.message.startsWith("compilation_") ||
+             error.message === "accepted_verdict_requires_all_tests_to_pass")) {
+          return errorResponse("INVALID_RUNNER_COMPLETION",
+            "The runner completion result violates the execution result contract.", 400, false,
+            requestId, origin, allowedOrigins);
+        }
         console.error("runner_completion_failed", { correlationId: requestId });
         return errorResponse("INTERNAL_ERROR",
           "The runner result could not be saved.", 500, true,
