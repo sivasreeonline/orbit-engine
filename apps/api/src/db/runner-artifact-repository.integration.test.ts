@@ -15,6 +15,37 @@ import {
 const databaseUrl = process.env.DATABASE_URL;
 const tenantId = "30000000-0000-4000-8000-000000000001";
 
+function canonicalTestBundleSha256(cases: readonly {
+  testCaseId: string;
+  sequence: number;
+  visibility: "PUBLIC" | "HIDDEN";
+  input: string;
+  expectedOutput: string;
+}[]): string {
+  const chunks: Buffer[] = [];
+  const appendU32 = (value: number) => {
+    const buffer = Buffer.alloc(4);
+    buffer.writeUInt32BE(value);
+    chunks.push(buffer);
+  };
+  const appendField = (value: string) => {
+    const bytes = Buffer.from(value, "utf8");
+    appendU32(bytes.length);
+    chunks.push(bytes);
+  };
+
+  appendField("SKYHIGH-TEST-BUNDLE-V1");
+  appendU32(cases.length);
+  for (const testCase of cases) {
+    appendField(testCase.testCaseId);
+    appendU32(testCase.sequence);
+    chunks.push(Buffer.from([testCase.visibility === "PUBLIC" ? 1 : 2]));
+    appendField(testCase.input);
+    appendField(testCase.expectedOutput);
+  }
+  return createHash("sha256").update(Buffer.concat(chunks)).digest("hex");
+}
+
 async function createClaimedDispatch(
   runnerId: string,
   actorId: string,
@@ -105,6 +136,9 @@ describe.skipIf(!databaseUrl)("runner private artifact PostgreSQL integration", 
       expect(runArtifact.testCases).toHaveLength(2);
       expect(runArtifact.testCases.every((testCase) => testCase.visibility === "PUBLIC")).toBe(true);
       expect(runArtifact.testBundleId).toContain("-run-");
+      expect(runArtifact.testBundleSha256).toBe(
+        canonicalTestBundleSha256(runArtifact.testCases),
+      );
 
       const submit = await createClaimedDispatch(runnerId, actorId, "SUBMIT");
       await acceptAndStart(runnerId, keyId, submit.created, submit.dispatch);
@@ -127,6 +161,9 @@ describe.skipIf(!databaseUrl)("runner private artifact PostgreSQL integration", 
       );
       expect(submitArtifact.sourceCode).toBe(submit.sourceCode);
       expect(submitArtifact.testBundleSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(submitArtifact.testBundleSha256).toBe(
+        canonicalTestBundleSha256(submitArtifact.testCases),
+      );
       expect(submitArtifact.problemVersionId).toBe("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1");
     } finally {
       await setup.end();
