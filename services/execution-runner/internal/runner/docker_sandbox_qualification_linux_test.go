@@ -72,18 +72,15 @@ func TestRunscHostileWorkloadIsolation(t *testing.T) {
 			source: `import os, socket
 from pathlib import Path
 print(os.getuid())
+mounts = [line.split() for line in Path("/proc/mounts").read_text().splitlines()]
+root = next((fields[3] for fields in mounts if len(fields) > 3 and fields[1] == "/"), "")
+print("ROOT_MOUNT_RO" if "ro" in root.split(",") else "ROOT_MOUNT_RW")
 try:
     with socket.create_connection(("1.1.1.1", 53), timeout=1):
         print("NETWORK_OPEN")
         raise SystemExit(3)
 except OSError:
     print("NETWORK_BLOCKED")
-try:
-    Path("/etc/skyhigh-qualification-probe").write_text("x")
-    print("ROOT_WRITABLE")
-    raise SystemExit(4)
-except OSError:
-    print("ROOT_READ_ONLY")
 `,
 		},
 		{
@@ -111,13 +108,12 @@ public class Main {
     } catch (IOException expected) {
       System.out.println("NETWORK_BLOCKED");
     }
-    try {
-      Files.writeString(Path.of("/etc/skyhigh-qualification-probe"), "x");
-      System.out.println("ROOT_WRITABLE");
-      System.exit(4);
-    } catch (IOException expected) {
-      System.out.println("ROOT_READ_ONLY");
-    }
+    String rootMount = Files.readAllLines(Path.of("/proc/mounts")).stream()
+      .filter(line -> line.split("\\s+").length > 3 && line.split("\\s+")[1].equals("/"))
+      .map(line -> line.split("\\s+")[3])
+      .findFirst().orElse("");
+    System.out.println(java.util.Arrays.asList(rootMount.split(",")).contains("ro")
+      ? "ROOT_MOUNT_RO" : "ROOT_MOUNT_RW");
   }
 }`,
 		},
@@ -144,12 +140,12 @@ public class Main {
 				t.Fatalf("sandbox did not finish and clean up: %+v", observation)
 			}
 			output := string(observation.StandardOutput)
-			for _, expected := range []string{"65532", "NETWORK_BLOCKED", "ROOT_READ_ONLY"} {
+			for _, expected := range []string{"65532", "NETWORK_BLOCKED", "ROOT_MOUNT_RO"} {
 				if !strings.Contains(output, expected) {
 					t.Errorf("output %q does not contain isolation proof %q", output, expected)
 				}
 			}
-			if strings.Contains(output, "NETWORK_OPEN") || strings.Contains(output, "ROOT_WRITABLE") {
+			if strings.Contains(output, "NETWORK_OPEN") || strings.Contains(output, "ROOT_MOUNT_RW") {
 				t.Fatalf("isolation boundary was violated: %q", output)
 			}
 		})
