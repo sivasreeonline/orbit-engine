@@ -58,6 +58,14 @@ The local journal is a write-ahead record for the future runner protocol:
 
 The journal is append-only JSONL with a 64 MiB initial size ceiling. It rejects malformed complete records and only truncates an incomplete final line left by a crash. A definitive signed `409 RUNNER_LEASE_STALE` response appends an `ABANDONED` event for that exact acceptance receipt; the record remains auditable but is excluded from future retries. Transport failures, 5xx responses and other unknown errors are never treated as abandonment.
 
+## Acceptance journal process ownership
+
+The acceptance journal enforces one process owner per canonical journal path. Opening a journal atomically creates a sibling `<journal-path>.lock` directory with a private owner record. A second process is rejected with `ErrJournalLocked` until the owner closes cleanly. Relative paths and symlinked parent-directory aliases are canonicalized before the lock is acquired.
+
+A clean close flushes the journal, closes its file descriptor, verifies the lock's private owner record and token, and then removes the lock directory. If the process crashes or lock ownership becomes uncertain, the lock is deliberately left in place. The runner never guesses that a lock is stale and never removes it automatically. An operator must first verify that no runner process still owns the journal, then remove the stale `.lock` directory before restarting. Do not delete a lock directory while a runner may still be active.
+
+The lock directory and owner record are created with owner-only permissions. Linux directory fsync is used to persist lock creation and release. Windows remains a local-development target only; its directory-sync helper is intentionally a no-op, and production runner durability remains Linux-only.
+
 ## Current runner control-plane client
 
 The Go client exposes separate methods for:
@@ -108,7 +116,7 @@ The execution adapter currently uses exact-byte output comparison. The artifact 
 **This remains a draft, not a live sandbox proof.** The Docker CLI and execution contract tests use fakes. CI does not start Docker or run a gVisor container. Runtime images have not been built, signed or qualified. Peak-memory sampling is not implemented. The sandbox adapter is disabled unless its caller explicitly sets `Enabled: true`; enabling it also requires a successful Docker/runsc/image preflight. It is not wired into the health-only command. Do not set that flag for student workloads until the real Linux/runsc and adversarial gates below pass.
 
 ## M0 next gates
-1. Add reviewed machine key loading/permissions and a single-process journal owner.
+1. Add reviewed machine-key file loading and verify owner-only key permissions on the supported Linux host.
 2. Integrate claim → accept → start → heartbeat → artifact retrieval → execute → complete in a bounded runner lifecycle with backoff, cancellation and graceful shutdown.
 3. Select a supported Linux host and architecture.
 4. Provision a disposable supported Linux host with a pinned Docker/OCI engine and install/verify the exact `runsc` runtime.
