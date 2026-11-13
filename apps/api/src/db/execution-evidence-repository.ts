@@ -5,6 +5,7 @@ export type ExecutionEvidenceEventType =
   | "ATTEMPT_ACCEPTED"
   | "JOB_QUEUED"
   | "JOB_CLAIMED"
+  | "RUNNER_ACCEPTED"
   | "RUNNER_STARTED"
   | "COMPILATION_STARTED"
   | "COMPILATION_FINISHED"
@@ -238,7 +239,7 @@ function isoTimestamp(value: Date | string): string {
 
 function validateEvent(input: AppendExecutionEvidenceEventInput): void {
   const eventTypes: readonly string[] = [
-    "ATTEMPT_ACCEPTED", "JOB_QUEUED", "JOB_CLAIMED", "RUNNER_STARTED",
+    "ATTEMPT_ACCEPTED", "JOB_QUEUED", "JOB_CLAIMED", "RUNNER_ACCEPTED", "RUNNER_STARTED",
     "COMPILATION_STARTED", "COMPILATION_FINISHED", "TEST_STARTED", "TEST_FINISHED",
     "EXECUTION_FINISHED", "INFRASTRUCTURE_FAILED", "CANCELLED", "RETRY_SCHEDULED",
   ];
