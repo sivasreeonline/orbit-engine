@@ -237,7 +237,7 @@ describe.skipIf(!databaseUrl)("PostgresCodingEvidenceRepository PostgreSQL integ
     if (!snapshot) throw new Error("TEST_SNAPSHOT_MISSING");
     const tampered = {
       ...record,
-      snapshot: { ...snapshot, sourceCode: "print('tampered')" },
+      snapshot: { ...snapshot, sourceCode: "print('world')" },
     };
     await expect(repository.appendBatch({
       principal, sessionId: created.sessionId, events: [tampered],
