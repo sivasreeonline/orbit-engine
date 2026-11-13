@@ -18,48 +18,8 @@ import (
 
 var (
 	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
-	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}package runner
-
-import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
-
-	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
-)
-
-var (
-	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
-)
-	imageIDPattern         = regexp.MustCompile(`^sha256:[0-9a-f]{64}package runner
-
-import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
-
-	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
-)
-
-var (
-	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
-)
+	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+	imageIDPattern         = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
 const compileSuccessMarker = "__SKYHIGH_COMPILE_OK__\n"
