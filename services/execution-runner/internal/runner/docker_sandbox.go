@@ -32,6 +32,7 @@ type DockerContainerState struct {
 // DockerCLI isolates the Docker command boundary so policy and lifecycle
 // behavior can be tested without running untrusted code on the host.
 type DockerCLI interface {
+	Preflight(context.Context, []string) error
 	Create(context.Context, []string) (string, error)
 	StartAttached(context.Context, string, io.Reader, io.Writer, io.Writer) (int, error)
 	Inspect(context.Context, string) (DockerContainerState, error)
@@ -47,6 +48,98 @@ func (cli OSCommandDockerCLI) binary() string {
 		return cli.Binary
 	}
 	return "docker"
+}
+
+// Preflight verifies that the local daemon exposes runsc and that the exact
+// digest-pinned Java/Python images are already present. It never pulls images.
+func (cli OSCommandDockerCLI) Preflight(ctx context.Context, imageRefs []string) error {
+	if len(imageRefs) != 2 {
+		return ErrDockerCommandFailed
+	}
+	command := exec.CommandContext(ctx, cli.binary(), "info", "--format", "{{json .Runtimes}}")
+	output, err := command.Output()
+	if err != nil {
+		return ErrDockerCommandFailed
+	}
+	var runtimes map[string]struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(output, &runtimes); err != nil {
+		return ErrDockerCommandFailed
+	}
+	runsc, ok := runtimes["runsc"]
+	if !ok || strings.TrimSpace(runsc.Path) == "" {
+		return ErrDockerCommandFailed
+	}
+
+	seen := make(map[string]struct{}, len(imageRefs))
+	for _, imageRef := range imageRefs {
+		if !imageReferencePattern.MatchString(imageRef) {
+			return ErrDockerCommandFailed
+		}
+		if _, exists := seen[imageRef]; exists {
+			continue
+		}
+		seen[imageRef] = struct{}{}
+		inspect := exec.CommandContext(ctx, cli.binary(), "image", "inspect", "--format", "{{.Id}}", imageRef)
+		imageID, err := inspect.Output()
+		if err != nil || !regexp.MustCompile(`^sha256:[0-9a-f]{64}package runner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+)
+
+var (
+	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
+	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+)
+
+const compileSuccessMarker = "__SKYHIGH_COMPILE_OK__\n"
+
+type DockerContainerState struct {
+	Status    string `json:"Status"`
+	ExitCode  int    `json:"ExitCode"`
+	OOMKilled bool   `json:"OOMKilled"`
+}
+
+// DockerCLI isolates the Docker command boundary so policy and lifecycle
+// behavior can be tested without running untrusted code on the host.
+type DockerCLI interface {
+	Preflight(context.Context, []string) error
+	Create(context.Context, []string) (string, error)
+	StartAttached(context.Context, string, io.Reader, io.Writer, io.Writer) (int, error)
+	Inspect(context.Context, string) (DockerContainerState, error)
+	Remove(context.Context, string) error
+}
+
+type OSCommandDockerCLI struct {
+	Binary string
+}
+
+func (cli OSCommandDockerCLI) binary() string {
+	if cli.Binary != "" {
+		return cli.Binary
+	}
+	return "docker"
+}
+
+).MatchString(strings.TrimSpace(string(imageID))) {
+			return ErrDockerCommandFailed
+		}
+	}
+	return nil
 }
 
 func (cli OSCommandDockerCLI) Create(ctx context.Context, args []string) (string, error) {
@@ -139,6 +232,25 @@ func NewDockerSandbox(cli DockerCLI) (*DockerSandbox, error) {
 		cli:            cli,
 		cleanupTimeout: 5 * time.Second,
 	}, nil
+}
+
+// Preflight is required before the artifact executor may report ready.
+// It checks local prerequisites only and intentionally does not pull images.
+func (sandbox *DockerSandbox) Preflight(
+	ctx context.Context,
+	runtimes RuntimeConfiguration,
+) error {
+	if sandbox == nil || sandbox.cli == nil {
+		return ErrSandboxNotConfigured
+	}
+	if !imageReferencePattern.MatchString(runtimes.JavaImageRef) ||
+		!imageReferencePattern.MatchString(runtimes.PythonImageRef) {
+		return ErrInvalidRuntimeConfig
+	}
+	return sandbox.cli.Preflight(ctx, []string{
+		runtimes.JavaImageRef,
+		runtimes.PythonImageRef,
+	})
 }
 
 func (sandbox *DockerSandbox) RunCase(
