@@ -73,13 +73,49 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
         if (text.includes("SELECT count(*)::integer AS active_count")) {
           return { rows: [{ active_count: 0 }] as unknown as T[] };
         }
-        if (text.includes("WITH candidate_lanes AS MATERIALIZED")) {
+        if (text.includes("SELECT lane.tenant_id, lane.actor_user_id")) {
           return { rows: [{
-            id: dispatchId, execution_id: executionId, attempt_id: attemptId,
-            protocol_version: "v1", correlation_id: "corr-runner",
-            delivery_attempts: 1, lease_token: token,
+            tenant_id: "30000000-0000-4000-8000-000000000001",
+            actor_user_id: "20000000-0000-4000-8000-000000000001",
+          }] as unknown as T[] };
+        }
+        if (text.includes("previous_job_state")) {
+          return { rows: [{
+            dispatch_id: dispatchId,
+            execution_id: executionId,
+            attempt_id: attemptId,
+            protocol_version: "v1",
+            correlation_id: "corr-runner",
+            delivery_attempts: 0,
+            previous_job_state: "QUEUED",
+            previous_lease_token: null,
+            previous_lease_owner: null,
+            previous_lease_expires_at: null,
+            previous_retry_count: 0,
+            previous_key_id: null,
+            previous_start_event_id: null,
+          }] as unknown as T[] };
+        }
+        if (text.includes("UPDATE runner_dispatch_outbox") && text.includes("RETURNING id, execution_id")) {
+          return { rows: [{
+            id: dispatchId,
+            execution_id: executionId,
+            attempt_id: attemptId,
+            protocol_version: "v1",
+            correlation_id: "corr-runner",
+            delivery_attempts: 1,
+            lease_token: token,
             lease_expires_at: new Date("2026-11-13T12:02:00Z"),
           }] as unknown as T[] };
+        }
+        if (text.includes("UPDATE execution_jobs") && text.includes("RETURNING id, retry_count")) {
+          return { rows: [{ id: executionId, retry_count: 0 }] as unknown as T[] };
+        }
+        if (text.includes("INSERT INTO execution_evidence_events")) {
+          return { rows: [{ event_id: "f0000000-0000-4000-8000-000000000001" }] as unknown as T[] };
+        }
+        if (text.includes("UPDATE runner_dispatch_scheduler_lanes")) {
+          return { rows: [{ id: "30000000-0000-4000-8000-000000000001" }] as unknown as T[] };
         }
         return { rows: [] as T[] };
       },
@@ -96,13 +132,12 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     expect(calls[1]?.text).toBe("BEGIN");
     expect(calls[2]?.text).toContain("pg_advisory_xact_lock");
     expect(calls[4]?.text).toContain("active_count");
-    const claim = calls.find((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"));
-    expect(claim?.text).toContain("FOR UPDATE OF pending, job SKIP LOCKED");
-    expect(claim?.text).toContain("UPDATE execution_jobs AS job");
-    expect(claim?.text).toContain("lease_token = claimed.lease_token");
-    expect(claim?.text).toContain("'JOB_CLAIMED', 'RUNNER'");
-    expect(claim?.text).toContain("INSERT INTO execution_evidence_events");
-    expect(claim?.values).toEqual([2, runnerId, 120]);
+    expect(calls.some((call) => call.text.includes("FOR UPDATE OF lane SKIP LOCKED"))).toBe(true);
+    expect(calls.some((call) => call.text.includes("FOR UPDATE OF dispatch, job SKIP LOCKED"))).toBe(true);
+    expect(calls.some((call) => call.text.includes("retry_count = retry_count + CASE WHEN $3 = 'RUNNING' THEN 1 ELSE 0 END"))).toBe(true);
+    expect(calls.some((call) => call.text.includes("'JOB_CLAIMED', 'RUNNER'"))).toBe(true);
+    expect(calls.some((call) => call.text.includes("INSERT INTO execution_evidence_events"))).toBe(true);
+    expect(calls.some((call) => call.text.includes("INSERT INTO runner_dispatch_lease_recoveries"))).toBe(false);
     expect(calls.some((call) => call.text === "COMMIT")).toBe(true);
     expect(ended).toBe(true);
   });
