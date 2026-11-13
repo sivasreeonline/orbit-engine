@@ -86,7 +86,7 @@ export async function authenticateRunnerRequest(
   if (!signatureValid) return null;
 
   const nonceExpiresAt = new Date(now.getTime() + RUNNER_REQUEST_NONCE_TTL_MS);
-  const nonceConsumed = await identities.consumeNonce(keyId, nonce, nonceExpiresAt);
+  const nonceConsumed = await identities.consumeNonce(keyId, nonce, now, nonceExpiresAt);
   if (!nonceConsumed) return null;
 
   return { runnerId: activeKey.runnerId, keyId };
