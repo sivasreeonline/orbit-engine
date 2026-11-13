@@ -42,3 +42,30 @@ Prove that the Go runner can execute Java 25 and Python 3.14 programs on separat
 
 ## M0 exclusions
 No public API, trainer analytics, AI feedback, multi-region scaling or production certification. A passing proof permits integration testing, not automatic production approval.
+
+
+## Draft runsc adapter implementation status
+
+The repository now contains a draft Go adapter from authenticated execution artifacts into a per-testcase Docker/runsc sandbox. The adapter verifies execution/attempt/problem-version identity, rechecks the source SHA-256, rejects hidden cases for RUN, keeps hidden-case details out of result payloads, and maps only aggregate result fields into the signed completion contract.
+
+The Docker command contract requests:
+- digest-pinned runtime image references and the `runsc` runtime;
+- disabled network and IPC, read-only container root, dropped capabilities, no-new-privileges, and UID/GID 65532:65532;
+- bounded memory/swap, CPU quota, PID count, wall-clock time and combined stdout/stderr;
+- private non-executable tmpfs mounts for `/workspace` and `/tmp`;
+- forced container removal on success, timeout, cancellation, output overflow and errors.
+
+Student source is not written to the runner host filesystem. The runner streams the exact source bytes first over the attached container stdin. A fixed wrapper consumes exactly the trusted byte length into `/workspace`, verifies the byte count and makes the file read-only. The remaining stdin bytes are then passed to the student program as its testcase input. Source contents are never interpolated into shell arguments and no host bind mount is used.
+
+The current comparator is exact-byte comparison. The artifact contract does not yet include a versioned comparison-mode field; do not infer whitespace normalization.
+
+### Evidence status and mandatory gates
+
+- Go format, vet and unit tests exercise the fake Docker CLI and execution-contract behavior only.
+- CI does not run Docker, gVisor, student programs or a real Linux sandbox.
+- Runtime images have not been built, signed or verified on a target Linux host.
+- Peak-memory sampling is not implemented; OOM classification is not measured peak memory.
+- The sandbox adapter requires an explicit enable flag and is not wired into `cmd/runner`. The default command remains loopback-only and health-only.
+- No production execution or student-facing Run/Submit release is authorized by these tests.
+
+Before enabling the adapter for any real workload, run the full adversarial test matrix on a disposable, supported Linux host with a pinned Docker/OCI engine and a verified `runsc` installation. Independently review network denial, host filesystem isolation, UID mapping, resource enforcement, timeout/process-tree termination, output limits, container cleanup and peak-memory telemetry. Record host/runtime/image digests and measured concurrency. Keep the worker disabled until those results pass review.
