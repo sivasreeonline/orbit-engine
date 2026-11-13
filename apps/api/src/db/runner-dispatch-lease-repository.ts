@@ -49,6 +49,7 @@ interface RunnerCandidateRow extends Record<string, unknown> {
   readonly previous_job_state: string;
   readonly previous_lease_token: string | null;
   readonly previous_lease_owner: string | null;
+  readonly previous_lease_expires_at: Date | string | null;
   readonly previous_retry_count: number;
   readonly previous_key_id: string | null;
   readonly previous_start_event_id: string | null;
