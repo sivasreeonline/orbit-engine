@@ -31,6 +31,13 @@ type conformanceSandbox struct {
 	requests     []SandboxRequest
 }
 
+func (s *conformanceSandbox) Preflight(
+	ctx context.Context,
+	_ RuntimeConfiguration,
+) error {
+	return ctx.Err()
+}
+
 func (s *conformanceSandbox) RunCase(_ context.Context, request SandboxRequest) (SandboxObservation, error) {
 	s.requests = append(s.requests, request)
 	if len(s.observations) == 0 {
