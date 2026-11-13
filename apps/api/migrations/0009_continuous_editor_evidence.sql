@@ -4,6 +4,8 @@ BEGIN;
 ALTER TABLE source_snapshots
   DROP CONSTRAINT IF EXISTS source_snapshots_byte_length_check;
 ALTER TABLE source_snapshots
+  DROP CONSTRAINT IF EXISTS source_snapshots_byte_length_nonnegative;
+ALTER TABLE source_snapshots
   ADD CONSTRAINT source_snapshots_byte_length_nonnegative
   CHECK (byte_length >= 0);
 
@@ -226,6 +228,101 @@ DROP TRIGGER IF EXISTS trg_editor_code_snapshots_append_only ON editor_code_snap
 CREATE TRIGGER trg_editor_code_snapshots_append_only
 BEFORE UPDATE OR DELETE ON editor_code_snapshots
 FOR EACH ROW EXECUTE FUNCTION prevent_coding_evidence_mutation();
+
+
+
+CREATE OR REPLACE FUNCTION prevent_coding_evidence_session_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'coding evidence sessions cannot be deleted'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF NEW.id IS DISTINCT FROM OLD.id
+    OR NEW.tenant_id IS DISTINCT FROM OLD.tenant_id
+    OR NEW.actor_user_id IS DISTINCT FROM OLD.actor_user_id
+    OR NEW.problem_id IS DISTINCT FROM OLD.problem_id
+    OR NEW.problem_version_id IS DISTINCT FROM OLD.problem_version_id
+    OR NEW.language IS DISTINCT FROM OLD.language
+    OR NEW.notice_version IS DISTINCT FROM OLD.notice_version
+    OR NEW.started_at IS DISTINCT FROM OLD.started_at
+    OR NEW.created_at IS DISTINCT FROM OLD.created_at
+    OR NEW.last_sequence < OLD.last_sequence
+    OR (OLD.status = 'ENDED' AND NEW.status <> 'ENDED')
+    OR (NEW.status = 'ENDED' AND NEW.ended_at IS NULL) THEN
+    RAISE EXCEPTION 'coding evidence session identity and sequence are immutable'
+      USING ERRCODE = '55000';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_coding_evidence_session_mutation ON coding_evidence_sessions;
+CREATE TRIGGER trg_coding_evidence_session_mutation
+BEFORE UPDATE OR DELETE ON coding_evidence_sessions
+FOR EACH ROW EXECUTE FUNCTION prevent_coding_evidence_session_mutation();
+
+CREATE OR REPLACE FUNCTION verify_coding_evidence_event_session()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+DECLARE
+  session_status varchar(12);
+  session_last_sequence bigint;
+BEGIN
+  SELECT status, last_sequence
+  INTO session_status, session_last_sequence
+  FROM coding_evidence_sessions
+  WHERE id = NEW.session_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR session_status IS DISTINCT FROM 'ACTIVE'
+    OR NEW.sequence <= session_last_sequence
+    OR (session_last_sequence = 0 AND
+      (NEW.sequence <> 1 OR NEW.event_type <> 'SESSION_STARTED'))
+    OR (session_last_sequence > 0 AND NEW.event_type = 'SESSION_STARTED') THEN
+    RAISE EXCEPTION 'coding evidence event session or sequence is invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_coding_evidence_event_session ON coding_evidence_events;
+CREATE TRIGGER trg_coding_evidence_event_session
+BEFORE INSERT ON coding_evidence_events
+FOR EACH ROW EXECUTE FUNCTION verify_coding_evidence_event_session();
+
+CREATE OR REPLACE FUNCTION prevent_referenced_source_snapshot_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM editor_code_snapshots WHERE source_snapshot_id = OLD.id
+  ) OR EXISTS (
+    SELECT 1 FROM execution_attempts WHERE source_snapshot_id = OLD.id
+  ) THEN
+    RAISE EXCEPTION 'source snapshots referenced by an attempt or editor evidence are immutable'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_referenced_source_snapshot_immutable ON source_snapshots;
+CREATE TRIGGER trg_referenced_source_snapshot_immutable
+BEFORE UPDATE OR DELETE ON source_snapshots
+FOR EACH ROW EXECUTE FUNCTION prevent_referenced_source_snapshot_mutation();
 
 INSERT INTO schema_migrations (version, description)
 VALUES (
