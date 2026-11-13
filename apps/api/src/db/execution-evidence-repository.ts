@@ -487,6 +487,23 @@ export class PostgresExecutionEvidenceRepository {
           };
         }
 
+        const delivered = await client.query<UpdatedJobRow>(
+          [
+            "UPDATE runner_dispatch_outbox",
+            "SET delivery_state = 'DELIVERED', delivered_at = now(),",
+            "    lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL",
+            "WHERE id = $1::uuid AND execution_id = $2::uuid AND attempt_id = $3::uuid",
+            "  AND delivery_state = 'PENDING' AND lease_owner = $4",
+            "  AND lease_token = $5::uuid AND lease_expires_at > clock_timestamp()",
+            "RETURNING id",
+          ].join("\n"),
+          [
+            input.dispatchId, input.executionId, input.attemptId,
+            input.leaseOwner, input.leaseToken,
+          ],
+        );
+        if (delivered.rows.length !== 1) throw new StaleExecutionLeaseError();
+
         const claimed = await client.query<UpdatedJobRow>(
           [
             "UPDATE execution_jobs",
