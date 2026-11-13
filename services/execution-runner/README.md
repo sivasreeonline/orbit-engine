@@ -7,6 +7,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 ## Current capabilities
 - Loopback-only HTTP health endpoint: `GET /healthz`.
 - Local append-only acceptance journal with fsync-before-send semantics, restart recovery and pending-receipt replay support.
+- Outbound Ed25519-signed claim/accept HTTP client with strict bounded response validation and write-ahead acceptance integration.
 - Readiness endpoint returns HTTP 503 until a sandbox executor is configured.
 - Versioned internal execution request types and strict structural validation.
 - An executor interface with a safe unconfigured implementation.
@@ -56,7 +57,7 @@ The local journal is a write-ahead record for the future runner protocol:
 The journal is append-only JSONL with a 64 MiB initial size ceiling. It rejects malformed complete records and only truncates an incomplete final line left by a crash. It is not yet wired to the HTTP client or claim loop.
 
 ## M0 next gates
-1. Implement the authenticated outbound claim/accept HTTP client and connect it to the durable journal.
+1. Wire the authenticated outbound claim/accept client into a controlled runner poll loop with reviewed key loading, bounded backoff and graceful shutdown.
 2. Select a supported Linux host and architecture.
 3. Select OCI engine and validate gVisor compatibility.
 4. Implement ephemeral sandbox lifecycle behind the Executor interface.
