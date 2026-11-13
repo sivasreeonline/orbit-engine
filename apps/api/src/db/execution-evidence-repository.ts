@@ -1005,6 +1005,10 @@ export class PostgresExecutionEvidenceRepository {
       if (error instanceof ExecutionEvidenceConflictError ||
           error instanceof ExecutionEvidenceNotFoundError ||
           error instanceof StaleExecutionLeaseError ||
+          error instanceof RunnerCompletionUnauthorizedError ||
+          error instanceof RunnerCompletionNotAcceptedError ||
+          error instanceof RunnerCompletionNotStartedError ||
+          error instanceof RunnerCompletionConflictError ||
           error instanceof Error && error.message.startsWith("invalid_")) {
         throw error;
       }
