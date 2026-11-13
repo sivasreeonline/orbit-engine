@@ -91,30 +91,55 @@ export class PostgresRunnerIdentityRepository {
   async consumeNonce(
     keyId: string,
     nonce: string,
+    now: Date,
     expiresAt: Date,
   ): Promise<boolean> {
     if (!this.connectionString) throw new DatabaseUnavailableError();
     if (!/^[A-Za-z0-9._:-]{1,128}$/.test(keyId) ||
         !/^[A-Za-z0-9_-]{43}$/.test(nonce) ||
-        !(expiresAt instanceof Date) || !Number.isFinite(expiresAt.getTime())) {
+        !(now instanceof Date) || !Number.isFinite(now.getTime()) ||
+        !(expiresAt instanceof Date) || !Number.isFinite(expiresAt.getTime()) ||
+        expiresAt.getTime() <= now.getTime()) {
       throw new Error("invalid_runner_request_nonce");
     }
 
     return this.withClient(async (client) => {
       await client.query("BEGIN");
       try {
+        // Lock both identity rows while rechecking active state. A concurrent
+        // revocation cannot race between signature lookup and nonce commit.
+        const active = await client.query<{ key_id: string }>(
+          [
+            "SELECT machine_key.key_id",
+            "FROM runner_machine_keys AS machine_key",
+            "INNER JOIN runner_machines AS machine ON machine.id = machine_key.runner_id",
+            "WHERE machine_key.key_id = $1",
+            "  AND machine.status = 'ACTIVE'",
+            "  AND machine_key.status = 'ACTIVE'",
+            "  AND machine_key.revoked_at IS NULL",
+            "  AND machine_key.valid_from <= $2::timestamptz",
+            "  AND (machine_key.expires_at IS NULL OR machine_key.expires_at > $2::timestamptz)",
+            "FOR UPDATE OF machine_key, machine",
+          ].join("\n"),
+          [keyId, now.toISOString()],
+        );
+        if (active.rows.length !== 1) {
+          await client.query("COMMIT");
+          return false;
+        }
+
         await client.query(
-          "DELETE FROM runner_request_nonces WHERE key_id = $1 AND expires_at <= now()",
-          [keyId],
+          "DELETE FROM runner_request_nonces WHERE key_id = $1 AND expires_at <= $2::timestamptz",
+          [keyId, now.toISOString()],
         );
         const inserted = await client.query<InsertedNonceRow>(
           [
-            "INSERT INTO runner_request_nonces (key_id, nonce, expires_at)",
-            "VALUES ($1, $2, $3::timestamptz)",
+            "INSERT INTO runner_request_nonces (key_id, nonce, received_at, expires_at)",
+            "VALUES ($1, $2, $3::timestamptz, $4::timestamptz)",
             "ON CONFLICT (key_id, nonce) DO NOTHING",
             "RETURNING nonce",
           ].join("\n"),
-          [keyId, nonce, expiresAt.toISOString()],
+          [keyId, nonce, now.toISOString(), expiresAt.toISOString()],
         );
         await client.query("COMMIT");
         return inserted.rows.length === 1;
