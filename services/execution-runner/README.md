@@ -6,6 +6,7 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 
 ## Current capabilities
 - Loopback-only HTTP health endpoint: `GET /healthz`.
+- Local append-only acceptance journal with fsync-before-send semantics, restart recovery and pending-receipt replay support.
 - Readiness endpoint returns HTTP 503 until a sandbox executor is configured.
 - Versioned internal execution request types and strict structural validation.
 - An executor interface with a safe unconfigured implementation.
@@ -14,6 +15,8 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 
 ## Explicit safety boundary
 - No endpoint accepts source code or starts a process.
+- The acceptance journal stores only opaque IDs, lease identity and receipt lifecycle metadata; it never stores source code, hidden tests or execution artifacts.
+- A single runner process must own a journal file. Journal files are created with owner-only permissions (0600), and incomplete trailing records are truncated during recovery.
 - No Docker, containerd, gVisor or host command is invoked.
 - The unconfigured executor always returns `ErrSandboxNotConfigured`.
 - The HTTP server refuses non-loopback bind addresses until an authenticated private transport is implemented.
@@ -41,10 +44,22 @@ The default listener is `127.0.0.1:8080`.
 
 Health does not imply readiness.
 
+## Acceptance journal
+
+The local journal is a write-ahead record for the future runner protocol:
+
+1. Persist a `PREPARED` receipt event and fsync the journal.
+2. Only after that succeeds, send the signed acceptance receipt to the control plane.
+3. After receiving the durable API acknowledgement, append a `CONFIRMED` event and fsync again.
+4. After a restart, retry every prepared-but-unconfirmed receipt using the same acceptanceId and receipt body, but a fresh signed HTTP nonce.
+
+The journal is append-only JSONL with a 64 MiB initial size ceiling. It rejects malformed complete records and only truncates an incomplete final line left by a crash. It is not yet wired to the HTTP client or claim loop.
+
 ## M0 next gates
-1. Select a supported Linux host and architecture.
-2. Select OCI engine and validate gVisor compatibility.
-3. Implement ephemeral sandbox lifecycle behind the Executor interface.
-4. Enforce network denial, non-root identity, CPU, memory, PID, wall-clock, filesystem and output limits.
-5. Add cancellation, process-tree cleanup, idempotent result persistence and adversarial tests.
-6. Complete security review before enabling execution.
+1. Implement the authenticated outbound claim/accept HTTP client and connect it to the durable journal.
+2. Select a supported Linux host and architecture.
+3. Select OCI engine and validate gVisor compatibility.
+4. Implement ephemeral sandbox lifecycle behind the Executor interface.
+5. Enforce network denial, non-root identity, CPU, memory, PID, wall-clock, filesystem and output limits.
+6. Add cancellation, process-tree cleanup, idempotent result persistence and adversarial tests.
+7. Complete security review before enabling execution.
