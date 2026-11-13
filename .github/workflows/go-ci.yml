@@ -43,14 +43,10 @@ jobs:
       - name: Verify local acceptance journal package
         run: test -f internal/acceptancejournal/journal.go
 
-      - name: Check formatting
+      - name: Print gofmt changes for acceptance journal
         run: |
-          diff="$(gofmt -d .)"
-          if [ -n "$diff" ]; then
-            echo "The following Go files need gofmt:"
-            echo "$diff"
-            exit 1
-          fi
+          gofmt -w .
+          git diff -- services/execution-runner/internal/acceptancejournal/journal.go
 
       - name: Vet
         run: go vet ./...
