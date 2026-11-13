@@ -14,7 +14,23 @@ var (
 	ErrInvalidSignedRequest = errors.New("invalid signed runner request")
 	keyIDPattern            = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 	methodPattern           = regexp.MustCompile(`^[A-Z]{3,10}$`)
-	timestampPattern        = regexp.MustCompile(`^[1-9][0-9]{9,12}$`)
+	timestampPattern        = regexp.MustCompile(`^[1-9][0-9]{9}package runnerauth
+
+import (
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"regexp"
+	"strings"
+)
+
+var (
+	ErrInvalidSignedRequest = errors.New("invalid signed runner request")
+	keyIDPattern            = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+	methodPattern           = regexp.MustCompile(`^[A-Z]{3,10}$`)
+	timestampPattern        = regexp.MustCompile()
 	noncePattern            = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 )
 
