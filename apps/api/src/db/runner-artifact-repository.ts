@@ -87,6 +87,12 @@ interface ArtifactRow extends Record<string, unknown> {
   readonly snapshot_byte_length: string | number;
   readonly storage_kind: string;
   readonly source_bytes: Uint8Array | null;
+  readonly acceptance_id: string | null;
+  readonly accepted_runner_id: string | null;
+  readonly accepted_key_id: string | null;
+  readonly start_event_id: string | null;
+  readonly started_runner_id: string | null;
+  readonly started_key_id: string | null;
 }
 
 interface TestCaseRow extends Record<string, unknown> {
@@ -217,7 +223,11 @@ export class PostgresRunnerArtifactRepository {
             "  problem.slug AS problem_slug, version.title AS problem_title,",
             "  attempt.source_snapshot_id, attempt.source_sha256 AS attempt_source_sha256,",
             "  snapshot.sha256 AS snapshot_sha256, snapshot.byte_length AS snapshot_byte_length,",
-            "  snapshot.storage_kind, snapshot.source_bytes",
+            "  snapshot.storage_kind, snapshot.source_bytes,",
+            "  accepted.acceptance_id::text AS acceptance_id, accepted.runner_id::text AS accepted_runner_id,",
+            "  accepted.key_id AS accepted_key_id,",
+            "  started.event_id::text AS start_event_id, started.runner_id::text AS started_runner_id,",
+            "  started.key_id AS started_key_id",
             "FROM runner_dispatch_outbox AS dispatch",
             "INNER JOIN execution_jobs AS job ON job.id = dispatch.execution_id",
             "INNER JOIN execution_attempts AS attempt ON attempt.id = dispatch.attempt_id",
@@ -225,9 +235,9 @@ export class PostgresRunnerArtifactRepository {
             "INNER JOIN problem_versions AS version",
             "  ON version.id = attempt.problem_version_id AND version.problem_id = attempt.problem_id",
             "INNER JOIN source_snapshots AS snapshot ON snapshot.id = attempt.source_snapshot_id",
-            "INNER JOIN runner_dispatch_acceptances AS accepted",
+            "LEFT JOIN runner_dispatch_acceptances AS accepted",
             "  ON accepted.dispatch_id = dispatch.id AND accepted.lease_token = dispatch.lease_token",
-            "INNER JOIN runner_dispatch_starts AS started",
+            "LEFT JOIN runner_dispatch_starts AS started",
             "  ON started.dispatch_id = dispatch.id AND started.lease_token = dispatch.lease_token",
             "WHERE dispatch.id = $1::uuid AND dispatch.execution_id = $2::uuid",
             "  AND dispatch.attempt_id = $3::uuid AND job.attempt_id = $3::uuid",
@@ -242,6 +252,16 @@ export class PostgresRunnerArtifactRepository {
         );
         const artifact = result.rows[0];
         if (!artifact) throw new RunnerArtifactNotFoundError();
+
+        if (!artifact.acceptance_id || !artifact.start_event_id) {
+          throw new RunnerArtifactNotStartedError();
+        }
+        if (artifact.accepted_runner_id !== input.runnerId ||
+            artifact.accepted_key_id !== input.keyId ||
+            artifact.started_runner_id !== input.runnerId ||
+            artifact.started_key_id !== input.keyId) {
+          throw new RunnerArtifactUnauthorizedError();
+        }
 
         if (artifact.delivery_state !== "PENDING" ||
             artifact.dispatch_owner !== input.runnerId ||
@@ -278,10 +298,11 @@ export class PostgresRunnerArtifactRepository {
             "SELECT id, sequence, visibility, input_data, expected_output",
             "FROM problem_test_cases",
             "WHERE problem_version_id = $1::uuid",
+            "  AND ($2::varchar = 'SUBMIT' OR visibility = 'PUBLIC')",
             "ORDER BY sequence",
-            "LIMIT $2",
+            "LIMIT $3",
           ].join("\n"),
-          [artifact.problem_version_id, MAX_TEST_CASES + 1],
+          [artifact.problem_version_id, artifact.action, MAX_TEST_CASES + 1],
         );
         if (testResult.rows.length < 1 || testResult.rows.length > MAX_TEST_CASES) {
           throw new RunnerArtifactIntegrityError("runner_artifact_test_case_count_invalid");
@@ -326,7 +347,7 @@ export class PostgresRunnerArtifactRepository {
           sourceArtifactId: artifact.source_snapshot_id,
           sourceSha256: computedSourceHash,
           sourceCode,
-          testBundleId: artifact.problem_version_id,
+          testBundleId: `${artifact.problem_version_id}-${artifact.action.toLowerCase()}-${testBundleSha256.slice(0, 16)}`,
           testBundleSha256,
           testCases,
         };
