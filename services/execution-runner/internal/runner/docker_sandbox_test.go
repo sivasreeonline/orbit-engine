@@ -181,7 +181,6 @@ func TestDockerCreateArgumentsApplyRequiredIsolationPolicy(t *testing.T) {
 
 func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
 	fake := &fakeDockerCLI{
 		stdout: []byte(compileSuccessMarker + "program output\n"),
 		stderr: []byte("program warning\n"),
@@ -310,7 +309,7 @@ func TestDockerSandboxEnforcesCombinedStdoutAndStderrLimit(t *testing.T) {
 func TestDockerSandboxTimeoutKillsContainerAndCleansWorkspace(t *testing.T) {
 	t.Parallel()
 	fake := &fakeDockerCLI{waitForContext: true}
-	sandbox, err := NewDockerSandbox(fake, t.TempDir())
+	sandbox, err := NewDockerSandbox(fake)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +332,7 @@ func TestDockerSandboxTreatsContainerCleanupFailureAsInfrastructureError(t *test
 		state:     DockerContainerState{Status: "exited", ExitCode: 0},
 		removeErr: errors.New("docker rm failed"),
 	}
-	sandbox, err := NewDockerSandbox(fake, t.TempDir())
+	sandbox, err := NewDockerSandbox(fake)
 	if err != nil {
 		t.Fatal(err)
 	}
