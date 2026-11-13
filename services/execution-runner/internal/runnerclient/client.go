@@ -34,6 +34,7 @@ const (
 	startPath             = "/internal/v1/runner/start"
 	heartbeatPath         = "/internal/v1/runner/heartbeat"
 	artifactPath          = "/internal/v1/runner/artifact"
+	completionPath        = "/internal/v1/runner/complete"
 	maxResponseBytes      = 64 << 10
 	maxArtifactResponseBytes = 8 << 20
 	maxArtifactSourceBytes   = 256 << 10
@@ -98,6 +99,33 @@ type HeartbeatResult struct {
 	DispatchID string
 	ExecutionID string
 	LeaseExpiresAt time.Time
+	Replayed bool
+}
+
+// CompletionInput contains only the allowlisted aggregate terminal result.
+// It deliberately has no fields for source, test contents, stdout or stderr.
+type CompletionInput struct {
+	InfrastructureStatus string
+	InfrastructureErrorCode string
+	CompilationStatus string
+	Verdict string
+	CleanupStatus string
+	TestsTotal int64
+	TestsPassed int64
+	ElapsedMs int64
+	PeakMemoryBytes *int64
+	RunnerVersion string
+	RuntimeImageDigest string
+	ResultSHA256 string
+	StartedAt time.Time
+	CompletedAt time.Time
+}
+
+type CompletionResult struct {
+	ExecutionID string
+	AttemptID string
+	State string
+	ResultSHA256 string
 	Replayed bool
 }
 
@@ -217,6 +245,38 @@ type artifactRequest struct {
 
 type artifactResponse struct {
 	Data ExecutionArtifact `json:"data"`
+}
+
+type completionRequest struct {
+	DispatchID string `json:"dispatchId"`
+	ExecutionID string `json:"executionId"`
+	AttemptID string `json:"attemptId"`
+	LeaseToken string `json:"leaseToken"`
+	InfrastructureStatus string `json:"infrastructureStatus"`
+	InfrastructureErrorCode string `json:"infrastructureErrorCode,omitempty"`
+	CompilationStatus string `json:"compilationStatus"`
+	Verdict string `json:"verdict"`
+	CleanupStatus string `json:"cleanupStatus"`
+	TestsTotal int64 `json:"testsTotal"`
+	TestsPassed int64 `json:"testsPassed"`
+	ElapsedMs int64 `json:"elapsedMs"`
+	PeakMemoryBytes *int64 `json:"peakMemoryBytes,omitempty"`
+	RunnerVersion string `json:"runnerVersion"`
+	RuntimeImageDigest string `json:"runtimeImageDigest,omitempty"`
+	ResultSHA256 string `json:"resultSha256"`
+	StartedAt string `json:"startedAt"`
+	CompletedAt string `json:"completedAt"`
+}
+
+type completionResponse struct {
+	Data struct {
+		Completed bool `json:"completed"`
+		Replayed bool `json:"replayed"`
+		ExecutionID string `json:"executionId"`
+		AttemptID string `json:"attemptId"`
+		State string `json:"state"`
+		ResultSHA256 string `json:"resultSha256"`
+	} `json:"data"`
 }
 
 type errorResponse struct {
@@ -543,6 +603,142 @@ func (c *Client) FetchArtifact(
 		return ExecutionArtifact{}, err
 	}
 	return artifact, nil
+}
+
+// CompleteExecution submits an allowlisted aggregate result for an already
+// started dispatch. The control plane binds it to the authenticated runner
+// and exact lease. Repeating the same input after a lost acknowledgement is
+// safe: the server returns the existing completion receipt.
+func (c *Client) CompleteExecution(
+	ctx context.Context,
+	dispatch Dispatch,
+	result CompletionInput,
+) (CompletionResult, error) {
+	if !validDispatch(dispatch) {
+		return CompletionResult{}, errors.New("valid dispatch is required")
+	}
+	if err := validateCompletionInput(result); err != nil {
+		return CompletionResult{}, err
+	}
+
+	body, err := json.Marshal(completionRequest{
+		DispatchID: dispatch.DispatchID,
+		ExecutionID: dispatch.ExecutionID,
+		AttemptID: dispatch.AttemptID,
+		LeaseToken: dispatch.LeaseToken,
+		InfrastructureStatus: result.InfrastructureStatus,
+		InfrastructureErrorCode: result.InfrastructureErrorCode,
+		CompilationStatus: result.CompilationStatus,
+		Verdict: result.Verdict,
+		CleanupStatus: result.CleanupStatus,
+		TestsTotal: result.TestsTotal,
+		TestsPassed: result.TestsPassed,
+		ElapsedMs: result.ElapsedMs,
+		PeakMemoryBytes: result.PeakMemoryBytes,
+		RunnerVersion: result.RunnerVersion,
+		RuntimeImageDigest: result.RuntimeImageDigest,
+		ResultSHA256: result.ResultSHA256,
+		StartedAt: result.StartedAt.UTC().Format(time.RFC3339Nano),
+		CompletedAt: result.CompletedAt.UTC().Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		return CompletionResult{}, fmt.Errorf("encode runner completion: %w", err)
+	}
+
+	var response completionResponse
+	if err := c.postSignedJSON(ctx, completionPath, body, &response); err != nil {
+		return CompletionResult{}, err
+	}
+	data := response.Data
+	expectedState := "COMPLETED"
+	if result.InfrastructureStatus == "FAILED" {
+		expectedState = "FAILED_INFRASTRUCTURE"
+	}
+	if !data.Completed || data.ExecutionID != dispatch.ExecutionID ||
+		data.AttemptID != dispatch.AttemptID ||
+		data.State != expectedState || data.ResultSHA256 != result.ResultSHA256 {
+		return CompletionResult{}, errors.New("runner completion acknowledgement does not match the submitted result")
+	}
+	return CompletionResult{
+		ExecutionID: data.ExecutionID,
+		AttemptID: data.AttemptID,
+		State: data.State,
+		ResultSHA256: data.ResultSHA256,
+		Replayed: data.Replayed,
+	}, nil
+}
+
+func validateCompletionInput(result CompletionInput) error {
+	if result.InfrastructureStatus != "SUCCEEDED" && result.InfrastructureStatus != "FAILED" {
+		return errors.New("invalid runner completion infrastructure status")
+	}
+	if result.CompilationStatus != "NOT_STARTED" &&
+		result.CompilationStatus != "SUCCEEDED" &&
+		result.CompilationStatus != "FAILED" {
+		return errors.New("invalid runner completion compilation status")
+	}
+	allowedVerdicts := map[string]bool{
+		"NOT_EVALUATED": true,
+		"ACCEPTED": true,
+		"WRONG_ANSWER": true,
+		"COMPILATION_ERROR": true,
+		"RUNTIME_ERROR": true,
+		"TIME_LIMIT_EXCEEDED": true,
+		"MEMORY_LIMIT_EXCEEDED": true,
+		"OUTPUT_LIMIT_EXCEEDED": true,
+		"INTERNAL_ERROR": true,
+	}
+	if !allowedVerdicts[result.Verdict] {
+		return errors.New("invalid runner completion verdict")
+	}
+	if result.CleanupStatus != "SUCCEEDED" &&
+		result.CleanupStatus != "FAILED" &&
+		result.CleanupStatus != "UNKNOWN" {
+		return errors.New("invalid runner completion cleanup status")
+	}
+	if result.InfrastructureStatus == "FAILED" {
+		if !regexp.MustCompile("^[A-Z][A-Z0-9_]{0,63}$").MatchString(result.InfrastructureErrorCode) ||
+			result.Verdict != "NOT_EVALUATED" {
+			return errors.New("infrastructure failure requires a safe error code and NOT_EVALUATED verdict")
+		}
+	} else if result.InfrastructureErrorCode != "" || result.Verdict == "NOT_EVALUATED" {
+		return errors.New("successful infrastructure result cannot include an infrastructure error code")
+	}
+	if result.CompilationStatus == "FAILED" && result.Verdict != "COMPILATION_ERROR" {
+		return errors.New("failed compilation requires COMPILATION_ERROR verdict")
+	}
+	if result.CompilationStatus != "FAILED" && result.Verdict == "COMPILATION_ERROR" {
+		return errors.New("COMPILATION_ERROR verdict requires failed compilation")
+	}
+	if result.TestsTotal < 0 || result.TestsPassed < 0 || result.TestsPassed > result.TestsTotal ||
+		result.TestsTotal > 9_007_199_254_740_991 || result.TestsPassed > 9_007_199_254_740_991 ||
+		result.ElapsedMs < 0 || result.ElapsedMs > 9_007_199_254_740_991 {
+		return errors.New("runner completion counts or duration are outside the safe integer range")
+	}
+	if result.CompilationStatus == "FAILED" && result.TestsTotal != 0 {
+		return errors.New("failed compilation cannot contain test results")
+	}
+	if result.Verdict == "ACCEPTED" && (result.TestsTotal == 0 || result.TestsPassed != result.TestsTotal) {
+		return errors.New("ACCEPTED verdict requires all non-empty test cases to pass")
+	}
+	if result.PeakMemoryBytes != nil &&
+		(*result.PeakMemoryBytes < 0 || *result.PeakMemoryBytes > 9_007_199_254_740_991) {
+		return errors.New("runner completion peak memory is outside the safe integer range")
+	}
+	if !regexp.MustCompile("^[A-Za-z0-9._+-]{1,64}$").MatchString(result.RunnerVersion) {
+		return errors.New("invalid runner completion version")
+	}
+	if result.RuntimeImageDigest != "" && !isSHA256(result.RuntimeImageDigest) {
+		return errors.New("invalid runner completion runtime image digest")
+	}
+	if !isSHA256(result.ResultSHA256) {
+		return errors.New("invalid runner completion result digest")
+	}
+	if result.StartedAt.IsZero() || result.CompletedAt.IsZero() ||
+		result.CompletedAt.Before(result.StartedAt) {
+		return errors.New("invalid runner completion time range")
+	}
+	return nil
 }
 
 func validateArtifact(dispatch Dispatch, artifact ExecutionArtifact) error {
