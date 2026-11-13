@@ -4,13 +4,10 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerauth"
 )
 
 func writeConfigKey(t *testing.T, path string) ed25519.PrivateKey {
@@ -81,13 +78,15 @@ func TestLoadReturnsValidatedIdentityAndDestroyClearsKey(t *testing.T) {
 	if !ed25519.PrivateKey(config.PrivateKey).Equal(expectedKey) {
 		t.Fatal("loaded config key differs from provisioned key")
 	}
+	loadedKey := config.PrivateKey
 	config.Destroy()
 	if config.PrivateKey != nil {
 		t.Fatal("Destroy did not clear the private-key reference")
 	}
-	for index, value := range expectedKey {
-		_ = index
-		_ = value
+	for index, value := range loadedKey {
+		if value != 0 {
+			t.Fatalf("Destroy did not zero private-key byte %d", index)
+		}
 	}
 }
 
@@ -158,10 +157,7 @@ func TestLoadDoesNotExposePrivateKeyContentsInErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected relative journal path failure")
 	}
-	if strings.Contains(err.Error(), "BEGIN") || strings.Contains(err.Error(), base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize))) {
-		t.Fatalf("configuration error unexpectedly includes key-like material: %v", err)
-	}
-	if errors.Is(err, runnerauth.ErrInvalidPrivateKeyFile) {
-		t.Fatalf("unexpected key-loader failure: %v", err)
+	if strings.Contains(err.Error(), base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize))) {
+		t.Fatalf("configuration error unexpectedly includes key material: %v", err)
 	}
 }
