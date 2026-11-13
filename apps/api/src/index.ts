@@ -11,12 +11,14 @@ import { PostgresRunnerAcceptanceRepository } from "./db/runner-acceptance-repos
 import { PostgresRunnerStartRepository } from "./db/runner-start-repository";
 import { PostgresRunnerHeartbeatRepository } from "./db/runner-heartbeat-repository";
 import { PostgresRunnerArtifactRepository } from "./db/runner-artifact-repository";
+import { PostgresRunnerRecoveryRepository } from "./db/runner-recovery-repository";
 import { consumeRunnerDispatchBatch } from "./services/runner-dispatch-queue-consumer";
 import { PostgresExecutionIntakeRepository } from "./db/execution-intake-repository";
 import type { Env } from "./env";
 
 const authenticator = new UnconfiguredAuthenticator();
 const publisherWorkerId = "sky-high-api-outbox-publisher";
+const runnerRecoveryWorkerId = "sky-high-api-runner-expiry-recovery";
 
 function positiveInteger(value: string | undefined, fallback: number, maximum: number): number {
   if (value === undefined) return fallback;
@@ -96,7 +98,36 @@ export default {
     }
 
     const repository = new PostgresOutboxLeaseRepository(connectionString);
-    const task = publishOutboxBatch(repository, queue, {
+    const recoveryRepository = new PostgresRunnerRecoveryRepository(connectionString);
+    const recoveryBatchSize = positiveInteger(env.RUNNER_RECOVERY_BATCH_SIZE, 25, 100);
+    const recoveryMaxRetries = positiveInteger(env.RUNNER_RECOVERY_MAX_RETRIES, 2, 10);
+    const recoveryBaseDelaySeconds = positiveInteger(env.RUNNER_RECOVERY_BASE_DELAY_SECONDS, 5, 300);
+    const recoveryMaxDelaySeconds = positiveInteger(env.RUNNER_RECOVERY_MAX_DELAY_SECONDS, 60, 3600);
+    if (recoveryBaseDelaySeconds > recoveryMaxDelaySeconds) {
+      throw new Error("invalid_runner_recovery_configuration");
+    }
+    const task = (async () => {
+      try {
+        const recoveries = await recoveryRepository.recoverExpiredRunning({
+          workerId: runnerRecoveryWorkerId,
+          batchSize: recoveryBatchSize,
+          maxRetries: recoveryMaxRetries,
+          baseDelaySeconds: recoveryBaseDelaySeconds,
+          maxDelaySeconds: recoveryMaxDelaySeconds,
+        });
+        if (recoveries.length > 0) {
+          console.info("runner_lease_recovery_batch_completed", {
+            recovered: recoveries.length,
+            requeued: recoveries.filter((item) => item.action === "REQUEUED").length,
+            failedInfrastructure: recoveries.filter((item) => item.action === "FAILED_INFRASTRUCTURE").length,
+          });
+        }
+      } catch {
+        // Never log lease tokens, runner keys, student source or database errors.
+        console.error("runner_lease_recovery_cycle_failed");
+      }
+
+      await publishOutboxBatch(repository, queue, {
       workerId: publisherWorkerId,
       batchSize,
       leaseDurationSeconds: leaseSeconds,
@@ -105,10 +136,11 @@ export default {
         const delay = Math.min(retryMaxMs, retryBaseMs * (2 ** exponent));
         return new Date(now.getTime() + delay);
       },
-    }).catch(() => {
-      // Do not log database errors, queue payloads or student source.
-      console.error("outbox_publish_cycle_failed");
-    });
+      }).catch(() => {
+        // Do not log database errors, queue payloads or student source.
+        console.error("outbox_publish_cycle_failed");
+      });
+    })();
 
     context.waitUntil(task);
   },
