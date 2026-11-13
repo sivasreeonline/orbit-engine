@@ -150,6 +150,7 @@ export class EditorEvidenceCollector {
   async changeContext(language: EvidenceLanguage, sourceCode: string): Promise<void> {
     if (!this.active || this.disposed) return;
     await this.processingTask;
+    this.cancelScheduledTimer();
     if (language === this.language && sourceCode === this.sourceCode) return;
     if (this.dirty) {
       await this.captureSnapshot("PERIODIC");
@@ -171,6 +172,7 @@ export class EditorEvidenceCollector {
       throw new Error("evidence_session_not_active");
     }
     await this.processingTask;
+    this.cancelScheduledTimer();
     this.noteEditorChange(sourceCode);
     this.language = language;
     const snapshot = await this.captureSnapshot(action);
@@ -210,12 +212,10 @@ export class EditorEvidenceCollector {
 
   async close(): Promise<void> {
     if (!this.active || this.disposed) return;
-    this.active = false;
-    if (this.timer !== null) {
-      this.cancelTimer(this.timer);
-      this.timer = null;
-    }
+    this.cancelScheduledTimer();
     await this.processingTask;
+    this.active = false;
+    this.cancelScheduledTimer();
     this.disposed = true;
     if (this.latestSnapshot === null || this.dirty) {
       await this.captureSnapshot("SESSION_END", true);
@@ -307,12 +307,16 @@ export class EditorEvidenceCollector {
     this.options.onRecord?.(record);
   }
 
-  private scheduleNext(): void {
-    if (!this.active || this.disposed || this.processing) return;
+  private cancelScheduledTimer(): void {
     if (this.timer !== null) {
       this.cancelTimer(this.timer);
       this.timer = null;
     }
+  }
+
+  private scheduleNext(): void {
+    if (!this.active || this.disposed || this.processing) return;
+    this.cancelScheduledTimer();
     const now = this.now();
     const changeDue = this.dirty
       ? this.lastSnapshotAt + CHANGE_CAPTURE_INTERVAL_MS
