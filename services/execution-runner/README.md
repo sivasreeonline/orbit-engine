@@ -143,3 +143,27 @@ The execution adapter currently uses exact-byte output comparison. The artifact 
 6. Run real Java/Python smoke tests and the full adversarial matrix: network/DNS, host filesystem traversal, process exhaustion, memory exhaustion, infinite loops, output floods, cancellation and cleanup failures.
 7. Verify container cleanup and lease-loss cancellation under real process execution; implement measured peak-memory sampling.
 8. Complete an independent security review and cleanup attestation design. Keep the adapter disabled until all gates pass.
+
+
+## Opt-in real runsc qualification suite
+
+The default CI suite uses a fake Docker boundary and never runs student code. A separate Linux-only integration suite is available for an operator-controlled host with gVisor `runsc` and both digest-pinned runtime images already loaded locally.
+
+The suite verifies, inside real containers:
+- UID 65532 (non-root execution);
+- outbound network isolation;
+- read-only container root filesystem;
+- bounded output and wall-clock cancellation;
+- process-count enforcement and cleanup.
+
+It never pulls images. Supply the exact digest references and versions that were independently reviewed:
+
+```bash
+export SKYHIGH_JAVA_IMAGE_REF='registry.example/sky-high/java@sha256:<64-hex-digest>'
+export SKYHIGH_PYTHON_IMAGE_REF='registry.example/sky-high/python@sha256:<64-hex-digest>'
+export SKYHIGH_JAVA_VERSION='25'
+export SKYHIGH_PYTHON_VERSION='3.14'
+go test -tags=sandboxqualification -run '^TestRunscHostileWorkload' ./internal/runner -count=1 -v
+```
+
+Run this only on a disposable, dedicated Linux qualification host. It invokes the local Docker daemon with the exact `runsc` runtime. The test is not run by ordinary CI and does not itself authorize student execution. A successful run is one evidence input; memory-pressure behavior, host escape review, kernel/runtime patch level, cleanup after daemon failure, and independent security review remain release gates.
