@@ -54,6 +54,10 @@ DECLARE
   expected_execution_id uuid;
   expected_attempt_id uuid;
   expected_key_runner_id uuid;
+  event_execution_id uuid;
+  event_attempt_id uuid;
+  event_type varchar(32);
+  event_actor_kind varchar(16);
 BEGIN
   SELECT execution_id, attempt_id
   INTO expected_execution_id, expected_attempt_id
@@ -64,11 +68,19 @@ BEGIN
   FROM runner_machine_keys
   WHERE key_id = NEW.key_id;
 
-  IF NOT FOUND
-    OR expected_execution_id IS DISTINCT FROM NEW.execution_id
+  SELECT execution_id, attempt_id, event_type, actor_kind
+  INTO event_execution_id, event_attempt_id, event_type, event_actor_kind
+  FROM execution_evidence_events
+  WHERE event_id = NEW.event_id;
+
+  IF expected_execution_id IS DISTINCT FROM NEW.execution_id
     OR expected_attempt_id IS DISTINCT FROM NEW.attempt_id
-    OR expected_key_runner_id IS DISTINCT FROM NEW.runner_id THEN
-    RAISE EXCEPTION 'runner acceptance identity does not match its dispatch or key'
+    OR expected_key_runner_id IS DISTINCT FROM NEW.runner_id
+    OR event_execution_id IS DISTINCT FROM NEW.execution_id
+    OR event_attempt_id IS DISTINCT FROM NEW.attempt_id
+    OR event_type IS DISTINCT FROM 'RUNNER_ACCEPTED'
+    OR event_actor_kind IS DISTINCT FROM 'RUNNER' THEN
+    RAISE EXCEPTION 'runner acceptance identity does not match its dispatch, key or evidence event'
       USING ERRCODE = '23514';
   END IF;
 
