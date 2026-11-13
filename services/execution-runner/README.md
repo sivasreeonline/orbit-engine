@@ -55,7 +55,7 @@ The local journal is a write-ahead record for the future runner protocol:
 3. After receiving the durable API acknowledgement, append a `CONFIRMED` event and fsync again.
 4. After a restart, retry every prepared-but-unconfirmed receipt using the same acceptanceId and receipt body, but a fresh signed HTTP nonce.
 
-The journal is append-only JSONL with a 64 MiB initial size ceiling. It rejects malformed complete records and only truncates an incomplete final line left by a crash. It is not yet wired to the HTTP client or claim loop.
+The journal is append-only JSONL with a 64 MiB initial size ceiling. It rejects malformed complete records and only truncates an incomplete final line left by a crash. A definitive signed `409 RUNNER_LEASE_STALE` response appends an `ABANDONED` event for that exact acceptance receipt; the record remains auditable but is excluded from future retries. Transport failures, 5xx responses and other unknown errors are never treated as abandonment.
 
 ## Current runner control-plane client
 
@@ -68,6 +68,26 @@ The Go client exposes separate methods for:
 6. Submit an allowlisted aggregate terminal result against the same dispatch and lease.
 
 The client verifies the returned source hash and canonical test-bundle hash. Completion retries preserve the result body and use a fresh signed nonce; the control plane returns the existing completion receipt when the result is identical. It rejects hidden tests in a `RUN` artifact and permits hidden fixtures only for the trusted runner's `SUBMIT` artifact. The methods are individually testable and are not yet wired into a continuously polling process.
+
+## Single-dispatch lifecycle coordinator
+
+The Go runner now includes an injectable `runner.Worker` coordinator with a single-dispatch `RunOnce` operation. It orders the control-plane operations as follows:
+
+1. Replay locally prepared, unconfirmed acceptance receipts.
+2. Verify that the injected artifact executor explicitly reports ready.
+3. Claim one dispatch.
+4. Persist and submit the acceptance receipt.
+5. Request the lease-fenced start transition.
+6. Fetch and verify the private source/test artifact.
+7. Execute through the injected artifact-executor interface while renewing the lease.
+8. Stop on a fenced/expired heartbeat; never submit a result for a lease the worker no longer owns.
+9. Submit the allowlisted aggregate result, retrying transient failures with the exact same result payload.
+
+A heartbeat retry reuses the same heartbeat ID and the HTTP client creates a fresh signed nonce for each transport attempt. The last acknowledged lease expiry is carried forward to artifact and completion calls. Completion retries keep the result immutable.
+
+This coordinator is a library operation, not a polling daemon. It claims at most one dispatch per invocation and does not create goroutines that poll forever. It refuses to claim work unless an executor reports ready. `UnconfiguredArtifactExecutor` always reports not ready and returns `ErrSandboxNotConfigured`.
+
+The `cmd/runner` entry point remains health-only and loopback-bound. It does not construct a runner identity, open the acceptance journal for production work, start the coordinator, or execute student code. The coordinator is not yet connected to a real OCI/gVisor executor.
 
 ## M0 next gates
 1. Add reviewed machine key loading/permissions and a single-process journal owner.

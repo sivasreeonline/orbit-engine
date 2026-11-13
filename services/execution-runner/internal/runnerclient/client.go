@@ -396,6 +396,15 @@ func (c *Client) AcceptDispatch(
 	if err != nil {
 		return AcceptanceResult{}, fmt.Errorf("find local acceptance receipt: %w", err)
 	}
+	if found {
+		abandoned, err := journal.IsAbandoned(receipt.AcceptanceID)
+		if err != nil {
+			return AcceptanceResult{}, fmt.Errorf("inspect acceptance receipt abandonment: %w", err)
+		}
+		if abandoned {
+			return AcceptanceResult{}, acceptancejournal.ErrAbandoned
+		}
+	}
 	if !found {
 		acceptanceID, err := c.newUUID()
 		if err != nil {
@@ -434,6 +443,11 @@ func (c *Client) RetryPending(
 	for _, receipt := range pending {
 		result, err := c.acceptPrepared(ctx, journal, receipt)
 		if err != nil {
+			if isStaleAcceptanceLeaseError(err) {
+				// The server has definitively fenced this lease generation. Its
+				// receipt remains in the journal, but it must not block newer work.
+				continue
+			}
 			return results, err
 		}
 		results = append(results, result)
@@ -459,6 +473,15 @@ func (c *Client) acceptPrepared(
 
 	var response acceptanceResponse
 	if err := c.postSignedJSON(ctx, acceptPath, body, &response); err != nil {
+		if isStaleAcceptanceLeaseError(err) {
+			if _, abandonErr := journal.Abandon(
+				receipt.AcceptanceID,
+				"RUNNER_LEASE_STALE",
+				c.now().UTC(),
+			); abandonErr != nil {
+				return AcceptanceResult{}, fmt.Errorf("persist stale acceptance abandonment: %w", abandonErr)
+			}
+		}
 		return AcceptanceResult{}, err
 	}
 	if !response.Data.Accepted ||
@@ -486,6 +509,13 @@ func (c *Client) acceptPrepared(
 // StartDispatch durably transitions an accepted lease to RUNNING. The operation
 // is idempotent for the same dispatch and fencing token, so callers may safely
 // retry after a lost acknowledgement.
+func isStaleAcceptanceLeaseError(err error) bool {
+	var remote *RemoteError
+	return errors.As(err, &remote) &&
+		remote.StatusCode == http.StatusConflict &&
+		remote.Code == "RUNNER_LEASE_STALE"
+}
+
 func (c *Client) StartDispatch(ctx context.Context, dispatch Dispatch) (StartResult, error) {
 	if !validDispatch(dispatch) {
 		return StartResult{}, errors.New("valid dispatch is required")
