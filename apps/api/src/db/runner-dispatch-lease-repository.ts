@@ -187,6 +187,113 @@ export class PostgresRunnerDispatchLeaseRepository {
     });
   }
 
+  /**
+   * Claims a bounded number of fair dispatches for one authenticated runner.
+   * A per-runner advisory transaction lock serializes concurrent polls so
+   * active leases cannot exceed maxActiveLeases for that runner.
+   */
+  async claimFairBatchForRunner(
+    runnerId: string,
+    requestedSlots: number,
+    maxActiveLeases: number,
+    leaseSeconds: number,
+  ): Promise<RunnerDispatchLease[]> {
+    if (!this.connectionString) throw new DatabaseUnavailableError();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(runnerId)) {
+      throw new Error("invalid_runner_machine_id");
+    }
+    if (!Number.isSafeInteger(requestedSlots) || requestedSlots < 1 || requestedSlots > 10 ||
+        !Number.isSafeInteger(maxActiveLeases) || maxActiveLeases < 1 || maxActiveLeases > 10) {
+      throw new Error("invalid_runner_dispatch_capacity");
+    }
+    if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 1 || leaseSeconds > 3600) {
+      throw new Error("invalid_runner_dispatch_lease_duration");
+    }
+
+    return this.withClient(async (client) => {
+      const result = await client.query<ClaimedRow>(
+        [
+          "WITH runner_lock AS MATERIALIZED (",
+          "  SELECT pg_advisory_xact_lock(hashtextextended($4::text, 0))",
+          "), active_leases AS MATERIALIZED (",
+          "  SELECT count(*)::integer AS active_count",
+          "  FROM runner_dispatch_outbox",
+          "  WHERE lease_owner = $4",
+          "    AND delivery_state = 'PENDING'",
+          "    AND lease_expires_at > now()",
+          "), slot_budget AS MATERIALIZED (",
+          "  SELECT LEAST($1::integer, GREATEST($2::integer - active_leases.active_count, 0))::integer AS slots",
+          "  FROM active_leases CROSS JOIN runner_lock",
+          "), candidate_lanes AS MATERIALIZED (",
+          "  SELECT lane.tenant_id, lane.actor_user_id",
+          "  FROM runner_dispatch_scheduler_lanes AS lane",
+          "  CROSS JOIN slot_budget",
+          "  WHERE slot_budget.slots > 0",
+          "    AND EXISTS (",
+          "      SELECT 1 FROM runner_dispatch_outbox AS pending",
+          "      INNER JOIN execution_attempts AS owner_attempt ON owner_attempt.id = pending.attempt_id",
+          "      WHERE owner_attempt.tenant_id = lane.tenant_id",
+          "        AND owner_attempt.actor_user_id = lane.actor_user_id",
+          "        AND pending.delivery_state = 'PENDING'",
+          "        AND pending.available_at <= now()",
+          "        AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= now())",
+          "    )",
+          "  ORDER BY lane.last_served_ticket, lane.tenant_id, lane.actor_user_id",
+          "  LIMIT (SELECT slots FROM slot_budget)",
+          "  FOR UPDATE OF lane SKIP LOCKED",
+          "), candidate_dispatches AS (",
+          "  SELECT DISTINCT ON (owner_attempt.tenant_id, owner_attempt.actor_user_id)",
+          "    pending.id",
+          "  FROM candidate_lanes AS lane",
+          "  INNER JOIN execution_attempts AS owner_attempt",
+          "    ON owner_attempt.tenant_id = lane.tenant_id",
+          "   AND owner_attempt.actor_user_id = lane.actor_user_id",
+          "  INNER JOIN runner_dispatch_outbox AS pending ON pending.attempt_id = owner_attempt.id",
+          "  WHERE pending.delivery_state = 'PENDING'",
+          "    AND pending.available_at <= now()",
+          "    AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= now())",
+          "  ORDER BY owner_attempt.tenant_id, owner_attempt.actor_user_id,",
+          "    pending.available_at, pending.created_at, pending.id",
+          "), claimed AS (",
+          "  UPDATE runner_dispatch_outbox AS dispatch",
+          "  SET lease_owner = $4, lease_token = gen_random_uuid(),",
+          "      lease_expires_at = now() + make_interval(secs => $3),",
+          "      delivery_attempts = dispatch.delivery_attempts + 1",
+          "  FROM candidate_dispatches AS candidate",
+          "  WHERE dispatch.id = candidate.id",
+          "  RETURNING dispatch.id, dispatch.execution_id, dispatch.attempt_id,",
+          "    dispatch.protocol_version, dispatch.correlation_id,",
+          "    dispatch.delivery_attempts, dispatch.lease_token, dispatch.lease_expires_at",
+          "), served AS (",
+          "  UPDATE runner_dispatch_scheduler_lanes AS lane",
+          "  SET last_served_ticket = nextval('runner_dispatch_scheduler_ticket_seq'),",
+          "      last_served_at = clock_timestamp(), updated_at = now()",
+          "  FROM claimed",
+          "  INNER JOIN execution_attempts AS owner_attempt ON owner_attempt.id = claimed.attempt_id",
+          "  WHERE lane.tenant_id = owner_attempt.tenant_id",
+          "    AND lane.actor_user_id = owner_attempt.actor_user_id",
+          "  RETURNING lane.tenant_id",
+          ")",
+          "SELECT claimed.* FROM claimed",
+          "CROSS JOIN (SELECT count(*) FROM served) AS scheduler_cursor_write",
+        ].join("\\n"),
+        [requestedSlots, maxActiveLeases, leaseSeconds, runnerId],
+      );
+      return result.rows.map((row) => ({
+        id: row.id,
+        executionId: row.execution_id,
+        attemptId: row.attempt_id,
+        protocolVersion: row.protocol_version,
+        correlationId: row.correlation_id,
+        deliveryAttempts: row.delivery_attempts,
+        leaseToken: row.lease_token,
+        leaseExpiresAt: row.lease_expires_at instanceof Date
+          ? row.lease_expires_at.toISOString()
+          : new Date(row.lease_expires_at).toISOString(),
+      }));
+    });
+  }
+
   /** Mark delivered only after the runner transport returns an authenticated receipt. */
   async markDelivered(dispatchId: string, workerId: string, leaseToken: string): Promise<boolean> {
     if (!this.connectionString) throw new DatabaseUnavailableError();
