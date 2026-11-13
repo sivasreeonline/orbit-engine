@@ -75,6 +75,7 @@ describe("authenticateRunnerRequest", () => {
     expect(identities.consumeNonce).toHaveBeenCalledWith(
       fixture.keyId,
       fixture.nonce,
+      now,
       new Date(now.getTime() + 5 * 60 * 1000),
     );
   });
