@@ -62,6 +62,51 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     expect(fake.ended()).toBe(true);
   });
 
+  it("claims execution and dispatch leases atomically and appends JOB_CLAIMED evidence", async () => {
+    const calls: Call[] = [];
+    let ended = false;
+    const runnerId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
+    const client = {
+      async connect() {},
+      async query<T extends Record<string, unknown>>(text: string, values?: unknown[]) {
+        calls.push({ text, values });
+        if (text.includes("SELECT count(*)::integer AS active_count")) {
+          return { rows: [{ active_count: 0 }] as unknown as T[] };
+        }
+        if (text.includes("WITH candidate_lanes AS MATERIALIZED")) {
+          return { rows: [{
+            id: dispatchId, execution_id: executionId, attempt_id: attemptId,
+            protocol_version: "v1", correlation_id: "corr-runner",
+            delivery_attempts: 1, lease_token: token,
+            lease_expires_at: new Date("2026-11-13T12:02:00Z"),
+          }] as unknown as T[] };
+        }
+        return { rows: [] as T[] };
+      },
+      async end() { ended = true; },
+    };
+    const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => client);
+
+    await expect(repository.claimFairBatchForRunner(runnerId, 4, 2, 120)).resolves.toEqual([{
+      id: dispatchId, executionId, attemptId, protocolVersion: "v1",
+      correlationId: "corr-runner", deliveryAttempts: 1, leaseToken: token,
+      leaseExpiresAt: "2026-11-13T12:02:00.000Z",
+    }]);
+
+    expect(calls[1]?.text).toBe("BEGIN");
+    expect(calls[2]?.text).toContain("pg_advisory_xact_lock");
+    expect(calls[3]?.text).toContain("active_count");
+    const claim = calls.find((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"));
+    expect(claim?.text).toContain("FOR UPDATE OF pending, job SKIP LOCKED");
+    expect(claim?.text).toContain("UPDATE execution_jobs AS job");
+    expect(claim?.text).toContain("lease_token = claimed.lease_token");
+    expect(claim?.text).toContain("'JOB_CLAIMED', 'RUNNER'");
+    expect(claim?.text).toContain("INSERT INTO execution_evidence_events");
+    expect(claim?.values).toEqual([2, runnerId, 120]);
+    expect(calls.some((call) => call.text === "COMMIT")).toBe(true);
+    expect(ended).toBe(true);
+  });
+
   it("marks delivered only with the active unexpired fencing token", async () => {
     const fake = fakeClient([{ id: dispatchId }]);
     const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => fake.client);
