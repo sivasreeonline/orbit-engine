@@ -39,6 +39,29 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     expect(fake.ended()).toBe(true);
   });
 
+  it("claims at most one job per student lane using durable least-served tickets", async () => {
+    const fake = fakeClient([{
+      id: dispatchId, execution_id: executionId, attempt_id: attemptId,
+      protocol_version: "v1", correlation_id: "corr-1", delivery_attempts: 2,
+      lease_token: token, lease_expires_at: new Date("2026-11-13T12:00:00Z"),
+    }]);
+    const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => fake.client);
+
+    await expect(repository.claimFairBatch("fair-dispatcher-1", 20, 45)).resolves.toEqual([{
+      id: dispatchId, executionId, attemptId, protocolVersion: "v1",
+      correlationId: "corr-1", deliveryAttempts: 2, leaseToken: token,
+      leaseExpiresAt: "2026-11-13T12:00:00.000Z",
+    }]);
+
+    const claim = fake.calls[1];
+    expect(claim?.text).toContain("FOR UPDATE OF lane SKIP LOCKED");
+    expect(claim?.text).toContain("DISTINCT ON (owner_attempt.tenant_id, owner_attempt.actor_user_id)");
+    expect(claim?.text).toContain("ORDER BY lane.last_served_ticket");
+    expect(claim?.text).toContain("nextval('runner_dispatch_scheduler_ticket_seq')");
+    expect(claim?.values).toEqual([20, "fair-dispatcher-1", 45]);
+    expect(fake.ended()).toBe(true);
+  });
+
   it("marks delivered only with the active unexpired fencing token", async () => {
     const fake = fakeClient([{ id: dispatchId }]);
     const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => fake.client);
