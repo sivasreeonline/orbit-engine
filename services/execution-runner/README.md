@@ -101,7 +101,7 @@ The `DockerSandbox` adapter creates a fresh container per testcase with:
 - a non-executable, nodev/nosuid `/workspace` tmpfs and bounded `/tmp` tmpfs;
 - forced container removal after completion, timeout, cancellation or output overflow.
 
-Student source is not written to a host temporary file or bind-mounted from the host. The runner sends the source bytes first over the container's attached stdin; a fixed wrapper consumes exactly the known source-byte count into `/workspace`, verifies the byte count, makes the file read-only, then leaves the remaining stdin stream for the testcase input. Student source is never interpolated into shell text.
+Student source is not written to a host temporary file or bind-mounted from the host. The runner sends the source bytes first over the container's attached stdin; a fixed wrapper consumes exactly the known source-byte count into `/workspace`, verifies the byte count, makes the file and workspace directory read-only, then leaves the remaining stdin stream for the testcase input. Student source is never interpolated into shell text.
 
 The execution adapter currently uses exact-byte output comparison. The artifact contract does not yet carry a versioned comparison mode, so whitespace-normalizing comparison is deliberately not inferred.
 
