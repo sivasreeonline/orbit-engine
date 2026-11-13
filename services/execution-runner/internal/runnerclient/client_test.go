@@ -6,10 +6,12 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -89,8 +91,8 @@ func TestClaimSendsSignedBoundedRequestAndValidatesDispatch(t *testing.T) {
 		if request.Method != http.MethodPost || request.URL.Path != claimPath {
 			t.Fatalf("unexpected request: %s %s", request.Method, request.URL.Path)
 		}
-		body := make([]byte, request.ContentLength)
-		if _, err := request.Body.Read(body); err != nil && !errors.Is(err, context.Canceled) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
 			t.Fatalf("read request body: %v", err)
 		}
 		verifyTestRequest(t, request, body)
@@ -178,8 +180,8 @@ func TestAcceptDispatchFsyncsBeforeNetworkAndConfirmsAfterAck(t *testing.T) {
 		if request.URL.Path != acceptPath {
 			t.Fatalf("unexpected path: %s", request.URL.Path)
 		}
-		body := make([]byte, request.ContentLength)
-		if _, err := request.Body.Read(body); err != nil {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
 			t.Fatal(err)
 		}
 		verifyTestRequest(t, request, body)
