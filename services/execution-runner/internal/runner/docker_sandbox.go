@@ -340,6 +340,7 @@ func runtimeScript(language protocol.Language, runtimeVersion string, sourceByte
 		"dd bs=1 count=" + strconv.Itoa(sourceBytes) + " of=/workspace/" + map[protocol.Language]string{protocol.LanguageJava: "Main.java", protocol.LanguagePython: "main.py"}[language] + " 2>/dev/null || exit 87",
 		"[ \"$(wc -c < /workspace/" + map[protocol.Language]string{protocol.LanguageJava: "Main.java", protocol.LanguagePython: "main.py"}[language] + ")\" -eq " + strconv.Itoa(sourceBytes) + " ] || exit 87",
 		"chmod 0444 /workspace/" + map[protocol.Language]string{protocol.LanguageJava: "Main.java", protocol.LanguagePython: "main.py"}[language] + " || exit 87",
+		"chmod 0555 /workspace || exit 87",
 	}, "\n")
 	// RuntimeVersion is validated against runtimeVersionPattern before this
 	// value enters the fixed shell program; student source is never interpolated.
