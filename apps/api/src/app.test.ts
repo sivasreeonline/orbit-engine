@@ -18,6 +18,12 @@ import { canonicalRunnerRequestMessage } from "./security/runner-request-signatu
 import { RUNNER_AUTH_HEADERS } from "./services/runner-request-authenticator";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
 import type { CreateExecutionInput } from "./db/execution-intake-repository";
+import type {
+  CreateCodingEvidenceSessionInput,
+  CreatedCodingEvidenceSession,
+  AppendCodingEvidenceBatchInput,
+  AppendedCodingEvidenceBatch,
+} from "./db/coding-evidence-repository";
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
@@ -84,6 +90,10 @@ interface HarnessOptions {
   runnerAcceptanceRepository?: {
     record(input: RecordRunnerAcceptanceInput): Promise<RecordedRunnerAcceptance>;
   };
+  codingEvidenceRepository?: {
+    createSession(input: CreateCodingEvidenceSessionInput): Promise<CreatedCodingEvidenceSession>;
+    appendBatch(input: AppendCodingEvidenceBatchInput): Promise<AppendedCodingEvidenceBatch>;
+  };
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -117,6 +127,9 @@ function makeHarness(options: HarnessOptions = {}) {
       : {}),
     ...(options.runnerAcceptanceRepository
       ? { runnerAcceptanceRepository: options.runnerAcceptanceRepository }
+      : {}),
+    ...(options.codingEvidenceRepository
+      ? { codingEvidenceRepository: options.codingEvidenceRepository }
       : {}),
     allowedOrigins: allowedOrigin,
   });
@@ -903,4 +916,173 @@ describe("authenticated runner acceptance endpoint", () => {
     expect(response.status).toBe(400);
     expect(findActivePublicKey).not.toHaveBeenCalled();
   });
+
+
+describe("Continuous editor evidence API", () => {
+  it("creates an explicitly noticed evidence session for the authenticated owner", async () => {
+    const createSession = vi.fn(async (_input: CreateCodingEvidenceSessionInput) => ({
+      sessionId: "90000000-0000-4000-8000-000000000001",
+      startedAt: "2026-11-13T05:00:00.000Z",
+      lastSequence: 0,
+    }));
+    const { handler, authenticator } = makeHarness({
+      codingEvidenceRepository: {
+        createSession,
+        appendBatch: vi.fn(),
+      },
+    });
+
+    const response = await handler(makeRequest("/api/v1/evidence/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        problemSlug: "two-sum",
+        language: "java",
+        noticeVersion: "notice-v1",
+      }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(await readJson(response)).toMatchObject({
+      data: {
+        sessionId: "90000000-0000-4000-8000-000000000001",
+        lastSequence: 0,
+        capturePolicy: {
+          changedSnapshotIntervalSeconds: 120,
+          checkpointIntervalSeconds: 300,
+        },
+      },
+    });
+    expect(createSession).toHaveBeenCalledWith({
+      principal: authenticated.principal,
+      problemSlug: "two-sum",
+      language: "java",
+      noticeVersion: "notice-v1",
+    });
+    expect(authenticator.authenticate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects missing notice version and extra session fields", async () => {
+    const createSession = vi.fn(async () => ({
+      sessionId: "90000000-0000-4000-8000-000000000001",
+      startedAt: "2026-11-13T05:00:00.000Z",
+      lastSequence: 0,
+    }));
+    const { handler } = makeHarness({
+      codingEvidenceRepository: { createSession, appendBatch: vi.fn() },
+    });
+
+    const response = await handler(makeRequest("/api/v1/evidence/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        problemSlug: "two-sum",
+        language: "java",
+        unexpected: "not allowed",
+      }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_EVIDENCE_SESSION", retryable: false },
+    });
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it("appends an owner-scoped batch and reports sequence gaps", async () => {
+    const appendBatch = vi.fn(async (_input: AppendCodingEvidenceBatchInput) => ({
+      accepted: 2,
+      replayed: 1,
+      sequenceGaps: [4],
+      lastSequence: 4,
+      sessionEnded: false,
+    }));
+    const { handler } = makeHarness({
+      codingEvidenceRepository: {
+        createSession: vi.fn(),
+        appendBatch,
+      },
+    });
+    const sessionId = "90000000-0000-4000-8000-000000000001";
+    const events = [
+      {
+        event: {
+          eventId: "91000000-0000-4000-8000-000000000001",
+          sessionId,
+          sequence: 1,
+          eventType: "SESSION_STARTED",
+          occurredAt: "2026-11-13T05:00:00.000Z",
+          language: "java",
+        },
+      },
+    ];
+
+    const response = await handler(makeRequest(`/api/v1/evidence/sessions/${sessionId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      data: {
+        accepted: 2,
+        replayed: 1,
+        sequenceGaps: [4],
+        lastSequence: 4,
+        sessionEnded: false,
+      },
+    });
+    expect(appendBatch).toHaveBeenCalledWith({
+      principal: authenticated.principal,
+      sessionId,
+      events,
+    });
+  });
+
+  it("rejects malformed event batches before persistence", async () => {
+    const appendBatch = vi.fn(async () => ({
+      accepted: 0, replayed: 0, sequenceGaps: [], lastSequence: 0, sessionEnded: false,
+    }));
+    const { handler } = makeHarness({
+      codingEvidenceRepository: { createSession: vi.fn(), appendBatch },
+    });
+    const sessionId = "90000000-0000-4000-8000-000000000001";
+
+    const response = await handler(makeRequest(`/api/v1/evidence/sessions/${sessionId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events: [] }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_EVIDENCE_BATCH", retryable: false },
+    });
+    expect(appendBatch).not.toHaveBeenCalled();
+  });
+
+  it("requires an authenticated student before creating an evidence session", async () => {
+    const createSession = vi.fn(async () => ({
+      sessionId: "90000000-0000-4000-8000-000000000001",
+      startedAt: "2026-11-13T05:00:00.000Z",
+      lastSequence: 0,
+    }));
+    const { handler } = makeHarness({
+      auth: { authenticated: false, reason: "missing" },
+      codingEvidenceRepository: { createSession, appendBatch: vi.fn() },
+    });
+
+    const response = await handler(makeRequest("/api/v1/evidence/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        problemSlug: "two-sum", language: "java", noticeVersion: "notice-v1",
+      }),
+    }));
+
+    expect(response.status).toBe(401);
+    expect(createSession).not.toHaveBeenCalled();
+  });
 });
+
