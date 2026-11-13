@@ -146,16 +146,20 @@ func runForeground(ctx context.Context, server *http.Server) (returnErr error) {
 
 	select {
 	case <-ctx.Done():
+		cancelWorker()
+		workerErr := <-workerDone
 		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 		shutdownErr := server.Shutdown(shutdownContext)
 		cancelShutdown()
-		cancelWorker()
-		workerErr := <-workerDone
+		serverErr := <-serverDone
+		if workerErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("stop foreground supervisor: %w", workerErr))
+		}
 		if shutdownErr != nil {
 			returnErr = errors.Join(returnErr, fmt.Errorf("shutdown runner HTTP server: %w", shutdownErr))
 		}
-		if workerErr != nil {
-			returnErr = errors.Join(returnErr, fmt.Errorf("stop foreground supervisor: %w", workerErr))
+		if serverErr != nil && !errors.Is(serverErr, http.ErrServerClosed) {
+			returnErr = errors.Join(returnErr, fmt.Errorf("runner HTTP server failed during shutdown: %w", serverErr))
 		}
 		return returnErr
 	case err := <-serverDone:
