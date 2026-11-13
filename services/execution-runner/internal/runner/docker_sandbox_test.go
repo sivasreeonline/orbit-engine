@@ -11,6 +11,8 @@ import (
 )
 
 type fakeDockerCLI struct {
+	preflightErr   error
+	preflightImages []string
 	createArgs     []string
 	containerID    string
 	createErr      error
@@ -25,6 +27,11 @@ type fakeDockerCLI struct {
 	created        bool
 	removed        bool
 	stdin          []byte
+}
+
+func (fake *fakeDockerCLI) Preflight(_ context.Context, imageRefs []string) error {
+	fake.preflightImages = append([]string(nil), imageRefs...)
+	return fake.preflightErr
 }
 
 func (fake *fakeDockerCLI) Create(_ context.Context, args []string) (string, error) {
@@ -121,6 +128,32 @@ func argumentAfter(args []string, flag string) string {
 		}
 	}
 	return ""
+}
+
+func TestDockerSandboxPreflightRequiresBothPinnedRuntimeImages(t *testing.T) {
+	t.Parallel()
+	fake := &fakeDockerCLI{}
+	sandbox, err := NewDockerSandbox(fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimes := RuntimeConfiguration{
+		JavaImageRef: "registry.example/sky-high/java@sha256:" + strings.Repeat("a", 64),
+		PythonImageRef: "registry.example/sky-high/python@sha256:" + strings.Repeat("b", 64),
+	}
+	if err := sandbox.Preflight(context.Background(), runtimes); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.preflightImages) != 2 ||
+		fake.preflightImages[0] != runtimes.JavaImageRef ||
+		fake.preflightImages[1] != runtimes.PythonImageRef {
+		t.Fatalf("preflight images = %v, want both exact digest pins", fake.preflightImages)
+	}
+
+	fake.preflightErr = ErrDockerCommandFailed
+	if err := sandbox.Preflight(context.Background(), runtimes); !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("missing runsc/image preflight was not propagated: %v", err)
+	}
 }
 
 func TestDockerCreateArgumentsApplyRequiredIsolationPolicy(t *testing.T) {
