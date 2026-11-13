@@ -999,7 +999,9 @@ describe("authenticated runner start endpoint", () => {
       data: {
         started: true,
         replayed: false,
-        ...startReceipt,
+        dispatchId: startReceipt.dispatchId,
+        executionId: startReceipt.executionId,
+        attemptId: startReceipt.attemptId,
         eventId: "a1000000-0000-4000-8000-000000000001",
       },
     });
