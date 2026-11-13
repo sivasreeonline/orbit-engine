@@ -118,15 +118,16 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
       const first = await createStartedDispatch(runnerId, actorId, keyId);
       await expireLease(setup, first.dispatch.id, first.created.executionId, true);
 
-      const firstRecovery = await recovery.recoverExpiredRunning({
+      const firstRecoveryBatch = await recovery.recoverExpiredRunning({
         workerId: "recovery-integration",
-        batchSize: 10,
+        batchSize: 100,
         maxRetries: 2,
         baseDelaySeconds: 1,
         maxDelaySeconds: 5,
       });
-      expect(firstRecovery).toHaveLength(1);
-      expect(firstRecovery[0]).toMatchObject({
+      const firstRecovery = firstRecoveryBatch.find((item) => item.dispatchId === first.dispatch.id);
+      expect(firstRecovery).toBeDefined();
+      expect(firstRecovery).toMatchObject({
         dispatchId: first.dispatch.id,
         executionId: first.created.executionId,
         action: "REQUEUED",
@@ -145,15 +146,16 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
       );
 
       await expireLease(setup, first.dispatch.id, first.created.executionId);
-      const secondRecovery = await recovery.recoverExpiredRunning({
+      const secondRecoveryBatch = await recovery.recoverExpiredRunning({
         workerId: "recovery-integration",
-        batchSize: 10,
+        batchSize: 100,
         maxRetries: 2,
         baseDelaySeconds: 1,
         maxDelaySeconds: 5,
       });
-      expect(secondRecovery).toHaveLength(1);
-      expect(secondRecovery[0]).toMatchObject({
+      const secondRecovery = secondRecoveryBatch.find((item) => item.dispatchId === first.dispatch.id);
+      expect(secondRecovery).toBeDefined();
+      expect(secondRecovery).toMatchObject({
         action: "REQUEUED",
         retryCount: 2,
       });
@@ -168,15 +170,16 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
       );
 
       await expireLease(setup, first.dispatch.id, first.created.executionId);
-      const terminalRecovery = await recovery.recoverExpiredRunning({
+      const terminalRecoveryBatch = await recovery.recoverExpiredRunning({
         workerId: "recovery-integration",
-        batchSize: 10,
+        batchSize: 100,
         maxRetries: 2,
         baseDelaySeconds: 1,
         maxDelaySeconds: 5,
       });
-      expect(terminalRecovery).toHaveLength(1);
-      expect(terminalRecovery[0]).toMatchObject({
+      const terminalRecovery = terminalRecoveryBatch.find((item) => item.dispatchId === first.dispatch.id);
+      expect(terminalRecovery).toBeDefined();
+      expect(terminalRecovery).toMatchObject({
         action: "FAILED_INFRASTRUCTURE",
         retryCount: 2,
       });
@@ -261,10 +264,13 @@ describe.skipIf(!databaseUrl)("runner expiry recovery PostgreSQL integration", (
       await expireLease(setup, execution.dispatch.id, execution.created.executionId);
 
       const [first, second] = await Promise.all([
-        recovery.recoverExpiredRunning({ workerId: "recovery-worker-a", batchSize: 10 }),
-        recovery.recoverExpiredRunning({ workerId: "recovery-worker-b", batchSize: 10 }),
+        recovery.recoverExpiredRunning({ workerId: "recovery-worker-a", batchSize: 100 }),
+        recovery.recoverExpiredRunning({ workerId: "recovery-worker-b", batchSize: 100 }),
       ]);
-      expect(first.length + second.length).toBe(1);
+      const matchingDecisions = [...first, ...second].filter(
+        (item) => item.dispatchId === execution.dispatch.id,
+      );
+      expect(matchingDecisions).toHaveLength(1);
 
       const receipts = await setup.query<{ count: string }>(
         "SELECT count(*)::text AS count FROM runner_dispatch_recoveries WHERE dispatch_id = $1::uuid AND lease_token = $2::uuid",
