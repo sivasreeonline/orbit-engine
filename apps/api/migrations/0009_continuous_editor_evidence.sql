@@ -280,7 +280,21 @@ BEGIN
   WHERE id = NEW.session_id
   FOR UPDATE;
 
-  IF NOT FOUND OR session_status IS DISTINCT FROM 'ACTIVE'
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'coding evidence session does not exist'
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- Include earlier events inserted in the same transaction/batch.
+  SELECT GREATEST(
+    session_last_sequence,
+    COALESCE(MAX(sequence), 0)
+  )
+  INTO session_last_sequence
+  FROM coding_evidence_events
+  WHERE session_id = NEW.session_id;
+
+  IF session_status IS DISTINCT FROM 'ACTIVE'
     OR NEW.sequence <= session_last_sequence
     OR (session_last_sequence = 0 AND
       (NEW.sequence <> 1 OR NEW.event_type <> 'SESSION_STARTED'))
