@@ -205,6 +205,22 @@ export class PostgresRunnerHeartbeatRepository {
               existing.key_id !== input.keyId) {
             throw new RunnerHeartbeatConflictError();
           }
+
+          const replayNow = Date.now();
+          const dispatchExpiry = timestampMs(lease.dispatch_expires_at);
+          const jobExpiry = timestampMs(lease.job_expires_at);
+          const receiptExpiry = timestampMs(existing.lease_expires_at);
+          if (lease.delivery_state !== "PENDING" ||
+              lease.dispatch_owner !== input.runnerId ||
+              lease.dispatch_token !== input.leaseToken ||
+              lease.job_state !== "RUNNING" ||
+              lease.job_owner !== input.runnerId ||
+              lease.job_token !== input.leaseToken ||
+              !Number.isFinite(dispatchExpiry) || dispatchExpiry <= replayNow ||
+              !Number.isFinite(jobExpiry) || jobExpiry <= replayNow ||
+              !Number.isFinite(receiptExpiry) || receiptExpiry <= replayNow) {
+            throw new RunnerHeartbeatStaleLeaseError();
+          }
           await client.query("COMMIT");
           return {
             heartbeatId: existing.heartbeat_id,
