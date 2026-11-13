@@ -35,6 +35,7 @@ type DockerContainerState struct {
 // behavior can be tested without running untrusted code on the host.
 type DockerCLI interface {
 	Create(context.Context, []string) (string, error)
+	CopyInto(context.Context, string, string, string) error
 	StartAttached(context.Context, string, io.Reader, io.Writer, io.Writer) (int, error)
 	Inspect(context.Context, string) (DockerContainerState, error)
 	Remove(context.Context, string) error
@@ -65,6 +66,40 @@ func (cli OSCommandDockerCLI) Create(ctx context.Context, args []string) (string
 		return "", ErrDockerCommandFailed
 	}
 	return id, nil
+}
+
+// CopyInto stages a private host file into the already-created container.
+// The source must live in a private 0700 directory and be read-only. Only the
+// two fixed runner source paths are accepted; no student-controlled path is
+// ever passed to a shell.
+func (cli OSCommandDockerCLI) CopyInto(
+	ctx context.Context,
+	id string,
+	sourcePath string,
+	destination string,
+) error {
+	if !containerIDPattern.MatchString(id) ||
+		!filepath.IsAbs(sourcePath) ||
+		filepath.Clean(sourcePath) != sourcePath ||
+		(destination != "/workspace/Main.java" && destination != "/workspace/main.py") {
+		return ErrDockerCommandFailed
+	}
+	parentInfo, err := os.Lstat(filepath.Dir(sourcePath))
+	if err != nil || !parentInfo.IsDir() || parentInfo.Mode()&os.ModeSymlink != 0 ||
+		parentInfo.Mode().Perm()&0o077 != 0 {
+		return ErrDockerCommandFailed
+	}
+	sourceInfo, err := os.Lstat(sourcePath)
+	if err != nil || !sourceInfo.Mode().IsRegular() ||
+		sourceInfo.Mode()&os.ModeSymlink != 0 ||
+		sourceInfo.Mode().Perm() != 0o444 {
+		return ErrDockerCommandFailed
+	}
+	command := exec.CommandContext(ctx, cli.binary(), "cp", sourcePath, id+":"+destination)
+	if err := command.Run(); err != nil {
+		return ErrDockerCommandFailed
+	}
+	return nil
 }
 
 func (cli OSCommandDockerCLI) StartAttached(
@@ -168,11 +203,13 @@ func (sandbox *DockerSandbox) RunCase(
 			_ = os.RemoveAll(workspace)
 		}
 	}()
-	if err := os.Chmod(workspace, 0711); err != nil {
+	// The parent directory is intentionally not traversable by other host
+	// users. Docker receives the bytes through its copy API, not a host bind.
+	if err := os.Chmod(workspace, 0o700); err != nil {
 		return SandboxObservation{}, ErrDockerCommandFailed
 	}
 	sourcePath := filepath.Join(workspace, request.SourceName)
-	file, err := os.OpenFile(sourcePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0444)
+	file, err := os.OpenFile(sourcePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return SandboxObservation{}, ErrDockerCommandFailed
 	}
@@ -183,7 +220,10 @@ func (sandbox *DockerSandbox) RunCase(
 	if err := file.Close(); err != nil {
 		return SandboxObservation{}, ErrDockerCommandFailed
 	}
-	if err := os.Chmod(sourcePath, 0444); err != nil {
+	// The file is readable by the Docker client running as this host user. Its
+	// 0700 parent prevents other host users from traversing the path. Docker
+	// copies it into the container tmpfs before the host copy is deleted.
+	if err := os.Chmod(sourcePath, 0o444); err != nil {
 		return SandboxObservation{}, ErrDockerCommandFailed
 	}
 
@@ -192,7 +232,7 @@ func (sandbox *DockerSandbox) RunCase(
 	defer cancel()
 	output := newBoundedOutput(request.Limits.OutputBytes, cancel)
 
-	args, err := dockerCreateArguments(request, workspace)
+	args, err := dockerCreateArguments(request)
 	if err != nil {
 		return SandboxObservation{}, err
 	}
@@ -209,6 +249,31 @@ func (sandbox *DockerSandbox) RunCase(
 	if !containerIDPattern.MatchString(containerID) {
 		return SandboxObservation{}, ErrDockerCommandFailed
 	}
+	containerRemoved := false
+	defer func() {
+		if !containerRemoved {
+			cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), sandbox.cleanupTimeout)
+			_ = sandbox.cli.Remove(cleanupContext, containerID)
+			cleanupCancel()
+		}
+	}()
+
+	containerPath := "/workspace/" + request.SourceName
+	if err := sandbox.cli.CopyInto(runContext, containerID, sourcePath, containerPath); err != nil {
+		if parent.Err() != nil {
+			return SandboxObservation{}, parent.Err()
+		}
+		if runContext.Err() != nil {
+			return SandboxObservation{}, runContext.Err()
+		}
+		return SandboxObservation{}, ErrDockerCommandFailed
+	}
+	// Never execute while the host-side student source still exists at a
+	// traversable path. Failure to erase staging aborts the container start.
+	if err := os.RemoveAll(workspace); err != nil {
+		return SandboxObservation{}, ErrDockerCommandFailed
+	}
+	cleanupWorkspace = false
 
 	startedAt := time.Now()
 	exitCode, startErr := sandbox.cli.StartAttached(
@@ -233,6 +298,11 @@ func (sandbox *DockerSandbox) RunCase(
 	cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), sandbox.cleanupTimeout)
 	removeErr := sandbox.cli.Remove(cleanupContext, containerID)
 	cleanupCancel()
+	if removeErr == nil {
+		containerRemoved = true
+	}
+	// The workspace was removed before student execution. This second call is
+	// idempotent and verifies no host staging material remains.
 	removeWorkspaceErr := os.RemoveAll(workspace)
 	if removeWorkspaceErr == nil {
 		cleanupWorkspace = false
@@ -314,9 +384,8 @@ func containerSafeID(value string) bool {
 	return artifactCaseIDPattern.MatchString(value)
 }
 
-func dockerCreateArguments(request SandboxRequest, workspace string) ([]string, error) {
-	if !imageReferencePattern.MatchString(request.ImageRef) ||
-		strings.ContainsAny(workspace, ",\r\n") {
+func dockerCreateArguments(request SandboxRequest) ([]string, error) {
+	if !imageReferencePattern.MatchString(request.ImageRef) {
 		return nil, ErrInvalidRuntimeConfig
 	}
 	cpuValue := strconv.FormatFloat(float64(request.Limits.CPUQuotaMillis)/1000, 'f', 3, 64)
@@ -333,6 +402,7 @@ func dockerCreateArguments(request SandboxRequest, workspace string) ([]string, 
 		"--network=none",
 		"--ipc=none",
 		"--read-only",
+		"--tmpfs", "/workspace:rw,nosuid,nodev,noexec,size=" + tmpfsSize,
 		"--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=" + tmpfsSize,
 		"--memory=" + memoryValue,
 		"--memory-swap=" + memoryValue,
@@ -344,7 +414,6 @@ func dockerCreateArguments(request SandboxRequest, workspace string) ([]string, 
 		"--ulimit", "core=0:0",
 		"--interactive",
 		"--env=HOME=/tmp",
-		"--mount", "type=bind,src=" + workspace + ",dst=/workspace,readonly",
 		"--workdir=/workspace",
 		"--label", "com.skyhigh.execution-id=" + request.ExecutionID,
 		"--entrypoint=/bin/sh",
