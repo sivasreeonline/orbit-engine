@@ -39,6 +39,41 @@ interface ClaimedRow extends Record<string, unknown> {
 }
 interface UpdatedRow extends Record<string, unknown> { readonly id: string; }
 
+interface RunnerCandidateRow extends Record<string, unknown> {
+  readonly dispatch_id: string;
+  readonly execution_id: string;
+  readonly attempt_id: string;
+  readonly protocol_version: string;
+  readonly correlation_id: string;
+  readonly delivery_attempts: number;
+  readonly previous_job_state: string;
+  readonly previous_lease_token: string | null;
+  readonly previous_lease_owner: string | null;
+  readonly previous_retry_count: number;
+  readonly previous_key_id: string | null;
+  readonly previous_start_event_id: string | null;
+}
+
+interface ClaimedDispatchRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly execution_id: string;
+  readonly attempt_id: string;
+  readonly protocol_version: string;
+  readonly correlation_id: string;
+  readonly delivery_attempts: number;
+  readonly lease_token: string;
+  readonly lease_expires_at: Date | string;
+}
+
+interface ClaimedJobRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly retry_count: number;
+}
+
+interface InsertedEvidenceRow extends Record<string, unknown> {
+  readonly event_id: string;
+}
+
 /** Database-only fenced leases for a future authenticated Linux-runner transport. */
 export class PostgresRunnerDispatchLeaseRepository {
   constructor(
@@ -226,8 +261,8 @@ export class PostgresRunnerDispatchLeaseRepository {
     return this.withClient(async (client) => {
       await client.query("BEGIN");
       try {
-        // The global scheduler lock protects cross-runner lane ordering;
-        // the per-runner lock additionally protects this runner's capacity.
+        // The global scheduler lock preserves cross-student fairness. The
+        // per-runner lock makes the active lease cap safe across simultaneous polls.
         await client.query(
           "SELECT pg_advisory_xact_lock(hashtextextended('sky-high-runner-fair-scheduler', 0))",
         );
@@ -235,13 +270,99 @@ export class PostgresRunnerDispatchLeaseRepository {
           "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
           [runnerId],
         );
+
+        // Expired RUNNING jobs that have exhausted all automatic recovery
+        // generations become terminal infrastructure failures. This sweep is
+        // intentionally performed even when this runner has no free slots.
+        const exhausted = await client.query<{
+          dispatch_id: string;
+          execution_id: string;
+          attempt_id: string;
+          lease_token: string;
+        }>(
+          [
+            "SELECT dispatch.id AS dispatch_id, dispatch.execution_id, dispatch.attempt_id,",
+            "  dispatch.lease_token::text AS lease_token",
+            "FROM runner_dispatch_outbox AS dispatch",
+            "INNER JOIN execution_jobs AS job ON job.id = dispatch.execution_id",
+            "WHERE dispatch.delivery_state = 'PENDING'",
+            "  AND dispatch.lease_expires_at <= clock_timestamp()",
+            "  AND job.state = 'RUNNING'",
+            "  AND job.lease_expires_at <= clock_timestamp()",
+            "  AND job.retry_count >= $1",
+            "  AND job.attempt_id = dispatch.attempt_id",
+            "  AND job.lease_owner = dispatch.lease_owner",
+            "  AND job.lease_token = dispatch.lease_token",
+            "ORDER BY dispatch.lease_expires_at, dispatch.id",
+            "LIMIT $2",
+            "FOR UPDATE OF dispatch, job SKIP LOCKED",
+          ].join("\n"),
+          [MAX_RUNNING_LEASE_RECOVERIES, MAX_EXHAUSTED_RECOVERY_SWEEP],
+        );
+
+        for (const expired of exhausted.rows) {
+          const failedJob = await client.query<UpdatedRow>(
+            [
+              "UPDATE execution_jobs",
+              "SET state = 'FAILED_INFRASTRUCTURE',",
+              "    state_version = state_version + 1,",
+              "    completed_at = clock_timestamp(), updated_at = clock_timestamp(),",
+              "    lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL",
+              "WHERE id = $1::uuid AND attempt_id = $2::uuid",
+              "  AND state = 'RUNNING' AND retry_count >= $3",
+              "  AND lease_token = $4::uuid AND lease_expires_at <= clock_timestamp()",
+              "RETURNING id",
+            ].join("\n"),
+            [expired.execution_id, expired.attempt_id, MAX_RUNNING_LEASE_RECOVERIES, expired.lease_token],
+          );
+          if (failedJob.rows.length !== 1) {
+            throw new Error("runner_recovery_exhaustion_job_transition_failed");
+          }
+
+          const deadDispatch = await client.query<UpdatedRow>(
+            [
+              "UPDATE runner_dispatch_outbox",
+              "SET delivery_state = 'DEAD_LETTER',",
+              "    lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL",
+              "WHERE id = $1::uuid AND execution_id = $2::uuid AND attempt_id = $3::uuid",
+              "  AND delivery_state = 'PENDING' AND lease_token = $4::uuid",
+              "  AND lease_expires_at <= clock_timestamp()",
+              "RETURNING id",
+            ].join("\n"),
+            [expired.dispatch_id, expired.execution_id, expired.attempt_id, expired.lease_token],
+          );
+          if (deadDispatch.rows.length !== 1) {
+            throw new Error("runner_recovery_exhaustion_dispatch_transition_failed");
+          }
+
+          const failureEvent = await client.query<InsertedEvidenceRow>(
+            [
+              "INSERT INTO execution_evidence_events (",
+              "  event_id, execution_id, attempt_id, tenant_id, actor_user_id,",
+              "  event_type, actor_kind, phase_status, safe_code, duration_ms",
+              ")",
+              "SELECT gen_random_uuid(), job.id, attempt.id, attempt.tenant_id, attempt.actor_user_id,",
+              "  'INFRASTRUCTURE_FAILED', 'JUDGE', 'FAILED',",
+              "  'RUNNER_LEASE_RECOVERIES_EXHAUSTED', NULL",
+              "FROM execution_jobs AS job",
+              "INNER JOIN execution_attempts AS attempt ON attempt.id = job.attempt_id",
+              "WHERE job.id = $1::uuid AND attempt.id = $2::uuid",
+              "RETURNING event_id",
+            ].join("\n"),
+            [expired.execution_id, expired.attempt_id],
+          );
+          if (failureEvent.rows.length !== 1) {
+            throw new Error("runner_recovery_exhaustion_event_insert_failed");
+          }
+        }
+
         const active = await client.query<{ active_count: number }>(
           [
             "SELECT count(*)::integer AS active_count",
             "FROM runner_dispatch_outbox",
             "WHERE lease_owner = $1",
             "  AND delivery_state = 'PENDING'",
-            "  AND lease_expires_at > now()",
+            "  AND lease_expires_at > clock_timestamp()",
           ].join("\n"),
           [runnerId],
         );
@@ -252,107 +373,218 @@ export class PostgresRunnerDispatchLeaseRepository {
           return [];
         }
 
-        const result = await client.query<ClaimedRow>(
+        const candidateLanes = await client.query<{
+          tenant_id: string;
+          actor_user_id: string;
+        }>(
           [
-            "WITH candidate_lanes AS MATERIALIZED (",
-          "  SELECT lane.tenant_id, lane.actor_user_id",
-          "  FROM runner_dispatch_scheduler_lanes AS lane",
-          "  WHERE EXISTS (",
-          "    SELECT 1 FROM runner_dispatch_outbox AS pending",
-          "    INNER JOIN execution_attempts AS owner_attempt ON owner_attempt.id = pending.attempt_id",
-          "    INNER JOIN execution_jobs AS job ON job.id = pending.execution_id",
-          "    WHERE owner_attempt.tenant_id = lane.tenant_id",
-          "      AND owner_attempt.actor_user_id = lane.actor_user_id",
-          "      AND pending.delivery_state = 'PENDING'",
-          "      AND pending.available_at <= now()",
-          "      AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= now())",
-          "      AND ((job.state = 'QUEUED' AND job.available_at <= now())",
-          "        OR (job.state = 'CLAIMED' AND job.lease_expires_at <= now()))",
-          "  )",
-          "  ORDER BY lane.last_served_ticket, lane.tenant_id, lane.actor_user_id",
-          "  LIMIT $1",
-          "  FOR UPDATE OF lane SKIP LOCKED",
-          "), candidate_dispatches AS MATERIALIZED (",
-          "  SELECT candidate.dispatch_id, candidate.execution_id, candidate.attempt_id,",
-          "    lane.tenant_id, lane.actor_user_id",
-          "  FROM candidate_lanes AS lane",
-          "  CROSS JOIN LATERAL (",
-          "    SELECT pending.id AS dispatch_id, pending.execution_id, pending.attempt_id",
-          "    FROM runner_dispatch_outbox AS pending",
-          "    INNER JOIN execution_attempts AS owner_attempt ON owner_attempt.id = pending.attempt_id",
-          "    INNER JOIN execution_jobs AS job ON job.id = pending.execution_id",
-          "    WHERE owner_attempt.tenant_id = lane.tenant_id",
-          "      AND owner_attempt.actor_user_id = lane.actor_user_id",
-          "      AND pending.delivery_state = 'PENDING'",
-          "      AND pending.available_at <= now()",
-          "      AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= now())",
-          "      AND ((job.state = 'QUEUED' AND job.available_at <= now())",
-          "        OR (job.state = 'CLAIMED' AND job.lease_expires_at <= now()))",
-          "    ORDER BY pending.available_at, pending.created_at, pending.id",
-          "    LIMIT 1",
-          "    FOR UPDATE OF pending, job SKIP LOCKED",
-          "  ) AS candidate",
-          "), claimed AS (",
-          "  UPDATE runner_dispatch_outbox AS dispatch",
-          "  SET lease_owner = $2, lease_token = gen_random_uuid(),",
-          "      lease_expires_at = now() + make_interval(secs => $3),",
-          "      delivery_attempts = dispatch.delivery_attempts + 1",
-          "  FROM candidate_dispatches AS candidate",
-          "  WHERE dispatch.id = candidate.dispatch_id",
-          "  RETURNING dispatch.id, dispatch.execution_id, dispatch.attempt_id,",
-          "    dispatch.protocol_version, dispatch.correlation_id,",
-          "    dispatch.delivery_attempts, dispatch.lease_token, dispatch.lease_expires_at",
-          "), claimed_jobs AS (",
-          "  UPDATE execution_jobs AS job",
-          "  SET state = 'CLAIMED', state_version = job.state_version + 1,",
-          "      lease_owner = $2, lease_token = claimed.lease_token,",
-          "      lease_expires_at = claimed.lease_expires_at, updated_at = now()",
-          "  FROM claimed",
-          "  WHERE job.id = claimed.execution_id",
-          "    AND job.attempt_id = claimed.attempt_id",
-          "    AND ((job.state = 'QUEUED' AND job.available_at <= now())",
-          "      OR (job.state = 'CLAIMED' AND job.lease_expires_at <= now()))",
-          "  RETURNING job.id, job.attempt_id",
-          "), claimed_events AS (",
-          "  INSERT INTO execution_evidence_events (",
-          "    event_id, execution_id, attempt_id, tenant_id, actor_user_id,",
-          "    event_type, actor_kind, phase_status, safe_code, duration_ms",
-          "  )",
-          "  SELECT gen_random_uuid(), claimed_jobs.id, attempt.id, attempt.tenant_id,",
-          "    attempt.actor_user_id, 'JOB_CLAIMED', 'RUNNER', NULL, NULL, NULL",
-          "  FROM claimed_jobs",
-          "  INNER JOIN execution_attempts AS attempt ON attempt.id = claimed_jobs.attempt_id",
-          "  RETURNING sequence_id",
-          "), served AS (",
-          "  UPDATE runner_dispatch_scheduler_lanes AS lane",
-          "  SET last_served_ticket = nextval('runner_dispatch_scheduler_ticket_seq'),",
-          "      last_served_at = clock_timestamp(), updated_at = now()",
-          "  FROM claimed_jobs",
-          "  INNER JOIN execution_attempts AS owner_attempt ON owner_attempt.id = claimed_jobs.attempt_id",
-          "  WHERE lane.tenant_id = owner_attempt.tenant_id",
-          "    AND lane.actor_user_id = owner_attempt.actor_user_id",
-          "  RETURNING lane.tenant_id",
-          ")",
-          "SELECT claimed.* FROM claimed",
-          "INNER JOIN claimed_jobs ON claimed_jobs.id = claimed.execution_id",
-          "CROSS JOIN (SELECT count(*) FROM claimed_events) AS evidence_write",
-          "CROSS JOIN (SELECT count(*) FROM served) AS scheduler_cursor_write",
+            "SELECT lane.tenant_id, lane.actor_user_id",
+            "FROM runner_dispatch_scheduler_lanes AS lane",
+            "WHERE EXISTS (",
+            "  SELECT 1",
+            "  FROM runner_dispatch_outbox AS pending",
+            "  INNER JOIN execution_attempts AS owner_attempt",
+            "    ON owner_attempt.id = pending.attempt_id",
+            "  INNER JOIN execution_jobs AS job ON job.id = pending.execution_id",
+            "  LEFT JOIN runner_dispatch_starts AS started",
+            "    ON started.dispatch_id = pending.id",
+            "   AND started.lease_token = pending.lease_token",
+            "  WHERE owner_attempt.tenant_id = lane.tenant_id",
+            "    AND owner_attempt.actor_user_id = lane.actor_user_id",
+            "    AND pending.delivery_state = 'PENDING'",
+            "    AND pending.available_at <= clock_timestamp()",
+            "    AND pending.lease_expires_at <= clock_timestamp()",
+            "    AND job.attempt_id = pending.attempt_id",
+            "    AND (",
+            "      (job.state = 'QUEUED' AND job.available_at <= clock_timestamp())",
+            "      OR (job.state = 'CLAIMED' AND job.lease_expires_at <= clock_timestamp())",
+            "      OR (job.state = 'RUNNING'",
+            "        AND job.lease_expires_at <= clock_timestamp()",
+            "        AND job.retry_count < $2",
+            "        AND job.lease_owner = pending.lease_owner",
+            "        AND job.lease_token = pending.lease_token",
+            "        AND started.event_id IS NOT NULL)",
+            "    )",
+            ")",
+            "ORDER BY lane.last_served_ticket, lane.tenant_id, lane.actor_user_id",
+            "LIMIT $1",
+            "FOR UPDATE OF lane SKIP LOCKED",
           ].join("\n"),
-          [slotBudget, runnerId, leaseSeconds],
+          [slotBudget, MAX_RUNNING_LEASE_RECOVERIES],
         );
+
+        const claimedLeases: RunnerDispatchLease[] = [];
+        for (const lane of candidateLanes.rows) {
+          const candidateResult = await client.query<RunnerCandidateRow>(
+            [
+              "SELECT dispatch.id AS dispatch_id, dispatch.execution_id, dispatch.attempt_id,",
+              "  dispatch.protocol_version, dispatch.correlation_id, dispatch.delivery_attempts,",
+              "  job.state AS previous_job_state, job.lease_token::text AS previous_lease_token,",
+              "  job.lease_owner AS previous_lease_owner, job.retry_count AS previous_retry_count,",
+              "  started.key_id AS previous_key_id, started.event_id::text AS previous_start_event_id",
+              "FROM runner_dispatch_outbox AS dispatch",
+              "INNER JOIN execution_attempts AS owner_attempt ON owner_attempt.id = dispatch.attempt_id",
+              "INNER JOIN execution_jobs AS job ON job.id = dispatch.execution_id",
+              "LEFT JOIN runner_dispatch_starts AS started",
+              "  ON started.dispatch_id = dispatch.id AND started.lease_token = dispatch.lease_token",
+              "WHERE owner_attempt.tenant_id = $1::uuid",
+              "  AND owner_attempt.actor_user_id = $2::uuid",
+              "  AND dispatch.delivery_state = 'PENDING'",
+              "  AND dispatch.available_at <= clock_timestamp()",
+              "  AND dispatch.lease_expires_at <= clock_timestamp()",
+              "  AND job.attempt_id = dispatch.attempt_id",
+              "  AND (",
+              "    (job.state = 'QUEUED' AND job.available_at <= clock_timestamp())",
+              "    OR (job.state = 'CLAIMED' AND job.lease_expires_at <= clock_timestamp())",
+              "    OR (job.state = 'RUNNING'",
+              "      AND job.lease_expires_at <= clock_timestamp()",
+              "      AND job.retry_count < $3",
+              "      AND job.lease_owner = dispatch.lease_owner",
+              "      AND job.lease_token = dispatch.lease_token",
+              "      AND started.event_id IS NOT NULL)",
+              "  )",
+              "ORDER BY dispatch.available_at, dispatch.created_at, dispatch.id",
+              "LIMIT 1",
+              "FOR UPDATE OF dispatch, job SKIP LOCKED",
+            ].join("\n"),
+            [lane.tenant_id, lane.actor_user_id, MAX_RUNNING_LEASE_RECOVERIES],
+          );
+          const candidate = candidateResult.rows[0];
+          if (!candidate) continue;
+
+          const claimed = await client.query<ClaimedDispatchRow>(
+            [
+              "UPDATE runner_dispatch_outbox",
+              "SET lease_owner = $2, lease_token = gen_random_uuid(),",
+              "    lease_expires_at = clock_timestamp() + make_interval(secs => $3),",
+              "    delivery_attempts = delivery_attempts + 1",
+              "WHERE id = $1::uuid AND delivery_state = 'PENDING'",
+              "  AND lease_expires_at <= clock_timestamp()",
+              "RETURNING id, execution_id, attempt_id, protocol_version, correlation_id,",
+              "  delivery_attempts, lease_token, lease_expires_at",
+            ].join("\n"),
+            [candidate.dispatch_id, runnerId, leaseSeconds],
+          );
+          const claimedDispatch = claimed.rows[0];
+          if (!claimedDispatch) continue;
+
+          const updatedJob = await client.query<ClaimedJobRow>(
+            [
+              "UPDATE execution_jobs",
+              "SET state = 'CLAIMED', state_version = state_version + 1,",
+              "    retry_count = retry_count + CASE WHEN $3 = 'RUNNING' THEN 1 ELSE 0 END,",
+              "    lease_owner = $4, lease_token = $5::uuid,",
+              "    lease_expires_at = $6::timestamptz, updated_at = clock_timestamp()",
+              "WHERE id = $1::uuid AND attempt_id = $2::uuid",
+              "  AND state = $3",
+              "  AND (",
+              "    (state = 'QUEUED' AND available_at <= clock_timestamp())",
+              "    OR (state = 'CLAIMED' AND lease_expires_at <= clock_timestamp())",
+              "    OR (state = 'RUNNING' AND lease_expires_at <= clock_timestamp()",
+              "      AND lease_token = $7::uuid AND lease_owner = $8)",
+              "  )",
+              "RETURNING id, retry_count",
+            ].join("\n"),
+            [
+              candidate.execution_id, candidate.attempt_id, candidate.previous_job_state,
+              runnerId, claimedDispatch.lease_token, claimedDispatch.lease_expires_at,
+              candidate.previous_lease_token, candidate.previous_lease_owner,
+            ],
+          );
+          const jobRow = updatedJob.rows[0];
+          if (!jobRow) throw new Error("runner_claim_job_transition_failed");
+
+          const jobClaimedEvent = await client.query<InsertedEvidenceRow>(
+            [
+              "INSERT INTO execution_evidence_events (",
+              "  event_id, execution_id, attempt_id, tenant_id, actor_user_id,",
+              "  event_type, actor_kind, phase_status, safe_code, duration_ms",
+              ")",
+              "SELECT gen_random_uuid(), job.id, attempt.id, attempt.tenant_id, attempt.actor_user_id,",
+              "  'JOB_CLAIMED', 'RUNNER', NULL, NULL, NULL",
+              "FROM execution_jobs AS job",
+              "INNER JOIN execution_attempts AS attempt ON attempt.id = job.attempt_id",
+              "WHERE job.id = $1::uuid AND attempt.id = $2::uuid",
+              "RETURNING event_id",
+            ].join("\n"),
+            [candidate.execution_id, candidate.attempt_id],
+          );
+          if (jobClaimedEvent.rows.length !== 1) throw new Error("runner_job_claimed_event_insert_failed");
+
+          if (candidate.previous_job_state === "RUNNING") {
+            if (!candidate.previous_lease_token || !candidate.previous_lease_owner ||
+                !candidate.previous_key_id || !candidate.previous_start_event_id ||
+                jobRow.retry_count < 1 || jobRow.retry_count > MAX_RUNNING_LEASE_RECOVERIES) {
+              throw new Error("runner_recovery_previous_generation_incomplete");
+            }
+
+            const retryEvent = await client.query<InsertedEvidenceRow>(
+              [
+                "INSERT INTO execution_evidence_events (",
+                "  event_id, execution_id, attempt_id, tenant_id, actor_user_id,",
+                "  event_type, actor_kind, phase_status, safe_code, duration_ms",
+                ")",
+                "SELECT gen_random_uuid(), job.id, attempt.id, attempt.tenant_id, attempt.actor_user_id,",
+                "  'RETRY_SCHEDULED', 'JUDGE', 'FAILED', 'RUNNER_LEASE_EXPIRED', NULL",
+                "FROM execution_jobs AS job",
+                "INNER JOIN execution_attempts AS attempt ON attempt.id = job.attempt_id",
+                "WHERE job.id = $1::uuid AND attempt.id = $2::uuid",
+                "RETURNING event_id",
+              ].join("\n"),
+              [candidate.execution_id, candidate.attempt_id],
+            );
+            const retryEventId = retryEvent.rows[0]?.event_id;
+            if (!retryEventId) throw new Error("runner_retry_scheduled_event_insert_failed");
+
+            await client.query(
+              [
+                "INSERT INTO runner_dispatch_lease_recoveries (",
+                "  dispatch_id, previous_lease_token, previous_runner_id, previous_key_id,",
+                "  previous_start_event_id, new_lease_token, new_runner_id, execution_id,",
+                "  attempt_id, recovery_attempt, event_id",
+                ")",
+                "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::uuid, $6::uuid,",
+                "  $7::uuid, $8::uuid, $9::uuid, $10, $11::uuid)",
+              ].join("\n"),
+              [
+                candidate.dispatch_id, candidate.previous_lease_token,
+                candidate.previous_lease_owner, candidate.previous_key_id,
+                candidate.previous_start_event_id, claimedDispatch.lease_token,
+                runnerId, candidate.execution_id, candidate.attempt_id,
+                jobRow.retry_count, retryEventId,
+              ],
+            );
+          }
+
+          const served = await client.query<UpdatedRow>(
+            [
+              "UPDATE runner_dispatch_scheduler_lanes",
+              "SET last_served_ticket = nextval('runner_dispatch_scheduler_ticket_seq'),",
+              "    last_served_at = clock_timestamp(), updated_at = clock_timestamp()",
+              "WHERE tenant_id = $1::uuid AND actor_user_id = $2::uuid",
+              "RETURNING tenant_id AS id",
+            ].join("\n"),
+            [lane.tenant_id, lane.actor_user_id],
+          );
+          if (served.rows.length !== 1) throw new Error("runner_scheduler_lane_update_failed");
+
+          const expiry = claimedDispatch.lease_expires_at instanceof Date
+            ? claimedDispatch.lease_expires_at.toISOString()
+            : new Date(claimedDispatch.lease_expires_at).toISOString();
+          claimedLeases.push({
+            id: claimedDispatch.id,
+            executionId: claimedDispatch.execution_id,
+            attemptId: claimedDispatch.attempt_id,
+            protocolVersion: claimedDispatch.protocol_version,
+            correlationId: claimedDispatch.correlation_id,
+            deliveryAttempts: claimedDispatch.delivery_attempts,
+            leaseToken: claimedDispatch.lease_token,
+            leaseExpiresAt: expiry,
+          });
+        }
+
         await client.query("COMMIT");
-        return result.rows.map((row) => ({
-          id: row.id,
-          executionId: row.execution_id,
-          attemptId: row.attempt_id,
-          protocolVersion: row.protocol_version,
-          correlationId: row.correlation_id,
-          deliveryAttempts: row.delivery_attempts,
-          leaseToken: row.lease_token,
-          leaseExpiresAt: row.lease_expires_at instanceof Date
-            ? row.lease_expires_at.toISOString()
-            : new Date(row.lease_expires_at).toISOString(),
-        }));
+        return claimedLeases;
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);
         throw error;
