@@ -14,6 +14,13 @@ type ExecutionEvidenceReadRepository = Pick<
 import type { Env } from "./env";
 import type { PostgresRunnerIdentityRepository } from "./db/runner-identity-repository";
 import type { PostgresRunnerDispatchLeaseRepository } from "./db/runner-dispatch-lease-repository";
+import type { PostgresRunnerAcceptanceRepository } from "./db/runner-acceptance-repository";
+import {
+  RunnerAcceptanceConflictError,
+  RunnerAcceptanceNotFoundError,
+  RunnerAcceptanceStaleLeaseError,
+  RunnerAcceptanceUnauthorizedError,
+} from "./db/runner-acceptance-repository";
 import { authenticateRunnerRequest } from "./services/runner-request-authenticator";
 
 type ExecutionIntakeRepository = {
@@ -31,6 +38,7 @@ interface ApiDependencies {
   readonly executionIntakeRepository?: ExecutionIntakeRepository;
   readonly runnerIdentityRepository?: Pick<PostgresRunnerIdentityRepository, "findActivePublicKey" | "consumeNonce">;
   readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner">;
+  readonly runnerAcceptanceRepository?: Pick<PostgresRunnerAcceptanceRepository, "record">;
   readonly runtimeVersions?: { readonly java: string; readonly python: string };
   readonly allowedOrigins?: string;
 }
@@ -255,6 +263,128 @@ export function createApiHandler(dependencies: ApiDependencies) {
           origin,
           allowedOrigins,
         );
+      }
+    }
+
+    if (request.method === "POST" && path === "/internal/v1/runner/accept") {
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerAcceptanceRepository) {
+        return errorResponse(
+          "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Runner acceptance is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner acceptance request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let receiptBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 2048);
+        receiptBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner acceptance request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner acceptance request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const receiptFields = [
+        "acceptanceId", "dispatchId", "executionId", "attemptId", "leaseToken",
+      ];
+      if (!isRecord(receiptBody) ||
+          Object.keys(receiptBody).length !== receiptFields.length ||
+          Object.keys(receiptBody).some((key) => !receiptFields.includes(key)) ||
+          receiptFields.some((key) => typeof receiptBody[key] !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+              .test(receiptBody[key] as string))) {
+        return errorResponse("INVALID_RUNNER_ACCEPTANCE",
+          "The runner acceptance receipt contains invalid identifiers or fields.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const receiptBytes = new Uint8Array(rawBody);
+        const digest = await crypto.subtle.digest("SHA-256", receiptBytes);
+        const receiptSha256 = Array.from(new Uint8Array(digest), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+
+        const recorded = await dependencies.runnerAcceptanceRepository.record({
+          acceptanceId: receiptBody.acceptanceId as string,
+          dispatchId: receiptBody.dispatchId as string,
+          executionId: receiptBody.executionId as string,
+          attemptId: receiptBody.attemptId as string,
+          leaseToken: receiptBody.leaseToken as string,
+          runnerId: authenticatedRunner.runnerId,
+          keyId: authenticatedRunner.keyId,
+          receiptSha256,
+        });
+        return jsonResponse({
+          data: {
+            accepted: true,
+            replayed: recorded.replayed,
+            dispatchId: recorded.dispatchId,
+            acceptanceId: recorded.acceptanceId,
+            eventId: recorded.eventId,
+            acceptedAt: recorded.acceptedAt,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof RunnerAcceptanceUnauthorizedError) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner identity is no longer authorized.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerAcceptanceNotFoundError) {
+          return errorResponse("RUNNER_DISPATCH_NOT_FOUND",
+            "The dispatch does not match this acceptance receipt.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerAcceptanceStaleLeaseError) {
+          return errorResponse("RUNNER_LEASE_STALE",
+            "The runner lease is no longer active.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerAcceptanceConflictError) {
+          return errorResponse("RUNNER_ACCEPTANCE_CONFLICT",
+            "A different acceptance receipt already exists for this lease.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Runner acceptance is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_acceptance_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The runner acceptance receipt could not be saved.", 500, true,
+          requestId, origin, allowedOrigins);
       }
     }
 
