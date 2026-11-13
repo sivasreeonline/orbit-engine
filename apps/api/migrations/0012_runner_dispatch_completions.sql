@@ -74,10 +74,10 @@ BEGIN
   FROM execution_jobs
   WHERE id = NEW.execution_id;
 
-  SELECT attempt_id, result_sha256, infrastructure_status
+  SELECT result_record.attempt_id, result_record.result_sha256, result_record.infrastructure_status
   INTO result_attempt_id, result_sha256, result_state
-  FROM execution_result_records
-  WHERE execution_id = NEW.execution_id;
+  FROM execution_result_records AS result_record
+  WHERE result_record.execution_id = NEW.execution_id;
 
   SELECT execution_id, attempt_id, event_type, actor_kind
   INTO event_execution_id, event_attempt_id, event_type, event_actor_kind
