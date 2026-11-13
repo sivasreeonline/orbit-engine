@@ -146,6 +146,52 @@ describe.skipIf(!databaseUrl)("fair runner dispatch scheduler PostgreSQL integra
     const thirdPoll = await leases.claimFairBatchForRunner(runnerId, 2, 2, 60);
     expect(thirdPoll).toHaveLength(0);
 
+    const verifier = new Client({ connectionString: databaseUrl });
+    try {
+      await verifier.connect();
+      const persisted = await verifier.query<{
+        execution_state: string;
+        job_lease_owner: string;
+        job_lease_token: string;
+        dispatch_lease_token: string;
+        claim_events: string;
+      }>(
+        `SELECT job.state AS execution_state,
+                job.lease_owner AS job_lease_owner,
+                job.lease_token::text AS job_lease_token,
+                dispatch.lease_token::text AS dispatch_lease_token,
+                (SELECT count(*)::text
+                 FROM execution_evidence_events AS event
+                 WHERE event.execution_id = job.id
+                   AND event.event_type = 'JOB_CLAIMED'
+                   AND event.actor_kind = 'RUNNER') AS claim_events
+         FROM runner_dispatch_outbox AS dispatch
+         INNER JOIN execution_jobs AS job ON job.id = dispatch.execution_id
+         WHERE dispatch.id = ANY($1::uuid[])`,
+        [combined.map((item) => item.id)],
+      );
+      expect(persisted.rows).toHaveLength(2);
+      for (const row of persisted.rows) {
+        expect(row.execution_state).toBe("CLAIMED");
+        expect(row.job_lease_owner).toBe(runnerId);
+        expect(row.job_lease_token).toBe(row.dispatch_lease_token);
+        expect(Number(row.claim_events)).toBe(1);
+      }
+
+      await verifier.query(
+        `UPDATE execution_jobs
+         SET state = 'QUEUED', state_version = state_version + 1,
+             lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+             updated_at = now()
+         WHERE id IN (
+           SELECT execution_id FROM runner_dispatch_outbox WHERE id = ANY($1::uuid[])
+         )`,
+        [combined.map((item) => item.id)],
+      );
+    } finally {
+      await verifier.end();
+    }
+
     await Promise.all(combined.map((item) =>
       leases.markDeadLetter(item.id, runnerId, item.leaseToken),
     ));
