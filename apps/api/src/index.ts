@@ -4,6 +4,8 @@ import { PostgresOutboxLeaseRepository } from "./db/outbox-lease-repository";
 import { publishOutboxBatch } from "./db/outbox-publisher";
 import { PostgresProblemRepository } from "./db/problem-repository";
 import { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+import { PostgresRunnerDispatchHandoffRepository } from "./db/runner-dispatch-handoff-repository";
+import { consumeRunnerDispatchBatch } from "./services/runner-dispatch-queue-consumer";
 import { PostgresExecutionIntakeRepository } from "./db/execution-intake-repository";
 import type { Env } from "./env";
 
@@ -37,6 +39,21 @@ export default {
       },
     });
     return handler(request);
+  },
+
+  async queue(batch: MessageBatch<unknown>, env: Env, _context: ExecutionContext): Promise<void> {
+    const connectionString = env.HYPERDRIVE?.connectionString;
+    if (!connectionString) {
+      for (const message of batch.messages) message.retry();
+      console.error("runner_dispatch_consumer_database_not_configured", {
+        received: batch.messages.length,
+      });
+      return;
+    }
+
+    const handoff = new PostgresRunnerDispatchHandoffRepository(connectionString);
+    const summary = await consumeRunnerDispatchBatch(batch, handoff);
+    console.info("runner_dispatch_handoff_batch_completed", summary);
   },
 
   async scheduled(

@@ -25,6 +25,15 @@
         "binding": "EXECUTION_QUEUE",
         "queue": "sky-high-execution-requests"
       }
+    ],
+    "consumers": [
+      {
+        "queue": "sky-high-execution-requests",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "sky-high-execution-requests-dlq"
+      }
     ]
   },
   "hyperdrive": [
