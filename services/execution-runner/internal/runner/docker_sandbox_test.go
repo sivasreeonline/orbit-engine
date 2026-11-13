@@ -187,7 +187,7 @@ func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *tes
 		stderr: []byte("program warning\n"),
 		state:  DockerContainerState{Status: "exited", ExitCode: 0},
 	}
-	sandbox, err := NewDockerSandbox(fake, root)
+	sandbox, err := NewDockerSandbox(fake)
 	if err != nil {
 		t.Fatalf("NewDockerSandbox: %v", err)
 	}
@@ -210,13 +210,6 @@ func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *tes
 	wantStdin := append(append([]byte(nil), request.SourceBytes...), request.StandardInput...)
 	if string(fake.stdin) != string(wantStdin) {
 		t.Fatalf("stdin = %q, want source bytes followed by test input %q", fake.stdin, wantStdin)
-	}
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatalf("ReadDir temporary root: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("temporary source workspace was not removed: %v", entries)
 	}
 	if containsArgument(fake.createArgs, "--mount") {
 		t.Fatalf("host source path unexpectedly passed to Docker: %v", fake.createArgs)
@@ -267,7 +260,7 @@ func TestDockerSandboxMapsCompileAndOOMStatuses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			fake := test.fake
-			sandbox, err := NewDockerSandbox(&fake, t.TempDir())
+			sandbox, err := NewDockerSandbox(&fake)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -292,7 +285,7 @@ func TestDockerSandboxEnforcesCombinedStdoutAndStderrLimit(t *testing.T) {
 		stderr: []byte("abcdef"),
 		state:  DockerContainerState{Status: "exited", ExitCode: 0},
 	}
-	sandbox, err := NewDockerSandbox(fake, t.TempDir())
+	sandbox, err := NewDockerSandbox(fake)
 	if err != nil {
 		t.Fatal(err)
 	}
