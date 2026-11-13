@@ -57,13 +57,18 @@ describe("runner Ed25519 request signature interoperability", () => {
     expect(valid).toBe(true);
   });
 
-  it.each([
+  const mutations: Array<[string, Partial<{
+    keyId: string; method: string; path: string; timestamp: string; nonce: string; body: string;
+  }>]> = [
     ["path", { path: "/internal/v1/runner/other" }],
     ["timestamp", { timestamp: "1794535201" }],
     ["nonce", { nonce: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }],
+    ["non-canonical nonce", { nonce: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB" }],
     ["body", { body: "{\"requestedSlots\":2}" }],
     ["key ID", { keyId: "runner-other-key" }],
-  ])("rejects a signature if the signed %s changes", async (_name, overrides) => {
+  ];
+
+  it.each(mutations)("rejects a signature if the signed %s changes", async (_name, overrides) => {
     const valid = await verifyRunnerRequestSignature(
       makeRequest(overrides),
       decodeBase64Url(fixture.publicKeyBase64Url),
