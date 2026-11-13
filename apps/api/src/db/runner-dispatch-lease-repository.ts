@@ -472,12 +472,14 @@ export class PostgresRunnerDispatchLeaseRepository {
               "  AND (lease_expires_at IS NULL OR lease_expires_at <= clock_timestamp())",
               "  AND lease_token IS NOT DISTINCT FROM $4::uuid",
               "  AND lease_owner IS NOT DISTINCT FROM $5",
+              "  AND lease_expires_at IS NOT DISTINCT FROM $6::timestamptz",
               "RETURNING id, execution_id, attempt_id, protocol_version, correlation_id,",
               "  delivery_attempts, lease_token, lease_expires_at",
             ].join("\n"),
             [
               candidate.dispatch_id, runnerId, leaseSeconds,
               candidate.previous_lease_token, candidate.previous_lease_owner,
+              candidate.previous_lease_expires_at,
             ],
           );
           const claimedDispatch = claimed.rows[0];
@@ -497,9 +499,9 @@ export class PostgresRunnerDispatchLeaseRepository {
               "  AND (",
               "    (state = 'QUEUED' AND available_at <= clock_timestamp())",
               "    OR (state = 'CLAIMED' AND lease_expires_at <= clock_timestamp()",
-              "      AND lease_expires_at IS NOT DISTINCT FROM $6::timestamptz)",
+              "      AND lease_expires_at IS NOT DISTINCT FROM $9::timestamptz)",
               "    OR (state = 'RUNNING' AND lease_expires_at <= clock_timestamp()",
-              "      AND lease_expires_at IS NOT DISTINCT FROM $6::timestamptz)",
+              "      AND lease_expires_at IS NOT DISTINCT FROM $9::timestamptz)",
               "  )",
               "RETURNING id, retry_count",
             ].join("\n"),
@@ -507,6 +509,7 @@ export class PostgresRunnerDispatchLeaseRepository {
               candidate.execution_id, candidate.attempt_id, candidate.previous_job_state,
               runnerId, claimedDispatch.lease_token, claimedDispatch.lease_expires_at,
               candidate.previous_lease_token, candidate.previous_lease_owner,
+              candidate.previous_lease_expires_at,
             ],
           );
           const jobRow = updatedJob.rows[0];
