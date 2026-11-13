@@ -163,13 +163,6 @@ export class RunnerArtifactStaleLeaseError extends Error {
   }
 }
 
-export class RunnerArtifactNotStartedError extends Error {
-  constructor() {
-    super("runner_artifact_start_required");
-    this.name = "RunnerArtifactNotStartedError";
-  }
-}
-
 export class RunnerArtifactStorageUnavailableError extends Error {
   constructor() {
     super("runner_artifact_storage_unavailable");
