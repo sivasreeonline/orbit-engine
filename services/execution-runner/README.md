@@ -143,12 +143,3 @@ The execution adapter currently uses exact-byte output comparison. The artifact 
 6. Run real Java/Python smoke tests and the full adversarial matrix: network/DNS, host filesystem traversal, process exhaustion, memory exhaustion, infinite loops, output floods, cancellation and cleanup failures.
 7. Verify container cleanup and lease-loss cancellation under real process execution; implement measured peak-memory sampling.
 8. Complete an independent security review and cleanup attestation design. Keep the adapter disabled until all gates pass.
-
-
-## Foreground supervisor and execution qualification gate
-
-The runner library now provides a bounded foreground `runner.Supervisor` around the existing one-dispatch `Worker.RunOnce` coordinator. The supervisor checks a separate `ReadinessGate` before it invokes the worker. If qualification is absent, false or unavailable, it waits with cancellation-aware backoff and **does not call the worker**, so it cannot claim dispatches.
-
-The supervisor itself does not qualify a sandbox. The gate must be supplied by a separately reviewed deployment integration whose affirmative result is backed by current Linux/runsc qualification evidence, pinned runtime image digests and the required adversarial/cleanup checks. A static false gate is the safe default for tests and local development. The health-only `cmd/runner` remains unchanged in behavior: it does not construct an identity, open the journal, create a control-plane client, or start the supervisor. This PR intentionally does not enable the foreground mode, Java/Python execution or student workloads.
-
-Supervisor polling defaults to 2 seconds and transient/qualification retry defaults to 5 seconds; both are bounded and context-cancellable. The process must cancel the supervisor first, then close the journal and destroy its identity configuration during graceful shutdown.

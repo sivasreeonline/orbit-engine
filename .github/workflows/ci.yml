@@ -1,0 +1,366 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, "feat/**", "fix/**"]
+    paths:
+      - "apps/web/**"
+      - "apps/api/**"
+      - "docs/**"
+      - ".github/workflows/**"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+  push:
+    branches: [main, "feat/**", "fix/**"]
+    paths:
+      - "apps/web/**"
+      - "apps/api/**"
+      - "docs/**"
+      - ".github/workflows/**"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web typecheck, tests and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+  api:
+    name: API typecheck, tests, migrations and dry-run deploy
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: sky_high_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sky_high_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # apps/api is still using exact direct dependency versions but does not
+      # yet have its generated lockfile. Replace npm install with npm ci once
+      # package-lock.json is generated and committed.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Apply problem catalog migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0001_problem_catalog.sql
+
+      - name: Seed and re-apply Two Sum migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0002_seed_two_sum.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0001_problem_catalog.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0002_seed_two_sum.sql
+
+      - name: Verify public fixtures and published immutability
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $block$
+          DECLARE
+            version_id uuid := 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
+            public_count integer;
+            hidden_count integer;
+            blocked boolean := false;
+          BEGIN
+            SELECT count(*) INTO public_count
+            FROM public_problem_test_cases
+            WHERE problem_version_id = version_id;
+
+            SELECT count(*) INTO hidden_count
+            FROM problem_test_cases
+            WHERE problem_version_id = version_id
+              AND visibility = 'HIDDEN';
+
+            IF public_count <> 2 OR hidden_count <> 2 THEN
+              RAISE EXCEPTION 'Expected two public and two hidden fixtures; got public %, hidden %',
+                public_count, hidden_count;
+            END IF;
+
+            BEGIN
+              UPDATE problem_versions
+              SET title = 'Mutation must be rejected'
+              WHERE id = version_id;
+            EXCEPTION WHEN SQLSTATE '55000' THEN
+              blocked := true;
+            END;
+
+            IF NOT blocked THEN
+              RAISE EXCEPTION 'Published problem version mutation was not rejected';
+            END IF;
+
+            blocked := false;
+            BEGIN
+              INSERT INTO problem_test_cases (
+                problem_version_id, sequence, input_data, expected_output, visibility
+              ) VALUES (
+                version_id, 999, convert_to('1 2', 'UTF8'),
+                convert_to('0 1', 'UTF8'), 'PUBLIC'
+              );
+            EXCEPTION WHEN SQLSTATE '55000' THEN
+              blocked := true;
+            END;
+
+            IF NOT blocked THEN
+              RAISE EXCEPTION 'Test fixture insertion into a published version was not rejected';
+            END IF;
+          END
+          $block$;
+          SQL
+
+      - name: Apply and re-apply proposed execution intake migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0003_execution_intake_foundation.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0003_execution_intake_foundation.sql
+
+      - name: Verify execution intake persistence invariants
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0003_execution_intake_foundation.sql
+
+      - name: Verify concurrent execution intake against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/execution-intake-repository.integration.test.ts
+
+      - name: Verify outbox leases against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/outbox-lease-repository.integration.test.ts
+
+      - name: Verify execution job claims against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/execution-job-repository.integration.test.ts
+
+      - name: Apply and re-apply append-only execution evidence migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0004_append_only_execution_results.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0004_append_only_execution_results.sql
+
+      - name: Verify append-only execution evidence against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/execution-evidence-repository.integration.test.ts
+
+      - name: Apply and re-apply durable runner dispatch outbox migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0005_runner_dispatch_outbox.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0005_runner_dispatch_outbox.sql
+
+      - name: Verify runner dispatch outbox SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0005_runner_dispatch_outbox.sql
+
+      # The handoff repository creates a student scheduler lane in the same
+      # transaction as the dispatch intent, so migration 0006 must precede it.
+      - name: Apply and re-apply fair runner dispatch scheduler migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0006_runner_dispatch_scheduler_lanes.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0006_runner_dispatch_scheduler_lanes.sql
+
+      - name: Verify durable runner handoff against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-dispatch-handoff-repository.integration.test.ts
+
+      - name: Verify runner dispatch leases against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-dispatch-lease-repository.integration.test.ts
+
+      - name: Verify fair scheduler cursor SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0006_runner_dispatch_scheduler_lanes.sql
+
+      - name: Verify fair dispatch across concurrent student lanes
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-dispatch-fair-scheduler.integration.test.ts
+
+      - name: Apply and re-apply runner machine identity migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0007_runner_machine_identity.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0007_runner_machine_identity.sql
+
+      - name: Verify runner machine identity SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0007_runner_machine_identity.sql
+
+      - name: Verify runner identity lookup and nonce replay protection against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-identity-repository.integration.test.ts
+
+      - name: Apply and re-apply runner acceptance receipt migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0008_runner_dispatch_acceptance_receipts.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0008_runner_dispatch_acceptance_receipts.sql
+
+      - name: Verify runner acceptance receipt SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0008_runner_dispatch_acceptance_receipts.sql
+
+      - name: Verify runner acceptance receipts and append-only evidence against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-acceptance-repository.integration.test.ts
+
+      - name: Apply and re-apply lease-fenced runner start migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0010_runner_dispatch_starts.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0010_runner_dispatch_starts.sql
+
+      - name: Verify lease-fenced runner start SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0010_runner_dispatch_starts.sql
+
+      - name: Verify accepted runner start and lease fencing against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-start-repository.integration.test.ts
+
+      - name: Apply and re-apply runner lease heartbeat migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0011_runner_dispatch_lease_heartbeats.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0011_runner_dispatch_lease_heartbeats.sql
+
+      - name: Verify runner lease heartbeat SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0011_runner_dispatch_lease_heartbeats.sql
+
+      - name: Verify runner lease renewals and idempotent heartbeats against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-heartbeat-repository.integration.test.ts
+
+      - name: Apply and re-apply authenticated runner completion migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0012_runner_dispatch_completions.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0012_runner_dispatch_completions.sql
+
+      - name: Verify runner completion receipt SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0012_runner_dispatch_completions.sql
+
+      - name: Verify authenticated runner completion and result replay against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-completion-repository.integration.test.ts
+
+      - name: Apply and re-apply expired runner lease recovery migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0013_runner_dispatch_expiry_recovery.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0013_runner_dispatch_expiry_recovery.sql
+
+      - name: Verify expired runner lease recovery SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0013_runner_dispatch_expiry_recovery.sql
+
+      - name: Verify expired runner lease recovery and retries against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-recovery-repository.integration.test.ts
+
+      - name: Worker deployment dry run
+        run: npx wrangler deploy --dry-run
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high

@@ -1,0 +1,145 @@
+openapi: 3.1.0
+info:
+  title: Sky High Coding Judge API
+  version: 1.0.0
+  description: Asynchronous coding assessment API. Hidden test data is never exposed.
+servers:
+  - url: https://api.example.invalid/api/v1
+paths:
+  /problems:
+    get:
+      summary: List published problems
+      responses:
+        "200":
+          description: Problem list
+  /problems/{problemId}:
+    get:
+      summary: Get sanitized problem details
+      parameters:
+        - in: path
+          name: problemId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Problem details }
+        "404": { description: Not found }
+  /problems/{problemId}/attempts:
+    get:
+      summary: Get the authenticated student's immutable attempts for a problem
+      parameters:
+        - in: path
+          name: problemId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200": { description: Owner-scoped attempt history; source bytes and hidden tests are excluded }
+        "400": { description: Invalid problem identifier or limit }
+        "401": { description: Authentication required }
+        "503": { description: Evidence store unavailable }
+  /executions/{executionId}/events:
+    get:
+      summary: Get the authenticated student's append-only lifecycle events for an execution
+      parameters:
+        - in: path
+          name: executionId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Owner-scoped execution evidence events }
+        "400": { description: Invalid execution identifier }
+        "401": { description: Authentication required }
+        "503": { description: Evidence store unavailable }
+  /problems/{problemId}/runs:
+    post:
+      summary: Create a Run attempt using public tests
+      parameters:
+        - in: path
+          name: problemId
+          required: true
+          schema: { type: string }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExecutionRequest" }
+      responses:
+        "202": { description: Queued }
+        "400": { description: Invalid request }
+        "409": { description: Idempotency conflict }
+  /problems/{problemId}/submissions:
+    post:
+      summary: Create an official Submit attempt using server-selected tests
+      parameters:
+        - in: path
+          name: problemId
+          required: true
+          schema: { type: string }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExecutionRequest" }
+      responses:
+        "202": { description: Queued }
+        "400": { description: Invalid request }
+        "409": { description: Idempotency conflict }
+  /submissions/{submissionId}:
+    get:
+      summary: Get status and sanitized evaluation result
+      parameters:
+        - in: path
+          name: submissionId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Status or final result }
+        "404": { description: Not found }
+  /submissions/{submissionId}/timeline:
+    get:
+      summary: Get immutable attempt timeline
+      parameters:
+        - in: path
+          name: submissionId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Attempt timeline }
+  /submissions/{submissionId}/feedback:
+    get:
+      summary: Get advisory analysis
+      parameters:
+        - in: path
+          name: submissionId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Advisory feedback, if available }
+components:
+  schemas:
+    ExecutionRequest:
+      type: object
+      additionalProperties: false
+      required: [problemVersionId, language, runtimeVersion, sourceCode]
+      properties:
+        problemVersionId: { type: string }
+        language: { type: string, enum: [java, python] }
+        runtimeVersion: { type: string }
+        sourceCode: { type: string, maxLength: 200000 }
+    Verdict:
+      type: string
+      enum: [ACCEPTED, WRONG_ANSWER, COMPILATION_ERROR, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, MEMORY_LIMIT_EXCEEDED, OUTPUT_LIMIT_EXCEEDED, INTERNAL_ERROR]
+    ExecutionState:
+      type: string
+      enum: [CREATED, QUEUED, CLAIMED, RUNNING, EVALUATING, COMPLETED, FAILED_INFRASTRUCTURE, CANCELLED, EXPIRED]

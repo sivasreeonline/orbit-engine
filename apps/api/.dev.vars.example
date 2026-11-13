@@ -1,0 +1,5 @@
+# Optional local API settings. Never put credentials in this file or commit a real .dev.vars.
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+
+# Set a local PostgreSQL URL in the PowerShell process environment:
+# $env:CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE = "postgres://..."
