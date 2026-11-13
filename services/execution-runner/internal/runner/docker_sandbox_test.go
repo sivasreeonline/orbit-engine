@@ -383,7 +383,8 @@ func TestRuntimeScriptsVerifyPinnedVersionsAndExposeCompileBoundary(t *testing.T
 	}
 	if !strings.Contains(javaScript, "dd bs=1 count=") ||
 		!strings.Contains(javaScript, "of=/workspace/Main.java") ||
-		!strings.Contains(javaScript, "chmod 0444 /workspace/Main.java") {
+		!strings.Contains(javaScript, "chmod 0444 /workspace/Main.java") ||
+		!strings.Contains(javaScript, "chmod 0555 /workspace") {
 		t.Fatalf("Java wrapper does not stage exact source bytes into private tmpfs: %s", javaScript)
 	}
 	if strings.Index(javaScript, "printf '") > strings.Index(javaScript, "exec java ") {
@@ -403,7 +404,8 @@ func TestRuntimeScriptsVerifyPinnedVersionsAndExposeCompileBoundary(t *testing.T
 	}
 	if !strings.Contains(pythonScript, "dd bs=1 count=64") ||
 		!strings.Contains(pythonScript, "of=/workspace/main.py") ||
-		!strings.Contains(pythonScript, "chmod 0444 /workspace/main.py") {
+		!strings.Contains(pythonScript, "chmod 0444 /workspace/main.py") ||
+		!strings.Contains(pythonScript, "chmod 0555 /workspace") {
 		t.Fatalf("Python wrapper does not stage exact source bytes into private tmpfs: %s", pythonScript)
 	}
 	if strings.Index(pythonScript, "printf '") > strings.Index(pythonScript, "exec python3 -I -B /workspace/main.py") {
