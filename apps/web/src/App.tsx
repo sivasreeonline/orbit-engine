@@ -79,6 +79,7 @@ export default function App() {
         problemVersion: "1",
         language,
         initialSource: sourceCode,
+        retainRecords: false,
         onRecord: recordEvidence,
       });
       evidenceCollector.current = collector;
