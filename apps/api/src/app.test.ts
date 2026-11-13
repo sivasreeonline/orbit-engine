@@ -675,8 +675,9 @@ describe("authenticated runner claim endpoint", () => {
       nonce,
       body,
     });
+    const signingBytes = new Uint8Array(signedMessage);
     const signature = new Uint8Array(await crypto.subtle.sign(
-      "Ed25519", keyPair.privateKey, signedMessage,
+      "Ed25519", keyPair.privateKey, signingBytes,
     ));
     return {
       request: new Request("https://api.skyhigh.example/internal/v1/runner/claim", {
