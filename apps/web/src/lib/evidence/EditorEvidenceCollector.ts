@@ -101,6 +101,7 @@ export class EditorEvidenceCollector {
   private sequence = 0;
   private active = true;
   private processing = false;
+  private processingTask: Promise<void> = Promise.resolve();
   private sourceCode: string;
   private language: EvidenceLanguage;
   private latestSnapshot: EditorEvidenceSnapshot | null = null;
@@ -148,6 +149,7 @@ export class EditorEvidenceCollector {
 
   async changeContext(language: EvidenceLanguage, sourceCode: string): Promise<void> {
     if (!this.active || this.disposed) return;
+    await this.processingTask;
     if (language === this.language && sourceCode === this.sourceCode) return;
     if (this.dirty) {
       await this.captureSnapshot("PERIODIC");
@@ -168,6 +170,7 @@ export class EditorEvidenceCollector {
     if (!this.active || this.disposed) {
       throw new Error("evidence_session_not_active");
     }
+    await this.processingTask;
     this.noteEditorChange(sourceCode);
     this.language = language;
     const snapshot = await this.captureSnapshot(action);
@@ -179,6 +182,14 @@ export class EditorEvidenceCollector {
     });
     this.scheduleNext();
     return snapshot;
+  }
+
+  /**
+   * Waits for any timer-triggered capture/checkpoint currently in progress.
+   * Useful to coordinate Run/Submit, shutdown, and deterministic tests.
+   */
+  async awaitScheduledWork(): Promise<void> {
+    await this.processingTask;
   }
 
   getSummary(): EditorEvidenceSummary {
@@ -200,11 +211,12 @@ export class EditorEvidenceCollector {
   async close(): Promise<void> {
     if (!this.active || this.disposed) return;
     this.active = false;
-    this.disposed = true;
     if (this.timer !== null) {
       this.cancelTimer(this.timer);
       this.timer = null;
     }
+    await this.processingTask;
+    this.disposed = true;
     if (this.latestSnapshot === null || this.dirty) {
       await this.captureSnapshot("SESSION_END", true);
     }
@@ -309,7 +321,7 @@ export class EditorEvidenceCollector {
     const dueAt = Math.min(changeDue, checkpointDue);
     this.timer = this.scheduleTimer(() => {
       this.timer = null;
-      void this.processDue();
+      this.processingTask = this.processDue();
     }, Math.max(0, dueAt - now));
   }
 
