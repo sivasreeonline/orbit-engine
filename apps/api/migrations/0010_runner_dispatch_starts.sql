@@ -52,10 +52,11 @@ BEGIN
   WHERE dispatch_id = NEW.dispatch_id
     AND lease_token = NEW.lease_token;
 
-  SELECT execution_id, attempt_id, event_type, actor_kind, phase_status
+  SELECT evidence.execution_id, evidence.attempt_id, evidence.event_type,
+    evidence.actor_kind, evidence.phase_status
   INTO event_execution_id, event_attempt_id, event_type, event_actor_kind, event_phase_status
-  FROM execution_evidence_events
-  WHERE event_id = NEW.event_id;
+  FROM execution_evidence_events AS evidence
+  WHERE evidence.event_id = NEW.event_id;
 
   IF expected_execution_id IS DISTINCT FROM NEW.execution_id
     OR expected_attempt_id IS DISTINCT FROM NEW.attempt_id
