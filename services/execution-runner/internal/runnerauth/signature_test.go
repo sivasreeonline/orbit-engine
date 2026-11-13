@@ -133,6 +133,10 @@ func TestRejectsMalformedKeysSignaturesAndRequestFields(t *testing.T) {
 	if _, err := CanonicalMessage(request); err == nil {
 		t.Fatal("accepted malformed nonce")
 	}
+	request.Nonce = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB"
+	if _, err := CanonicalMessage(request); err == nil {
+		t.Fatal("accepted non-canonical base64url nonce")
+	}
 }
 
 func sha256Sum(value []byte) string {
