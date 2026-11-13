@@ -23,8 +23,7 @@ export type EditorSnapshotKind =
 
 export interface CreateCodingEvidenceSessionInput {
   readonly principal: Principal;
-  readonly problemId: string;
-  readonly problemVersionId: string;
+  readonly problemSlug: string;
   readonly language: CodingLanguage;
   readonly noticeVersion: string;
 }
@@ -158,7 +157,8 @@ function validTimestamp(value: string): boolean {
 
 function validateSessionInput(input: CreateCodingEvidenceSessionInput): void {
   if (!input || !isUuid(input.principal.tenantId) || !isUuid(input.principal.userId) ||
-      !isUuid(input.problemId) || !isUuid(input.problemVersionId) ||
+      typeof input.problemSlug !== "string" ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.problemSlug) || input.problemSlug.length > 64 ||
       !isLanguage(input.language) ||
       typeof input.noticeVersion !== "string" ||
       input.noticeVersion.length < 1 || input.noticeVersion.length > 32) {
@@ -308,18 +308,18 @@ export class PostgresCodingEvidenceRepository {
           "  tenant_id, actor_user_id, problem_id, problem_version_id,",
           "  language, notice_version",
           ")",
-          "SELECT $1::uuid, $2::uuid, problem.id, version.id, $5, $6",
+          "SELECT $1::uuid, $2::uuid, problem.id, version.id, $4, $5",
           "FROM problems AS problem",
           "INNER JOIN problem_versions AS version",
-          "  ON version.problem_id = problem.id AND version.id = $4::uuid",
-          "WHERE problem.id = $3::uuid AND problem.lifecycle_status = 'PUBLISHED'",
+          "  ON version.problem_id = problem.id AND version.id = problem.current_version_id",
+          "WHERE problem.slug = $3 AND problem.lifecycle_status = 'PUBLISHED'",
           "  AND version.published_at IS NOT NULL",
           "  AND (problem.tenant_id IS NULL OR problem.tenant_id = $1::uuid)",
           "RETURNING id, started_at, last_sequence",
         ].join("\n"),
         [
-          input.principal.tenantId, input.principal.userId, input.problemId,
-          input.problemVersionId, input.language, input.noticeVersion,
+          input.principal.tenantId, input.principal.userId, input.problemSlug,
+          input.language, input.noticeVersion,
         ],
       );
       const row = result.rows[0];
