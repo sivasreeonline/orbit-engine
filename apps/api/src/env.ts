@@ -15,4 +15,6 @@ export interface Env {
   readonly OUTBOX_RETRY_MAX_MS?: string;
   readonly CORS_ALLOWED_ORIGINS?: string;
   readonly APP_ENV?: string;
+  readonly JAVA_RUNTIME_VERSION?: string;
+  readonly PYTHON_RUNTIME_VERSION?: string;
 }
