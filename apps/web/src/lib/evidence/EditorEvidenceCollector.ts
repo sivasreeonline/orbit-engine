@@ -227,7 +227,6 @@ export class EditorEvidenceCollector {
       throw new Error("evidence_session_not_active");
     }
     const source = this.sourceCode;
-    const changesSincePreviousSnapshot = this.pendingChangeCount;
     const capturedAtMs = this.now();
     const changesSincePreviousSnapshot = this.pendingChangeCount;
     const sourceBytes = new TextEncoder().encode(source);
