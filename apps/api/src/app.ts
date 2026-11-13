@@ -1,6 +1,11 @@
 import type { Authenticator, ProblemRepository } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+import {
+  ExecutionProblemNotFoundError,
+  IdempotencyConflictError,
+  type CreateExecutionInput,
+} from "./db/execution-intake-repository";
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
@@ -8,10 +13,20 @@ type ExecutionEvidenceReadRepository = Pick<
 > & Partial<Pick<PostgresExecutionEvidenceRepository, "getExecutionQueueStatus">>;
 import type { Env } from "./env";
 
+type ExecutionIntakeRepository = {
+  create(input: CreateExecutionInput, idempotencyKey: string): Promise<{
+    executionId: string;
+    attemptId: string;
+    replayed: boolean;
+  }>;
+};
+
 interface ApiDependencies {
   readonly authenticator: Authenticator;
   readonly repository: ProblemRepository;
   readonly evidenceRepository?: ExecutionEvidenceReadRepository;
+  readonly executionIntakeRepository?: ExecutionIntakeRepository;
+  readonly runtimeVersions?: { readonly java: string; readonly python: string };
   readonly allowedOrigins?: string;
 }
 
@@ -54,10 +69,10 @@ function makeHeaders(
 
   if (origin && allowedOrigins.has(origin)) {
     headers.set("Access-Control-Allow-Origin", origin);
-    headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     headers.set(
       "Access-Control-Allow-Headers",
-      "Authorization, Content-Type, X-Correlation-ID",
+      "Authorization, Content-Type, Idempotency-Key, X-Correlation-ID",
     );
     headers.append("Vary", "Origin");
   }
@@ -91,6 +106,46 @@ function errorResponse(
     correlationId: requestId,
   };
   return jsonResponse(body, status, requestId, origin, allowedOrigins);
+}
+
+class RequestBodyTooLargeError extends Error {}
+class InvalidRequestBodyError extends Error {}
+
+async function readJsonBody(request: Request, maximumBytes: number): Promise<unknown> {
+  const reader = request.body?.getReader();
+  if (!reader) throw new InvalidRequestBodyError();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      total += next.value.byteLength;
+      if (total > maximumBytes) {
+        await reader.cancel();
+        throw new RequestBodyTooLargeError();
+      }
+      chunks.push(next.value);
+    }
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) throw error;
+    throw new InvalidRequestBodyError();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
+  } catch {
+    throw new InvalidRequestBodyError();
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isValidSlug(slug: string): boolean {
@@ -169,6 +224,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
     }
 
+    const isExecutionCreate = request.method === "POST" && path === "/api/v1/executions";
     const isProblemList = request.method === "GET" && path === "/api/v1/problems";
     const problemMatch = request.method === "GET"
       ? path.match(/^\/api\/v1\/problems\/([^/]+)$/)
@@ -183,7 +239,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
       ? path.match(/^\/api\/v1\/executions\/([^/]+)\/status$/)
       : null;
 
-    if (!isProblemList && !problemMatch && !attemptHistoryMatch &&
+    if (!isExecutionCreate && !isProblemList && !problemMatch && !attemptHistoryMatch &&
         !executionEventsMatch && !executionStatusMatch) {
       return errorResponse(
         "NOT_FOUND",
@@ -246,6 +302,127 @@ export function createApiHandler(dependencies: ApiDependencies) {
         origin,
         allowedOrigins,
       );
+    }
+
+    if (isExecutionCreate) {
+      if (!dependencies.executionIntakeRepository) {
+        return errorResponse("EXECUTION_INTAKE_NOT_CONFIGURED",
+          "Code execution requests are temporarily unavailable.", 503, true,
+          requestId, origin, allowedOrigins);
+      }
+
+      const idempotencyKey = request.headers.get("Idempotency-Key") ?? "";
+      if (!/^[A-Za-z0-9._~-]{1,128}$/.test(idempotencyKey)) {
+        return errorResponse("INVALID_IDEMPOTENCY_KEY",
+          "A valid Idempotency-Key header is required.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The request body must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+      const contentLength = request.headers.get("Content-Length");
+      if (contentLength !== null &&
+          (!/^[0-9]+$/.test(contentLength) || Number(contentLength) > 256 * 1024)) {
+        return errorResponse("REQUEST_BODY_TOO_LARGE",
+          "The execution request exceeds the allowed size.", 413, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let body: unknown;
+      try {
+        body = await readJsonBody(request, 256 * 1024);
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The execution request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The execution request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      if (!isRecord(body) ||
+          Object.keys(body).some((key) =>
+            !["action", "problemSlug", "language", "sourceCode"].includes(key)) ||
+          Object.keys(body).length !== 4) {
+        return errorResponse("INVALID_EXECUTION_REQUEST",
+          "The request must contain only action, problemSlug, language and sourceCode.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const action = body.action;
+      const problemSlug = body.problemSlug;
+      const language = body.language;
+      const sourceCode = body.sourceCode;
+      if ((action !== "RUN" && action !== "SUBMIT") ||
+          typeof problemSlug !== "string" || !isValidSlug(problemSlug) ||
+          (language !== "java" && language !== "python") ||
+          typeof sourceCode !== "string" || sourceCode.length === 0) {
+        return errorResponse("INVALID_EXECUTION_REQUEST",
+          "The execution request contains invalid action, problem, language or source code.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const sourceByteLength = new TextEncoder().encode(sourceCode).byteLength;
+      if (sourceByteLength > 200 * 1024) {
+        return errorResponse("SOURCE_TOO_LARGE",
+          "Source code must not exceed 200 KiB.", 413, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const runtimeVersion = dependencies.runtimeVersions?.[language];
+      if (!runtimeVersion || !/^[A-Za-z0-9._+-]{1,32}$/.test(runtimeVersion)) {
+        return errorResponse("RUNTIME_POLICY_NOT_CONFIGURED",
+          "The selected language runtime is not configured.", 503, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const created = await dependencies.executionIntakeRepository.create({
+          principal,
+          action,
+          problemSlug,
+          language,
+          runtimeVersion,
+          sourceCode,
+          correlationId: requestId,
+        }, idempotencyKey);
+        return jsonResponse({
+          data: {
+            executionId: created.executionId,
+            attemptId: created.attemptId,
+            action,
+            accepted: true,
+            replayed: created.replayed,
+            statusUrl: `/api/v1/executions/${created.executionId}/status`,
+          },
+        }, 202, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof ExecutionProblemNotFoundError) {
+          return errorResponse("PROBLEM_NOT_FOUND",
+            "The requested published problem was not found.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof IdempotencyConflictError) {
+          return errorResponse("IDEMPOTENCY_CONFLICT",
+            "This Idempotency-Key was already used for a different request.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("DATABASE_UNAVAILABLE",
+            "The execution request could not be saved right now.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("execution_intake_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The execution request could not be accepted.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
     }
 
     if (attemptHistoryMatch) {

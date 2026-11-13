@@ -9,6 +9,7 @@ import type {
 } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+import type { CreateExecutionInput } from "./db/execution-intake-repository";
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
@@ -57,6 +58,12 @@ interface HarnessOptions {
   auth?: AuthenticationResult;
   repository?: Partial<ProblemRepository>;
   evidenceRepository?: ExecutionEvidenceReadRepository;
+  executionIntakeRepository?: {
+    create(input: CreateExecutionInput, idempotencyKey: string): Promise<{
+      executionId: string; attemptId: string; replayed: boolean;
+    }>;
+  };
+  runtimeVersions?: { readonly java: string; readonly python: string };
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -78,6 +85,10 @@ function makeHarness(options: HarnessOptions = {}) {
     ...(options.evidenceRepository
       ? { evidenceRepository: options.evidenceRepository }
       : {}),
+    ...(options.executionIntakeRepository
+      ? { executionIntakeRepository: options.executionIntakeRepository }
+      : {}),
+    ...(options.runtimeVersions ? { runtimeVersions: options.runtimeVersions } : {}),
     allowedOrigins: allowedOrigin,
   });
 
@@ -149,8 +160,9 @@ describe("M1 API control plane", () => {
     }));
 
     expect(response.status).toBe(204);
-    expect(response.headers.get("Access-Control-Allow-Methods")).toBe("GET, OPTIONS");
+    expect(response.headers.get("Access-Control-Allow-Methods")).toBe("GET, POST, OPTIONS");
     expect(response.headers.get("Access-Control-Allow-Headers")).toContain("Authorization");
+    expect(response.headers.get("Access-Control-Allow-Headers")).toContain("Idempotency-Key");
     expect(authenticator.authenticate).not.toHaveBeenCalled();
   });
 
@@ -282,6 +294,147 @@ describe("M1 API control plane", () => {
     expect(body).toMatchObject({
       error: { code: "INTERNAL_ERROR", retryable: true },
     });
+  });
+
+  it("accepts an authenticated Run request with server-selected runtime and durable idempotency", async () => {
+    const create = vi.fn(async (_input: CreateExecutionInput, _key: string) => ({
+      executionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      attemptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      replayed: false,
+    }));
+    const { handler } = makeHarness({
+      executionIntakeRepository: { create },
+      runtimeVersions: { java: "25", python: "3.14" },
+    });
+
+    const response = await handler(makeRequest("/api/v1/executions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "student-run-001",
+        "X-Correlation-ID": "run-request-001",
+      },
+      body: JSON.stringify({
+        action: "RUN",
+        problemSlug: "two-sum",
+        language: "java",
+        sourceCode: "public class Main {}",
+      }),
+    }));
+
+    expect(response.status).toBe(202);
+    expect(await readJson(response)).toEqual({
+      data: {
+        executionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+        attemptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+        action: "RUN",
+        accepted: true,
+        replayed: false,
+        statusUrl: "/api/v1/executions/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1/status",
+      },
+    });
+    expect(create).toHaveBeenCalledWith({
+      principal: authenticated.principal,
+      action: "RUN",
+      problemSlug: "two-sum",
+      language: "java",
+      runtimeVersion: "25",
+      sourceCode: "public class Main {}",
+      correlationId: "run-request-001",
+    }, "student-run-001");
+  });
+
+  it("rejects client-supplied identity or runtime fields instead of trusting them", async () => {
+    const create = vi.fn(async () => ({
+      executionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      attemptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      replayed: false,
+    }));
+    const { handler } = makeHarness({
+      executionIntakeRepository: { create },
+      runtimeVersions: { java: "25", python: "3.14" },
+    });
+
+    const response = await handler(makeRequest("/api/v1/executions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "student-run-002",
+      },
+      body: JSON.stringify({
+        action: "RUN",
+        problemSlug: "two-sum",
+        language: "java",
+        runtimeVersion: "attacker-selected",
+        tenantId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        sourceCode: "public class Main {}",
+      }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_EXECUTION_REQUEST", retryable: false },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-JSON media types before reading the request body", async () => {
+    const create = vi.fn(async () => ({
+      executionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      attemptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      replayed: false,
+    }));
+    const { handler } = makeHarness({
+      executionIntakeRepository: { create },
+      runtimeVersions: { java: "25", python: "3.14" },
+    });
+
+    const response = await handler(makeRequest("/api/v1/executions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/jsonp",
+        "Idempotency-Key": "student-run-004",
+      },
+      body: "{}",
+    }));
+
+    expect(response.status).toBe(415);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "UNSUPPORTED_MEDIA_TYPE", retryable: false },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("rejects source larger than 200 KiB before writing an execution attempt", async () => {
+    const create = vi.fn(async () => ({
+      executionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      attemptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      replayed: false,
+    }));
+    const { handler } = makeHarness({
+      executionIntakeRepository: { create },
+      runtimeVersions: { java: "25", python: "3.14" },
+    });
+
+    const response = await handler(makeRequest("/api/v1/executions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "student-run-003",
+      },
+      body: JSON.stringify({
+        action: "RUN",
+        problemSlug: "two-sum",
+        language: "java",
+        sourceCode: "x".repeat(200 * 1024 + 1),
+      }),
+    }));
+
+    expect(response.status).toBe(413);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "SOURCE_TOO_LARGE", retryable: false },
+    });
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("returns attempt history only for the authenticated tenant and student", async () => {

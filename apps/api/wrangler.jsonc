@@ -12,7 +12,9 @@
     "OUTBOX_BATCH_SIZE": "10",
     "OUTBOX_LEASE_SECONDS": "120",
     "OUTBOX_RETRY_BASE_MS": "5000",
-    "OUTBOX_RETRY_MAX_MS": "300000"
+    "OUTBOX_RETRY_MAX_MS": "300000",
+    "JAVA_RUNTIME_VERSION": "25",
+    "PYTHON_RUNTIME_VERSION": "3.14"
   },
   "triggers": {
     "crons": ["*/1 * * * *"]
