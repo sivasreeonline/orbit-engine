@@ -618,7 +618,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
         verdicts.includes(String(completionBody.verdict)) &&
         cleanupStatuses.includes(String(completionBody.cleanupStatus)) &&
         numericFields.every((field) => validNumber(completionBody[field])) &&
-        completionBody.testsPassed <= completionBody.testsTotal &&
+        (completionBody.testsPassed as number) <= (completionBody.testsTotal as number) &&
         typeof completionBody.runnerVersion === "string" &&
         /^[A-Za-z0-9._+-]{1,64}$/.test(completionBody.runnerVersion) &&
         typeof completionBody.resultSha256 === "string" &&
@@ -639,6 +639,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
           "The runner completion request contains invalid or unsupported result fields.", 400, false,
           requestId, origin, allowedOrigins);
       }
+      const validatedCompletion = completionBody as Record<string, unknown>;
 
       try {
         const authenticatedRunner = await authenticateRunnerRequest(
@@ -653,36 +654,36 @@ export function createApiHandler(dependencies: ApiDependencies) {
         }
 
         const resultInput: RecordRunnerExecutionResultInput = {
-          dispatchId: completionBody.dispatchId as string,
-          executionId: completionBody.executionId as string,
-          attemptId: completionBody.attemptId as string,
-          leaseToken: completionBody.leaseToken as string,
+          dispatchId: validatedCompletion.dispatchId as string,
+          executionId: validatedCompletion.executionId as string,
+          attemptId: validatedCompletion.attemptId as string,
+          leaseToken: validatedCompletion.leaseToken as string,
           leaseOwner: authenticatedRunner.runnerId,
           keyId: authenticatedRunner.keyId,
-          infrastructureStatus: completionBody.infrastructureStatus as "SUCCEEDED" | "FAILED",
-          ...(completionBody.infrastructureErrorCode !== undefined
-            ? { infrastructureErrorCode: completionBody.infrastructureErrorCode as string }
+          infrastructureStatus: validatedCompletion.infrastructureStatus as "SUCCEEDED" | "FAILED",
+          ...(validatedCompletion.infrastructureErrorCode !== undefined
+            ? { infrastructureErrorCode: validatedCompletion.infrastructureErrorCode as string }
             : {}),
-          compilationStatus: completionBody.compilationStatus as RecordRunnerExecutionResultInput["compilationStatus"],
-          verdict: completionBody.verdict as RecordRunnerExecutionResultInput["verdict"],
-          cleanupStatus: completionBody.cleanupStatus as RecordRunnerExecutionResultInput["cleanupStatus"],
-          testsTotal: completionBody.testsTotal as number,
-          testsPassed: completionBody.testsPassed as number,
-          elapsedMs: completionBody.elapsedMs as number,
-          ...(completionBody.peakMemoryBytes !== undefined
-            ? { peakMemoryBytes: completionBody.peakMemoryBytes as number }
+          compilationStatus: validatedCompletion.compilationStatus as RecordRunnerExecutionResultInput["compilationStatus"],
+          verdict: validatedCompletion.verdict as RecordRunnerExecutionResultInput["verdict"],
+          cleanupStatus: validatedCompletion.cleanupStatus as RecordRunnerExecutionResultInput["cleanupStatus"],
+          testsTotal: validatedCompletion.testsTotal as number,
+          testsPassed: validatedCompletion.testsPassed as number,
+          elapsedMs: validatedCompletion.elapsedMs as number,
+          ...(validatedCompletion.peakMemoryBytes !== undefined
+            ? { peakMemoryBytes: validatedCompletion.peakMemoryBytes as number }
             : {}),
-          runnerVersion: completionBody.runnerVersion as string,
-          ...(completionBody.runtimeImageDigest !== undefined
-            ? { runtimeImageDigest: completionBody.runtimeImageDigest as string }
+          runnerVersion: validatedCompletion.runnerVersion as string,
+          ...(validatedCompletion.runtimeImageDigest !== undefined
+            ? { runtimeImageDigest: validatedCompletion.runtimeImageDigest as string }
             : {}),
-          resultSha256: completionBody.resultSha256 as string,
-          startedAt: completionBody.startedAt as string,
-          completedAt: completionBody.completedAt as string,
+          resultSha256: validatedCompletion.resultSha256 as string,
+          startedAt: validatedCompletion.startedAt as string,
+          completedAt: validatedCompletion.completedAt as string,
         };
         const recorded = await dependencies.runnerCompletionRepository.recordRunnerResult({
           ...resultInput,
-          dispatchId: completionBody.dispatchId as string,
+          dispatchId: validatedCompletion.dispatchId as string,
           keyId: authenticatedRunner.keyId,
         });
         return jsonResponse({
