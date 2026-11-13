@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -35,7 +33,6 @@ type DockerContainerState struct {
 // behavior can be tested without running untrusted code on the host.
 type DockerCLI interface {
 	Create(context.Context, []string) (string, error)
-	CopyInto(context.Context, string, string, string) error
 	StartAttached(context.Context, string, io.Reader, io.Writer, io.Writer) (int, error)
 	Inspect(context.Context, string) (DockerContainerState, error)
 	Remove(context.Context, string) error
@@ -66,40 +63,6 @@ func (cli OSCommandDockerCLI) Create(ctx context.Context, args []string) (string
 		return "", ErrDockerCommandFailed
 	}
 	return id, nil
-}
-
-// CopyInto stages a private host file into the already-created container.
-// The source must live in a private 0700 directory and be read-only. Only the
-// two fixed runner source paths are accepted; no student-controlled path is
-// ever passed to a shell.
-func (cli OSCommandDockerCLI) CopyInto(
-	ctx context.Context,
-	id string,
-	sourcePath string,
-	destination string,
-) error {
-	if !containerIDPattern.MatchString(id) ||
-		!filepath.IsAbs(sourcePath) ||
-		filepath.Clean(sourcePath) != sourcePath ||
-		(destination != "/workspace/Main.java" && destination != "/workspace/main.py") {
-		return ErrDockerCommandFailed
-	}
-	parentInfo, err := os.Lstat(filepath.Dir(sourcePath))
-	if err != nil || !parentInfo.IsDir() || parentInfo.Mode()&os.ModeSymlink != 0 ||
-		parentInfo.Mode().Perm()&0o077 != 0 {
-		return ErrDockerCommandFailed
-	}
-	sourceInfo, err := os.Lstat(sourcePath)
-	if err != nil || !sourceInfo.Mode().IsRegular() ||
-		sourceInfo.Mode()&os.ModeSymlink != 0 ||
-		sourceInfo.Mode().Perm() != 0o444 {
-		return ErrDockerCommandFailed
-	}
-	command := exec.CommandContext(ctx, cli.binary(), "cp", sourcePath, id+":"+destination)
-	if err := command.Run(); err != nil {
-		return ErrDockerCommandFailed
-	}
-	return nil
 }
 
 func (cli OSCommandDockerCLI) StartAttached(
@@ -163,24 +126,15 @@ func (cli OSCommandDockerCLI) Remove(ctx context.Context, id string) error {
 
 type DockerSandbox struct {
 	cli            DockerCLI
-	temporaryRoot  string
 	cleanupTimeout time.Duration
 }
 
-func NewDockerSandbox(cli DockerCLI, temporaryRoot string) (*DockerSandbox, error) {
+func NewDockerSandbox(cli DockerCLI, _ string) (*DockerSandbox, error) {
 	if cli == nil {
-		return nil, ErrSandboxNotConfigured
-	}
-	if temporaryRoot == "" {
-		temporaryRoot = os.TempDir()
-	}
-	info, err := os.Stat(temporaryRoot)
-	if err != nil || !info.IsDir() {
 		return nil, ErrSandboxNotConfigured
 	}
 	return &DockerSandbox{
 		cli:            cli,
-		temporaryRoot:  temporaryRoot,
 		cleanupTimeout: 5 * time.Second,
 	}, nil
 }
@@ -191,40 +145,6 @@ func (sandbox *DockerSandbox) RunCase(
 ) (SandboxObservation, error) {
 	if err := validateSandboxRequest(request); err != nil {
 		return SandboxObservation{}, err
-	}
-
-	workspace, err := os.MkdirTemp(sandbox.temporaryRoot, "sky-high-exec-")
-	if err != nil {
-		return SandboxObservation{}, ErrDockerCommandFailed
-	}
-	cleanupWorkspace := true
-	defer func() {
-		if cleanupWorkspace {
-			_ = os.RemoveAll(workspace)
-		}
-	}()
-	// The parent directory is intentionally not traversable by other host
-	// users. Docker receives the bytes through its copy API, not a host bind.
-	if err := os.Chmod(workspace, 0o700); err != nil {
-		return SandboxObservation{}, ErrDockerCommandFailed
-	}
-	sourcePath := filepath.Join(workspace, request.SourceName)
-	file, err := os.OpenFile(sourcePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return SandboxObservation{}, ErrDockerCommandFailed
-	}
-	if _, err := file.Write(request.SourceBytes); err != nil {
-		_ = file.Close()
-		return SandboxObservation{}, ErrDockerCommandFailed
-	}
-	if err := file.Close(); err != nil {
-		return SandboxObservation{}, ErrDockerCommandFailed
-	}
-	// The file is readable by the Docker client running as this host user. Its
-	// 0700 parent prevents other host users from traversing the path. Docker
-	// copies it into the container tmpfs before the host copy is deleted.
-	if err := os.Chmod(sourcePath, 0o444); err != nil {
-		return SandboxObservation{}, ErrDockerCommandFailed
 	}
 
 	wallClock := time.Duration(request.Limits.WallTimeMillis) * time.Millisecond
@@ -258,28 +178,14 @@ func (sandbox *DockerSandbox) RunCase(
 		}
 	}()
 
-	containerPath := "/workspace/" + request.SourceName
-	if err := sandbox.cli.CopyInto(runContext, containerID, sourcePath, containerPath); err != nil {
-		if parent.Err() != nil {
-			return SandboxObservation{}, parent.Err()
-		}
-		if runContext.Err() != nil {
-			return SandboxObservation{}, runContext.Err()
-		}
-		return SandboxObservation{}, ErrDockerCommandFailed
-	}
-	// Never execute while the host-side student source still exists at a
-	// traversable path. Failure to erase staging aborts the container start.
-	if err := os.RemoveAll(workspace); err != nil {
-		return SandboxObservation{}, ErrDockerCommandFailed
-	}
-	cleanupWorkspace = false
-
+	// Source bytes are streamed directly into the container's private /workspace
+	// tmpfs. The fixed wrapper consumes exactly len(SourceBytes), then the
+	// student's test input remains on the same stdin stream for the program.
 	startedAt := time.Now()
 	exitCode, startErr := sandbox.cli.StartAttached(
 		runContext,
 		containerID,
-		bytes.NewReader(request.StandardInput),
+		io.MultiReader(bytes.NewReader(request.SourceBytes), bytes.NewReader(request.StandardInput)),
 		output.StdoutWriter(),
 		output.StderrWriter(),
 	)
@@ -301,14 +207,8 @@ func (sandbox *DockerSandbox) RunCase(
 	if removeErr == nil {
 		containerRemoved = true
 	}
-	// The workspace was removed before student execution. This second call is
-	// idempotent and verifies no host staging material remains.
-	removeWorkspaceErr := os.RemoveAll(workspace)
-	if removeWorkspaceErr == nil {
-		cleanupWorkspace = false
-	}
 
-	cleanupSucceeded := removeErr == nil && removeWorkspaceErr == nil
+	cleanupSucceeded := removeErr == nil
 	standardOutput := output.StdoutBytes()
 	compiled, standardOutput := removeCompileSuccessMarker(standardOutput)
 	observation := SandboxObservation{
@@ -385,7 +285,8 @@ func containerSafeID(value string) bool {
 }
 
 func dockerCreateArguments(request SandboxRequest) ([]string, error) {
-	if !imageReferencePattern.MatchString(request.ImageRef) {
+	if !imageReferencePattern.MatchString(request.ImageRef) ||
+		len(request.SourceBytes) == 0 || len(request.SourceBytes) > maximumSourceBytes {
 		return nil, ErrInvalidRuntimeConfig
 	}
 	cpuValue := strconv.FormatFloat(float64(request.Limits.CPUQuotaMillis)/1000, 'f', 3, 64)
@@ -396,13 +297,13 @@ func dockerCreateArguments(request SandboxRequest) ([]string, error) {
 		tmpfsSize = "16m"
 	}
 
-	script := runtimeScript(request.Language, request.RuntimeVersion)
+	script := runtimeScript(request.Language, request.RuntimeVersion, len(request.SourceBytes))
 	args := []string{
 		"--runtime=runsc",
 		"--network=none",
 		"--ipc=none",
 		"--read-only",
-		"--tmpfs", "/workspace:rw,nosuid,nodev,noexec,size=" + tmpfsSize,
+		"--tmpfs", "/workspace:rw,nosuid,nodev,noexec,size=" + tmpfsSize + ",uid=65532,gid=65532,mode=0700",
 		"--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=" + tmpfsSize,
 		"--memory=" + memoryValue,
 		"--memory-swap=" + memoryValue,
@@ -432,13 +333,20 @@ func removeCompileSuccessMarker(output []byte) (bool, []byte) {
 	return true, append([]byte(nil), output[len(marker):]...)
 }
 
-func runtimeScript(language protocol.Language, runtimeVersion string) string {
+func runtimeScript(language protocol.Language, runtimeVersion string, sourceBytes int) string {
+	sourceBootstrap := strings.Join([]string{
+		"dd bs=1 count=" + strconv.Itoa(sourceBytes) + " of=/workspace/" + map[protocol.Language]string{protocol.LanguageJava: "Main.java", protocol.LanguagePython: "main.py"}[language] + " 2>/dev/null || exit 87",
+		"[ \"$(wc -c < /workspace/" + map[protocol.Language]string{protocol.LanguageJava: "Main.java", protocol.LanguagePython: "main.py"}[language] + ")\" -eq " + strconv.Itoa(sourceBytes) + " ] || exit 87",
+		"chmod 0444 /workspace/" + map[protocol.Language]string{protocol.LanguageJava: "Main.java", protocol.LanguagePython: "main.py"}[language] + " || exit 87",
+	}, "\\n")
 	// RuntimeVersion is validated against runtimeVersionPattern before this
 	// value enters the fixed shell program; student source is never interpolated.
 	switch language {
 	case protocol.LanguageJava:
 		return strings.Join([]string{
 			"set -eu",
+			sourceBootstrap,
+			sourceBootstrap,
 			"command -v javac >/dev/null 2>&1 || exit 87",
 			"command -v java >/dev/null 2>&1 || exit 87",
 			"java_version=\"$(java -version 2>&1)\" || exit 87",
