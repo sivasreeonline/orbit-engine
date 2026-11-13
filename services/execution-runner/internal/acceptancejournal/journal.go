@@ -21,8 +21,8 @@ const (
 )
 
 var (
-	ErrConflict   = errors.New("acceptance journal conflict")
-	ErrNotFound   = errors.New("acceptance receipt not found")
+	ErrConflict    = errors.New("acceptance journal conflict")
+	ErrNotFound    = errors.New("acceptance receipt not found")
 	ErrJournalFull = errors.New("acceptance journal reached its configured size limit")
 )
 
@@ -51,13 +51,13 @@ type Confirmation struct {
 }
 
 type Journal struct {
-	mu          sync.Mutex
-	file        *os.File
-	path        string
-	receipts    map[string]Receipt
-	leaseIndex  map[string]string
+	mu            sync.Mutex
+	file          *os.File
+	path          string
+	receipts      map[string]Receipt
+	leaseIndex    map[string]string
 	confirmations map[string]Confirmation
-	closed      bool
+	closed        bool
 }
 
 func Open(path string) (*Journal, error) {
@@ -86,10 +86,10 @@ func Open(path string) (*Journal, error) {
 	}
 
 	journal := &Journal{
-		file: file,
-		path: path,
-		receipts: make(map[string]Receipt),
-		leaseIndex: make(map[string]string),
+		file:          file,
+		path:          path,
+		receipts:      make(map[string]Receipt),
+		leaseIndex:    make(map[string]string),
 		confirmations: make(map[string]Confirmation),
 	}
 	if err := journal.recoverLocked(); err != nil {
@@ -352,8 +352,8 @@ func applyEvent(j *Journal, event journalEvent) error {
 		}
 		confirmation := Confirmation{
 			AcceptanceID: event.AcceptanceID,
-			EventID: event.EventID,
-			ConfirmedAt: event.ConfirmedAt.UTC(),
+			EventID:      event.EventID,
+			ConfirmedAt:  event.ConfirmedAt.UTC(),
 		}
 		if existing, ok := j.confirmations[event.AcceptanceID]; ok {
 			if existing.EventID != confirmation.EventID {
