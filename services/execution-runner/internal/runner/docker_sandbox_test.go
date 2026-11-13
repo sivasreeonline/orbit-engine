@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -128,6 +131,84 @@ func argumentAfter(args []string, flag string) string {
 		}
 	}
 	return ""
+}
+
+func TestOSCommandDockerCLIPreflightInspectsRunscAndNeverPulls(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the Docker sandbox targets Linux hosts")
+	}
+	logPath := filepath.Join(t.TempDir(), "docker-commands.log")
+	binaryPath := filepath.Join(t.TempDir(), "docker-stub")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"printf '%s\\n' \"$*\" >> \"$DOCKER_TEST_LOG\"",
+		"if [ \"$1\" = \"info\" ]; then",
+		"  if [ \"$DOCKER_TEST_NO_RUNSC\" = \"1\" ]; then",
+		"    printf '%s' '{\"runc\":{\"path\":\"runc\"}}'",
+		"  else",
+		"    printf '%s' '{\"runsc\":{\"path\":\"runsc\"},\"runc\":{\"path\":\"runc\"}}'",
+		"  fi",
+		"  exit 0",
+		"fi",
+		"if [ \"$1\" = \"image\" ] && [ \"$2\" = \"inspect\" ]; then",
+		"  [ \"$DOCKER_TEST_IMAGE_FAIL\" != \"1\" ] || exit 1",
+		"  printf '%s' 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
+		"  exit 0",
+		"fi",
+		"exit 91",
+	}, "\n")
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_TEST_LOG", logPath)
+	t.Setenv("DOCKER_TEST_NO_RUNSC", "0")
+	t.Setenv("DOCKER_TEST_IMAGE_FAIL", "0")
+
+	cli := OSCommandDockerCLI{Binary: binaryPath}
+	images := []string{
+		"registry.example/sky-high/java@sha256:" + strings.Repeat("a", 64),
+		"registry.example/sky-high/python@sha256:" + strings.Repeat("b", 64),
+	}
+	if err := cli.Preflight(context.Background(), images); err != nil {
+		t.Fatalf("preflight with runsc and both local images: %v", err)
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Split(strings.TrimSpace(string(log)), "\n")
+	if len(calls) != 3 || !strings.HasPrefix(calls[0], "info --format ") ||
+		!strings.HasPrefix(calls[1], "image inspect --format ") ||
+		!strings.HasPrefix(calls[2], "image inspect --format ") {
+		t.Fatalf("preflight invoked unexpected Docker commands: %q", log)
+	}
+	if strings.Contains(string(log), "pull") {
+		t.Fatalf("preflight must never pull images: %q", log)
+	}
+
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_TEST_NO_RUNSC", "1")
+	if err := cli.Preflight(context.Background(), images); !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("missing runsc runtime was accepted: %v", err)
+	}
+	log, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(log), "\n") != 1 || !strings.HasPrefix(string(log), "info --format ") {
+		t.Fatalf("image inspection continued without runsc: %q", log)
+	}
+
+	if err := os.WriteFile(logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_TEST_NO_RUNSC", "0")
+	t.Setenv("DOCKER_TEST_IMAGE_FAIL", "1")
+	if err := cli.Preflight(context.Background(), images); !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("missing digest-pinned image was accepted: %v", err)
+	}
 }
 
 func TestDockerSandboxPreflightRequiresBothPinnedRuntimeImages(t *testing.T) {
