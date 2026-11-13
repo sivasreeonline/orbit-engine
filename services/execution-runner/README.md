@@ -153,7 +153,7 @@ The suite verifies, inside real containers:
 - UID 65532 (non-root execution);
 - outbound IP and DNS isolation;
 - absence of the Docker daemon socket from the workload;
-- read-only container root filesystem;
+- read-only container root filesystem and student workspace after source staging;
 - bounded output and wall-clock cancellation;
 - process-count enforcement and cleanup.
 
