@@ -32,6 +32,23 @@ afterEach(() => {
 });
 
 describe("EditorEvidenceCollector", () => {
+  it("uses a server-issued session ID and starts at the server-confirmed sequence", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-13T05:00:00.000Z"));
+    const serverSessionId = "91000000-0000-4000-8000-000000000099";
+    const collector = await EditorEvidenceCollector.start({
+      ...problem,
+      sessionId: serverSessionId,
+      initialSequence: 0,
+      createId: createIds(),
+    });
+
+    const records = collector.getRecords();
+    expect(records.every((record) => record.event.sessionId === serverSessionId)).toBe(true);
+    expect(records.map((record) => record.event.sequence)).toEqual([1, 2]);
+    await collector.close();
+  });
+
   it("starts only when explicitly invoked and records a hashed initial snapshot", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-13T05:00:00.000Z"));
