@@ -83,8 +83,10 @@ BEGIN
     OR accepted_key_id IS DISTINCT FROM NEW.key_id
     OR started_runner_id IS DISTINCT FROM NEW.runner_id
     OR started_key_id IS DISTINCT FROM NEW.key_id
-    OR dispatch_expires_at <= now()
-    OR job_expires_at <= now()
+    OR dispatch_expires_at <= clock_timestamp()
+    OR job_expires_at <= clock_timestamp()
+    OR dispatch_expires_at IS DISTINCT FROM job_expires_at
+    OR NEW.lease_expires_at <= clock_timestamp()
     OR NEW.lease_expires_at <= dispatch_expires_at
     OR NEW.lease_expires_at <= job_expires_at THEN
     RAISE EXCEPTION 'runner heartbeat does not match an active accepted and started lease'
