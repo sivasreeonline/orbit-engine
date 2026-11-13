@@ -142,6 +142,9 @@ func (j *Journal) Prepare(receipt Receipt) (bool, error) {
 		if !sameReceipt(existing, receipt) {
 			return false, ErrConflict
 		}
+		if _, abandoned := j.abandonments[receipt.AcceptanceID]; abandoned {
+			return false, ErrAbandoned
+		}
 		return true, nil
 	}
 	leaseKey := receipt.DispatchID + ":" + receipt.LeaseToken
@@ -439,6 +442,9 @@ func applyEvent(j *Journal, event journalEvent) error {
 		}
 		if _, ok := j.receipts[event.AcceptanceID]; !ok {
 			return ErrNotFound
+		}
+		if _, abandoned := j.abandonments[event.AcceptanceID]; abandoned {
+			return ErrConflict
 		}
 		confirmation := Confirmation{
 			AcceptanceID: event.AcceptanceID,
