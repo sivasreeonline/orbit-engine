@@ -250,10 +250,7 @@ export class PostgresRunnerArtifactRepository {
             "  AND dispatch.attempt_id = $3::uuid AND job.attempt_id = $3::uuid",
             "FOR UPDATE OF dispatch, job",
           ].join("\n"),
-          [
-            input.dispatchId, input.executionId, input.attemptId,
-            input.runnerId, input.keyId,
-          ],
+          [input.dispatchId, input.executionId, input.attemptId],
         );
         const artifact = result.rows[0];
         if (!artifact) throw new RunnerArtifactNotFoundError();
