@@ -81,6 +81,11 @@ export interface RecordedExecutionResult {
   readonly replayed: boolean;
 }
 
+export interface RecordRunnerExecutionResultInput extends RecordExecutionResultInput {
+  readonly dispatchId: string;
+  readonly keyId: string;
+}
+
 export interface ExecutionAttemptHistoryEntry {
   readonly attemptId: string;
   readonly executionId: string;
@@ -163,6 +168,34 @@ export class StaleExecutionLeaseError extends Error {
   constructor() {
     super("execution_result_rejected_for_stale_or_invalid_lease");
     this.name = "StaleExecutionLeaseError";
+  }
+}
+
+export class RunnerCompletionUnauthorizedError extends Error {
+  constructor() {
+    super("runner_completion_machine_not_authorized");
+    this.name = "RunnerCompletionUnauthorizedError";
+  }
+}
+
+export class RunnerCompletionNotAcceptedError extends Error {
+  constructor() {
+    super("runner_completion_acceptance_required");
+    this.name = "RunnerCompletionNotAcceptedError";
+  }
+}
+
+export class RunnerCompletionNotStartedError extends Error {
+  constructor() {
+    super("runner_completion_start_required");
+    this.name = "RunnerCompletionNotStartedError";
+  }
+}
+
+export class RunnerCompletionConflictError extends Error {
+  constructor() {
+    super("runner_completion_conflict");
+    this.name = "RunnerCompletionConflictError";
   }
 }
 
@@ -538,6 +571,264 @@ export class PostgresExecutionEvidenceRepository {
       if (error instanceof ExecutionEvidenceConflictError ||
           error instanceof ExecutionEvidenceNotFoundError ||
           error instanceof StaleExecutionLeaseError) {
+        throw error;
+      }
+      if (error instanceof DatabaseUnavailableError) throw error;
+      throw new DatabaseUnavailableError();
+    });
+  }
+
+  /**
+   * Completes a running execution only for the authenticated runner and the
+   * exact accepted/started lease generation. The terminal result, lifecycle
+   * event and immutable completion receipt commit in one transaction.
+   */
+  async recordRunnerResult(
+    input: RecordRunnerExecutionResultInput,
+  ): Promise<RecordedExecutionResult> {
+    if (!this.connectionString) throw new DatabaseUnavailableError();
+    validateResult(input);
+    if (!isUuid(input.dispatchId) || !/^[A-Za-z0-9._:-]{1,128}$/.test(input.keyId)) {
+      throw new Error("invalid_runner_completion_identity");
+    }
+
+    const terminalState: "FAILED_INFRASTRUCTURE" | "COMPLETED" =
+      input.infrastructureStatus === "FAILED" ? "FAILED_INFRASTRUCTURE" : "COMPLETED";
+    const eventType: ExecutionEvidenceEventType = input.infrastructureStatus === "FAILED"
+      ? "INFRASTRUCTURE_FAILED"
+      : "EXECUTION_FINISHED";
+    const phaseStatus = input.infrastructureStatus === "FAILED" ? "FAILED" : "SUCCEEDED";
+    const safeCode = input.infrastructureErrorCode ??
+      (input.cleanupStatus === "FAILED" ? "CLEANUP_FAILED" : `VERDICT_${input.verdict}`);
+
+    return this.withClient(async (client) => {
+      await client.query("BEGIN");
+      try {
+        const machine = await client.query<{ key_id: string }>(
+          [
+            "SELECT machine_key.key_id",
+            "FROM runner_machine_keys AS machine_key",
+            "INNER JOIN runner_machines AS runner ON runner.id = machine_key.runner_id",
+            "WHERE machine_key.key_id = $1 AND machine_key.runner_id = $2::uuid",
+            "  AND runner.status = 'ACTIVE' AND machine_key.status = 'ACTIVE'",
+            "  AND machine_key.revoked_at IS NULL",
+            "  AND machine_key.valid_from <= clock_timestamp()",
+            "  AND (machine_key.expires_at IS NULL OR machine_key.expires_at > clock_timestamp())",
+            "FOR UPDATE OF machine_key, runner",
+          ].join("\n"),
+          [input.keyId, input.leaseOwner],
+        );
+        if (machine.rows.length !== 1) throw new RunnerCompletionUnauthorizedError();
+
+        const lease = await client.query<{
+          dispatch_id: string;
+          execution_id: string;
+          attempt_id: string;
+          delivery_state: string;
+          dispatch_owner: string | null;
+          dispatch_token: string | null;
+          dispatch_expires_at: Date | string | null;
+          job_state: string;
+          job_owner: string | null;
+          job_token: string | null;
+          job_expires_at: Date | string | null;
+        }>(
+          [
+            "SELECT dispatch.id AS dispatch_id, dispatch.execution_id, dispatch.attempt_id,",
+            "  dispatch.delivery_state, dispatch.lease_owner AS dispatch_owner,",
+            "  dispatch.lease_token::text AS dispatch_token, dispatch.lease_expires_at AS dispatch_expires_at,",
+            "  job.state AS job_state, job.lease_owner AS job_owner,",
+            "  job.lease_token::text AS job_token, job.lease_expires_at AS job_expires_at",
+            "FROM runner_dispatch_outbox AS dispatch",
+            "INNER JOIN execution_jobs AS job ON job.id = dispatch.execution_id",
+            "WHERE dispatch.id = $1::uuid AND dispatch.execution_id = $2::uuid",
+            "  AND dispatch.attempt_id = $3::uuid AND job.attempt_id = $3::uuid",
+            "FOR UPDATE OF dispatch, job",
+          ].join("\n"),
+          [input.dispatchId, input.executionId, input.attemptId],
+        );
+        const currentLease = lease.rows[0];
+        if (!currentLease) throw new ExecutionEvidenceNotFoundError();
+
+        const priorCompletion = await client.query<{
+          execution_id: string;
+          attempt_id: string;
+          runner_id: string;
+          key_id: string;
+          result_sha256: string;
+          terminal_state: "COMPLETED" | "FAILED_INFRASTRUCTURE";
+        }>(
+          [
+            "SELECT execution_id, attempt_id, runner_id, key_id, result_sha256, terminal_state",
+            "FROM runner_dispatch_completions",
+            "WHERE dispatch_id = $1::uuid AND lease_token = $2::uuid",
+            "FOR UPDATE",
+          ].join("\n"),
+          [input.dispatchId, input.leaseToken],
+        );
+        const prior = priorCompletion.rows[0];
+        if (prior) {
+          if (prior.execution_id !== input.executionId ||
+              prior.attempt_id !== input.attemptId ||
+              prior.runner_id !== input.leaseOwner ||
+              prior.key_id !== input.keyId ||
+              prior.result_sha256.trim() !== input.resultSha256 ||
+              prior.terminal_state !== terminalState) {
+            throw new RunnerCompletionConflictError();
+          }
+          await client.query("COMMIT");
+          return {
+            executionId: input.executionId,
+            attemptId: input.attemptId,
+            state: terminalState,
+            resultSha256: input.resultSha256,
+            replayed: true,
+          };
+        }
+
+        const priorResult = await client.query<{ result_sha256: string }>(
+          "SELECT result_sha256 FROM execution_result_records WHERE execution_id = $1::uuid FOR UPDATE",
+          [input.executionId],
+        );
+        if (priorResult.rows.length > 0) throw new RunnerCompletionConflictError();
+
+        const accepted = await client.query<{ runner_id: string; key_id: string }>(
+          [
+            "SELECT runner_id, key_id FROM runner_dispatch_acceptances",
+            "WHERE dispatch_id = $1::uuid AND lease_token = $2::uuid",
+            "FOR UPDATE",
+          ].join("\n"),
+          [input.dispatchId, input.leaseToken],
+        );
+        const acceptance = accepted.rows[0];
+        if (!acceptance || acceptance.runner_id !== input.leaseOwner ||
+            acceptance.key_id !== input.keyId) {
+          throw new RunnerCompletionNotAcceptedError();
+        }
+
+        const started = await client.query<{ runner_id: string; key_id: string }>(
+          [
+            "SELECT runner_id, key_id FROM runner_dispatch_starts",
+            "WHERE dispatch_id = $1::uuid AND lease_token = $2::uuid",
+            "FOR UPDATE",
+          ].join("\n"),
+          [input.dispatchId, input.leaseToken],
+        );
+        const start = started.rows[0];
+        if (!start || start.runner_id !== input.leaseOwner || start.key_id !== input.keyId) {
+          throw new RunnerCompletionNotStartedError();
+        }
+
+        const now = Date.now();
+        const dispatchExpiry = currentLease.dispatch_expires_at instanceof Date
+          ? currentLease.dispatch_expires_at.getTime()
+          : currentLease.dispatch_expires_at === null ? 0 : new Date(currentLease.dispatch_expires_at).getTime();
+        const jobExpiry = currentLease.job_expires_at instanceof Date
+          ? currentLease.job_expires_at.getTime()
+          : currentLease.job_expires_at === null ? 0 : new Date(currentLease.job_expires_at).getTime();
+        if (currentLease.delivery_state !== "PENDING" ||
+            currentLease.dispatch_owner !== input.leaseOwner ||
+            currentLease.dispatch_token !== input.leaseToken ||
+            currentLease.job_state !== "RUNNING" ||
+            currentLease.job_owner !== input.leaseOwner ||
+            currentLease.job_token !== input.leaseToken ||
+            !Number.isFinite(dispatchExpiry) || dispatchExpiry <= now ||
+            !Number.isFinite(jobExpiry) || jobExpiry <= now ||
+            dispatchExpiry !== jobExpiry) {
+          throw new StaleExecutionLeaseError();
+        }
+
+        const claimed = await client.query<UpdatedJobRow>(
+          [
+            "UPDATE execution_jobs",
+            "SET state = $4, state_version = state_version + 1,",
+            "    completed_at = now(), updated_at = now(),",
+            "    lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL",
+            "WHERE id = $1::uuid AND attempt_id = $2::uuid",
+            "  AND state = 'RUNNING' AND lease_owner = $3",
+            "  AND lease_token = $5::uuid AND lease_expires_at > clock_timestamp()",
+            "RETURNING id",
+          ].join("\n"),
+          [
+            input.executionId, input.attemptId, input.leaseOwner, terminalState, input.leaseToken,
+          ],
+        );
+        if (claimed.rows.length !== 1) throw new StaleExecutionLeaseError();
+
+        const result = await client.query<UpdatedJobRow>(
+          [
+            "INSERT INTO execution_result_records (",
+            "  execution_id, attempt_id, tenant_id, actor_user_id,",
+            "  infrastructure_status, infrastructure_error_code, compilation_status,",
+            "  verdict, cleanup_status, tests_total, tests_passed, elapsed_ms,",
+            "  peak_memory_bytes, runner_version, runtime_image_digest, result_sha256,",
+            "  started_at, completed_at",
+            ")",
+            "SELECT $1::uuid, ea.id, ea.tenant_id, ea.actor_user_id,",
+            "  $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::timestamptz, $16::timestamptz",
+            "FROM execution_attempts AS ea WHERE ea.id = $2::uuid",
+            "RETURNING execution_id",
+          ].join("\n"),
+          [
+            input.executionId, input.attemptId, input.infrastructureStatus,
+            input.infrastructureErrorCode ?? null, input.compilationStatus, input.verdict,
+            input.cleanupStatus, input.testsTotal, input.testsPassed, input.elapsedMs,
+            input.peakMemoryBytes ?? null, input.runnerVersion, input.runtimeImageDigest ?? null,
+            input.resultSha256, input.startedAt, input.completedAt,
+          ],
+        );
+        if (result.rows.length !== 1) throw new ExecutionEvidenceNotFoundError();
+
+        const eventId = crypto.randomUUID();
+        await client.query(
+          [
+            "INSERT INTO execution_evidence_events (",
+            "  event_id, execution_id, attempt_id, tenant_id, actor_user_id,",
+            "  event_type, actor_kind, phase_status, safe_code, duration_ms",
+            ")",
+            "SELECT $1::uuid, job.id, attempt.id, attempt.tenant_id, attempt.actor_user_id,",
+            "  $4, 'JUDGE', $5, $6, $7",
+            "FROM execution_jobs AS job",
+            "INNER JOIN execution_attempts AS attempt ON attempt.id = job.attempt_id",
+            "WHERE job.id = $2::uuid AND attempt.id = $3::uuid",
+          ].join("\n"),
+          [eventId, input.executionId, input.attemptId, eventType, phaseStatus, safeCode, input.elapsedMs],
+        );
+
+        await client.query(
+          [
+            "INSERT INTO runner_dispatch_completions (",
+            "  dispatch_id, lease_token, execution_id, attempt_id, runner_id, key_id,",
+            "  event_id, result_sha256, terminal_state",
+            ")",
+            "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7::uuid, $8, $9)",
+          ].join("\n"),
+          [
+            input.dispatchId, input.leaseToken, input.executionId, input.attemptId,
+            input.leaseOwner, input.keyId, eventId, input.resultSha256, terminalState,
+          ],
+        );
+
+        await client.query("COMMIT");
+        return {
+          executionId: input.executionId,
+          attemptId: input.attemptId,
+          state: terminalState,
+          resultSha256: input.resultSha256,
+          replayed: false,
+        };
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      }
+    }).catch((error: unknown) => {
+      if (error instanceof ExecutionEvidenceConflictError ||
+          error instanceof ExecutionEvidenceNotFoundError ||
+          error instanceof StaleExecutionLeaseError ||
+          error instanceof RunnerCompletionUnauthorizedError ||
+          error instanceof RunnerCompletionNotAcceptedError ||
+          error instanceof RunnerCompletionNotStartedError ||
+          error instanceof RunnerCompletionConflictError) {
         throw error;
       }
       if (error instanceof DatabaseUnavailableError) throw error;
