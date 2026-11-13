@@ -53,7 +53,7 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
       leaseExpiresAt: "2026-11-13T12:00:00.000Z",
     }]);
 
-    const claim = fake.calls[1];
+    const claim = fake.calls[3];
     expect(claim?.text).toContain("FOR UPDATE OF lane SKIP LOCKED");
     expect(claim?.text).toContain("DISTINCT ON (owner_attempt.tenant_id, owner_attempt.actor_user_id)");
     expect(claim?.text).toContain("ORDER BY lane.last_served_ticket");
@@ -95,7 +95,7 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
 
     expect(calls[1]?.text).toBe("BEGIN");
     expect(calls[2]?.text).toContain("pg_advisory_xact_lock");
-    expect(calls[3]?.text).toContain("active_count");
+    expect(calls[4]?.text).toContain("active_count");
     const claim = calls.find((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"));
     expect(claim?.text).toContain("FOR UPDATE OF pending, job SKIP LOCKED");
     expect(claim?.text).toContain("UPDATE execution_jobs AS job");
