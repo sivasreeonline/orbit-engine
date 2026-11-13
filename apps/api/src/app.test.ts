@@ -14,6 +14,10 @@ import type {
   RecordRunnerAcceptanceInput,
   RecordedRunnerAcceptance,
 } from "./db/runner-acceptance-repository";
+import type {
+  RecordRunnerStartInput,
+  RecordedRunnerStart,
+} from "./db/runner-start-repository";
 import { canonicalRunnerRequestMessage } from "./security/runner-request-signature";
 import { RUNNER_AUTH_HEADERS } from "./services/runner-request-authenticator";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
@@ -84,6 +88,9 @@ interface HarnessOptions {
   runnerAcceptanceRepository?: {
     record(input: RecordRunnerAcceptanceInput): Promise<RecordedRunnerAcceptance>;
   };
+  runnerStartRepository?: {
+    start(input: RecordRunnerStartInput): Promise<RecordedRunnerStart>;
+  };
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -117,6 +124,9 @@ function makeHarness(options: HarnessOptions = {}) {
       : {}),
     ...(options.runnerAcceptanceRepository
       ? { runnerAcceptanceRepository: options.runnerAcceptanceRepository }
+      : {}),
+    ...(options.runnerStartRepository
+      ? { runnerStartRepository: options.runnerStartRepository }
       : {}),
     allowedOrigins: allowedOrigin,
   });
