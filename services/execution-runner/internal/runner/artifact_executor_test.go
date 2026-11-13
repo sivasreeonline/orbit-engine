@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -154,11 +155,32 @@ func TestSandboxArtifactExecutorKeepsHiddenFixturesOutOfCompletionPayload(t *tes
 	if result.Verdict != string(VerdictWrongAnswer) || result.TestsTotal != 2 || result.TestsPassed != 1 {
 		t.Fatalf("hidden fixture aggregate is incorrect: %+v", result)
 	}
-	// CompletionInput has no fields for per-case identifiers, inputs, expected
-	// outputs, stdout or stderr. Only counts, verdict and a digest can leave.
-	encoded := result.ResultSHA256 + result.Verdict
-	if strings.Contains(encoded, "secret") {
-		t.Fatal("hidden fixture data escaped into the completion envelope")
+	// The terminal completion contract carries only the aggregate. It cannot
+	// expose any per-case identifier, input, expected output, stdout or stderr.
+	completion := completionInputFromResult(result)
+	encodedBytes, err := json.Marshal(completion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded := string(encodedBytes)
+	for _, forbidden := range []string{
+		"secret input",
+		"secret expected output",
+		"wrong\\n",
+		"ok\\n",
+		"a3000000-0000-4000-8000-000000000001",
+		"a3000000-0000-4000-8000-000000000002",
+		"standardOutput",
+		"standardError",
+		"caseId",
+	} {
+		if strings.Contains(encoded, forbidden) {
+			t.Fatalf("per-case data leaked into completion envelope: %q", forbidden)
+		}
+	}
+	if completion.TestsTotal != 2 || completion.TestsPassed != 1 ||
+		completion.Verdict != string(VerdictWrongAnswer) {
+		t.Fatalf("terminal completion lost aggregate verdict/counts: %+v", completion)
 	}
 }
 
