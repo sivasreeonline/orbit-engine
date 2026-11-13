@@ -35,7 +35,7 @@ const (
 	heartbeatPath         = "/internal/v1/runner/heartbeat"
 	artifactPath          = "/internal/v1/runner/artifact"
 	maxResponseBytes      = 64 << 10
-	maxArtifactResponseBytes = 2 << 20
+	maxArtifactResponseBytes = 8 << 20
 	maxArtifactSourceBytes   = 256 << 10
 	maxArtifactTestBytes     = 1 << 20
 	maxArtifactTestCases     = 200
