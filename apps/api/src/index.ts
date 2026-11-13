@@ -4,6 +4,7 @@ import { PostgresOutboxLeaseRepository } from "./db/outbox-lease-repository";
 import { publishOutboxBatch } from "./db/outbox-publisher";
 import { PostgresProblemRepository } from "./db/problem-repository";
 import { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+import { PostgresExecutionIntakeRepository } from "./db/execution-intake-repository";
 import type { Env } from "./env";
 
 const authenticator = new UnconfiguredAuthenticator();
@@ -22,13 +23,18 @@ function positiveInteger(value: string | undefined, fallback: number, maximum: n
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const repository = new PostgresProblemRepository(env);
-    const evidenceRepository = new PostgresExecutionEvidenceRepository(
-      env.HYPERDRIVE?.connectionString,
-    );
+    const connectionString = env.HYPERDRIVE?.connectionString;
+    const evidenceRepository = new PostgresExecutionEvidenceRepository(connectionString);
+    const executionIntakeRepository = new PostgresExecutionIntakeRepository(connectionString);
     const handler = buildApiHandler(env, {
       authenticator,
       repository,
       evidenceRepository,
+      executionIntakeRepository,
+      runtimeVersions: {
+        java: env.JAVA_RUNTIME_VERSION ?? "",
+        python: env.PYTHON_RUNTIME_VERSION ?? "",
+      },
     });
     return handler(request);
   },
