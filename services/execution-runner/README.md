@@ -155,7 +155,8 @@ The suite verifies, inside real containers:
 - absence of the Docker daemon socket from the workload;
 - read-only container root filesystem and student workspace after source staging;
 - bounded output and wall-clock cancellation;
-- process-count enforcement and cleanup.
+- process-count enforcement and cleanup;
+- memory-pressure containment under the configured container memory ceiling, with cleanup after the workload is killed.
 
 It never pulls images. Supply the exact digest references and versions that were independently reviewed:
 
