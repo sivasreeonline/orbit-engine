@@ -151,7 +151,8 @@ The default CI suite uses a fake Docker boundary and never runs student code. A 
 
 The suite verifies, inside real containers:
 - UID 65532 (non-root execution);
-- outbound network isolation;
+- outbound IP and DNS isolation;
+- absence of the Docker daemon socket from the workload;
 - read-only container root filesystem;
 - bounded output and wall-clock cancellation;
 - process-count enforcement and cleanup.
