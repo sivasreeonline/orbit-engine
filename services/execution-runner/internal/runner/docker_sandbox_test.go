@@ -628,6 +628,69 @@ func TestDockerSandboxPersistsCreateIntentBeforeDockerCreate(t *testing.T) {
 	}
 }
 
+func TestDockerSandboxRecordsCleanupOnlyAfterDockerConfirmsRemoval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.jsonl")
+	journal, err := sandboxjournal.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+	fake := &fakeDockerCLI{
+		stdout: []byte(compileSuccessMarker + "ok"),
+		state: DockerContainerState{Status: "exited", ExitCode: 0},
+	}
+	sandbox, err := NewJournaledDockerSandbox(fake, journal, strings.Repeat("d", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation, err := sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if err != nil {
+		t.Fatalf("RunCase: %v", err)
+	}
+	if !observation.CleanupSucceeded || !fake.removed {
+		t.Fatalf("cleanup was not confirmed: %+v", observation)
+	}
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("confirmed cleanup remained pending: %+v", pending)
+	}
+}
+
+func TestDockerSandboxLeavesCreatedLifecyclePendingWhenRemovalFails(t *testing.T) {
+	journal, err := sandboxjournal.Open(filepath.Join(t.TempDir(), "lifecycle.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+	fake := &fakeDockerCLI{
+		stdout: []byte(compileSuccessMarker + "ok"),
+		state: DockerContainerState{Status: "exited", ExitCode: 0},
+		removeErr: errors.New("daemon unavailable during remove"),
+	}
+	sandbox, err := NewJournaledDockerSandbox(fake, journal, strings.Repeat("e", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation, err := sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("RunCase error = %v, want Docker command failure", err)
+	}
+	if observation.CleanupSucceeded {
+		t.Fatal("failed removal was reported as successful")
+	}
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || !pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != fake.containerID {
+		t.Fatalf("failed cleanup must retain full container identity: %+v", pending)
+	}
+}
+
 func TestDockerSandboxRequiresDurableLifecycleJournal(t *testing.T) {
 	fake := &fakeDockerCLI{}
 	sandbox, err := NewDockerSandbox(fake)
