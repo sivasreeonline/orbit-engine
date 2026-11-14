@@ -151,7 +151,7 @@ func TestJournalRejectsTrailingJSONOnCompleteRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	content = append([]byte(strings.TrimSuffix(string(content), "\n")+" {}\n"), []byte{}...)
+	content = []byte(strings.TrimSuffix(string(content), "\n") + " {}\n")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
