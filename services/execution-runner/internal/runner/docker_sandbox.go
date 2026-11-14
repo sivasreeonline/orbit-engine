@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os/exec"
 	"regexp"
@@ -14,12 +15,58 @@ import (
 	"time"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 )
 
 var (
 	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
 	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
-	imageIDPattern         = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	imageIDPattern         = regexp.MustCompile(`^sha256:[0-9a-f]{64}package runner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
+)
+
+var (
+	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
+	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+	)
+	runnerInstanceIDPattern = regexp.MustCompile(`^[a-f0-9]{32}package runner
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
+)
+
+var (
+	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
+	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+	)
 )
 
 const compileSuccessMarker = "__SKYHIGH_COMPILE_OK__\n"
@@ -167,8 +214,10 @@ func (cli OSCommandDockerCLI) Remove(ctx context.Context, id string) error {
 }
 
 type DockerSandbox struct {
-	cli            DockerCLI
-	cleanupTimeout time.Duration
+	cli              DockerCLI
+	cleanupTimeout   time.Duration
+	journal          *sandboxjournal.Journal
+	runnerInstanceID string
 }
 
 // NewDockerSandbox configures the OCI CLI adapter. Source bytes are streamed
@@ -180,6 +229,25 @@ func NewDockerSandbox(cli DockerCLI) (*DockerSandbox, error) {
 	return &DockerSandbox{
 		cli:            cli,
 		cleanupTimeout: 5 * time.Second,
+	}, nil
+}
+
+
+// NewJournaledDockerSandbox creates an execution-capable sandbox. RunCase
+// refuses to execute unless every container lifecycle is durably journaled.
+func NewJournaledDockerSandbox(
+	cli DockerCLI,
+	journal *sandboxjournal.Journal,
+	runnerInstanceID string,
+) (*DockerSandbox, error) {
+	if cli == nil || journal == nil || !runnerInstanceIDPattern.MatchString(runnerInstanceID) {
+		return nil, ErrSandboxNotConfigured
+	}
+	return &DockerSandbox{
+		cli: cli,
+		cleanupTimeout: 5 * time.Second,
+		journal: journal,
+		runnerInstanceID: runnerInstanceID,
 	}, nil
 }
 
@@ -206,7 +274,8 @@ func (sandbox *DockerSandbox) RunCase(
 	parent context.Context,
 	request SandboxRequest,
 ) (SandboxObservation, error) {
-	if sandbox == nil || sandbox.cli == nil {
+	if sandbox == nil || sandbox.cli == nil || sandbox.journal == nil ||
+		!runnerInstanceIDPattern.MatchString(sandbox.runnerInstanceID) {
 		return SandboxObservation{}, ErrSandboxNotConfigured
 	}
 	if err := validateSandboxRequest(request); err != nil {
@@ -222,6 +291,14 @@ func (sandbox *DockerSandbox) RunCase(
 	if err != nil {
 		return SandboxObservation{}, err
 	}
+	lifecycleID, err := sandbox.journal.Begin(sandbox.runnerInstanceID, request.ExecutionID)
+	if err != nil {
+		return SandboxObservation{}, fmt.Errorf("persist sandbox create intent: %w", err)
+	}
+	args = append(args,
+		"--label", "com.skyhigh.runner-instance="+sandbox.runnerInstanceID,
+		"--label", "com.skyhigh.lifecycle-id="+lifecycleID,
+	)
 	containerID, err := sandbox.cli.Create(runContext, args)
 	if err != nil {
 		if parent.Err() != nil {
@@ -235,12 +312,25 @@ func (sandbox *DockerSandbox) RunCase(
 	if !containerIDPattern.MatchString(containerID) {
 		return SandboxObservation{}, ErrDockerCommandFailed
 	}
+	if err := sandbox.journal.Created(lifecycleID, containerID); err != nil {
+		cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), sandbox.cleanupTimeout)
+		removeErr := sandbox.cli.Remove(cleanupContext, containerID)
+		cleanupCancel()
+		return SandboxObservation{}, errors.Join(
+			fmt.Errorf("persist created sandbox container: %w", err),
+			wrapDockerCleanupError(removeErr),
+		)
+	}
 	containerRemoved := false
 	defer func() {
 		if !containerRemoved {
 			cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), sandbox.cleanupTimeout)
-			_ = sandbox.cli.Remove(cleanupContext, containerID)
+			removeErr := sandbox.cli.Remove(cleanupContext, containerID)
 			cleanupCancel()
+			if removeErr == nil {
+				containerRemoved = true
+				_ = sandbox.journal.Cleaned(lifecycleID)
+			}
 		}
 	}()
 
@@ -272,6 +362,9 @@ func (sandbox *DockerSandbox) RunCase(
 	cleanupCancel()
 	if removeErr == nil {
 		containerRemoved = true
+		if journalErr := sandbox.journal.Cleaned(lifecycleID); journalErr != nil {
+			removeErr = fmt.Errorf("persist sandbox cleanup confirmation: %w", journalErr)
+		}
 	}
 
 	cleanupSucceeded := removeErr == nil
@@ -330,6 +423,13 @@ func (sandbox *DockerSandbox) RunCase(
 		observation.Status = SandboxRuntimeError
 	}
 	return observation, nil
+}
+
+func wrapDockerCleanupError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("remove container after lifecycle journal failure: %w", err)
 }
 
 func validateSandboxRequest(request SandboxRequest) error {
