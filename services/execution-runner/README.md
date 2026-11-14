@@ -126,13 +126,13 @@ The `DockerSandbox` adapter creates a fresh container per testcase with:
 - a non-root UID/GID (65532:65532), all Linux capabilities dropped and no-new-privileges;
 - bounded memory/swap, CPU quota, PID count, wall time and combined stdout/stderr;
 - a non-executable, nodev/nosuid `/workspace` tmpfs and bounded `/tmp` tmpfs;
-- forced container removal after completion, timeout, cancellation or output overflow.
+- forced container removal is attempted after completion, timeout, cancellation or output overflow; failures are surfaced, but process-crash/daemon-failure orphan reconciliation is not yet implemented.
 
 Student source is not written to a host temporary file or bind-mounted from the host. The runner sends the source bytes first over the container's attached stdin; a fixed wrapper consumes exactly the known source-byte count into `/workspace`, verifies the byte count, makes the file and workspace directory read-only, then leaves the remaining stdin stream for the testcase input. Student source is never interpolated into shell text.
 
 The execution adapter currently uses exact-byte output comparison. The artifact contract does not yet carry a versioned comparison mode, so whitespace-normalizing comparison is deliberately not inferred.
 
-**This remains a draft, not a live sandbox proof.** The Docker CLI and execution contract tests use fakes. CI does not start Docker or run a gVisor container. Runtime images have not been built, signed or qualified. Peak-memory sampling is not implemented. The sandbox adapter is disabled unless its caller explicitly sets `Enabled: true`; enabling it also requires a successful Docker/runsc/image preflight. It is not wired into the health-only command. Do not set that flag for student workloads until the real Linux/runsc and adversarial gates below pass.
+**This remains a draft, not a live sandbox proof.** Execution requires `NewJournaledDockerSandbox` with a durable sandbox lifecycle journal and a stable runner-instance ID. The Docker CLI and execution contract tests use fakes. CI does not start Docker or run a gVisor container. Runtime images have not been built, signed or qualified. Peak-memory sampling is not implemented. The sandbox adapter is disabled unless its caller explicitly sets `Enabled: true`; enabling it also requires a successful Docker/runsc/image preflight. It is not wired into the health-only command. Do not set that flag for student workloads until the real Linux/runsc and adversarial gates below pass.
 
 ## M0 next gates
 1. Add reviewed machine-key file loading and verify owner-only key permissions on the supported Linux host.
@@ -143,3 +143,29 @@ The execution adapter currently uses exact-byte output comparison. The artifact 
 6. Run real Java/Python smoke tests and the full adversarial matrix: network/DNS, host filesystem traversal, process exhaustion, memory exhaustion, infinite loops, output floods, cancellation and cleanup failures.
 7. Verify container cleanup and lease-loss cancellation under real process execution; implement measured peak-memory sampling.
 8. Complete an independent security review and cleanup attestation design. Keep the adapter disabled until all gates pass.
+
+
+## Opt-in real runsc qualification suite
+
+The default CI suite uses a fake Docker boundary and never runs student code. A separate Linux-only integration suite is available for an operator-controlled host with gVisor `runsc` and both digest-pinned runtime images already loaded locally.
+
+The suite verifies, inside real containers:
+- UID 65532 (non-root execution);
+- outbound IP and DNS isolation;
+- absence of the Docker daemon socket from the workload;
+- read-only container root filesystem and student workspace after source staging;
+- bounded output and wall-clock cancellation;
+- process-count enforcement and cleanup;
+- memory-pressure containment under the configured container memory ceiling, with cleanup after the workload is killed.
+
+It never pulls images. Supply the exact digest references and versions that were independently reviewed:
+
+```bash
+export SKYHIGH_JAVA_IMAGE_REF='registry.example/sky-high/java@sha256:<64-hex-digest>'
+export SKYHIGH_PYTHON_IMAGE_REF='registry.example/sky-high/python@sha256:<64-hex-digest>'
+export SKYHIGH_JAVA_VERSION='25'
+export SKYHIGH_PYTHON_VERSION='3.14'
+go test -tags=sandboxqualification -run '^TestRunscHostileWorkload' ./internal/runner -count=1 -v
+```
+
+Run this only on a disposable, dedicated Linux qualification host. It invokes the local Docker daemon with the exact `runsc` runtime. The test is not run by ordinary CI and does not itself authorize student execution. A successful run is one evidence input; memory-pressure behavior, host escape review, kernel/runtime patch level, cleanup after daemon failure, and independent security review remain release gates.
