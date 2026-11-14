@@ -12,8 +12,17 @@ const testRunnerID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const testExecutionID = "exec_test_01"
 const testContainerID = "0123456789abcdef"
 
+func privateTempDir(t *testing.T) string {
+	t.Helper()
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return directory
+}
+
 func TestJournalPersistsLifecycleTransitionsAndRecoversPending(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sandbox.jsonl")
+	path := filepath.Join(privateTempDir(t), "sandbox.jsonl")
 	journal, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +80,7 @@ func TestJournalPersistsLifecycleTransitionsAndRecoversPending(t *testing.T) {
 }
 
 func TestJournalRejectsConcurrentOwnerAndDoesNotStealLock(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sandbox.jsonl")
+	path := filepath.Join(privateTempDir(t), "sandbox.jsonl")
 	first, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +101,7 @@ func TestJournalRejectsConcurrentOwnerAndDoesNotStealLock(t *testing.T) {
 }
 
 func TestJournalTruncatesOnlyIncompleteTrailingRecord(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sandbox.jsonl")
+	path := filepath.Join(privateTempDir(t), "sandbox.jsonl")
 	journal, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +145,7 @@ func TestJournalTruncatesOnlyIncompleteTrailingRecord(t *testing.T) {
 }
 
 func TestJournalRejectsTrailingJSONOnCompleteRecord(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sandbox.jsonl")
+	path := filepath.Join(privateTempDir(t), "sandbox.jsonl")
 	journal, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +170,7 @@ func TestJournalRejectsTrailingJSONOnCompleteRecord(t *testing.T) {
 }
 
 func TestJournalRejectsMalformedCompleteRecord(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sandbox.jsonl")
+	path := filepath.Join(privateTempDir(t), "sandbox.jsonl")
 	if err := os.WriteFile(path, []byte("{not-json}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +183,7 @@ func TestJournalRejectsMalformedCompleteRecord(t *testing.T) {
 }
 
 func TestJournalRejectsInvalidTransitionsAndIdentifiers(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sandbox.jsonl")
+	path := filepath.Join(privateTempDir(t), "sandbox.jsonl")
 	journal, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -215,7 +224,7 @@ func TestJournalRejectsInvalidTransitionsAndIdentifiers(t *testing.T) {
 }
 
 func TestJournalRejectsSymlinkAndPermissiveExistingFile(t *testing.T) {
-	directory := t.TempDir()
+	directory := privateTempDir(t)
 	target := filepath.Join(directory, "target.jsonl")
 	if err := os.WriteFile(target, nil, 0o600); err != nil {
 		t.Fatal(err)
