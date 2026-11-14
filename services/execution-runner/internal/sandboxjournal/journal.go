@@ -109,13 +109,31 @@ func Open(path string) (*Journal, error) {
 		return nil, fmt.Errorf("inspect sandbox lifecycle journal: %w", statErr)
 	}
 
+	_, statBeforeOpenErr := os.Lstat(canonical)
 	file, err := os.OpenFile(canonical, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open sandbox lifecycle journal: %w", err)
 	}
+	openedInfo, statErr := file.Stat()
+	if statErr != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("stat opened sandbox lifecycle journal: %w", statErr)
+	}
+	currentInfo, pathStatErr := os.Lstat(canonical)
+	if pathStatErr != nil || currentInfo.Mode()&os.ModeSymlink != 0 ||
+		!currentInfo.Mode().IsRegular() || !os.SameFile(openedInfo, currentInfo) {
+		_ = file.Close()
+		return nil, errors.New("sandbox lifecycle journal path changed during open")
+	}
 	if err := file.Chmod(0o600); err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("secure sandbox lifecycle journal: %w", err)
+	}
+	if errors.Is(statBeforeOpenErr, os.ErrNotExist) {
+		if err := syncDirectory(directory); err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("persist sandbox lifecycle journal directory entry: %w", err)
+		}
 	}
 	journal := &Journal{
 		file: file, path: canonical, lockPath: lockPath, lockToken: token,
@@ -157,6 +175,9 @@ func acquireLock(path string) (string, error) {
 	if err != nil || closeErr != nil {
 		return "", errors.Join(err, closeErr)
 	}
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		return "", fmt.Errorf("persist sandbox journal lock directory entry: %w", err)
+	}
 	return token, nil
 }
 
@@ -174,7 +195,10 @@ func releaseLock(path, token string) error {
 	if owner.Token != token || token == "" {
 		return errors.New("sandbox lifecycle journal lock ownership changed")
 	}
-	return os.Remove(path)
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
 }
 
 func (journal *Journal) recover() error {
