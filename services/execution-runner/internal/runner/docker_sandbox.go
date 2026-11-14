@@ -20,53 +20,9 @@ import (
 
 var (
 	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
-	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
-	imageIDPattern         = regexp.MustCompile(`^sha256:[0-9a-f]{64}package runner
-
-import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
-
-	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
-	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
-)
-
-var (
-	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
-	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
-	)
-	runnerInstanceIDPattern = regexp.MustCompile(`^[a-f0-9]{32}package runner
-
-import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"os/exec"
-	"regexp"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
-
-	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
-	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
-)
-
-var (
-	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
-	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
-	)
+	containerIDPattern = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+	imageIDPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	runnerInstanceIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 )
 
 const compileSuccessMarker = "__SKYHIGH_COMPILE_OK__\n"
@@ -214,9 +170,9 @@ func (cli OSCommandDockerCLI) Remove(ctx context.Context, id string) error {
 }
 
 type DockerSandbox struct {
-	cli              DockerCLI
-	cleanupTimeout   time.Duration
-	journal          *sandboxjournal.Journal
+	cli DockerCLI
+	cleanupTimeout time.Duration
+	journal *sandboxjournal.Journal
 	runnerInstanceID string
 }
 
@@ -233,22 +189,13 @@ func NewDockerSandbox(cli DockerCLI) (*DockerSandbox, error) {
 }
 
 
-// NewJournaledDockerSandbox creates an execution-capable sandbox. RunCase
-// refuses to execute unless every container lifecycle is durably journaled.
-func NewJournaledDockerSandbox(
-	cli DockerCLI,
-	journal *sandboxjournal.Journal,
-	runnerInstanceID string,
-) (*DockerSandbox, error) {
+ // NewJournaledDockerSandbox creates an execution-capable sandbox. RunCase
+ // refuses to execute unless every container lifecycle is durably journaled.
+func NewJournaledDockerSandbox(cli DockerCLI, journal *sandboxjournal.Journal, runnerInstanceID string) (*DockerSandbox, error) {
 	if cli == nil || journal == nil || !runnerInstanceIDPattern.MatchString(runnerInstanceID) {
 		return nil, ErrSandboxNotConfigured
 	}
-	return &DockerSandbox{
-		cli: cli,
-		cleanupTimeout: 5 * time.Second,
-		journal: journal,
-		runnerInstanceID: runnerInstanceID,
-	}, nil
+	return &DockerSandbox{cli: cli, cleanupTimeout: 5 * time.Second, journal: journal, runnerInstanceID: runnerInstanceID}, nil
 }
 
 // Preflight is required before the artifact executor may report ready.
@@ -274,8 +221,7 @@ func (sandbox *DockerSandbox) RunCase(
 	parent context.Context,
 	request SandboxRequest,
 ) (SandboxObservation, error) {
-	if sandbox == nil || sandbox.cli == nil || sandbox.journal == nil ||
-		!runnerInstanceIDPattern.MatchString(sandbox.runnerInstanceID) {
+	if sandbox == nil || sandbox.cli == nil || sandbox.journal == nil || !runnerInstanceIDPattern.MatchString(sandbox.runnerInstanceID) {
 		return SandboxObservation{}, ErrSandboxNotConfigured
 	}
 	if err := validateSandboxRequest(request); err != nil {
