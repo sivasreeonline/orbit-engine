@@ -6,11 +6,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 )
 
 // These tests execute hostile-but-bounded programs only inside a real runsc
@@ -31,7 +33,16 @@ func qualificationRuntime(t *testing.T) (*DockerSandbox, RuntimeConfiguration) {
 		PythonVersion:  pythonVersion,
 		PythonImageRef: pythonImage,
 	}
-	sandbox, err := NewDockerSandbox(OSCommandDockerCLI{})
+	journal, err := sandboxjournal.Open(filepath.Join(t.TempDir(), "qualification-lifecycle.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := journal.Close(); err != nil {
+			t.Errorf("close qualification lifecycle journal: %v", err)
+		}
+	})
+	sandbox, err := NewJournaledDockerSandbox(OSCommandDockerCLI{}, journal, strings.Repeat("b", 32))
 	if err != nil {
 		t.Fatal(err)
 	}
