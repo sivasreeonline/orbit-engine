@@ -97,9 +97,18 @@ func (fake *fakeDockerCLI) Remove(_ context.Context, id string) error {
 	return fake.removeErr
 }
 
+func privateJournalTestPath(t *testing.T, name string) string {
+	t.Helper()
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(directory, name)
+}
+
 func newJournaledTestSandbox(t *testing.T, cli DockerCLI) (*DockerSandbox, error) {
 	t.Helper()
-	journal, err := sandboxjournal.Open(filepath.Join(t.TempDir(), "sandbox-lifecycle.jsonl"))
+	journal, err := sandboxjournal.Open(privateJournalTestPath(t, "sandbox-lifecycle.jsonl"))
 	if err != nil {
 		return nil, err
 	}
@@ -598,7 +607,7 @@ func TestSandboxRejectsUntrustedRuntimeAndImageTokens(t *testing.T) {
 
 
 func TestDockerSandboxPersistsCreateIntentBeforeDockerCreate(t *testing.T) {
-	journal, err := sandboxjournal.Open(filepath.Join(t.TempDir(), "lifecycle.jsonl"))
+	journal, err := sandboxjournal.Open(privateJournalTestPath(t, "lifecycle.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
