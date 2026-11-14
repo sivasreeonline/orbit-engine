@@ -85,6 +85,11 @@ func Open(path string) (*Journal, error) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, fmt.Errorf("create sandbox journal directory: %w", err)
 	}
+	resolvedDirectory, err := filepath.EvalSymlinks(directory)
+	if err != nil {
+		return nil, fmt.Errorf("resolve sandbox journal directory symlinks: %w", err)
+	}
+	directory = resolvedDirectory
 	canonical := filepath.Join(directory, filepath.Base(path))
 	lockPath := canonical + ".lock"
 	token, err := acquireLock(lockPath)
@@ -98,18 +103,17 @@ func Open(path string) (*Journal, error) {
 		}
 	}()
 
-	if info, statErr := os.Lstat(canonical); statErr == nil {
-		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+	initialInfo, statBeforeOpenErr := os.Lstat(canonical)
+	if statBeforeOpenErr == nil {
+		if initialInfo.Mode()&os.ModeSymlink != 0 || !initialInfo.Mode().IsRegular() {
 			return nil, errors.New("sandbox lifecycle journal must be a regular non-symlink file")
 		}
-		if info.Mode().Perm()&0o077 != 0 {
+		if initialInfo.Mode().Perm()&0o077 != 0 {
 			return nil, errors.New("sandbox lifecycle journal permissions must exclude group and other access")
 		}
-	} else if !errors.Is(statErr, os.ErrNotExist) {
-		return nil, fmt.Errorf("inspect sandbox lifecycle journal: %w", statErr)
+	} else if !errors.Is(statBeforeOpenErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("inspect sandbox lifecycle journal: %w", statBeforeOpenErr)
 	}
-
-	_, statBeforeOpenErr := os.Lstat(canonical)
 	file, err := os.OpenFile(canonical, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open sandbox lifecycle journal: %w", err)
@@ -121,7 +125,8 @@ func Open(path string) (*Journal, error) {
 	}
 	currentInfo, pathStatErr := os.Lstat(canonical)
 	if pathStatErr != nil || currentInfo.Mode()&os.ModeSymlink != 0 ||
-		!currentInfo.Mode().IsRegular() || !os.SameFile(openedInfo, currentInfo) {
+		!currentInfo.Mode().IsRegular() || !os.SameFile(openedInfo, currentInfo) ||
+		(statBeforeOpenErr == nil && !os.SameFile(initialInfo, openedInfo)) {
 		_ = file.Close()
 		return nil, errors.New("sandbox lifecycle journal path changed during open")
 	}
