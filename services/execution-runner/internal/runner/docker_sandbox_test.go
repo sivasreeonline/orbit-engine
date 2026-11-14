@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 )
 
 type fakeDockerCLI struct {
@@ -94,6 +95,20 @@ func (fake *fakeDockerCLI) Remove(_ context.Context, id string) error {
 	}
 	fake.removed = true
 	return fake.removeErr
+}
+
+func newJournaledTestSandbox(t *testing.T, cli DockerCLI) (*DockerSandbox, error) {
+	t.Helper()
+	journal, err := sandboxjournal.Open(filepath.Join(t.TempDir(), "sandbox-lifecycle.jsonl"))
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(func() {
+		if err := journal.Close(); err != nil {
+			t.Errorf("close sandbox lifecycle journal: %v", err)
+		}
+	})
+	return NewJournaledDockerSandbox(cli, journal, strings.Repeat("a", 32))
 }
 
 func dockerSandboxTestRequest() SandboxRequest {
@@ -299,7 +314,7 @@ func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *tes
 		stderr: []byte("program warning\n"),
 		state:  DockerContainerState{Status: "exited", ExitCode: 0},
 	}
-	sandbox, err := NewDockerSandbox(fake)
+	sandbox, err := newJournaledTestSandbox(t, fake)
 	if err != nil {
 		t.Fatalf("NewDockerSandbox: %v", err)
 	}
@@ -372,7 +387,7 @@ func TestDockerSandboxMapsCompileAndOOMStatuses(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			fake := test.fake
-			sandbox, err := NewDockerSandbox(&fake)
+			sandbox, err := newJournaledTestSandbox(t, &fake)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -397,7 +412,7 @@ func TestDockerSandboxEnforcesCombinedStdoutAndStderrLimit(t *testing.T) {
 		stderr: []byte("abcdef"),
 		state:  DockerContainerState{Status: "exited", ExitCode: 0},
 	}
-	sandbox, err := NewDockerSandbox(fake)
+	sandbox, err := newJournaledTestSandbox(t, fake)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +437,7 @@ func TestDockerSandboxEnforcesCombinedStdoutAndStderrLimit(t *testing.T) {
 func TestDockerSandboxTimeoutKillsContainerAndCleansWorkspace(t *testing.T) {
 	t.Parallel()
 	fake := &fakeDockerCLI{waitForContext: true}
-	sandbox, err := NewDockerSandbox(fake)
+	sandbox, err := newJournaledTestSandbox(t, fake)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +460,7 @@ func TestDockerSandboxTreatsContainerCleanupFailureAsInfrastructureError(t *test
 		state:     DockerContainerState{Status: "exited", ExitCode: 0},
 		removeErr: errors.New("docker rm failed"),
 	}
-	sandbox, err := NewDockerSandbox(fake)
+	sandbox, err := newJournaledTestSandbox(t, fake)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,6 +581,21 @@ func TestSandboxRejectsUntrustedRuntimeAndImageTokens(t *testing.T) {
 }
 
 
+
+func TestDockerSandboxRequiresDurableLifecycleJournal(t *testing.T) {
+	fake := &fakeDockerCLI{}
+	sandbox, err := NewDockerSandbox(fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(err, ErrSandboxNotConfigured) {
+		t.Fatalf("unjournaled sandbox RunCase error = %v, want ErrSandboxNotConfigured", err)
+	}
+	if fake.created {
+		t.Fatal("unjournaled sandbox created a container")
+	}
+}
 
 func TestDockerSandboxRunCaseRejectsNilSandbox(t *testing.T) {
 	t.Parallel()
