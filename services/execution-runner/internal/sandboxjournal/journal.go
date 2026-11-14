@@ -178,7 +178,11 @@ func acquireLock(path string) (string, error) {
 		CreatedAt time.Time `json:"createdAt"`
 	}{os.Getpid(), token, time.Now().UTC()})
 	if err == nil {
-		_, err = file.Write(payload)
+		var written int
+		written, err = file.Write(payload)
+		if err == nil && written != len(payload) {
+			err = io.ErrShortWrite
+		}
 	}
 	if err == nil {
 		err = file.Sync()
@@ -374,8 +378,12 @@ func (journal *Journal) appendLocked(event Event) error {
 		return errors.New("sandbox lifecycle journal reached its size limit")
 	}
 	payload = append(payload, '\n')
-	if _, err := journal.file.Write(payload); err != nil {
-		return fmt.Errorf("append sandbox lifecycle event: %w", err)
+	written, writeErr := journal.file.Write(payload)
+	if writeErr == nil && written != len(payload) {
+		writeErr = io.ErrShortWrite
+	}
+	if writeErr != nil {
+		return fmt.Errorf("append sandbox lifecycle event: %w", writeErr)
 	}
 	if err := journal.file.Sync(); err != nil {
 		return fmt.Errorf("sync sandbox lifecycle event: %w", err)
