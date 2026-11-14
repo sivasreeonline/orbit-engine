@@ -353,8 +353,7 @@ func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *tes
 	if !containsArgument(fake.createArgs, "com.skyhigh.runner-instance="+strings.Repeat("a", 32)) {
 		t.Fatalf("container missing runner-instance ownership label: %v", fake.createArgs)
 	}
-	if !containsArgument(fake.createArgs, "com.skyhigh.lifecycle-id="+strings.Repeat("0", 32)) &&
-		!hasLabelPrefix(fake.createArgs, "com.skyhigh.lifecycle-id=") {
+	if !hasLabelPrefix(fake.createArgs, "com.skyhigh.lifecycle-id=") {
 		t.Fatalf("container missing lifecycle recovery label: %v", fake.createArgs)
 	}
 }
@@ -597,6 +596,37 @@ func TestSandboxRejectsUntrustedRuntimeAndImageTokens(t *testing.T) {
 }
 
 
+
+func TestDockerSandboxPersistsCreateIntentBeforeDockerCreate(t *testing.T) {
+	journal, err := sandboxjournal.Open(filepath.Join(t.TempDir(), "lifecycle.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+	fake := &fakeDockerCLI{createErr: errors.New("daemon unavailable")}
+	sandbox, err := NewJournaledDockerSandbox(fake, journal, strings.Repeat("c", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("RunCase error = %v, want Docker command failure", err)
+	}
+	if !fake.created {
+		t.Fatal("Docker create was not attempted")
+	}
+	if !containsArgument(fake.createArgs, "com.skyhigh.runner-instance="+strings.Repeat("c", 32)) ||
+		!hasLabelPrefix(fake.createArgs, "com.skyhigh.lifecycle-id=") {
+		t.Fatalf("Docker create did not receive ownership and lifecycle labels: %v", fake.createArgs)
+	}
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Created || pending[0].Cleaned {
+		t.Fatalf("failed create intent should remain visible for reconciliation: %+v", pending)
+	}
+}
 
 func TestDockerSandboxRequiresDurableLifecycleJournal(t *testing.T) {
 	fake := &fakeDockerCLI{}
