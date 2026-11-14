@@ -90,6 +90,13 @@ func Open(path string) (*Journal, error) {
 		return nil, fmt.Errorf("resolve sandbox journal directory symlinks: %w", err)
 	}
 	directory = resolvedDirectory
+	directoryInfo, err := os.Stat(directory)
+	if err != nil {
+		return nil, fmt.Errorf("inspect sandbox journal directory: %w", err)
+	}
+	if !directoryInfo.IsDir() || directoryInfo.Mode().Perm()&0o077 != 0 {
+		return nil, errors.New("sandbox lifecycle journal directory must be private to its owner")
+	}
 	canonical := filepath.Join(directory, filepath.Base(path))
 	lockPath := canonical + ".lock"
 	token, err := acquireLock(lockPath)
