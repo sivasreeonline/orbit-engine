@@ -135,6 +135,31 @@ func TestJournalTruncatesOnlyIncompleteTrailingRecord(t *testing.T) {
 	}
 }
 
+func TestJournalRejectsTrailingJSONOnCompleteRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sandbox.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.Begin(testRunnerID, testExecutionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append([]byte(strings.TrimSuffix(string(content), "\n")+" {}\n"), []byte{}...)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil {
+		t.Fatal("trailing JSON data on a complete record was accepted")
+	}
+}
+
 func TestJournalRejectsMalformedCompleteRecord(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.jsonl")
 	if err := os.WriteFile(path, []byte("{not-json}\n"), 0o600); err != nil {
