@@ -55,7 +55,7 @@ This procedure is for an operator investigating a disposable, dedicated runner h
    ```
 
 7. Repeat the filtered listing and verify it returns no Sky High execution containers. Preserve before/after output and Docker daemon logs.
-8. Investigate why cleanup failed before restarting the runner. Do not remove the acceptance-journal lock until its separate ownership recovery procedure has been followed.
+8. Investigate why cleanup failed before restarting the runner. Do not remove the acceptance-journal lock until its separate ownership recovery procedure has been followed. For the sandbox lifecycle journal, remove its exact sibling `.lock` file only after verifying that no process can still own that journal path; never remove it while a runner may be active.
 
 If any step cannot be established, stop and escalate; do not guess which container is safe to remove.
 
