@@ -139,6 +139,15 @@ func containsArgument(args []string, expected string) bool {
 	return false
 }
 
+func hasLabelPrefix(args []string, prefix string) bool {
+	for index, argument := range args {
+		if argument == "--label" && index+1 < len(args) && strings.HasPrefix(args[index+1], prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func argumentAfter(args []string, flag string) string {
 	for index, argument := range args {
 		if argument == flag && index+1 < len(args) {
@@ -340,6 +349,13 @@ func TestDockerSandboxPreservesSeparateStreamsAndCleansTemporaryWorkspace(t *tes
 	}
 	if containsArgument(fake.createArgs, "--mount") {
 		t.Fatalf("host source path unexpectedly passed to Docker: %v", fake.createArgs)
+	}
+	if !containsArgument(fake.createArgs, "com.skyhigh.runner-instance="+strings.Repeat("a", 32)) {
+		t.Fatalf("container missing runner-instance ownership label: %v", fake.createArgs)
+	}
+	if !containsArgument(fake.createArgs, "com.skyhigh.lifecycle-id="+strings.Repeat("0", 32)) &&
+		!hasLabelPrefix(fake.createArgs, "com.skyhigh.lifecycle-id=") {
+		t.Fatalf("container missing lifecycle recovery label: %v", fake.createArgs)
 	}
 }
 
