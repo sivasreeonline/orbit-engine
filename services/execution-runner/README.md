@@ -161,6 +161,7 @@ Example from the execution-runner module directory on the dedicated Linux host:
 ```bash
 RUNNER_INSTANCE_ID='<32-character-installation-id>' \
 RUNNER_SANDBOX_JOURNAL_PATH='/var/lib/skyhigh/sandbox-lifecycle.jsonl' \
+RUNNER_HOST_LOCK_PATH='/run/lock/skyhigh-runner-host.lock' \
 go run ./cmd/sandbox-recovery
 ```
 
