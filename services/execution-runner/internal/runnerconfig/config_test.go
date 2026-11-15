@@ -39,6 +39,7 @@ func validValues(keyPath, journalPath string) map[string]string {
 		EnvPrivateKeyFile:     keyPath,
 		EnvJournalPath:        journalPath,
 		EnvSandboxJournalPath: filepath.Join(filepath.Dir(journalPath), "sandbox-lifecycle.jsonl"),
+		EnvHostLockPath:       filepath.Join(filepath.Dir(journalPath), "runner-host.lock"),
 		EnvRunnerInstanceID:   "0123456789abcdef0123456789abcdef",
 	}
 }
@@ -49,7 +50,7 @@ func TestLoadRequiresEveryIdentitySetting(t *testing.T) {
 	}
 
 	for _, name := range []string{
-		EnvControlPlaneURL, EnvKeyID, EnvPrivateKeyFile, EnvJournalPath, EnvSandboxJournalPath, EnvRunnerInstanceID,
+		EnvControlPlaneURL, EnvKeyID, EnvPrivateKeyFile, EnvJournalPath, EnvSandboxJournalPath, EnvHostLockPath, EnvRunnerInstanceID,
 	} {
 		t.Run(name, func(t *testing.T) {
 			keyPath := filepath.Join(t.TempDir(), "runner.key")
@@ -76,6 +77,7 @@ func TestLoadReturnsValidatedIdentityAndDestroyClearsKey(t *testing.T) {
 	if config.ControlPlaneURL != "https://control.example.test" ||
 		config.KeyID != "runner-machine-01" || config.JournalPath != journalPath ||
 		config.SandboxJournalPath != filepath.Join(filepath.Dir(journalPath), "sandbox-lifecycle.jsonl") ||
+		config.HostLockPath != filepath.Join(filepath.Dir(journalPath), "runner-host.lock") ||
 		config.RunnerInstanceID != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("unexpected runner config: %+v", config)
 	}
@@ -197,6 +199,22 @@ func TestLoadRejectsSharedOrInvalidSandboxJournalPaths(t *testing.T) {
 			if config, err := Load(lookupValues(values)); err == nil {
 				config.Destroy()
 				t.Fatalf("invalid sandbox journal path %q was accepted", sandboxPath)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsInvalidOrAliasedHostLockPaths(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "runner.key")
+	_ = writeConfigKey(t, keyPath)
+	journalPath := filepath.Join(t.TempDir(), "acceptance.jsonl")
+	for _, hostPath := range []string{journalPath, "relative.lock", string(filepath.Separator)} {
+		t.Run(hostPath, func(t *testing.T) {
+			values := validValues(keyPath, journalPath)
+			values[EnvHostLockPath] = hostPath
+			if config, err := Load(lookupValues(values)); err == nil {
+				config.Destroy()
+				t.Fatalf("invalid host lock path %q was accepted", hostPath)
 			}
 		})
 	}
