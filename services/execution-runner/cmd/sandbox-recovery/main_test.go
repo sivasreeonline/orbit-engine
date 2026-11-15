@@ -39,7 +39,11 @@ func recoveryEnvironment(path string) environment {
 
 func createPendingJournal(t *testing.T) (string, string, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "sandbox-lifecycle.jsonl")
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "sandbox-lifecycle.jsonl")
 	journal, err := sandboxjournal.Open(path)
 	if err != nil {
 		t.Fatal(err)
