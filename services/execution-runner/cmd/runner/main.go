@@ -17,6 +17,7 @@ import (
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runner"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerclient"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerconfig"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 )
 
 func main() {
@@ -112,6 +113,22 @@ func runForeground(ctx context.Context, server *http.Server) (returnErr error) {
 		}
 	}()
 
+	sandboxLifecycleJournal, err := sandboxjournal.Open(config.SandboxJournalPath)
+	if err != nil {
+		return fmt.Errorf("open durable sandbox lifecycle journal: %w", err)
+	}
+	defer func() {
+		if err := sandboxLifecycleJournal.Close(); err != nil {
+			returnErr = errors.Join(returnErr, err)
+		}
+	}()
+
+	// Bind the provisioned runner identity to the journaled Docker adapter.
+	// The adapter is deliberately not passed to the worker: execution remains disabled.
+	if _, err := runner.NewJournaledDockerSandbox(runner.OSCommandDockerCLI{}, sandboxLifecycleJournal, config.RunnerInstanceID); err != nil {
+		return fmt.Errorf("initialize journaled sandbox lifecycle boundary: %w", err)
+	}
+
 	journal, err := acceptancejournal.Open(config.JournalPath)
 	if err != nil {
 		return fmt.Errorf("open durable acceptance journal: %w", err)
@@ -142,7 +159,7 @@ func runForeground(ctx context.Context, server *http.Server) (returnErr error) {
 		serverDone <- server.ListenAndServe()
 	}()
 
-	log.Printf("runner foreground process listening on %s; identity and journal initialized; qualification gate is CLOSED and dispatch claims are disabled", server.Addr)
+	log.Printf("runner foreground process listening on %s; identity and both journals initialized; runner identity bound to the disabled sandbox adapter; qualification gate is CLOSED and dispatch claims are disabled", server.Addr)
 
 	select {
 	case <-ctx.Done():
