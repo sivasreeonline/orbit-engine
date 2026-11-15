@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/hostlock"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runner"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 )
@@ -58,7 +59,7 @@ func run(
 	lookup environment,
 	discoverer runner.DockerLifecycleDiscoverer,
 	output io.Writer,
-) error {
+) (returnErr error) {
 	if lookup == nil || discoverer == nil || output == nil {
 		return errors.New("recovery inspection dependencies are required")
 	}
@@ -66,6 +67,21 @@ func run(
 	if !ok || !runnerIDPattern.MatchString(runnerID) {
 		return errors.New("RUNNER_INSTANCE_ID must be 32 lowercase hexadecimal characters")
 	}
+	hostLockPath, ok := lookup("RUNNER_HOST_LOCK_PATH")
+	if !ok || hostLockPath == "" || !filepath.IsAbs(hostLockPath) ||
+		filepath.Clean(hostLockPath) == string(filepath.Separator) {
+		return errors.New("RUNNER_HOST_LOCK_PATH must be an absolute non-root path")
+	}
+	hostOwnershipLock, err := hostlock.Acquire(hostLockPath, runnerID)
+	if err != nil {
+		return fmt.Errorf("acquire exclusive host ownership lock: %w", err)
+	}
+	defer func() {
+		if err := hostOwnershipLock.Close(); err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("release host ownership lock: %w", err))
+		}
+	}()
+
 	journalPath, ok := lookup("RUNNER_SANDBOX_JOURNAL_PATH")
 	if !ok || journalPath == "" || !filepath.IsAbs(journalPath) ||
 		filepath.Clean(journalPath) == string(filepath.Separator) {
