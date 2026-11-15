@@ -34,12 +34,12 @@ func lookupValues(values map[string]string) func(string) (string, bool) {
 
 func validValues(keyPath, journalPath string) map[string]string {
 	return map[string]string{
-		EnvControlPlaneURL: "https://control.example.test",
-		EnvKeyID: "runner-machine-01",
-		EnvPrivateKeyFile: keyPath,
-		EnvJournalPath: journalPath,
+		EnvControlPlaneURL:    "https://control.example.test",
+		EnvKeyID:              "runner-machine-01",
+		EnvPrivateKeyFile:     keyPath,
+		EnvJournalPath:        journalPath,
 		EnvSandboxJournalPath: filepath.Join(filepath.Dir(journalPath), "sandbox-lifecycle.jsonl"),
-		EnvRunnerInstanceID: "0123456789abcdef0123456789abcdef",
+		EnvRunnerInstanceID:   "0123456789abcdef0123456789abcdef",
 	}
 }
 
