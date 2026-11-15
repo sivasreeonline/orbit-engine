@@ -92,6 +92,12 @@ func acquirePlatformLock(path, ownerID string) (*Lock, error) {
 		_ = syscall.Flock(fd, syscall.LOCK_UN)
 		return fail(fmt.Errorf("persist host lock owner metadata: %w", err))
 	}
+	if errors.Is(beforeErr, os.ErrNotExist) {
+		if err := syncLockDirectory(directory); err != nil {
+			_ = syscall.Flock(fd, syscall.LOCK_UN)
+			return fail(fmt.Errorf("persist host lock directory entry: %w", err))
+		}
+	}
 	return lock, nil
 }
 
@@ -138,3 +144,13 @@ func releasePlatformLock(file *os.File, ownerID string) error {
 }
 
 func ptrTime(value time.Time) *time.Time { return &value }
+
+func syncLockDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	syncErr := directory.Sync()
+	closeErr := directory.Close()
+	return errors.Join(syncErr, closeErr)
+}
