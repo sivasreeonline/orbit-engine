@@ -95,7 +95,7 @@ printf 'RUNNER_INSTANCE_ID=%s\n' "$(openssl rand -hex 16)" > /etc/skyhigh/runner
 chmod 0600 /etc/skyhigh/runner-instance.env
 ```
 
-Load that file through the service manager's environment-file mechanism. Back it up as installation metadata (not as a signing secret); replacing the runner installation requires an explicit identity-rotation and orphan-reconciliation procedure. The foreground process now opens and holds the sandbox lifecycle journal and constructs the journaled Docker adapter with this stable ID. The adapter is deliberately not passed to the worker; the worker still receives `UnconfiguredArtifactExecutor` and the qualification gate remains closed. No Docker preflight, container creation, student execution or automatic cleanup is enabled.
+Load that file through the service manager's environment-file mechanism. Back it up as installation metadata (not as a signing secret); replacing the runner installation requires an explicit identity-rotation and orphan-reconciliation procedure. The foreground process first acquires the shared host lock, then opens and holds the sandbox lifecycle journal and constructs the journaled Docker adapter with this stable ID. The adapter is deliberately not passed to the worker; the worker still receives `UnconfiguredArtifactExecutor` and the qualification gate remains closed. No Docker preflight, container creation, student execution or automatic cleanup is enabled.
 
 Provision `RUNNER_SANDBOX_JOURNAL_PATH` as a distinct private journal file, for example `/var/lib/skyhigh/sandbox-lifecycle.jsonl`. Its parent directory must be owner-only. The foreground process holds its exclusive lock for the process lifetime, so a second process cannot concurrently own the same lifecycle journal. Do not remove a stale journal lock until the runner is verified stopped.
 
@@ -154,7 +154,7 @@ The execution adapter currently uses exact-byte output comparison. The artifact 
 
 The separate `cmd/sandbox-recovery` command performs read-only correlation between the existing sandbox lifecycle journal and Docker containers carrying both exact runner-instance and lifecycle labels. It emits a versioned JSON report with pending lifecycle IDs, exact container IDs, state and an operator-review assessment.
 
-Run it only after stopping the foreground runner on the dedicated host. It opens the exact same existing sandbox journal in strict read-only mode and must acquire its exclusive journal lock before it can query Docker; if the foreground process still owns that journal, inspection fails before Docker discovery. It refuses a missing journal or a symlink and never creates an empty journal that could be mistaken for a clean recovery state. An incomplete final journal record is reported as an error and is never truncated or repaired by this command.
+Run it only after stopping the foreground runner on the dedicated host. It first acquires the same persistent host lock as the foreground runner, then opens the exact same existing sandbox journal in strict read-only mode and acquires its exclusive journal lock before querying Docker. If any Sky High process owns the shared host lock, inspection fails before journal or Docker discovery. It refuses a missing journal or a symlink and never creates an empty journal that could be mistaken for a clean recovery state. An incomplete final journal record is reported as an error and is never truncated or repaired by this command.
 
 Example from the execution-runner module directory on the dedicated Linux host:
 
@@ -169,7 +169,7 @@ The command has no deletion operation. It does not stop, kill, remove, prune, or
 
 If the runner crashed and left a stale `.lock` file, first preserve its contents and independently verify at the OS level that no process can still own the journal. Only then may the operator remove that exact sibling lock file; the command never steals or clears stale locks. If the journal has an incomplete final record, preserve a copy and stop for explicit operator review rather than using this inspection command to repair it.
 
-The host lock coordinates only processes configured with the same lock path; it cannot protect against unrelated software or an administrator bypassing the lock. Keep the runner host dedicated and ensure every Sky High runner installation uses the same canonical path. Use a dedicated host and independently verify process/daemon ownership. A host-level lock shared by execution and reconciliation, deletion workflow, and automatic cleanup remain unimplemented and prohibited. This command does not enable student execution.
+The host lock coordinates only processes configured with the same lock path; it cannot protect against unrelated software or an administrator bypassing the lock. Keep the runner host dedicated and ensure every Sky High runner installation uses the same canonical path. Independently verify process/daemon ownership before manual recovery. The shared Linux host lock is implemented for foreground startup and dry-run inspection. Container deletion and automatic cleanup remain unimplemented and prohibited. This command does not enable student execution.
 
 ## M0 next gates
 1. Add reviewed machine-key file loading and verify owner-only key permissions on the supported Linux host.
