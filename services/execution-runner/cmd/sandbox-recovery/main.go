@@ -86,8 +86,10 @@ func run(
 	if err != nil {
 		return fmt.Errorf("acquire exclusive sandbox journal ownership: %w", err)
 	}
+	inspectionContext, cancelInspection := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelInspection()
 	findings, discoveryErr := runner.DiscoverPendingDockerLifecycles(
-		ctx, journal, discoverer, runnerID,
+		inspectionContext, journal, discoverer, runnerID,
 	)
 	closeErr := journal.Close()
 	if discoveryErr != nil || closeErr != nil {
