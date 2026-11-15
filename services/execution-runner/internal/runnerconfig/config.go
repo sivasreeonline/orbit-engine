@@ -23,6 +23,7 @@ const (
 	EnvKeyID            = "RUNNER_KEY_ID"
 	EnvPrivateKeyFile   = "RUNNER_PRIVATE_KEY_FILE"
 	EnvJournalPath      = "RUNNER_JOURNAL_PATH"
+	EnvSandboxJournalPath = "RUNNER_SANDBOX_JOURNAL_PATH"
 	EnvRunnerInstanceID = "RUNNER_INSTANCE_ID"
 )
 
@@ -30,8 +31,9 @@ type Config struct {
 	ControlPlaneURL  string
 	KeyID            string
 	PrivateKey       ed25519.PrivateKey
-	JournalPath      string
-	RunnerInstanceID string
+	JournalPath        string
+	SandboxJournalPath string
+	RunnerInstanceID   string
 }
 
 // Load reads the runner's explicit identity configuration. The lookup
@@ -90,11 +92,26 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 		return nil, fmt.Errorf("%s must be an absolute non-root path", EnvJournalPath)
 	}
 
+	sandboxJournalPath, err := requiredValue(lookup, EnvSandboxJournalPath)
+	if err != nil {
+		zero(privateKey)
+		return nil, err
+	}
+	if !filepath.IsAbs(sandboxJournalPath) || filepath.Clean(sandboxJournalPath) == string(filepath.Separator) {
+		zero(privateKey)
+		return nil, fmt.Errorf("%s must be an absolute non-root path", EnvSandboxJournalPath)
+	}
+	if filepath.Clean(sandboxJournalPath) == filepath.Clean(journalPath) {
+		zero(privateKey)
+		return nil, errors.New("acceptance and sandbox lifecycle journals must use different paths")
+	}
+
 	return &Config{
 		ControlPlaneURL:  controlPlaneURL,
 		KeyID:            keyID,
 		PrivateKey:       privateKey,
-		JournalPath:      journalPath,
+		JournalPath:        journalPath,
+		SandboxJournalPath: sandboxJournalPath,
 		RunnerInstanceID: runnerInstanceID,
 	}, nil
 }
