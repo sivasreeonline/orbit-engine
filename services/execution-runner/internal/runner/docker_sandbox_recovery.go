@@ -20,10 +20,10 @@ const (
 // DiscoveredDockerContainer contains only identity and state metadata. It never
 // includes student source, stdin, stdout, stderr or hidden-test material.
 type DiscoveredDockerContainer struct {
-	ID              string
-	RunnerInstanceID string
-	LifecycleID     string
-	State           string
+	ID               string `json:"id"`
+	RunnerInstanceID string `json:"runnerInstanceId"`
+	LifecycleID      string `json:"lifecycleId"`
+	State            string `json:"state"`
 }
 
 // DockerLifecycleDiscoverer must query by both exact Sky High ownership labels.
