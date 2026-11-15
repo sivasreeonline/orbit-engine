@@ -27,6 +27,7 @@ var (
 	ErrConflict = errors.New("sandbox lifecycle transition conflict")
 	ErrNotFound = errors.New("sandbox lifecycle record not found")
 	ErrLocked = errors.New("sandbox lifecycle journal already has an owner")
+	ErrReadOnly = errors.New("sandbox lifecycle journal is read-only")
 	runnerIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 	executionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 	containerIDPattern = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
@@ -72,9 +73,21 @@ type Journal struct {
 	sequence uint64
 	records map[string]Lifecycle
 	closed bool
+	readOnly bool
 }
 
 func Open(path string) (*Journal, error) {
+	return openJournal(path, false)
+}
+
+// OpenReadOnly acquires the journal ownership lock and validates the existing
+// journal without repairing or truncating it. An incomplete final record is
+// reported as an error for operator review.
+func OpenReadOnly(path string) (*Journal, error) {
+	return openJournal(path, true)
+}
+
+func openJournal(path string, readOnly bool) (*Journal, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("sandbox lifecycle journal path is required")
 	}
@@ -82,8 +95,10 @@ func Open(path string) (*Journal, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve sandbox journal directory: %w", err)
 	}
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return nil, fmt.Errorf("create sandbox journal directory: %w", err)
+	if !readOnly {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			return nil, fmt.Errorf("create sandbox journal directory: %w", err)
+		}
 	}
 	resolvedDirectory, err := filepath.EvalSymlinks(directory)
 	if err != nil {
@@ -121,7 +136,15 @@ func Open(path string) (*Journal, error) {
 	} else if !errors.Is(statBeforeOpenErr, os.ErrNotExist) {
 		return nil, fmt.Errorf("inspect sandbox lifecycle journal: %w", statBeforeOpenErr)
 	}
-	file, err := os.OpenFile(canonical, os.O_CREATE|os.O_RDWR, 0o600)
+	var file *os.File
+	if readOnly {
+		if errors.Is(statBeforeOpenErr, os.ErrNotExist) {
+			return nil, errors.New("sandbox lifecycle journal does not exist")
+		}
+		file, err = os.Open(canonical)
+	} else {
+		file, err = os.OpenFile(canonical, os.O_CREATE|os.O_RDWR, 0o600)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("open sandbox lifecycle journal: %w", err)
 	}
@@ -137,11 +160,13 @@ func Open(path string) (*Journal, error) {
 		_ = file.Close()
 		return nil, errors.New("sandbox lifecycle journal path changed during open")
 	}
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		return nil, fmt.Errorf("secure sandbox lifecycle journal: %w", err)
+	if !readOnly {
+		if err := file.Chmod(0o600); err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("secure sandbox lifecycle journal: %w", err)
+		}
 	}
-	if errors.Is(statBeforeOpenErr, os.ErrNotExist) {
+	if !readOnly && errors.Is(statBeforeOpenErr, os.ErrNotExist) {
 		if err := syncDirectory(directory); err != nil {
 			_ = file.Close()
 			return nil, fmt.Errorf("persist sandbox lifecycle journal directory entry: %w", err)
@@ -150,6 +175,7 @@ func Open(path string) (*Journal, error) {
 	journal := &Journal{
 		file: file, path: canonical, lockPath: lockPath, lockToken: token,
 		records: make(map[string]Lifecycle),
+		readOnly: readOnly,
 	}
 	if err := journal.recover(); err != nil {
 		_ = file.Close()
@@ -231,6 +257,9 @@ func (journal *Journal) recover() error {
 	}
 	lastNewline := bytes.LastIndexByte(content, '\n')
 	if lastNewline != len(content)-1 {
+		if journal.readOnly {
+			return errors.New("sandbox lifecycle journal has an incomplete final record; read-only inspection refuses repair")
+		}
 		validLength := lastNewline + 1
 		if err := journal.file.Truncate(int64(validLength)); err != nil {
 			return fmt.Errorf("truncate incomplete sandbox lifecycle record: %w", err)
@@ -357,6 +386,9 @@ func (journal *Journal) appendLocked(event Event) error {
 	if journal.closed {
 		return ErrClosed
 	}
+	if journal.readOnly {
+		return ErrReadOnly
+	}
 	if journal.sequence >= maxJournalSize {
 		return errors.New("sandbox lifecycle journal sequence limit reached")
 	}
@@ -447,8 +479,10 @@ func (journal *Journal) Close() error {
 	if journal.closed {
 		return nil
 	}
-	if err := journal.file.Sync(); err != nil {
-		return fmt.Errorf("sync sandbox lifecycle journal on close: %w", err)
+	if !journal.readOnly {
+		if err := journal.file.Sync(); err != nil {
+			return fmt.Errorf("sync sandbox lifecycle journal on close: %w", err)
+		}
 	}
 	if err := journal.file.Close(); err != nil {
 		return fmt.Errorf("close sandbox lifecycle journal: %w", err)
