@@ -80,9 +80,10 @@ The `internal/runnerconfig` package validates the environment contract for a fut
 - `RUNNER_KEY_ID`: a bounded key identifier matching the signed-request protocol.
 - `RUNNER_PRIVATE_KEY_FILE`: an absolute path to a private key file accepted by the strict Linux `runnerauth.LoadPrivateKeyFile` loader.
 - `RUNNER_JOURNAL_PATH`: an absolute, non-root path for the append-only acceptance journal.
+- `RUNNER_SANDBOX_JOURNAL_PATH`: a separate absolute, non-root path for the append-only Docker lifecycle journal; it must not alias the acceptance journal.
 - `RUNNER_INSTANCE_ID`: a stable, installation-specific 32-character lowercase-hex identifier. It is distinct from the signing key ID and is used to scope sandbox lifecycle labels and recovery ownership.
 
-All five settings are mandatory. The loader rejects credentialed URLs, URL paths, query strings, fragments, invalid key IDs and relative file paths. It never returns key contents in errors. Call `Config.Destroy()` when the configuration is no longer needed; it overwrites the in-memory private-key bytes and clears the reference.
+All six settings are mandatory. The loader rejects credentialed URLs, URL paths, query strings, fragments, invalid key IDs and relative file paths. It never returns key contents in errors. Call `Config.Destroy()` when the configuration is no longer needed; it overwrites the in-memory private-key bytes and clears the reference.
 
 This package is a validated configuration boundary. The foreground process loads and validates the stable runner instance ID alongside its signing identity. Provision the ID once using a cryptographically secure random generator, store it in a root/runner-owned environment file with mode `0600`, and preserve it across restarts. Do not generate a new ID on every process start. Example on the dedicated Linux host:
 
@@ -93,7 +94,9 @@ printf 'RUNNER_INSTANCE_ID=%s\n' "$(openssl rand -hex 16)" > /etc/skyhigh/runner
 chmod 0600 /etc/skyhigh/runner-instance.env
 ```
 
-Load that file through the service manager's environment-file mechanism. Back it up as installation metadata (not as a signing secret); replacing the runner installation requires an explicit identity-rotation and orphan-reconciliation procedure. The ID is currently validated at foreground startup but is not yet connected to an enabled Docker executor or automatic cleanup. This does not enable student execution.
+Load that file through the service manager's environment-file mechanism. Back it up as installation metadata (not as a signing secret); replacing the runner installation requires an explicit identity-rotation and orphan-reconciliation procedure. The foreground process now opens and holds the sandbox lifecycle journal and constructs the journaled Docker adapter with this stable ID. The adapter is deliberately not passed to the worker; the worker still receives `UnconfiguredArtifactExecutor` and the qualification gate remains closed. No Docker preflight, container creation, student execution or automatic cleanup is enabled.
+
+Provision `RUNNER_SANDBOX_JOURNAL_PATH` as a distinct private journal file, for example `/var/lib/skyhigh/sandbox-lifecycle.jsonl`. Its parent directory must be owner-only. The foreground process holds its exclusive lock for the process lifetime, so a second process cannot concurrently own the same lifecycle journal. Do not remove a stale lock until the runner is verified stopped.
 
 ## Current runner control-plane client
 
