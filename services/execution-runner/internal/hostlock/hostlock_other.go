@@ -3,7 +3,6 @@
 package hostlock
 
 import (
-	"errors"
 	"os"
 )
 
