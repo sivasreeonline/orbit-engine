@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func privateLockDir(t *testing.T) string {
@@ -103,5 +102,4 @@ func TestHostLockCloseIsIdempotent(t *testing.T) {
 	if err := lock.Close(); err != nil {
 		t.Fatal(err)
 	}
-	_ = time.Now()
 }
