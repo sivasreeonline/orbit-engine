@@ -14,9 +14,9 @@ These attempts do not cover every failure:
 - The runner process can terminate after Docker creates a container and before normal cleanup completes.
 - The Docker daemon can be unavailable during removal.
 - A deferred retry is best-effort; its own failure cannot be treated as cleanup success.
-- The runner instance ID is now a required, validated `RUNNER_INSTANCE_ID` in foreground runner configuration. It must be generated once with a cryptographically secure random generator and persisted in a protected service environment file across restarts. The foreground process validates it but does not yet pass it into an enabled Docker executor; student execution remains disabled.
+- The runner instance ID is now a required, validated `RUNNER_INSTANCE_ID` in foreground runner configuration. It must be generated once with a cryptographically secure random generator and persisted in a protected service environment file across restarts. The foreground process opens a separate sandbox lifecycle journal, holds its exclusive lock, and constructs the journaled Docker adapter with this ID. The adapter is not passed to the worker, which still uses the unconfigured executor; student execution remains disabled.
 - A read-only exact-label discovery library now queries both runner-instance and lifecycle labels, then independently inspects each full container ID and verifies the labels. It correlates results with pending journal records and reports mismatches/ambiguity. It is a dry-run library only: there is no CLI, no host-level ownership lock, and no deletion path.
-- The local acceptance journal records dispatch receipt lifecycle, not Docker container IDs or sandbox lifecycle transitions.
+- The local acceptance journal records dispatch receipt lifecycle, not Docker container IDs or sandbox lifecycle transitions. The foreground process now separately opens the sandbox lifecycle journal and binds the stable runner ID to a journaled adapter, but does not make that adapter available to dispatch execution.
 
 Consequently, the system cannot yet prove which container belongs to a particular runner instance or automatically distinguish a crashed runner's container from a live runner's container on a shared daemon.
 
