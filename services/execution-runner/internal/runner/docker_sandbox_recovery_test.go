@@ -201,7 +201,12 @@ func TestDiscoverPendingDockerLifecyclesFlagsAmbiguousAndMismatchedContainers(t 
 			if err := sandbox.journal.Created(lifecycleID, strings.Repeat("b", 64)); err != nil {
 				t.Fatal(err)
 			}
-			discoverer := &fakeLifecycleDiscoverer{containers: test.containers}
+			containers := test.containers
+			for i := range containers {
+				containers[i].RunnerInstanceID = runnerID
+				containers[i].LifecycleID = lifecycleID
+			}
+			discoverer := &fakeLifecycleDiscoverer{containers: containers}
 			results, err := DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, runnerID)
 			if err != nil {
 				t.Fatal(err)
