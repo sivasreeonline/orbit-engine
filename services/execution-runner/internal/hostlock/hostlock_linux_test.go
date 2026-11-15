@@ -49,7 +49,7 @@ func TestHostLockExcludesConcurrentOwnersAndPersistsReleaseMetadata(t *testing.T
 	if err := json.Unmarshal(payload, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.RunnerInstanceID != ownerID || metadata.ReleasedAt == nil || metadata.ReleasedAt.IsZero() {
+	if metadata.RunnerInstanceID != ownerID || metadata.AcquiredAt.IsZero() || metadata.ReleasedAt == nil || metadata.ReleasedAt.IsZero() {
 		t.Fatalf("release metadata = %+v", metadata)
 	}
 
