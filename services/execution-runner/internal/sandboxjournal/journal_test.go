@@ -247,3 +247,81 @@ func TestJournalRejectsSymlinkAndPermissiveExistingFile(t *testing.T) {
 		t.Fatal("symlinked journal was accepted")
 	}
 }
+
+func TestReadOnlyJournalAllowsInspectionButRejectsMutation(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "sandbox.jsonl")
+	created, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycleID, err := created.Begin(testRunnerID, testExecutionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := created.Created(lifecycleID, testContainerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := created.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	readOnly, err := OpenReadOnly(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := readOnly.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || !pending[0].Created || pending[0].ContainerID != testContainerID {
+		t.Fatalf("read-only journal state = %+v", pending)
+	}
+	if _, err := readOnly.Begin(testRunnerID, testExecutionID); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("read-only mutation error = %v, want ErrReadOnly", err)
+	}
+	if err := readOnly.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadOnlyJournalRejectsIncompleteTailWithoutTruncating(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "sandbox.jsonl")
+	created, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := created.Begin(testRunnerID, testExecutionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := created.Close(); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(`{"partial":`); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := OpenReadOnly(path); err == nil {
+		t.Fatal("read-only open accepted an incomplete final record")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("read-only open truncated or otherwise modified the journal")
+	}
+	if _, err := os.Stat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed read-only open left its lock behind: %v", err)
+	}
+}
