@@ -212,3 +212,94 @@ func TestDiscoverPendingDockerLifecyclesFlagsAmbiguousAndMismatchedContainers(t 
 		})
 	}
 }
+
+
+func TestOSCommandDockerCLIDiscoveryFailsClosedOnUntrustedDockerResponses(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	id := strings.Repeat("a", 64)
+	runnerID := strings.Repeat("b", 32)
+	lifecycleID := strings.Repeat("c", 32)
+	validInspect := `{"Id":"` + id + `","Config":{"Labels":{"com.skyhigh.runner-instance":"` + runnerID + `","com.skyhigh.lifecycle-id":"` + lifecycleID + `"}},"State":{"Status":"exited"}}`
+
+	tests := []struct {
+		name string
+		script string
+	}{
+		{
+			name: "daemon unavailable during list",
+			script: "#!/bin/sh\nexit 41\n",
+		},
+		{
+			name: "malformed short container id",
+			script: "#!/bin/sh\nprintf 'abc123\\n'\n",
+		},
+		{
+			name: "duplicate container ids",
+			script: "#!/bin/sh\nprintf '" + id + "\\n" + id + "\\n'\n",
+		},
+		{
+			name: "daemon unavailable during inspect",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\\n'; exit 0; fi\nexit 42\n",
+		},
+		{
+			name: "malformed inspect json",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\\n'; exit 0; fi\nprintf '{not-json'\n",
+		},
+		{
+			name: "inspect id differs from queried id",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\\n'; exit 0; fi\nprintf '%s' '{\"Id\":\"" + strings.Repeat("d", 64) + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"" + lifecycleID + "\"}},\"State\":{\"Status\":\"exited\"}}'\n",
+		},
+		{
+			name: "inspect state missing",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\\n'; exit 0; fi\nprintf '%s' '{\"Id\":\"" + id + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"" + lifecycleID + "\"}},\"State\":{}}'\n",
+		},
+		{
+			name: "inspect valid ownership",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\\n'; exit 0; fi\nprintf '%s' '" + validInspect + "'\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			binary := filepath.Join(t.TempDir(), "docker-stub")
+			if err := os.WriteFile(binary, []byte(test.script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByLifecycleLabels(
+				context.Background(), runnerID, lifecycleID,
+			)
+			if test.name == "inspect valid ownership" {
+				if err != nil || len(found) != 1 || found[0].ID != id {
+					t.Fatalf("valid discovery = %+v, %v", found, err)
+				}
+				return
+			}
+			if !errors.Is(err, ErrDockerCommandFailed) {
+				t.Fatalf("discovery error = %v, want ErrDockerCommandFailed", err)
+			}
+			if len(found) != 0 {
+				t.Fatalf("untrusted Docker response produced findings: %+v", found)
+			}
+		})
+	}
+}
+
+func TestOSCommandDockerCLIDiscoveryHonorsCancellation(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\nsleep 2\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByLifecycleLabels(
+		ctx, strings.Repeat("a", 32), strings.Repeat("b", 32),
+	)
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("cancelled discovery error = %v, want ErrDockerCommandFailed", err)
+	}
+}
