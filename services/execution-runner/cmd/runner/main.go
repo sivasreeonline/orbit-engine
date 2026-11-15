@@ -170,7 +170,7 @@ func runForeground(ctx context.Context, server *http.Server) (returnErr error) {
 		serverDone <- server.ListenAndServe()
 	}()
 
-	log.Printf("runner foreground process listening on %s; identity and both journals initialized; runner identity bound to the disabled sandbox adapter; qualification gate is CLOSED and dispatch claims are disabled", server.Addr)
+	log.Printf("runner foreground process listening on %s; host ownership lock, identity and both journals initialized; runner identity bound to the disabled sandbox adapter; qualification gate is CLOSED and dispatch claims are disabled", server.Addr)
 
 	select {
 	case <-ctx.Done():
