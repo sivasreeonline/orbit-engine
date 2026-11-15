@@ -139,3 +139,37 @@ func TestRecoveryCommandRejectsMissingSymlinkAndInvalidConfiguration(t *testing.
 		t.Fatal("missing recovery identity was accepted")
 	}
 }
+
+func TestRecoveryCommandDoesNotRepairIncompleteJournalTail(t *testing.T) {
+	path, _, _ := createPendingJournal(t)
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(`{"incomplete":`); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	discoverer := &fakeDiscoverer{}
+	var output bytes.Buffer
+	if err := run(context.Background(), recoveryEnvironment(path), discoverer, &output); err == nil {
+		t.Fatal("read-only recovery accepted an incomplete journal tail")
+	}
+	if discoverer.calls != 0 {
+		t.Fatal("Docker discovery ran against an invalid journal")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("read-only recovery modified the incomplete journal")
+	}
+}
