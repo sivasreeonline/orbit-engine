@@ -79,6 +79,12 @@ func acquirePlatformLock(path, ownerID string) (*Lock, error) {
 		}
 		return fail(fmt.Errorf("acquire kernel host lock: %w", err))
 	}
+	lockedPath, pathErr := os.Lstat(canonical)
+	if pathErr != nil || lockedPath.Mode()&os.ModeSymlink != 0 ||
+		!lockedPath.Mode().IsRegular() || !os.SameFile(info, lockedPath) {
+			_ = syscall.Flock(fd, syscall.LOCK_UN)
+			return fail(errors.New("host lock path changed while acquiring kernel ownership"))
+	}
 	lock := &Lock{file: file, ownerID: ownerID}
 	if err := writeMetadata(file, lockMetadata{
 		PID: os.Getpid(), RunnerInstanceID: ownerID, AcquiredAt: time.Now().UTC(),
