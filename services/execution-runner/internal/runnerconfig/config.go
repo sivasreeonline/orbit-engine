@@ -14,23 +14,23 @@ import (
 )
 
 var (
-	keyIDPattern          = regexp.MustCompile("^[A-Za-z0-9._:-]{1,128}$")
+	keyIDPattern            = regexp.MustCompile("^[A-Za-z0-9._:-]{1,128}$")
 	runnerInstanceIDPattern = regexp.MustCompile("^[a-f0-9]{32}$")
 )
 
 const (
-	EnvControlPlaneURL  = "RUNNER_CONTROL_PLANE_URL"
-	EnvKeyID            = "RUNNER_KEY_ID"
-	EnvPrivateKeyFile   = "RUNNER_PRIVATE_KEY_FILE"
-	EnvJournalPath      = "RUNNER_JOURNAL_PATH"
+	EnvControlPlaneURL    = "RUNNER_CONTROL_PLANE_URL"
+	EnvKeyID              = "RUNNER_KEY_ID"
+	EnvPrivateKeyFile     = "RUNNER_PRIVATE_KEY_FILE"
+	EnvJournalPath        = "RUNNER_JOURNAL_PATH"
 	EnvSandboxJournalPath = "RUNNER_SANDBOX_JOURNAL_PATH"
-	EnvRunnerInstanceID = "RUNNER_INSTANCE_ID"
+	EnvRunnerInstanceID   = "RUNNER_INSTANCE_ID"
 )
 
 type Config struct {
-	ControlPlaneURL  string
-	KeyID            string
-	PrivateKey       ed25519.PrivateKey
+	ControlPlaneURL    string
+	KeyID              string
+	PrivateKey         ed25519.PrivateKey
 	JournalPath        string
 	SandboxJournalPath string
 	RunnerInstanceID   string
@@ -107,12 +107,12 @@ func Load(lookup func(string) (string, bool)) (*Config, error) {
 	}
 
 	return &Config{
-		ControlPlaneURL:  controlPlaneURL,
-		KeyID:            keyID,
-		PrivateKey:       privateKey,
+		ControlPlaneURL:    controlPlaneURL,
+		KeyID:              keyID,
+		PrivateKey:         privateKey,
 		JournalPath:        journalPath,
 		SandboxJournalPath: sandboxJournalPath,
-		RunnerInstanceID: runnerInstanceID,
+		RunnerInstanceID:   runnerInstanceID,
 	}, nil
 }
 
