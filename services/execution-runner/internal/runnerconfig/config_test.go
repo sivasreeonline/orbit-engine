@@ -38,6 +38,7 @@ func validValues(keyPath, journalPath string) map[string]string {
 		EnvKeyID: "runner-machine-01",
 		EnvPrivateKeyFile: keyPath,
 		EnvJournalPath: journalPath,
+		EnvSandboxJournalPath: filepath.Join(filepath.Dir(journalPath), "sandbox-lifecycle.jsonl"),
 		EnvRunnerInstanceID: "0123456789abcdef0123456789abcdef",
 	}
 }
@@ -48,7 +49,7 @@ func TestLoadRequiresEveryIdentitySetting(t *testing.T) {
 	}
 
 	for _, name := range []string{
-		EnvControlPlaneURL, EnvKeyID, EnvPrivateKeyFile, EnvJournalPath, EnvRunnerInstanceID,
+		EnvControlPlaneURL, EnvKeyID, EnvPrivateKeyFile, EnvJournalPath, EnvSandboxJournalPath, EnvRunnerInstanceID,
 	} {
 		t.Run(name, func(t *testing.T) {
 			keyPath := filepath.Join(t.TempDir(), "runner.key")
@@ -74,6 +75,7 @@ func TestLoadReturnsValidatedIdentityAndDestroyClearsKey(t *testing.T) {
 	}
 	if config.ControlPlaneURL != "https://control.example.test" ||
 		config.KeyID != "runner-machine-01" || config.JournalPath != journalPath ||
+		config.SandboxJournalPath != filepath.Join(filepath.Dir(journalPath), "sandbox-lifecycle.jsonl") ||
 		config.RunnerInstanceID != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("unexpected runner config: %+v", config)
 	}
@@ -181,5 +183,21 @@ func TestLoadDoesNotExposePrivateKeyContentsInErrors(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), base64.StdEncoding.EncodeToString(make([]byte, ed25519.PrivateKeySize))) {
 		t.Fatalf("configuration error unexpectedly includes key material: %v", err)
+	}
+}
+
+func TestLoadRejectsSharedOrInvalidSandboxJournalPaths(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "runner.key")
+	_ = writeConfigKey(t, keyPath)
+	journalPath := filepath.Join(t.TempDir(), "acceptance.jsonl")
+	for _, sandboxPath := range []string{journalPath, "relative.jsonl", string(filepath.Separator)} {
+		t.Run(sandboxPath, func(t *testing.T) {
+			values := validValues(keyPath, journalPath)
+			values[EnvSandboxJournalPath] = sandboxPath
+			if config, err := Load(lookupValues(values)); err == nil {
+				config.Destroy()
+				t.Fatalf("invalid sandbox journal path %q was accepted", sandboxPath)
+			}
+		})
 	}
 }
