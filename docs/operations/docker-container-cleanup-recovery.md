@@ -69,7 +69,7 @@ The implementation must be reviewed as a separate safety change and should inclu
 - Retain the dry-run CLI JSON report as incident evidence. It queries both exact runner-instance and lifecycle-ID labels, inspects each full ID, and correlates candidates with pending records; findings are never deletion authorization.
 - An operator-invoked, dry-run-first reconciler that lists exact owned candidates, requires proof that the previous process is stopped, and refuses ambiguous ownership. No automatic startup janitor.
 - Provision and enforce one canonical `RUNNER_HOST_LOCK_PATH` across all runner installations on the host. The Linux kernel lock is shared by foreground and recovery, while the separate journal lock protects the exact journal file. Reconciliation must fail closed if either lock cannot be acquired.
-- A manual, dry-run-first reconciliation command that reports candidates and evidence. The current implementation is only a library function and does not remove containers. Deletion must require explicit operator action and exact full container IDs until automated ownership proof has been independently reviewed.
+- The dry-run CLI and library report candidates and evidence but do not remove containers. A future reconciliation/deletion command must require explicit operator action and exact full container IDs until automated ownership proof has been independently reviewed.
 - Tests for daemon unavailable before create, daemon lost after create, process crash at each lifecycle boundary, duplicate runner startup, stale lock, cleanup failure, malformed journal records, and unrelated containers remaining untouched.
 - Real Linux/runsc failure-injection evidence and independent security review before any automatic cleanup path is enabled.
 
