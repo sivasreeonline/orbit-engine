@@ -14,6 +14,7 @@ import (
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/acceptancejournal"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/httpapi"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/hostlock"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runner"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerclient"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerconfig"
@@ -95,6 +96,16 @@ func runForeground(ctx context.Context, server *http.Server) (returnErr error) {
 		return fmt.Errorf("load foreground runner identity: %w", err)
 	}
 	defer config.Destroy()
+
+	hostOwnershipLock, err := hostlock.Acquire(config.HostLockPath, config.RunnerInstanceID)
+	if err != nil {
+		return fmt.Errorf("acquire exclusive host ownership lock: %w", err)
+	}
+	defer func() {
+		if err := hostOwnershipLock.Close(); err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("release host ownership lock: %w", err))
+		}
+	}()
 
 	client, err := runnerclient.New(runnerclient.Config{
 		ControlPlaneURL: config.ControlPlaneURL,
