@@ -86,10 +86,6 @@ func run(
 	if err != nil {
 		return fmt.Errorf("acquire exclusive sandbox journal ownership: %w", err)
 	}
-	defer func() {
-		// Close errors are returned explicitly below through the named result.
-	}()
-
 	findings, discoveryErr := runner.DiscoverPendingDockerLifecycles(
 		ctx, journal, discoverer, runnerID,
 	)
