@@ -66,6 +66,26 @@ func DiscoverPendingDockerLifecycles(
 		if err != nil {
 			return nil, fmt.Errorf("discover lifecycle %s: %w", lifecycle.LifecycleID, err)
 		}
+
+		// Enforce ownership again at this boundary instead of trusting every
+		// implementation of DockerLifecycleDiscoverer to honor its contract.
+		// Any malformed, duplicate, incomplete or cross-owned result aborts the
+		// entire report so an operator never receives a partial "clean" view.
+		seen := make(map[string]struct{}, len(containers))
+		for _, container := range containers {
+			if len(container.ID) != 64 ||
+				!containerIDPattern.MatchString(container.ID) ||
+				container.RunnerInstanceID != runnerID ||
+				container.LifecycleID != lifecycle.LifecycleID ||
+				strings.TrimSpace(container.State) == "" {
+				return nil, errors.New("Docker discovery returned invalid or foreign container metadata")
+			}
+			if _, exists := seen[container.ID]; exists {
+				return nil, errors.New("Docker discovery returned duplicate container IDs")
+			}
+			seen[container.ID] = struct{}{}
+		}
+
 		result := LifecycleDiscovery{Lifecycle: lifecycle, Containers: containers}
 		switch {
 		case len(containers) == 0:
