@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 type fakeDiscoverer struct {
 	containers []runner.DiscoveredDockerContainer
+	err error
 	calls int
 }
 
@@ -24,7 +26,7 @@ func (fake *fakeDiscoverer) DiscoverByLifecycleLabels(
 	_, _ string,
 ) ([]runner.DiscoveredDockerContainer, error) {
 	fake.calls++
-	return append([]runner.DiscoveredDockerContainer(nil), fake.containers...), nil
+	return append([]runner.DiscoveredDockerContainer(nil), fake.containers...), fake.err
 }
 
 func recoveryEnvironment(path string) environment {
@@ -197,5 +199,88 @@ func TestRecoveryCommandRefusesActiveHostOwnerBeforeJournalOrDockerInspection(t 
 	}
 	if discoverer.calls != 0 {
 		t.Fatal("Docker discovery ran while another host owner held the lock")
+	}
+}
+
+
+func TestRecoveryCommandReportsCreateIntentCrashWindowWithoutCleanup(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "sandbox-lifecycle.jsonl")
+	journal, err := sandboxjournal.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	lifecycleID, err := journal.Begin(runnerID, "exec_create_crash_window")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	containerID := strings.Repeat("b", 64)
+	discoverer := &fakeDiscoverer{containers: []runner.DiscoveredDockerContainer{{
+		ID: containerID, RunnerInstanceID: runnerID, LifecycleID: lifecycleID, State: "created",
+	}}}
+	var output bytes.Buffer
+	if err := run(context.Background(), recoveryEnvironment(path), discoverer, &output); err != nil {
+		t.Fatal(err)
+	}
+	var report recoveryReport
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.PendingCount != 1 || len(report.Findings) != 1 ||
+		report.Findings[0].Assessment != "CREATE_INTENT_MATCH — crash-window candidate; operator review required" ||
+		report.Findings[0].ContainerID != "" || report.DeletionPerformed {
+		t.Fatalf("create-intent crash window was not conservatively reported: %+v", report)
+	}
+
+	// Reopening proves the recovery command left the original intent untouched.
+	reopened, err := sandboxjournal.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	pending, err := reopened.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].LifecycleID != lifecycleID || pending[0].ContainerID != "" {
+		t.Fatalf("recovery changed create-intent journal state: %+v", pending)
+	}
+}
+
+func TestRecoveryCommandDaemonFailureProducesNoCleanReportAndLeavesJournalUsable(t *testing.T) {
+	path, _, _ := createPendingJournal(t)
+	discoverer := &fakeDiscoverer{err: errors.New("docker daemon unavailable")}
+	var output bytes.Buffer
+	err := run(context.Background(), recoveryEnvironment(path), discoverer, &output)
+	if err == nil {
+		t.Fatal("daemon failure was reported as successful recovery inspection")
+	}
+	if output.Len() != 0 {
+		t.Fatalf("daemon failure emitted a potentially misleading report: %s", output.String())
+	}
+	if discoverer.calls != 1 {
+		t.Fatalf("discovery calls = %d, want 1", discoverer.calls)
+	}
+
+	// Both ownership locks must have been released despite the failed inspection.
+	journal, err := sandboxjournal.Open(path)
+	if err != nil {
+		t.Fatalf("journal remained locked after daemon failure: %v", err)
+	}
+	defer journal.Close()
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("daemon failure changed pending journal state: %+v", pending)
 	}
 }
