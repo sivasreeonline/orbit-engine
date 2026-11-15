@@ -82,7 +82,7 @@ func run(
 		return errors.New("sandbox journal must be an existing regular non-symlink file")
 	}
 
-	journal, err := sandboxjournal.Open(journalPath)
+	journal, err := sandboxjournal.OpenReadOnly(journalPath)
 	if err != nil {
 		return fmt.Errorf("acquire exclusive sandbox journal ownership: %w", err)
 	}
