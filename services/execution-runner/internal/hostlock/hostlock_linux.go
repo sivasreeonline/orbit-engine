@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -110,13 +111,24 @@ func writeMetadata(file *os.File, metadata lockMetadata) error {
 }
 
 func releasePlatformLock(file *os.File, ownerID string) error {
-	metadata := lockMetadata{
-		PID: os.Getpid(), RunnerInstanceID: ownerID, ReleasedAt: ptrTime(time.Now().UTC()),
+	var metadata lockMetadata
+	_, seekErr := file.Seek(0, 0)
+	payload, readErr := io.ReadAll(file)
+	if seekErr == nil && readErr == nil {
+		readErr = json.Unmarshal(payload, &metadata)
 	}
-	writeErr := writeMetadata(file, metadata)
+	if readErr == nil && metadata.RunnerInstanceID != ownerID {
+		readErr = errors.New("host lock owner metadata changed while held")
+	}
+	var writeErr error
+	if seekErr == nil && readErr == nil {
+		metadata.PID = os.Getpid()
+		metadata.ReleasedAt = ptrTime(time.Now().UTC())
+		writeErr = writeMetadata(file, metadata)
+	}
 	unlockErr := syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
 	closeErr := file.Close()
-	return errors.Join(writeErr, unlockErr, closeErr)
+	return errors.Join(seekErr, readErr, writeErr, unlockErr, closeErr)
 }
 
 func ptrTime(value time.Time) *time.Time { return &value }
