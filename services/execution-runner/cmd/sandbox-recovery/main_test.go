@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/hostlock"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runner"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 )
@@ -30,6 +31,7 @@ func recoveryEnvironment(path string) environment {
 	values := map[string]string{
 		"RUNNER_INSTANCE_ID": strings.Repeat("a", 32),
 		"RUNNER_SANDBOX_JOURNAL_PATH": path,
+		"RUNNER_HOST_LOCK_PATH": path + ".host.lock",
 	}
 	return func(name string) (string, bool) {
 		value, ok := values[name]
@@ -175,5 +177,25 @@ func TestRecoveryCommandDoesNotRepairIncompleteJournalTail(t *testing.T) {
 	}
 	if !bytes.Equal(before, after) {
 		t.Fatal("read-only recovery modified the incomplete journal")
+	}
+}
+
+func TestRecoveryCommandRefusesActiveHostOwnerBeforeJournalOrDockerInspection(t *testing.T) {
+	path, _, _ := createPendingJournal(t)
+	hostPath := path + ".host.lock"
+	owner, err := hostlock.Acquire(hostPath, strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+
+	discoverer := &fakeDiscoverer{}
+	var output bytes.Buffer
+	err = run(context.Background(), recoveryEnvironment(path), discoverer, &output)
+	if err == nil {
+		t.Fatal("recovery command accepted an active host owner")
+	}
+	if discoverer.calls != 0 {
+		t.Fatal("Docker discovery ran while another host owner held the lock")
 	}
 }
