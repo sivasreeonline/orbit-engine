@@ -2,12 +2,15 @@
 
 package hostlock
 
-import "errors"
+import (
+	"errors"
+	"os"
+)
 
 func acquirePlatformLock(string, string) (*Lock, error) {
 	return nil, ErrUnsupported
 }
 
-func releasePlatformLock(_ interface{ Close() error }, _ string) error {
+func releasePlatformLock(_ *os.File, _ string) error {
 	return ErrUnsupported
 }
