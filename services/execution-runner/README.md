@@ -81,9 +81,10 @@ The `internal/runnerconfig` package validates the environment contract for a fut
 - `RUNNER_PRIVATE_KEY_FILE`: an absolute path to a private key file accepted by the strict Linux `runnerauth.LoadPrivateKeyFile` loader.
 - `RUNNER_JOURNAL_PATH`: an absolute, non-root path for the append-only acceptance journal.
 - `RUNNER_SANDBOX_JOURNAL_PATH`: a separate absolute, non-root path for the append-only Docker lifecycle journal; it must not alias the acceptance journal.
+- `RUNNER_HOST_LOCK_PATH`: an absolute path to the persistent Linux host-ownership lock file. Every runner process and recovery command on the same host must use the exact same path.
 - `RUNNER_INSTANCE_ID`: a stable, installation-specific 32-character lowercase-hex identifier. It is distinct from the signing key ID and is used to scope sandbox lifecycle labels and recovery ownership.
 
-All six settings are mandatory. The loader rejects credentialed URLs, URL paths, query strings, fragments, invalid key IDs and relative file paths. It never returns key contents in errors. Call `Config.Destroy()` when the configuration is no longer needed; it overwrites the in-memory private-key bytes and clears the reference.
+All seven settings are mandatory. The loader rejects credentialed URLs, URL paths, query strings, fragments, invalid key IDs and relative file paths. It never returns key contents in errors. Call `Config.Destroy()` when the configuration is no longer needed; it overwrites the in-memory private-key bytes and clears the reference.
 
 This package is a validated configuration boundary. The foreground process loads and validates the stable runner instance ID alongside its signing identity. Provision the ID once using a cryptographically secure random generator, store it in a root/runner-owned environment file with mode `0600`, and preserve it across restarts. Do not generate a new ID on every process start. Example on the dedicated Linux host:
 
@@ -96,7 +97,9 @@ chmod 0600 /etc/skyhigh/runner-instance.env
 
 Load that file through the service manager's environment-file mechanism. Back it up as installation metadata (not as a signing secret); replacing the runner installation requires an explicit identity-rotation and orphan-reconciliation procedure. The foreground process now opens and holds the sandbox lifecycle journal and constructs the journaled Docker adapter with this stable ID. The adapter is deliberately not passed to the worker; the worker still receives `UnconfiguredArtifactExecutor` and the qualification gate remains closed. No Docker preflight, container creation, student execution or automatic cleanup is enabled.
 
-Provision `RUNNER_SANDBOX_JOURNAL_PATH` as a distinct private journal file, for example `/var/lib/skyhigh/sandbox-lifecycle.jsonl`. Its parent directory must be owner-only. The foreground process holds its exclusive lock for the process lifetime, so a second process cannot concurrently own the same lifecycle journal. Do not remove a stale lock until the runner is verified stopped.
+Provision `RUNNER_SANDBOX_JOURNAL_PATH` as a distinct private journal file, for example `/var/lib/skyhigh/sandbox-lifecycle.jsonl`. Its parent directory must be owner-only. The foreground process holds its exclusive lock for the process lifetime, so a second process cannot concurrently own the same lifecycle journal. Do not remove a stale journal lock until the runner is verified stopped.
+
+Set `RUNNER_HOST_LOCK_PATH` to one stable path shared by every Sky High runner process and recovery command on the host, for example `/run/lock/skyhigh-runner-host.lock`. The Linux implementation uses non-blocking kernel `flock`, records PID/runner identity/acquisition and release metadata, and keeps the file descriptor open for the protected lifetime. The lock file is intentionally persistent and must never be deleted or replaced; deleting a held lock file can split ownership across different inodes. A crashed process releases the kernel lock automatically, while its last-acquired metadata remains available for diagnosis. The foreground process and dry-run recovery command both acquire this same host lock before opening the sandbox journal. Different configured paths do not coordinate, so host provisioning must enforce one canonical path.
 
 ## Current runner control-plane client
 
@@ -165,7 +168,7 @@ The command has no deletion operation. It does not stop, kill, remove, prune, or
 
 If the runner crashed and left a stale `.lock` file, first preserve its contents and independently verify at the OS level that no process can still own the journal. Only then may the operator remove that exact sibling lock file; the command never steals or clears stale locks. If the journal has an incomplete final record, preserve a copy and stop for explicit operator review rather than using this inspection command to repair it.
 
-The journal lock proves only that no process currently owns this exact journal path. It is not a host-wide lock and cannot prove that another runner installation or unrelated workload is inactive on a shared Docker daemon. Use a dedicated host and independently verify process/daemon ownership. A host-level lock shared by execution and reconciliation, deletion workflow, and automatic cleanup remain unimplemented and prohibited. This command does not enable student execution.
+The host lock coordinates only processes configured with the same lock path; it cannot protect against unrelated software or an administrator bypassing the lock. Keep the runner host dedicated and ensure every Sky High runner installation uses the same canonical path. Use a dedicated host and independently verify process/daemon ownership. A host-level lock shared by execution and reconciliation, deletion workflow, and automatic cleanup remain unimplemented and prohibited. This command does not enable student execution.
 
 ## M0 next gates
 1. Add reviewed machine-key file loading and verify owner-only key permissions on the supported Linux host.
