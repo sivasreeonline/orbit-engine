@@ -129,7 +129,7 @@ func TestOSCommandDockerCLIDiscoveryUsesExactLabelsAndVerifiesInspect(t *testing
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID, lifecycleID)
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,17 +451,20 @@ func TestDiscoverPendingDockerLifecyclesReturnsNoPartialReportOnLaterDiscoveryFa
 	}
 
 	discoverer := &sequencedLifecycleDiscoverer{
-		errors: []error{nil, errors.New("Docker daemon became unavailable")},
+		err: errors.New("Docker daemon became unavailable"),
 	}
 
 	results, err := DiscoverPendingDockerLifecycles(
 		context.Background(), sandbox.journal, discoverer, runnerID,
 	)
 	if err == nil {
-		t.Fatal("partial discovery unexpectedly returned a clean report")
+		t.Fatal("failed inventory unexpectedly returned a clean report")
 	}
 	if results != nil {
-		t.Fatalf("discovery failure returned partial findings: %+v", results)
+		t.Fatalf("inventory failure returned partial findings: %+v", results)
+	}
+	if discoverer.calls != 1 {
+		t.Fatalf("Docker inventory calls = %d, want exactly one", discoverer.calls)
 	}
 	pending, pendingErr := sandbox.journal.Pending()
 	if pendingErr != nil {
@@ -473,23 +476,14 @@ func TestDiscoverPendingDockerLifecyclesReturnsNoPartialReportOnLaterDiscoveryFa
 }
 
 type sequencedLifecycleDiscoverer struct {
-	errors []error
+	err error
 	calls int
 }
 
-func (discoverer *sequencedLifecycleDiscoverer) DiscoverByRunnerLabel(_ context.Context, runnerID string) ([]DiscoveredDockerContainer, error) {
-	index := discoverer.calls
+func (discoverer *sequencedLifecycleDiscoverer) DiscoverByRunnerLabel(
+	_ context.Context,
+	_ string,
+) ([]DiscoveredDockerContainer, error) {
 	discoverer.calls++
-	if index < len(discoverer.errors) && discoverer.errors[index] != nil {
-		return nil, discoverer.errors[index]
-	}
-	if index == 0 {
-		return []DiscoveredDockerContainer{{
-			ID: strings.Repeat("b", 64),
-			RunnerInstanceID: runnerID,
-			LifecycleID: lifecycleID,
-			State: "exited",
-		}}, nil
-	}
-	return nil, nil
+	return nil, discoverer.err
 }
