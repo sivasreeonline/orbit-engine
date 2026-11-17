@@ -755,8 +755,8 @@ func TestDockerSandboxStartFailureStillConfirmsAndJournalsCleanup(t *testing.T) 
 	if !errors.Is(err, ErrDockerCommandFailed) {
 		t.Fatalf("RunCase error = %v, want Docker command failure", err)
 	}
-	if !fake.created || !fake.removed || observation.CleanupSucceeded {
-		t.Fatalf("start failure cleanup state is inconsistent: created=%v removed=%v observation=%+v",
+	if !fake.created || !fake.removed || !observation.CleanupSucceeded {
+		t.Fatalf("start failure cleanup was not confirmed: created=%v removed=%v observation=%+v",
 			fake.created, fake.removed, observation)
 	}
 	pending, err := journal.Pending()
