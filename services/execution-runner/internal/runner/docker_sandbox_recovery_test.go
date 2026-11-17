@@ -324,6 +324,57 @@ func TestOSCommandDockerCLIDiscoveryFailsClosedOnUntrustedDockerResponses(t *tes
 	}
 }
 
+
+func TestOSCommandDockerCLIDiscoveryInspectsInBoundedBatches(t *testing.T) {
+	if os.PathSeparator == '\\\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "docker-stub")
+	logPath := filepath.Join(directory, "inspect-calls.log")
+	runnerID := strings.Repeat("b", 32)
+	lifecycleID := strings.Repeat("c", 32)
+	ids := make([]string, dockerInspectBatchSize+1)
+	var inventory strings.Builder
+	for i := range ids {
+		ids[i] = strings.Repeat(string(rune('a'+i)), 64)
+		inventory.WriteString(ids[i] + "\\n")
+	}
+	script := "#!/bin/sh\\n" +
+		"if [ \"$1\" = \"ps\" ]; then printf '%s' '" + inventory.String() + "'; exit 0; fi\\n" +
+		"if [ \"$1\" = \"inspect\" ]; then\\n" +
+		"  [ \"$2\" = \"--format\" ] || exit 91\\n" +
+		"  [ \"$3\" = \"{{json .}}\" ] || exit 92\\n" +
+		"  shift 3\\n" +
+		"  [ \"$#\" -ge 1 ] && [ \"$#\" -le " + fmt.Sprint(dockerInspectBatchSize) + " ] || exit 93\\n" +
+		"  printf 'call\\n' >> '" + logPath + "'\\n" +
+		"  for id do printf '{\\"Id\\":\\"%s\\",\\"Config\\":{\\"Labels\\":{\\"com.skyhigh.runner-instance\\":\\"'\''" + runnerID + "'\''\\",\\"com.skyhigh.lifecycle-id\\":\\"'\''" + lifecycleID + "'\''\\"}},\\"State\\":{\\"Status\\":\\"exited\\"}}\\n' \"$id\"; done\\n" +
+		"  exit 0\\nfi\\nexit 94\\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != len(ids) {
+		t.Fatalf("discovered %d containers, want %d", len(found), len(ids))
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(calls), "call"); got != 2 {
+		t.Fatalf("inspect process count = %d, want 2 bounded batches", got)
+	}
+	for i, container := range found {
+		if container.ID != ids[i] || container.RunnerInstanceID != runnerID ||
+			container.LifecycleID != lifecycleID || container.State != "exited" {
+			t.Fatalf("container %d failed exact identity validation: %+v", i, container)
+		}
+	}
+}
+
 func TestOSCommandDockerCLIDiscoveryHonorsCancellation(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
