@@ -30,7 +30,7 @@ var (
 	ErrReadOnly = errors.New("sandbox lifecycle journal is read-only")
 	runnerIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 	executionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
-	containerIDPattern = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+	containerIDPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
 type EventType string
