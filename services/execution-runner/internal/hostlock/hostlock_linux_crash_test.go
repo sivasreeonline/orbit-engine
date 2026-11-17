@@ -110,7 +110,7 @@ func TestHostLockIsReleasedAfterAbruptProcessDeath(t *testing.T) {
 	if err := json.Unmarshal(payload, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.RunnerInstanceID != secondOwner || metadata.PID != os.Getpid() || metadata.AcquiredAt.IsZero() {
+	if metadata.RunnerInstanceID != secondOwner || metadata.PID != os.Getpid() || metadata.AcquiredAt.IsZero() || metadata.ReleasedAt != nil {
 		t.Fatalf("recovered owner metadata = %+v", metadata)
 	}
 }
