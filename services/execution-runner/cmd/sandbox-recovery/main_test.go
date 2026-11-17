@@ -21,10 +21,7 @@ type fakeDiscoverer struct {
 	calls int
 }
 
-func (fake *fakeDiscoverer) DiscoverByLifecycleLabels(
-	_ context.Context,
-	_, _ string,
-) ([]runner.DiscoveredDockerContainer, error) {
+func (fake *fakeDiscoverer) DiscoverByRunnerLabel(_ context.Context, _ string) ([]runner.DiscoveredDockerContainer, error) {
 	fake.calls++
 	return append([]runner.DiscoveredDockerContainer(nil), fake.containers...), fake.err
 }
