@@ -87,6 +87,20 @@ func TestHostLockIsReleasedAfterAbruptProcessDeath(t *testing.T) {
 		t.Fatal("killed child unexpectedly exited successfully")
 	}
 
+	// Abrupt death must leave the previous acquisition record intact;
+	// it must not fabricate a clean release timestamp.
+	crashPayload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var crashedMetadata lockMetadata
+	if err := json.Unmarshal(crashPayload, &crashedMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if crashedMetadata.RunnerInstanceID != firstOwner || crashedMetadata.ReleasedAt != nil {
+		t.Fatalf("abrupt-exit metadata = %+v; want prior owner without release timestamp", crashedMetadata)
+	}
+
 	// flock is kernel-owned: process death must release it even though
 	// release metadata was never written and Lock.Close never ran.
 	recovered, err := Acquire(path, secondOwner)
