@@ -2,7 +2,7 @@ package runner
 
 import (
 	"context"
-	"errors"
+	"errors"\n\t"os/exec"\n\t"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -310,7 +310,95 @@ func TestOSCommandDockerCLIDiscoveryHonorsCancellation(t *testing.T) {
 }
 
 
-func TestDiscoverPendingDockerLifecyclesCorrelatesCreateIntentCrashWindow(t *testing.T) {
+
+func TestCreateIntentSurvivesAbruptProcessExitAndIsDiscoverableAfterOperatorUnlock(t *testing.T) {
+	if os.Getenv("SKYHIGH_CREATE_CRASH_HELPER") == "1" {
+		journalPath := os.Getenv("SKYHIGH_CREATE_CRASH_JOURNAL")
+		markerPath := os.Getenv("SKYHIGH_CREATE_CRASH_MARKER")
+		runnerID := strings.Repeat("a", 32)
+		journal, err := sandboxjournal.Open(journalPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lifecycleID, err := journal.Begin(runnerID, "exec_process_crash")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Simulate Docker returning a full container ID after CREATE_INTENT
+		// was fsynced, then terminate before journal.Created can be appended.
+		containerID := strings.Repeat("d", 64)
+		if err := os.WriteFile(markerPath, []byte(lifecycleID+"\\n"+containerID), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		os.Exit(0)
+	}
+
+	journalPath := filepath.Join(privateJournalTestPath(t, "process-crash"), "sandbox.jsonl")
+	markerPath := filepath.Join(filepath.Dir(journalPath), "docker-created.marker")
+	command := exec.Command(os.Args[0], "-test.run=^TestCreateIntentSurvivesAbruptProcessExitAndIsDiscoverableAfterOperatorUnlock$")
+	command.Env = append(os.Environ(),
+		"SKYHIGH_CREATE_CRASH_HELPER=1",
+		"SKYHIGH_CREATE_CRASH_JOURNAL="+journalPath,
+		"SKYHIGH_CREATE_CRASH_MARKER="+markerPath,
+	)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("crash helper failed: %v\\n%s", err, output)
+	}
+
+	marker, err := os.ReadFile(markerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(strings.TrimSpace(string(marker)), "\\n")
+	if len(parts) != 2 {
+		t.Fatalf("crash marker = %q, want lifecycle and container IDs", marker)
+	}
+	lifecycleID, containerID := parts[0], parts[1]
+	if len(lifecycleID) != 32 || len(containerID) != 64 {
+		t.Fatalf("crash marker contains invalid IDs: %q", marker)
+	}
+
+	// The journal's exclusive lock is deliberately not stolen by Open.
+	// The operator may remove this exact stale lock only after independently
+	// confirming the former owner process has exited (the child has exited).
+	lockPath := journalPath + ".lock"
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("abrupt process exit did not preserve journal lock for review: %v", err)
+	}
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatalf("operator-reviewed stale lock removal: %v", err)
+	}
+
+	journal, err := sandboxjournal.OpenReadOnly(journalPath)
+	if err != nil {
+		t.Fatalf("read-only reopen after operator lock review: %v", err)
+	}
+	defer journal.Close()
+
+	runnerID := strings.Repeat("a", 32)
+	discoverer := &fakeLifecycleDiscoverer{containers: []DiscoveredDockerContainer{{
+		ID: containerID, RunnerInstanceID: runnerID, LifecycleID: lifecycleID, State: "created",
+	}}}
+	results, err := DiscoverPendingDockerLifecycles(context.Background(), journal, discoverer, runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 ||
+		results[0].Assessment != "CREATE_INTENT_MATCH — crash-window candidate; operator review required" ||
+		len(results[0].Containers) != 1 || results[0].Containers[0].ID != containerID {
+		t.Fatalf("process-crash recovery finding = %+v", results)
+	}
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].LifecycleID != lifecycleID ||
+		pending[0].Created || pending[0].Cleaned || pending[0].ContainerID != "" {
+		t.Fatalf("read-only recovery must preserve intent-only journal: %+v", pending)
+	}
+}
+\nfunc TestDiscoverPendingDockerLifecyclesCorrelatesCreateIntentCrashWindow(t *testing.T) {
 	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
 	if err != nil {
 		t.Fatal(err)
