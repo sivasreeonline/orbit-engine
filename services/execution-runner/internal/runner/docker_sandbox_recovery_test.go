@@ -361,25 +361,14 @@ func TestDiscoverPendingDockerLifecyclesReturnsNoPartialReportOnLaterDiscoveryFa
 		t.Fatal(err)
 	}
 	runnerID := strings.Repeat("a", 32)
-	firstID, err := sandbox.journal.Begin(runnerID, "exec_first_gap")
-	if err != nil {
+	if _, err := sandbox.journal.Begin(runnerID, "exec_first_gap"); err != nil {
 		t.Fatal(err)
 	}
-	secondID, err := sandbox.journal.Begin(runnerID, "exec_second_gap")
-	if err != nil {
+	if _, err := sandbox.journal.Begin(runnerID, "exec_second_gap"); err != nil {
 		t.Fatal(err)
 	}
-	_ = firstID
 
 	discoverer := &sequencedLifecycleDiscoverer{
-		responses: [][]DiscoveredDockerContainer{
-			{{
-				ID: strings.Repeat("b", 64),
-				RunnerInstanceID: runnerID,
-				LifecycleID: secondID,
-				State: "exited",
-			}},
-		},
 		errors: []error{nil, errors.New("Docker daemon became unavailable")},
 	}
 
@@ -402,22 +391,26 @@ func TestDiscoverPendingDockerLifecyclesReturnsNoPartialReportOnLaterDiscoveryFa
 }
 
 type sequencedLifecycleDiscoverer struct {
-	responses [][]DiscoveredDockerContainer
 	errors []error
 	calls int
 }
 
 func (discoverer *sequencedLifecycleDiscoverer) DiscoverByLifecycleLabels(
 	_ context.Context,
-	_, _ string,
+	runnerID, lifecycleID string,
 ) ([]DiscoveredDockerContainer, error) {
 	index := discoverer.calls
 	discoverer.calls++
 	if index < len(discoverer.errors) && discoverer.errors[index] != nil {
 		return nil, discoverer.errors[index]
 	}
-	if index >= len(discoverer.responses) {
-		return nil, nil
+	if index == 0 {
+		return []DiscoveredDockerContainer{{
+			ID: strings.Repeat("b", 64),
+			RunnerInstanceID: runnerID,
+			LifecycleID: lifecycleID,
+			State: "exited",
+		}}, nil
 	}
-	return append([]DiscoveredDockerContainer(nil), discoverer.responses[index]...), nil
+	return nil, nil
 }
