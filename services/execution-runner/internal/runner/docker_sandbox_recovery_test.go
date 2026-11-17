@@ -184,7 +184,6 @@ func TestOSCommandDockerCLIDiscoveryRejectsInspectLabelMismatch(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "docker-stub")
 	id := strings.Repeat("a", 64)
 	runnerID := strings.Repeat("b", 32)
-	lifecycleID := strings.Repeat("c", 32)
 	script := strings.Join([]string{
 		"#!/bin/sh",
 		"if [ \"$1\" = \"ps\" ]; then printf '%s\n' \"" + id + "\"; exit 0; fi",
