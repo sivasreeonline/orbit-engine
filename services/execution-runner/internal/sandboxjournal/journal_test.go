@@ -10,7 +10,7 @@ import (
 
 const testRunnerID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const testExecutionID = "exec_test_01"
-const testContainerID = "0123456789abcdef"
+const testContainerID = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func privateTempDir(t *testing.T) string {
 	t.Helper()
