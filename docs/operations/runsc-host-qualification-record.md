@@ -67,7 +67,7 @@ Record exact output for:
 Record the exact commands, environment variable names (never secret values), working directory, exit code, start/end timestamps, and raw output. The opt-in suite must be run with the approved image digests:
 
 ```bash
-go test -tags=sandboxqualification -run '^TestRunscHostileWorkload' ./internal/runner -count=1 -v
+go test -tags=sandboxqualification -run '^TestRunsc(HostileWorkload|MemoryPressure)' ./internal/runner -count=1 -v
 ```
 
 | Test | Expected result | Actual result | Exit code | Evidence file / SHA-256 |
