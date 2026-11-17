@@ -2,11 +2,14 @@ package runner
 
 import (
 	"context"
-	"errors"\n\t"os/exec"\n\t"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 )
 
 type fakeLifecycleDiscoverer struct {
@@ -333,7 +336,7 @@ func TestCreateIntentSurvivesAbruptProcessExitAndIsDiscoverableAfterOperatorUnlo
 		os.Exit(0)
 	}
 
-	journalPath := filepath.Join(privateJournalTestPath(t, "process-crash"), "sandbox.jsonl")
+	journalPath := privateJournalTestPath(t, "process-crash.jsonl")
 	markerPath := filepath.Join(filepath.Dir(journalPath), "docker-created.marker")
 	command := exec.Command(os.Args[0], "-test.run=^TestCreateIntentSurvivesAbruptProcessExitAndIsDiscoverableAfterOperatorUnlock$")
 	command.Env = append(os.Environ(),
