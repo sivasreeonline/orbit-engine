@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"sort"
 	"strings"
@@ -15,6 +16,7 @@ import (
 const (
 	runnerInstanceLabel = "com.skyhigh.runner-instance"
 	lifecycleIDLabel    = "com.skyhigh.lifecycle-id"
+	dockerInspectBatchSize = 32
 )
 
 // DiscoveredDockerContainer contains only identity and state metadata. It never
@@ -143,7 +145,7 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 	}
 	lines := strings.Split(trimmed, "\n")
 	seen := make(map[string]struct{}, len(lines))
-	containers := make([]DiscoveredDockerContainer, 0, len(lines))
+	ids := make([]string, 0, len(lines))
 	for _, id := range lines {
 		id = strings.TrimSpace(id)
 		if len(id) != 64 || !containerIDPattern.MatchString(id) {
@@ -153,33 +155,69 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 			return nil, ErrDockerCommandFailed
 		}
 		seen[id] = struct{}{}
-		inspect := exec.CommandContext(ctx, cli.binary(), "inspect", "--format", "{{json .}}", id)
+		ids = append(ids, id)
+	}
+
+	containers := make([]DiscoveredDockerContainer, 0, len(ids))
+	for offset := 0; offset < len(ids); offset += dockerInspectBatchSize {
+		end := offset + dockerInspectBatchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batch := ids[offset:end]
+		args := []string{"inspect", "--format", "{{json .}}"}
+		args = append(args, batch...)
+		inspect := exec.CommandContext(ctx, cli.binary(), args...)
 		inspected, err := inspect.Output()
 		if err != nil {
 			return nil, ErrDockerCommandFailed
 		}
-		var item struct {
-			ID string `json:"Id"`
-			Config struct {
-				Labels map[string]string `json:"Labels"`
-			} `json:"Config"`
-			State struct {
-				Status string `json:"Status"`
-			} `json:"State"`
+
+		// Docker emits one JSON object per requested container. Decode the
+		// complete stream and require an exact one-to-one ID match; never
+		// accept omitted, duplicated, or unexpected inspect records.
+		expected := make(map[string]struct{}, len(batch))
+		for _, id := range batch {
+			expected[id] = struct{}{}
 		}
-		if err := json.Unmarshal(inspected, &item); err != nil {
+		decoder := json.NewDecoder(strings.NewReader(string(inspected)))
+		batchContainers := make([]DiscoveredDockerContainer, 0, len(batch))
+		for decoder.More() {
+			var item struct {
+				ID string `json:"Id"`
+				Config struct {
+					Labels map[string]string `json:"Labels"`
+				} `json:"Config"`
+				State struct {
+					Status string `json:"Status"`
+				} `json:"State"`
+			}
+			if err := decoder.Decode(&item); err != nil {
+				return nil, ErrDockerCommandFailed
+			}
+			if _, ok := expected[item.ID]; !ok {
+				return nil, ErrDockerCommandFailed
+			}
+			delete(expected, item.ID)
+			lifecycleID := item.Config.Labels[lifecycleIDLabel]
+			if item.ID == "" ||
+				item.Config.Labels[runnerInstanceLabel] != runnerID ||
+				!runnerInstanceIDPattern.MatchString(lifecycleID) ||
+				strings.TrimSpace(item.State.Status) == "" {
+				return nil, ErrDockerCommandFailed
+			}
+			batchContainers = append(batchContainers, DiscoveredDockerContainer{
+				ID: item.ID, RunnerInstanceID: runnerID, LifecycleID: lifecycleID, State: item.State.Status,
+			})
+		}
+		if len(expected) != 0 {
 			return nil, ErrDockerCommandFailed
 		}
-		lifecycleID := item.Config.Labels[lifecycleIDLabel]
-		if item.ID != id ||
-			item.Config.Labels[runnerInstanceLabel] != runnerID ||
-			!runnerInstanceIDPattern.MatchString(lifecycleID) ||
-			strings.TrimSpace(item.State.Status) == "" {
+		var trailing any
+		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 			return nil, ErrDockerCommandFailed
 		}
-		containers = append(containers, DiscoveredDockerContainer{
-			ID: id, RunnerInstanceID: runnerID, LifecycleID: lifecycleID, State: item.State.Status,
-		})
+		containers = append(containers, batchContainers...)
 	}
 	return containers, nil
 }
