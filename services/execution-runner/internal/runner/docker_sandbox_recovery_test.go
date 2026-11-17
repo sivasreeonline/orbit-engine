@@ -346,7 +346,7 @@ func TestOSCommandDockerCLIDiscoveryInspectsInBoundedBatches(t *testing.T) {
 		`  [ "$2" = "--format" ] || exit 91`,
 		`  [ "$3" = "{{json .}}" ] || exit 92`,
 		`  shift 3`,
-		`  [ "$#" -ge 1 ] && [ "$#" -le ` + fmt.Sprint(dockerInspectBatchSize) + `] || exit 93`,
+		`  [ "$#" -ge 1 ] && [ "$#" -le ` + fmt.Sprint(dockerInspectBatchSize) + ` ] || exit 93`,
 		`  printf 'call\n' >> '` + logPath + `'`,
 		`  for id in "$@"; do printf '{"Id":"%s","Config":{"Labels":{"com.skyhigh.runner-instance":"` + runnerID + `","com.skyhigh.lifecycle-id":"` + lifecycleID + `"}},"State":{"Status":"exited"}}\n' "$id"; done`,
 		"  exit 0",
