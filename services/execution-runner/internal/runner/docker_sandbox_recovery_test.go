@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -335,21 +336,23 @@ func TestOSCommandDockerCLIDiscoveryInspectsInBoundedBatches(t *testing.T) {
 	runnerID := strings.Repeat("b", 32)
 	lifecycleID := strings.Repeat("c", 32)
 	ids := make([]string, dockerInspectBatchSize+1)
-	var inventory strings.Builder
 	for i := range ids {
-		ids[i] = strings.Repeat(string(rune('a'+i)), 64)
-		inventory.WriteString(ids[i] + "\\n")
+		ids[i] = fmt.Sprintf("%064x", i+1)
 	}
-	script := "#!/bin/sh\\n" +
-		"if [ \"$1\" = \"ps\" ]; then printf '%s' '" + inventory.String() + "'; exit 0; fi\\n" +
-		"if [ \"$1\" = \"inspect\" ]; then\\n" +
-		"  [ \"$2\" = \"--format\" ] || exit 91\\n" +
-		"  [ \"$3\" = \"{{json .}}\" ] || exit 92\\n" +
-		"  shift 3\\n" +
-		"  [ \"$#\" -ge 1 ] && [ \"$#\" -le " + fmt.Sprint(dockerInspectBatchSize) + " ] || exit 93\\n" +
-		"  printf 'call\\n' >> '" + logPath + "'\\n" +
-		"  for id do printf '{\\"Id\\":\\"%s\\",\\"Config\\":{\\"Labels\\":{\\"com.skyhigh.runner-instance\\":\\"'\''" + runnerID + "'\''\\",\\"com.skyhigh.lifecycle-id\\":\\"'\''" + lifecycleID + "'\''\\"}},\\"State\\":{\\"Status\\":\\"exited\\"}}\\n' \"$id\"; done\\n" +
-		"  exit 0\\nfi\\nexit 94\\n"
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		`if [ "$1" = "ps" ]; then printf '%s\\n' '` + strings.Join(ids, "' '") + `'; exit 0; fi`,
+		`if [ "$1" = "inspect" ]; then`,
+		`  [ "$2" = "--format" ] || exit 91`,
+		`  [ "$3" = "{{json .}}" ] || exit 92`,
+		`  shift 3`,
+		`  [ "$#" -ge 1 ] && [ "$#" -le ` + fmt.Sprint(dockerInspectBatchSize) + `] || exit 93`,
+		`  printf 'call\\n' >> '` + logPath + `'`,
+		`  for id do printf '{"Id":"%s","Config":{"Labels":{"com.skyhigh.runner-instance":"` + runnerID + `","com.skyhigh.lifecycle-id":"` + lifecycleID + `"}},"State":{"Status":"exited"}}\\n' "$id"; done`,
+		"  exit 0",
+		"fi",
+		"exit 94",
+	}, "\\n")
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
