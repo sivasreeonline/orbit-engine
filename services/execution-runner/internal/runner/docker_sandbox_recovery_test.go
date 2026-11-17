@@ -62,6 +62,45 @@ func TestDiscoverPendingDockerLifecyclesIsDryRunAndCorrelatesExactIdentity(t *te
 	}
 }
 
+func TestDiscoverPendingDockerLifecyclesUsesOneInventoryForMultiplePendingRecords(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	firstLifecycle, err := sandbox.journal.Begin(runnerID, "exec_first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sandbox.journal.Created(firstLifecycle, strings.Repeat("b", 64)); err != nil {
+		t.Fatal(err)
+	}
+	secondLifecycle, err := sandbox.journal.Begin(runnerID, "exec_second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	containers := []DiscoveredDockerContainer{
+		{ID: strings.Repeat("b", 64), RunnerInstanceID: runnerID, LifecycleID: firstLifecycle, State: "exited"},
+		{ID: strings.Repeat("c", 64), RunnerInstanceID: runnerID, LifecycleID: secondLifecycle, State: "created"},
+	}
+	discoverer := &fakeLifecycleDiscoverer{containers: containers}
+	results, err := DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if discoverer.calls != 1 {
+		t.Fatalf("Docker inventory calls = %d, want one for both lifecycles", discoverer.calls)
+	}
+	if len(results) != 2 {
+		t.Fatalf("recovery findings = %+v, want two", results)
+	}
+	for _, result := range results {
+		if len(result.Containers) != 1 || result.Containers[0].LifecycleID != result.Lifecycle.LifecycleID {
+			t.Fatalf("container was not correlated to its exact lifecycle: %+v", result)
+		}
+	}
+}
+
 func TestDiscoverPendingDockerLifecyclesFailsClosedOnRunnerMismatch(t *testing.T) {
 	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
 	if err != nil {
@@ -155,7 +194,7 @@ func TestOSCommandDockerCLIDiscoveryRejectsInspectLabelMismatch(t *testing.T) {
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	_, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID, lifecycleID)
+	_, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
 	if !errors.Is(err, ErrDockerCommandFailed) {
 		t.Fatalf("mismatched inspect labels error = %v, want ErrDockerCommandFailed", err)
 	}
