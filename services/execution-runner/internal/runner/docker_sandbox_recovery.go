@@ -182,7 +182,7 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 		}
 		decoder := json.NewDecoder(strings.NewReader(string(inspected)))
 		batchContainers := make([]DiscoveredDockerContainer, 0, len(batch))
-		for decoder.More() {
+		for {
 			var item struct {
 				ID string `json:"Id"`
 				Config struct {
@@ -192,7 +192,9 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 					Status string `json:"Status"`
 				} `json:"State"`
 			}
-			if err := decoder.Decode(&item); err != nil {
+			if err := decoder.Decode(&item); errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
 				return nil, ErrDockerCommandFailed
 			}
 			if _, ok := expected[item.ID]; !ok {
@@ -211,10 +213,6 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 			})
 		}
 		if len(expected) != 0 {
-			return nil, ErrDockerCommandFailed
-		}
-		var trailing any
-		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 			return nil, ErrDockerCommandFailed
 		}
 		containers = append(containers, batchContainers...)
