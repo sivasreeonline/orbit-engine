@@ -327,7 +327,7 @@ func TestOSCommandDockerCLIDiscoveryFailsClosedOnUntrustedDockerResponses(t *tes
 
 
 func TestOSCommandDockerCLIDiscoveryInspectsInBoundedBatches(t *testing.T) {
-	if os.PathSeparator == '\\\\' {
+	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
 	}
 	directory := t.TempDir()
