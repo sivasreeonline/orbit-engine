@@ -152,7 +152,7 @@ The execution adapter currently uses exact-byte output comparison. The artifact 
 
 ## Operator sandbox recovery inspection (dry-run only)
 
-The separate `cmd/sandbox-recovery` command performs read-only correlation between the existing sandbox lifecycle journal and Docker containers carrying both exact runner-instance and lifecycle labels. It emits a versioned JSON report with pending lifecycle IDs, exact container IDs, state and an operator-review assessment.
+The separate `cmd/sandbox-recovery` command performs read-only correlation between the existing sandbox lifecycle journal and Docker containers. It queries Docker once for all containers carrying the exact runner-instance label, independently inspects every full container ID, verifies both runner-instance and lifecycle labels, then correlates the inventory with pending journal records in memory. It emits a versioned JSON report with pending lifecycle IDs, exact container IDs, state and an operator-review assessment. When there are no pending journal records, it skips Docker discovery entirely.
 
 Run it only after stopping the foreground runner on the dedicated host. It first acquires the same persistent host lock as the foreground runner, then opens the exact same existing sandbox journal in strict read-only mode and acquires its exclusive journal lock before querying Docker. If any Sky High process owns the shared host lock, inspection fails before journal or Docker discovery. It refuses a missing journal or a symlink and never creates an empty journal that could be mistaken for a clean recovery state. An incomplete final journal record is reported as an error and is never truncated or repaired by this command.
 
