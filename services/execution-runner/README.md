@@ -202,7 +202,7 @@ export SKYHIGH_JAVA_IMAGE_REF='registry.example/sky-high/java@sha256:<64-hex-dig
 export SKYHIGH_PYTHON_IMAGE_REF='registry.example/sky-high/python@sha256:<64-hex-digest>'
 export SKYHIGH_JAVA_VERSION='25'
 export SKYHIGH_PYTHON_VERSION='3.14'
-go test -tags=sandboxqualification -run '^TestRunscHostileWorkload' ./internal/runner -count=1 -v
+go test -tags=sandboxqualification -run '^TestRunsc(HostileWorkload|MemoryPressure)' ./internal/runner -count=1 -v
 ```
 
 Run this only on a disposable, dedicated Linux qualification host. It invokes the local Docker daemon with the exact `runsc` runtime. The test is not run by ordinary CI and does not itself authorize student execution. A successful run is one evidence input; memory-pressure behavior, host escape review, kernel/runtime patch level, cleanup after daemon failure, and independent security review remain release gates.
