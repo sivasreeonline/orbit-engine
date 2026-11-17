@@ -122,7 +122,7 @@ func TestOSCommandDockerCLIDiscoveryUsesExactLabelsAndVerifiesInspect(t *testing
 		"  [ \"$5\" = \"label=com.skyhigh.runner-instance=" + runnerID + "\" ] || exit 84",
 		"  [ \"$6\" = \"--filter\" ] || exit 85",
 		"  [ \"$7\" = \"label=com.skyhigh.lifecycle-id=" + lifecycleID + "\" ] || exit 86",
-		"  printf '%s\\n' \"" + id + "\"",
+		"  printf '%s\n' \"" + id + "\"",
 		"  exit 0",
 		"fi",
 		"if [ \"$1\" = \"inspect\" ]; then",
@@ -154,7 +154,7 @@ func TestOSCommandDockerCLIDiscoveryRejectsInspectLabelMismatch(t *testing.T) {
 	lifecycleID := strings.Repeat("c", 32)
 	script := strings.Join([]string{
 		"#!/bin/sh",
-		"if [ \"$1\" = \"ps\" ]; then printf '%s\\n' \"" + id + "\"; exit 0; fi",
+		"if [ \"$1\" = \"ps\" ]; then printf '%s\n' \"" + id + "\"; exit 0; fi",
 		"if [ \"$1\" = \"inspect\" ]; then printf '%s' '{\"Id\":\"" + id + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"wrong\"}},\"State\":{\"Status\":\"exited\"}}'; exit 0; fi",
 		"exit 89",
 	}, "\n")
@@ -241,31 +241,31 @@ func TestOSCommandDockerCLIDiscoveryFailsClosedOnUntrustedDockerResponses(t *tes
 		},
 		{
 			name: "malformed short container id",
-			script: "#!/bin/sh\nprintf 'abc123\\n'\n",
+			script: "#!/bin/sh\nprintf 'abc123\n'\n",
 		},
 		{
 			name: "duplicate container ids",
-			script: "#!/bin/sh\nprintf '" + id + "\\n" + id + "\\n'\n",
+			script: "#!/bin/sh\nprintf '" + id + "\n" + id + "\n'\n",
 		},
 		{
 			name: "daemon unavailable during inspect",
-			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\\n'; exit 0; fi\nexit 42\n",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\n'; exit 0; fi\nexit 42\n",
 		},
 		{
 			name: "malformed inspect json",
-			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\\n'; exit 0; fi\nprintf '{not-json'\n",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\n'; exit 0; fi\nprintf '{not-json'\n",
 		},
 		{
 			name: "inspect id differs from queried id",
-			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\\n'; exit 0; fi\nprintf '%s' '{\"Id\":\"" + strings.Repeat("d", 64) + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"" + lifecycleID + "\"}},\"State\":{\"Status\":\"exited\"}}'\n",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\n'; exit 0; fi\nprintf '%s' '{\"Id\":\"" + strings.Repeat("d", 64) + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"" + lifecycleID + "\"}},\"State\":{\"Status\":\"exited\"}}'\n",
 		},
 		{
 			name: "inspect state missing",
-			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\\n'; exit 0; fi\nprintf '%s' '{\"Id\":\"" + id + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"" + lifecycleID + "\"}},\"State\":{}}'\n",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\n'; exit 0; fi\nprintf '%s' '{\"Id\":\"" + id + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"" + lifecycleID + "\"}},\"State\":{}}'\n",
 		},
 		{
 			name: "inspect valid ownership",
-			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\\n'; exit 0; fi\nprintf '%s' '" + validInspect + "'\n",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\n'; exit 0; fi\nprintf '%s' '" + validInspect + "'\n",
 		},
 	}
 
@@ -330,7 +330,7 @@ func TestCreateIntentSurvivesAbruptProcessExitAndIsDiscoverableAfterOperatorUnlo
 		// Simulate Docker returning a full container ID after CREATE_INTENT
 		// was fsynced, then terminate before journal.Created can be appended.
 		containerID := strings.Repeat("d", 64)
-		if err := os.WriteFile(markerPath, []byte(lifecycleID+"\\n"+containerID), 0o600); err != nil {
+		if err := os.WriteFile(markerPath, []byte(lifecycleID+"\n"+containerID), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		os.Exit(0)
@@ -346,14 +346,14 @@ func TestCreateIntentSurvivesAbruptProcessExitAndIsDiscoverableAfterOperatorUnlo
 	)
 	output, err := command.CombinedOutput()
 	if err != nil {
-		t.Fatalf("crash helper failed: %v\\n%s", err, output)
+		t.Fatalf("crash helper failed: %v\n%s", err, output)
 	}
 
 	marker, err := os.ReadFile(markerPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	parts := strings.Split(strings.TrimSpace(string(marker)), "\\n")
+	parts := strings.Split(strings.TrimSpace(string(marker)), "\n")
 	if len(parts) != 2 {
 		t.Fatalf("crash marker = %q, want lifecycle and container IDs", marker)
 	}
