@@ -799,3 +799,39 @@ func TestDockerSandboxInspectFailureDoesNotInventPendingContainerAfterConfirmedR
 		t.Fatalf("confirmed container removal should leave no pending lifecycle: %+v", pending)
 	}
 }
+
+
+func TestDockerSandboxPreservesCreateIntentWhenCreatedRecordRejectsContainerID(t *testing.T) {
+	journal, err := sandboxjournal.Open(privateJournalTestPath(t, "invalid-created-id.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+
+	// The Docker CLI boundary accepts abbreviated IDs for ordinary commands,
+	// but the durable lifecycle journal requires the full 64-character ID.
+	// This forces the post-create journal transition to fail without adding a
+	// production-only fault-injection hook.
+	fake := &fakeDockerCLI{containerID: strings.Repeat("a", 12)}
+	sandbox, err := NewJournaledDockerSandbox(fake, journal, strings.Repeat("2", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if err == nil {
+		t.Fatal("journal accepted a non-full container ID")
+	}
+	if !fake.created || !fake.removed {
+		t.Fatalf("post-create failure did not attempt exact-ID cleanup: created=%v removed=%v",
+			fake.created, fake.removed)
+	}
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != "" {
+		t.Fatalf("failed CREATED transition must preserve unresolved CREATE_INTENT: %+v", pending)
+	}
+}
