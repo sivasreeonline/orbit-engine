@@ -401,7 +401,8 @@ func TestCreateIntentSurvivesAbruptProcessExitAndIsDiscoverableAfterOperatorUnlo
 		t.Fatalf("read-only recovery must preserve intent-only journal: %+v", pending)
 	}
 }
-\nfunc TestDiscoverPendingDockerLifecyclesCorrelatesCreateIntentCrashWindow(t *testing.T) {
+
+func TestDiscoverPendingDockerLifecyclesCorrelatesCreateIntentCrashWindow(t *testing.T) {
 	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
 	if err != nil {
 		t.Fatal(err)
