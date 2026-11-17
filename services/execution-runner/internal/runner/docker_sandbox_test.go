@@ -45,7 +45,7 @@ func (fake *fakeDockerCLI) Create(_ context.Context, args []string) (string, err
 		return "", fake.createErr
 	}
 	if fake.containerID == "" {
-		fake.containerID = "0123456789abcdef"
+		fake.containerID = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	}
 	return fake.containerID, nil
 }
