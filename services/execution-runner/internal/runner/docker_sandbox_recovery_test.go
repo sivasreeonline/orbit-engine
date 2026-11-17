@@ -348,7 +348,7 @@ func TestOSCommandDockerCLIDiscoveryInspectsInBoundedBatches(t *testing.T) {
 		`  shift 3`,
 		`  [ "$#" -ge 1 ] && [ "$#" -le ` + fmt.Sprint(dockerInspectBatchSize) + `] || exit 93`,
 		`  printf 'call\n' >> '` + logPath + `'`,
-		`  for id do printf '{"Id":"%s","Config":{"Labels":{"com.skyhigh.runner-instance":"` + runnerID + `","com.skyhigh.lifecycle-id":"` + lifecycleID + `"}},"State":{"Status":"exited"}}\n' "$id"; done`,
+		`  for id in "$@"; do printf '{"Id":"%s","Config":{"Labels":{"com.skyhigh.runner-instance":"` + runnerID + `","com.skyhigh.lifecycle-id":"` + lifecycleID + `"}},"State":{"Status":"exited"}}\n' "$id"; done`,
 		"  exit 0",
 		"fi",
 		"exit 94",
@@ -358,7 +358,7 @@ func TestOSCommandDockerCLIDiscoveryInspectsInBoundedBatches(t *testing.T) {
 	}
 	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("batched Docker discovery failed: %v\\nfixture:\\n%s", err, script)
 	}
 	if len(found) != len(ids) {
 		t.Fatalf("discovered %d containers, want %d", len(found), len(ids))
