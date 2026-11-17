@@ -58,6 +58,9 @@ func DiscoverPendingDockerLifecycles(
 	if err != nil {
 		return nil, fmt.Errorf("read pending sandbox lifecycles: %w", err)
 	}
+	if len(pending) == 0 {
+		return []LifecycleDiscovery{}, nil
+	}
 	for _, lifecycle := range pending {
 		if lifecycle.RunnerInstanceID != runnerID {
 			return nil, errors.New("pending lifecycle belongs to a different runner instance")
