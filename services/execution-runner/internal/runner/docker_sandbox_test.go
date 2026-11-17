@@ -734,3 +734,68 @@ func TestDockerSandboxRunCaseRejectsMissingCLI(t *testing.T) {
 		t.Fatalf("RunCase error = %v, want ErrSandboxNotConfigured", err)
 	}
 }
+
+
+func TestDockerSandboxStartFailureStillConfirmsAndJournalsCleanup(t *testing.T) {
+	journal, err := sandboxjournal.Open(privateJournalTestPath(t, "start-failure.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+
+	fake := &fakeDockerCLI{
+		startErr: errors.New("docker start stream failed"),
+	}
+	sandbox, err := NewJournaledDockerSandbox(fake, journal, strings.Repeat("f", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	observation, err := sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("RunCase error = %v, want Docker command failure", err)
+	}
+	if !fake.created || !fake.removed || observation.CleanupSucceeded {
+		t.Fatalf("start failure cleanup state is inconsistent: created=%v removed=%v observation=%+v",
+			fake.created, fake.removed, observation)
+	}
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("confirmed removal after start failure must be journaled as clean: %+v", pending)
+	}
+}
+
+func TestDockerSandboxInspectFailureDoesNotInventPendingContainerAfterConfirmedRemoval(t *testing.T) {
+	journal, err := sandboxjournal.Open(privateJournalTestPath(t, "inspect-failure.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+
+	fake := &fakeDockerCLI{
+		stdout:     []byte(compileSuccessMarker + "output"),
+		inspectErr: errors.New("docker inspect unavailable"),
+	}
+	sandbox, err := NewJournaledDockerSandbox(fake, journal, strings.Repeat("1", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("RunCase error = %v, want Docker command failure", err)
+	}
+	if !fake.removed {
+		t.Fatal("container removal was not attempted after inspect failure")
+	}
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("confirmed container removal should leave no pending lifecycle: %+v", pending)
+	}
+}
