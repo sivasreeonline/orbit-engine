@@ -308,3 +308,116 @@ func TestOSCommandDockerCLIDiscoveryHonorsCancellation(t *testing.T) {
 		t.Fatalf("cancelled discovery error = %v, want ErrDockerCommandFailed", err)
 	}
 }
+
+
+func TestDiscoverPendingDockerLifecyclesCorrelatesCreateIntentCrashWindow(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	lifecycleID, err := sandbox.journal.Begin(runnerID, "exec_create_gap")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Model the durable CREATE_INTENT surviving a process crash after Docker
+	// created the container but before the CREATED event reached the journal.
+	// Discovery must correlate exact labels, but it must not repair the journal
+	// or interpret the match as permission to remove the container.
+	containerID := strings.Repeat("d", 64)
+	discoverer := &fakeLifecycleDiscoverer{containers: []DiscoveredDockerContainer{{
+		ID: containerID,
+		RunnerInstanceID: runnerID,
+		LifecycleID: lifecycleID,
+		State: "created",
+	}}}
+
+	results, err := DiscoverPendingDockerLifecycles(
+		context.Background(), sandbox.journal, discoverer, runnerID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 ||
+		results[0].Assessment != "CREATE_INTENT_MATCH — crash-window candidate; operator review required" ||
+		len(results[0].Containers) != 1 ||
+		results[0].Containers[0].ID != containerID {
+		t.Fatalf("create-intent crash-window finding = %+v", results)
+	}
+	pending, err := sandbox.journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != "" {
+		t.Fatalf("discovery must preserve the original intent-only journal state: %+v", pending)
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesReturnsNoPartialReportOnLaterDiscoveryFailure(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	firstID, err := sandbox.journal.Begin(runnerID, "exec_first_gap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondID, err := sandbox.journal.Begin(runnerID, "exec_second_gap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = firstID
+
+	discoverer := &sequencedLifecycleDiscoverer{
+		responses: [][]DiscoveredDockerContainer{
+			{{
+				ID: strings.Repeat("b", 64),
+				RunnerInstanceID: runnerID,
+				LifecycleID: secondID,
+				State: "exited",
+			}},
+		},
+		errors: []error{nil, errors.New("Docker daemon became unavailable")},
+	}
+
+	results, err := DiscoverPendingDockerLifecycles(
+		context.Background(), sandbox.journal, discoverer, runnerID,
+	)
+	if err == nil {
+		t.Fatal("partial discovery unexpectedly returned a clean report")
+	}
+	if results != nil {
+		t.Fatalf("discovery failure returned partial findings: %+v", results)
+	}
+	pending, pendingErr := sandbox.journal.Pending()
+	if pendingErr != nil {
+		t.Fatal(pendingErr)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("failed discovery mutated pending journal records: %+v", pending)
+	}
+}
+
+type sequencedLifecycleDiscoverer struct {
+	responses [][]DiscoveredDockerContainer
+	errors []error
+	calls int
+}
+
+func (discoverer *sequencedLifecycleDiscoverer) DiscoverByLifecycleLabels(
+	_ context.Context,
+	_, _ string,
+) ([]DiscoveredDockerContainer, error) {
+	index := discoverer.calls
+	discoverer.calls++
+	if index < len(discoverer.errors) && discoverer.errors[index] != nil {
+		return nil, discoverer.errors[index]
+	}
+	if index >= len(discoverer.responses) {
+		return nil, nil
+	}
+	return append([]DiscoveredDockerContainer(nil), discoverer.responses[index]...), nil
+}
