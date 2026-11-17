@@ -341,18 +341,18 @@ func TestOSCommandDockerCLIDiscoveryInspectsInBoundedBatches(t *testing.T) {
 	}
 	script := strings.Join([]string{
 		"#!/bin/sh",
-		`if [ "$1" = "ps" ]; then printf '%s\\n' '` + strings.Join(ids, "' '") + `'; exit 0; fi`,
+		`if [ "$1" = "ps" ]; then printf '%s\n' '` + strings.Join(ids, "' '") + `'; exit 0; fi`,
 		`if [ "$1" = "inspect" ]; then`,
 		`  [ "$2" = "--format" ] || exit 91`,
 		`  [ "$3" = "{{json .}}" ] || exit 92`,
 		`  shift 3`,
 		`  [ "$#" -ge 1 ] && [ "$#" -le ` + fmt.Sprint(dockerInspectBatchSize) + `] || exit 93`,
-		`  printf 'call\\n' >> '` + logPath + `'`,
-		`  for id do printf '{"Id":"%s","Config":{"Labels":{"com.skyhigh.runner-instance":"` + runnerID + `","com.skyhigh.lifecycle-id":"` + lifecycleID + `"}},"State":{"Status":"exited"}}\\n' "$id"; done`,
+		`  printf 'call\n' >> '` + logPath + `'`,
+		`  for id do printf '{"Id":"%s","Config":{"Labels":{"com.skyhigh.runner-instance":"` + runnerID + `","com.skyhigh.lifecycle-id":"` + lifecycleID + `"}},"State":{"Status":"exited"}}\n' "$id"; done`,
 		"  exit 0",
 		"fi",
 		"exit 94",
-	}, "\\n")
+	}, "\n")
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
