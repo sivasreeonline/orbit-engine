@@ -5,6 +5,7 @@ package hostlock
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -73,7 +74,7 @@ func TestHostLockIsReleasedAfterAbruptProcessDeath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("child did not create persistent lock file: %v", err)
 	}
-	if _, err := Acquire(path, secondOwner); err != ErrLocked {
+	if _, err := Acquire(path, secondOwner); !errors.Is(err, ErrLocked) {
 		t.Fatalf("concurrent parent acquisition error = %v, want ErrLocked", err)
 	}
 
