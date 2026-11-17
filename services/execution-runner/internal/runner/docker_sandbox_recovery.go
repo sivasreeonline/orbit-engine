@@ -58,13 +58,12 @@ func DiscoverPendingDockerLifecycles(
 	if err != nil {
 		return nil, fmt.Errorf("read pending sandbox lifecycles: %w", err)
 	}
-	if len(pending) == 0 {
-		return []LifecycleDiscovery{}, nil
-	}
+	pendingLifecycleIDs := make(map[string]struct{}, len(pending))
 	for _, lifecycle := range pending {
 		if lifecycle.RunnerInstanceID != runnerID {
 			return nil, errors.New("pending lifecycle belongs to a different runner instance")
 		}
+		pendingLifecycleIDs[lifecycle.LifecycleID] = struct{}{}
 	}
 
 	// Inventory once, then correlate in memory. A failed or incomplete Docker
@@ -87,6 +86,9 @@ func DiscoverPendingDockerLifecycles(
 			return nil, errors.New("Docker discovery returned duplicate container IDs")
 		}
 		seen[container.ID] = struct{}{}
+		if _, exists := pendingLifecycleIDs[container.LifecycleID]; !exists {
+			return nil, errors.New("Docker discovery returned a container without a pending journal lifecycle")
+		}
 		byLifecycle[container.LifecycleID] = append(byLifecycle[container.LifecycleID], container)
 	}
 
