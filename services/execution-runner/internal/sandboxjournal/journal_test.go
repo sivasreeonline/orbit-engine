@@ -209,6 +209,9 @@ func TestJournalRejectsInvalidTransitionsAndIdentifiers(t *testing.T) {
 	if err := journal.Created(lifecycleID, "not-a-container-id"); err == nil {
 		t.Fatal("invalid container ID accepted")
 	}
+	if err := journal.Created(lifecycleID, "0123456789abcdef"); err == nil {
+		t.Fatal("abbreviated container ID accepted by durable journal")
+	}
 	if err := journal.Created(lifecycleID, testContainerID); err != nil {
 		t.Fatal(err)
 	}
