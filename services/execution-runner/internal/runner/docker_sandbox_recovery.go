@@ -26,9 +26,10 @@ type DiscoveredDockerContainer struct {
 	State            string `json:"state"`
 }
 
-// DockerLifecycleDiscoverer must query by both exact Sky High ownership labels.
+// DockerLifecycleDiscoverer returns the complete read-only inventory for one
+// exact runner-instance label. Callers correlate lifecycle labels in memory.
 type DockerLifecycleDiscoverer interface {
-	DiscoverByLifecycleLabels(context.Context, string, string) ([]DiscoveredDockerContainer, error)
+	DiscoverByRunnerLabel(context.Context, string) ([]DiscoveredDockerContainer, error)
 }
 
 // LifecycleDiscovery is a dry-run result. No method in this file removes or
@@ -57,42 +58,46 @@ func DiscoverPendingDockerLifecycles(
 	if err != nil {
 		return nil, fmt.Errorf("read pending sandbox lifecycles: %w", err)
 	}
-	results := make([]LifecycleDiscovery, 0, len(pending))
 	for _, lifecycle := range pending {
 		if lifecycle.RunnerInstanceID != runnerID {
 			return nil, errors.New("pending lifecycle belongs to a different runner instance")
 		}
-		containers, err := discoverer.DiscoverByLifecycleLabels(ctx, runnerID, lifecycle.LifecycleID)
-		if err != nil {
-			return nil, fmt.Errorf("discover lifecycle %s: %w", lifecycle.LifecycleID, err)
-		}
+	}
 
-		// Enforce ownership again at this boundary instead of trusting every
-		// implementation of DockerLifecycleDiscoverer to honor its contract.
-		// Any malformed, duplicate, incomplete or cross-owned result aborts the
-		// entire report so an operator never receives a partial "clean" view.
-		seen := make(map[string]struct{}, len(containers))
-		for _, container := range containers {
-			if len(container.ID) != 64 ||
-				!containerIDPattern.MatchString(container.ID) ||
-				container.RunnerInstanceID != runnerID ||
-				container.LifecycleID != lifecycle.LifecycleID ||
-				strings.TrimSpace(container.State) == "" {
-				return nil, errors.New("Docker discovery returned invalid or foreign container metadata")
-			}
-			if _, exists := seen[container.ID]; exists {
-				return nil, errors.New("Docker discovery returned duplicate container IDs")
-			}
-			seen[container.ID] = struct{}{}
+	// Inventory once, then correlate in memory. A failed or incomplete Docker
+	// inventory must never produce a partial recovery report.
+	containers, err := discoverer.DiscoverByRunnerLabel(ctx, runnerID)
+	if err != nil {
+		return nil, fmt.Errorf("discover runner containers: %w", err)
+	}
+	byLifecycle := make(map[string][]DiscoveredDockerContainer, len(pending))
+	seen := make(map[string]struct{}, len(containers))
+	for _, container := range containers {
+		if len(container.ID) != 64 ||
+			!containerIDPattern.MatchString(container.ID) ||
+			container.RunnerInstanceID != runnerID ||
+			!runnerInstanceIDPattern.MatchString(container.LifecycleID) ||
+			strings.TrimSpace(container.State) == "" {
+			return nil, errors.New("Docker discovery returned invalid or foreign container metadata")
 		}
+		if _, exists := seen[container.ID]; exists {
+			return nil, errors.New("Docker discovery returned duplicate container IDs")
+		}
+		seen[container.ID] = struct{}{}
+		byLifecycle[container.LifecycleID] = append(byLifecycle[container.LifecycleID], container)
+	}
 
-		result := LifecycleDiscovery{Lifecycle: lifecycle, Containers: containers}
+	results := make([]LifecycleDiscovery, 0, len(pending))
+	for _, lifecycle := range pending {
+		matches := byLifecycle[lifecycle.LifecycleID]
+		sort.Slice(matches, func(i, j int) bool { return matches[i].ID < matches[j].ID })
+		result := LifecycleDiscovery{Lifecycle: lifecycle, Containers: matches}
 		switch {
-		case len(containers) == 0:
+		case len(matches) == 0:
 			result.Assessment = "NO_CONTAINER_MATCH — operator review required"
-		case len(containers) > 1:
+		case len(matches) > 1:
 			result.Assessment = "AMBIGUOUS_MULTIPLE_MATCHES — operator review required"
-		case lifecycle.ContainerID != "" && containers[0].ID != lifecycle.ContainerID:
+		case lifecycle.ContainerID != "" && matches[0].ID != lifecycle.ContainerID:
 			result.Assessment = "CONTAINER_ID_MISMATCH — operator review required"
 		case lifecycle.ContainerID == "":
 			result.Assessment = "CREATE_INTENT_MATCH — crash-window candidate; operator review required"
@@ -107,15 +112,13 @@ func DiscoverPendingDockerLifecycles(
 	return results, nil
 }
 
-// DiscoverByLifecycleLabels performs read-only Docker discovery. It first
-// filters on both exact labels, then independently inspects every returned
-// full container ID and verifies both labels before reporting a match.
-func (cli OSCommandDockerCLI) DiscoverByLifecycleLabels(
+// DiscoverByRunnerLabel performs one read-only inventory query for an exact
+// runner-instance label, then independently inspects every full container ID.
+func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 	ctx context.Context,
 	runnerID string,
-	lifecycleID string,
 ) ([]DiscoveredDockerContainer, error) {
-	if !runnerInstanceIDPattern.MatchString(runnerID) || !runnerInstanceIDPattern.MatchString(lifecycleID) {
+	if !runnerInstanceIDPattern.MatchString(runnerID) {
 		return nil, ErrDockerCommandFailed
 	}
 	command := exec.CommandContext(
@@ -123,17 +126,17 @@ func (cli OSCommandDockerCLI) DiscoverByLifecycleLabels(
 		cli.binary(),
 		"ps", "--all", "--no-trunc",
 		"--filter", "label="+runnerInstanceLabel+"="+runnerID,
-		"--filter", "label="+lifecycleIDLabel+"="+lifecycleID,
 		"--format", "{{.ID}}",
 	)
 	output, err := command.Output()
 	if err != nil {
 		return nil, ErrDockerCommandFailed
 	}
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 1 && lines[0] == "" {
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
 		return []DiscoveredDockerContainer{}, nil
 	}
+	lines := strings.Split(trimmed, "\n")
 	seen := make(map[string]struct{}, len(lines))
 	containers := make([]DiscoveredDockerContainer, 0, len(lines))
 	for _, id := range lines {
@@ -162,9 +165,10 @@ func (cli OSCommandDockerCLI) DiscoverByLifecycleLabels(
 		if err := json.Unmarshal(inspected, &item); err != nil {
 			return nil, ErrDockerCommandFailed
 		}
+		lifecycleID := item.Config.Labels[lifecycleIDLabel]
 		if item.ID != id ||
 			item.Config.Labels[runnerInstanceLabel] != runnerID ||
-			item.Config.Labels[lifecycleIDLabel] != lifecycleID ||
+			!runnerInstanceIDPattern.MatchString(lifecycleID) ||
 			strings.TrimSpace(item.State.Status) == "" {
 			return nil, ErrDockerCommandFailed
 		}
