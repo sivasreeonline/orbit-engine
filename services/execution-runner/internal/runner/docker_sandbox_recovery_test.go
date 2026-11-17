@@ -17,18 +17,12 @@ type fakeLifecycleDiscoverer struct {
 	err error
 	calls int
 	runnerID string
-	lifecycleID string
-}
+	}
 
-func (fake *fakeLifecycleDiscoverer) DiscoverByLifecycleLabels(
-	_ context.Context,
-	runnerID string,
-	lifecycleID string,
-) ([]DiscoveredDockerContainer, error) {
+func (fake *fakeLifecycleDiscoverer) DiscoverByRunnerLabel(_ context.Context, runnerID string) ([]DiscoveredDockerContainer, error) {
 	fake.calls++
 	fake.runnerID = runnerID
-	fake.lifecycleID = lifecycleID
-	return append([]DiscoveredDockerContainer(nil), fake.containers...), fake.err
+		return append([]DiscoveredDockerContainer(nil), fake.containers...), fake.err
 }
 
 func TestDiscoverPendingDockerLifecyclesIsDryRunAndCorrelatesExactIdentity(t *testing.T) {
@@ -56,7 +50,7 @@ func TestDiscoverPendingDockerLifecyclesIsDryRunAndCorrelatesExactIdentity(t *te
 	if len(results) != 1 || results[0].Assessment != "PENDING_CONTAINER_MATCH — operator review required" {
 		t.Fatalf("discovery result = %+v", results)
 	}
-	if discoverer.calls != 1 || discoverer.runnerID != runnerID || discoverer.lifecycleID != lifecycleID {
+	if discoverer.calls != 1 || discoverer.runnerID != runnerID {
 		t.Fatalf("discovery did not use exact journal identity: %+v", discoverer)
 	}
 	pending, err := sandbox.journal.Pending()
@@ -120,8 +114,8 @@ func TestOSCommandDockerCLIDiscoveryUsesExactLabelsAndVerifiesInspect(t *testing
 		"  [ \"$3\" = \"--no-trunc\" ] || exit 82",
 		"  [ \"$4\" = \"--filter\" ] || exit 83",
 		"  [ \"$5\" = \"label=com.skyhigh.runner-instance=" + runnerID + "\" ] || exit 84",
-		"  [ \"$6\" = \"--filter\" ] || exit 85",
-		"  [ \"$7\" = \"label=com.skyhigh.lifecycle-id=" + lifecycleID + "\" ] || exit 86",
+		"  [ \"$6\" = \"--format\" ] || exit 85",
+		"  [ \"$7\" = \"{{.ID}}\" ] || exit 86",
 		"  printf '%s\n' \"" + id + "\"",
 		"  exit 0",
 		"fi",
@@ -135,7 +129,7 @@ func TestOSCommandDockerCLIDiscoveryUsesExactLabelsAndVerifiesInspect(t *testing
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByLifecycleLabels(context.Background(), runnerID, lifecycleID)
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID, lifecycleID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +155,7 @@ func TestOSCommandDockerCLIDiscoveryRejectsInspectLabelMismatch(t *testing.T) {
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	_, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByLifecycleLabels(context.Background(), runnerID, lifecycleID)
+	_, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID, lifecycleID)
 	if !errors.Is(err, ErrDockerCommandFailed) {
 		t.Fatalf("mismatched inspect labels error = %v, want ErrDockerCommandFailed", err)
 	}
@@ -275,9 +269,7 @@ func TestOSCommandDockerCLIDiscoveryFailsClosedOnUntrustedDockerResponses(t *tes
 			if err := os.WriteFile(binary, []byte(test.script), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByLifecycleLabels(
-				context.Background(), runnerID, lifecycleID,
-			)
+			found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
 			if test.name == "inspect valid ownership" {
 				if err != nil || len(found) != 1 || found[0].ID != id {
 					t.Fatalf("valid discovery = %+v, %v", found, err)
@@ -304,9 +296,7 @@ func TestOSCommandDockerCLIDiscoveryHonorsCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByLifecycleLabels(
-		ctx, strings.Repeat("a", 32), strings.Repeat("b", 32),
-	)
+	_, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(ctx, strings.Repeat("a", 32))
 	if !errors.Is(err, ErrDockerCommandFailed) {
 		t.Fatalf("cancelled discovery error = %v, want ErrDockerCommandFailed", err)
 	}
@@ -487,10 +477,7 @@ type sequencedLifecycleDiscoverer struct {
 	calls int
 }
 
-func (discoverer *sequencedLifecycleDiscoverer) DiscoverByLifecycleLabels(
-	_ context.Context,
-	runnerID, lifecycleID string,
-) ([]DiscoveredDockerContainer, error) {
+func (discoverer *sequencedLifecycleDiscoverer) DiscoverByRunnerLabel(_ context.Context, runnerID string) ([]DiscoveredDockerContainer, error) {
 	index := discoverer.calls
 	discoverer.calls++
 	if index < len(discoverer.errors) && discoverer.errors[index] != nil {
