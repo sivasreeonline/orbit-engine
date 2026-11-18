@@ -66,6 +66,13 @@ func run(
 	if lookup == nil || discoverer == nil || output == nil {
 		return errors.New("recovery inspection dependencies are required")
 	}
+	// Start the deadline before lock acquisition and filesystem inspection so
+	// setup time is part of the same bounded recovery operation.
+	inspectionContext, cancelInspection := context.WithTimeout(ctx, 30*time.Second)
+	defer cancelInspection()
+	if err := inspectionContext.Err(); err != nil {
+		return fmt.Errorf("recovery inspection deadline: %w", err)
+	}
 	runnerID, ok := lookup("RUNNER_INSTANCE_ID")
 	if !ok || !runnerIDPattern.MatchString(runnerID) {
 		return errors.New("RUNNER_INSTANCE_ID must be 32 lowercase hexadecimal characters")
@@ -84,6 +91,9 @@ func run(
 			returnErr = errors.Join(returnErr, fmt.Errorf("release host ownership lock: %w", err))
 		}
 	}()
+	if err := inspectionContext.Err(); err != nil {
+		return fmt.Errorf("recovery inspection deadline: %w", err)
+	}
 
 	journalPath, ok := lookup("RUNNER_SANDBOX_JOURNAL_PATH")
 	if !ok || journalPath == "" || !filepath.IsAbs(journalPath) ||
@@ -105,16 +115,23 @@ func run(
 	if err != nil {
 		return fmt.Errorf("acquire exclusive sandbox journal ownership: %w", err)
 	}
-	inspectionContext, cancelInspection := context.WithTimeout(ctx, 30*time.Second)
-	defer cancelInspection()
+	if err := inspectionContext.Err(); err != nil {
+		return errors.Join(fmt.Errorf("recovery inspection deadline: %w", err), journal.Close())
+	}
 	findings, discoveryErr := runner.DiscoverPendingDockerLifecycles(
 		inspectionContext, journal, discoverer, runnerID,
 	)
 	closeErr := journal.Close()
+	if deadlineErr := inspectionContext.Err(); deadlineErr != nil {
+		return errors.Join(fmt.Errorf("recovery inspection deadline: %w", deadlineErr), discoveryErr, closeErr)
+	}
 	if discoveryErr != nil || closeErr != nil {
 		return errors.Join(discoveryErr, closeErr)
 	}
 
+	if err := inspectionContext.Err(); err != nil {
+		return fmt.Errorf("recovery inspection deadline: %w", err)
+	}
 	report := recoveryReport{
 		SchemaVersion: 1,
 		Mode: "DRY_RUN",
@@ -138,11 +155,20 @@ func run(
 		return fmt.Errorf("encode recovery inspection report: %w", err)
 	}
 	payload = append(payload, '\n')
+	if err := inspectionContext.Err(); err != nil {
+		return fmt.Errorf("recovery inspection deadline: %w", err)
+	}
 	if len(payload) > maxRecoveryReportBytes {
 		return errors.New("recovery inspection report exceeds output safety limit")
 	}
+	if err := inspectionContext.Err(); err != nil {
+		return fmt.Errorf("recovery inspection deadline: %w", err)
+	}
 	if _, err := io.Copy(output, bytes.NewReader(payload)); err != nil {
 		return fmt.Errorf("write recovery inspection report: %w", err)
+	}
+	if err := inspectionContext.Err(); err != nil {
+		return fmt.Errorf("recovery inspection deadline after report write: %w", err)
 	}
 	return nil
 }
