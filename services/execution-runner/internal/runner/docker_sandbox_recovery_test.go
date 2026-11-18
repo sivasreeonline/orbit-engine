@@ -179,11 +179,11 @@ func TestDiscoverPendingDockerLifecyclesReportsCreateIntentWithoutDeletion(t *te
 }
 
 func TestOSCommandDockerCLIDiscoveryRejectsOversizedInventoryOutput(t *testing.T) {
-	if os.PathSeparator == '\\\\' {
+	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
 	}
 	binary := filepath.Join(t.TempDir(), "docker-stub")
-	script := "#!/bin/sh\\nprintf '%*s' " + fmt.Sprint(maxDockerInventoryOutputBytes+1) + " x\\n"
+	script := "#!/bin/sh\nprintf '%*s' " + fmt.Sprint(maxDockerInventoryOutputBytes+1) + " x\n"
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -194,17 +194,17 @@ func TestOSCommandDockerCLIDiscoveryRejectsOversizedInventoryOutput(t *testing.T
 }
 
 func TestOSCommandDockerCLIDiscoveryRejectsOversizedInspectOutput(t *testing.T) {
-	if os.PathSeparator == '\\\\' {
+	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
 	}
 	binary := filepath.Join(t.TempDir(), "docker-stub")
 	id := strings.Repeat("a", 64)
 	script := strings.Join([]string{
 		"#!/bin/sh",
-		"if [ \"$1\" = \"ps\" ]; then printf '%s\\n' \"" + id + "\"; exit 0; fi",
+		"if [ \"$1\" = \"ps\" ]; then printf '%s\n' \"" + id + "\"; exit 0; fi",
 		"if [ \"$1\" = \"inspect\" ]; then printf '%*s' " + fmt.Sprint(maxDockerInspectOutputBytes+1) + " x; exit 0; fi",
 		"exit 98",
-	}, "\\n")
+	}, "\n")
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
