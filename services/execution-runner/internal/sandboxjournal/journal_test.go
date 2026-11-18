@@ -842,12 +842,12 @@ func TestJournalRejectsNonCanonicalJSONEncodingWithoutMutatingJournal(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	line := strings.TrimSuffix(string(content), "\\n")
+	line := strings.TrimSuffix(string(content), "\n")
 	if !strings.HasPrefix(line, "{") {
 		t.Fatal("fixture is not a JSON object")
 	}
 	// Whitespace is legal JSON, but the journal writer never emits it.
-	mutated := "{ " + strings.TrimPrefix(line, "{") + "\\n"
+	mutated := "{ " + strings.TrimPrefix(line, "{") + "\n"
 	if err := os.WriteFile(path, []byte(mutated), 0o600); err != nil {
 		t.Fatal(err)
 	}
