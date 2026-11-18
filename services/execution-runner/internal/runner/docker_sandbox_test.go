@@ -1015,6 +1015,7 @@ func TestDockerSandboxFailedCreateWithUnconfirmedCleanupRemainsDiscoverable(t *t
 		"#!/bin/sh",
 		"case \"$1\" in",
 		"  create)",
+		"    for arg in \"$@\"; do case \"$arg\" in " + lifecycleIDLabel + "=*) printf '%s\\n' \"${arg#*=}\" > \"$DOCKER_TEST_LIFECYCLE_ID\" ;; esac; done",
 		"    printf '%s\\n' '" + containerID + "'",
 		"    printf '%s\\n' 'daemon disconnected after container creation' >&2",
 		"    exit 1",
@@ -1028,7 +1029,8 @@ func TestDockerSandboxFailedCreateWithUnconfirmedCleanupRemainsDiscoverable(t *t
 		"    exit 0",
 		"    ;;",
 		"  inspect)",
-		"    printf '%s\\n' '{\"Id\":\"" + containerID + "\",\"Config\":{\"Labels\":{\"" + runnerInstanceLabel + "\":\"" + runnerID + "\",\"" + lifecycleIDLabel + "\":\"0123456789abcdef0123456789abcdef\"}},\"State\":{\"Status\":\"created\"}}'",
+		"    lifecycle_id=$(cat \"$DOCKER_TEST_LIFECYCLE_ID\")",
+		"    printf '%s\\n' '{\"Id\":\"" + containerID + "\",\"Config\":{\"Labels\":{\"" + runnerInstanceLabel + "\":\"" + runnerID + "\",\"" + lifecycleIDLabel + "\":\"'\\"$lifecycle_id\\"'\"}},\"State\":{\"Status\":\"created\"}}'",
 		"    exit 0",
 		"    ;;",
 		"esac",
@@ -1043,6 +1045,8 @@ func TestDockerSandboxFailedCreateWithUnconfirmedCleanupRemainsDiscoverable(t *t
 		t.Fatal(err)
 	}
 	defer journal.Close()
+	lifecycleIDPath := filepath.Join(t.TempDir(), "lifecycle-id")
+	t.Setenv("DOCKER_TEST_LIFECYCLE_ID", lifecycleIDPath)
 	cli := OSCommandDockerCLI{Binary: dockerPath}
 	sandbox, err := NewJournaledDockerSandbox(cli, journal, runnerID)
 	if err != nil {
