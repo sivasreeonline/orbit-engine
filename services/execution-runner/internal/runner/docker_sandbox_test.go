@@ -726,6 +726,38 @@ func TestDockerSandboxPersistsCreateIntentBeforeDockerCreate(t *testing.T) {
 	}
 }
 
+func TestDockerSandboxCancellationDuringCreatePreservesUnresolvedIntent(t *testing.T) {
+	journal, err := sandboxjournal.Open(privateJournalTestPath(t, "cancelled-create.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+
+	fake := &fakeDockerCLI{waitCreateForContext: true}
+	sandbox, err := NewJournaledDockerSandbox(fake, journal, strings.Repeat("c", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	_, err = sandbox.RunCase(ctx, dockerSandboxTestRequest())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("cancelled create error = %v, want context.DeadlineExceeded", err)
+	}
+	if !fake.created {
+		t.Fatal("Docker create was not attempted")
+	}
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != "" {
+		t.Fatalf("cancelled create must preserve unresolved intent for reconciliation: %+v", pending)
+	}
+}
+
 func TestDockerSandboxRecordsCleanupOnlyAfterDockerConfirmsRemoval(t *testing.T) {
 	path := privateJournalTestPath(t, "lifecycle.jsonl")
 	journal, err := sandboxjournal.Open(path)
