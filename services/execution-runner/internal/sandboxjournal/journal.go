@@ -289,6 +289,13 @@ func (journal *Journal) recover() error {
 		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 			return errors.New("sandbox lifecycle record contains trailing JSON data")
 		}
+		canonical, err := json.Marshal(event)
+		if err != nil {
+			return fmt.Errorf("re-encode sandbox lifecycle record: %w", err)
+		}
+		if !bytes.Equal(canonical, line) {
+			return errors.New("sandbox lifecycle record is not in canonical JSON encoding")
+		}
 		if event.Version != formatVersion || event.Sequence != expected || event.At.IsZero() {
 			return errors.New("sandbox lifecycle journal version, sequence or timestamp is invalid")
 		}
