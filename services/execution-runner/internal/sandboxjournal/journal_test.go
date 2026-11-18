@@ -650,7 +650,7 @@ func TestJournalRecoveryRejectsCompleteInvalidTransitionWithoutMutatingJournal(t
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := file.Write(append(invalid, '\\n')); err != nil {
+			if _, err := file.Write(append(invalid, '\n')); err != nil {
 				t.Fatal(err)
 			}
 			// Include a partial tail as well: recovery must not truncate it
