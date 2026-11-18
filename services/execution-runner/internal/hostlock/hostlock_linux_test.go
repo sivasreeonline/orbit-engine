@@ -91,6 +91,24 @@ func TestHostLockRejectsInvalidOwnerPathSymlinkAndPermissiveFile(t *testing.T) {
 	}
 }
 
+func TestHostLockRejectsNonPrivateParentDirectory(t *testing.T) {
+	for _, mode := range []os.FileMode{0o755, 0o770, 0o777} {
+		t.Run(mode.String(), func(t *testing.T) {
+			parent := filepath.Join(t.TempDir(), "shared")
+			if err := os.Mkdir(parent, mode); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(parent, mode); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Acquire(filepath.Join(parent, "runner-host.lock"), strings.Repeat("d", 32))
+			if err == nil {
+				t.Fatalf("host lock accepted parent directory with permissions %o", mode)
+			}
+		})
+	}
+}
+
 func TestHostLockCloseIsIdempotent(t *testing.T) {
 	lock, err := Acquire(filepath.Join(privateLockDir(t), "runner-host.lock"), strings.Repeat("c", 32))
 	if err != nil {
