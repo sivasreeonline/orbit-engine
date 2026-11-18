@@ -200,6 +200,23 @@ func TestDiscoverPendingDockerLifecyclesReportsCreateIntentWithoutDeletion(t *te
 	}
 }
 
+func TestOSCommandDockerCLIDiscoveryRejectsNilContextWithoutRunningDocker(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	marker := filepath.Join(t.TempDir(), "docker-invoked")
+	script := "#!/bin/sh\\nprintf invoked > \"" + marker + "\"\\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(nil, strings.Repeat("a", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+		t.Fatalf("nil-context discovery = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Docker command ran despite nil context (marker stat error: %v)", err)
+	}
+}
+
 func TestOSCommandDockerCLIDiscoveryRejectsOversizedInventoryOutput(t *testing.T) {
 	if os.PathSeparator == 92 {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
