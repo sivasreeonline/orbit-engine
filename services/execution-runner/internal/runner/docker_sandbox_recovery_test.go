@@ -253,6 +253,42 @@ func TestOSCommandDockerCLIDiscoveryRejectsOversizedInspectOutput(t *testing.T) 
 	}
 }
 
+func TestOSCommandDockerCLIDiscoveryRejectsOversizedStderr(t *testing.T) {
+	if os.PathSeparator == '\\\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	id := strings.Repeat("a", 64)
+	runnerID := strings.Repeat("b", 32)
+	lifecycleID := strings.Repeat("c", 32)
+	validInspect := `{"Id":"` + id + `","Config":{"Labels":{"com.skyhigh.runner-instance":"` + runnerID + `","com.skyhigh.lifecycle-id":"` + lifecycleID + `"}},"State":{"Status":"exited"}}`
+
+	tests := []struct {
+		name   string
+		script string
+	}{
+		{
+			name: "inventory stderr",
+			script: "#!/bin/sh\\nprintf '%s\\n' \"" + id + "\"\\nprintf '%*s' " + fmt.Sprint(maxDockerStderrBytes+1) + " x >&2\\n",
+		},
+		{
+			name: "inspect stderr",
+			script: "#!/bin/sh\\nif [ \"$1\" = \"ps\" ]; then printf '%s\\n' \"" + id + "\"; exit 0; fi\\nif [ \"$1\" = \"inspect\" ]; then printf '%s' '" + validInspect + "'; printf '%*s' " + fmt.Sprint(maxDockerStderrBytes+1) + " x >&2; exit 0; fi\\nexit 99\\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			binary := filepath.Join(t.TempDir(), "docker-stub")
+			if err := os.WriteFile(binary, []byte(test.script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
+			if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+				t.Fatalf("oversized stderr discovery = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
+			}
+		})
+	}
+}
+
 func TestOSCommandDockerCLIDiscoveryUsesExactLabelsAndVerifiesInspect(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
