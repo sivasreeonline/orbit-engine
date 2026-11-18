@@ -454,3 +454,31 @@ func TestRecoveryCommandRejectsLateSuccessAfterDeadline(t *testing.T) {
 	}
 	defer journal.Close()
 }
+
+
+func TestRecoveryCommandDeadlineDuringConfigurationDoesNotAcquireHostLock(t *testing.T) {
+	path, _, _ := createPendingJournal(t)
+	values := recoveryEnvironment(path)
+	hostLockPath := path + ".host.lock"
+	lookup := func(name string) (string, bool) {
+		if name == "RUNNER_HOST_LOCK_PATH" {
+			time.Sleep(40 * time.Millisecond)
+		}
+		return values(name)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	discoverer := &fakeDiscoverer{}
+	var output bytes.Buffer
+
+	err := run(ctx, lookup, discoverer, &output)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("configuration deadline error = %v, want context.DeadlineExceeded", err)
+	}
+	if discoverer.calls != 0 || output.Len() != 0 {
+		t.Fatalf("expired setup continued into discovery or report: calls=%d output=%q", discoverer.calls, output.String())
+	}
+	if _, err := os.Lstat(hostLockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("host lock was acquired after configuration deadline: %v", err)
+	}
+}
