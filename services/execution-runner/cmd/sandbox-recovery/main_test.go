@@ -490,8 +490,7 @@ func TestRecoveryCommandRejectsLateSuccessAfterDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	var output bytes.Buffer
-	type runResult struct{ err error }
-	result := make(chan runResult, 1)
+	result := make(chan error, 1)
 	go func() {
 		result <- run(ctx, recoveryEnvironment(path), discoverer, &output)
 	}()
@@ -501,7 +500,7 @@ func TestRecoveryCommandRejectsLateSuccessAfterDeadline(t *testing.T) {
 	<-discoverer.started
 	<-ctx.Done()
 	close(discoverer.release)
-	err := (<-result).err
+	err := <-result
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("late discovery success error = %v, want context.DeadlineExceeded", err)
 	}
