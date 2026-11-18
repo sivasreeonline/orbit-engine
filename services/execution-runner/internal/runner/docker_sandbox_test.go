@@ -1030,7 +1030,7 @@ func TestDockerSandboxFailedCreateWithUnconfirmedCleanupRemainsDiscoverable(t *t
 		"    ;;",
 		"  inspect)",
 		"    lifecycle_id=$(cat \"$DOCKER_TEST_LIFECYCLE_ID\")",
-		"    printf '%s\\n' '{\"Id\":\"" + containerID + "\",\"Config\":{\"Labels\":{\"" + runnerInstanceLabel + "\":\"" + runnerID + "\",\"" + lifecycleIDLabel + "\":\"'\\"$lifecycle_id\\"'\"}},\"State\":{\"Status\":\"created\"}}'",
+		"    printf '{\"Id\":\"%s\",\"Config\":{\"Labels\":{\"%s\":\"%s\",\"%s\":\"%s\"}},\"State\":{\"Status\":\"created\"}}\\n' '" + containerID + "' '" + runnerInstanceLabel + "' '" + runnerID + "' '" + lifecycleIDLabel + "' \"$lifecycle_id\"",
 		"    exit 0",
 		"    ;;",
 		"esac",
