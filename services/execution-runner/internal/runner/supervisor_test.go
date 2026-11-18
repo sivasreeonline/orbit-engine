@@ -16,6 +16,20 @@ func (w *countedWorker) RunOnce(context.Context) (WorkResult, error) {
 type fixedGate struct { qualified bool }
 func (g fixedGate) Qualified(context.Context) (bool, error) { return g.qualified, nil }
 
+func TestSupervisorRejectsNilContext(t *testing.T) {
+	worker := &countedWorker{}
+	s, err := NewSupervisor(worker, fixedGate{qualified: true}, SupervisorConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Run(nil); err != ErrExecutionContextRequired {
+		t.Fatalf("Run with nil context error = %v, want ErrExecutionContextRequired", err)
+	}
+	if got := worker.calls.Load(); got != 0 {
+		t.Fatalf("RunOnce calls = %d, want 0", got)
+	}
+}
+
 func TestSupervisorNeverCallsWorkerWithoutQualification(t *testing.T) {
 	worker := &countedWorker{}
 	s, err := NewSupervisor(worker, fixedGate{qualified: false}, SupervisorConfig{
