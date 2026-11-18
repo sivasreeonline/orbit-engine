@@ -65,6 +65,23 @@ func createPendingJournal(t *testing.T) (string, string, string) {
 	return path, lifecycleID, containerID
 }
 
+func TestRecoveryCommandRejectsNilContextWithoutPanicking(t *testing.T) {
+	path, _, _ := createPendingJournal(t)
+	discoverer := &fakeDiscoverer{}
+	var output bytes.Buffer
+
+	err := run(nil, recoveryEnvironment(path), discoverer, &output)
+	if err == nil || !strings.Contains(err.Error(), "context is required") {
+		t.Fatalf("nil context error = %v, want explicit context-required error", err)
+	}
+	if discoverer.calls != 0 {
+		t.Fatalf("discovery calls = %d, want 0 for nil context", discoverer.calls)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("nil-context recovery emitted a report: %s", output.String())
+	}
+}
+
 func TestRecoveryCommandProducesDryRunReportWithoutMutatingJournal(t *testing.T) {
 	path, lifecycleID, containerID := createPendingJournal(t)
 	runnerID := strings.Repeat("a", 32)
