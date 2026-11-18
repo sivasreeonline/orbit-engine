@@ -411,3 +411,59 @@ func TestJournalRecoveryPreservesCreatedStateAfterPartialCleanedTail(t *testing.
 		t.Fatalf("valid post-recovery CLEANED transition remained pending: %+v", pending)
 	}
 }
+
+
+func TestJournalStopsAppendingAfterWriteOutcomeBecomesUncertain(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "uncertain-append.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycleID, err := journal.Begin(testRunnerID, testExecutionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Created(lifecycleID, testContainerID); err != nil {
+		t.Fatal(err)
+	}
+
+	// /dev/full accepts open/stat but rejects writes with ENOSPC. Swap only
+	// the private test handle to inject a failure after append preflight.
+	full, err := os.OpenFile("/dev/full", os.O_WRONLY, 0)
+	if err != nil {
+		_ = journal.Close()
+		t.Skipf("write-failure fixture /dev/full unavailable: %v", err)
+	}
+	original := journal.file
+	journal.file = full
+	appendErr := journal.Cleaned(lifecycleID)
+	journal.file = original
+	if err := full.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(appendErr, ErrAppendUncertain) {
+		t.Fatalf("first CLEANED append error = %v, want ErrAppendUncertain", appendErr)
+	}
+
+	if err := journal.Cleaned(lifecycleID); !errors.Is(err, ErrAppendUncertain) {
+		t.Fatalf("second CLEANED append error = %v, want poisoned journal rejection", err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen after uncertain append: %v", err)
+	}
+	defer recovered.Close()
+	pending, err := recovered.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].LifecycleID != lifecycleID ||
+		!pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != testContainerID {
+		t.Fatalf("failed append must preserve prior CREATED evidence: %+v", pending)
+	}
+}
