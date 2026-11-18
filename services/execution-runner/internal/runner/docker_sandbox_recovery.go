@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,10 @@ const (
 	runnerInstanceLabel = "com.skyhigh.runner-instance"
 	lifecycleIDLabel    = "com.skyhigh.lifecycle-id"
 	dockerInspectBatchSize = 32
+	maxRecoveryContainers = 1000
+	maxDockerInventoryOutputBytes = 128 << 10
+	maxDockerInspectOutputBytes = 2 << 20
+	maxDockerStderrBytes = 64 << 10
 )
 
 // DiscoveredDockerContainer contains only identity and state metadata. It never
@@ -68,6 +73,12 @@ func DiscoverPendingDockerLifecycles(
 		pendingLifecycleIDs[lifecycle.LifecycleID] = struct{}{}
 	}
 
+	// Bound the journal side before invoking Docker. This is an operational
+	// safety ceiling (2x the 500-student target), not a concurrency guarantee.
+	if len(pending) > maxRecoveryContainers {
+		return nil, errors.New("pending sandbox lifecycle count exceeds recovery safety limit")
+	}
+
 	// Inventory once, then correlate in memory. A failed or incomplete Docker
 	// inventory must never produce a partial recovery report.
 	containers, err := discoverer.DiscoverByRunnerLabel(ctx, runnerID)
@@ -75,6 +86,9 @@ func DiscoverPendingDockerLifecycles(
 		return nil, fmt.Errorf("discover runner containers: %w", err)
 	}
 	byLifecycle := make(map[string][]DiscoveredDockerContainer, len(pending))
+	if len(containers) > maxRecoveryContainers {
+		return nil, errors.New("Docker inventory exceeds recovery safety limit")
+	}
 	seen := make(map[string]struct{}, len(containers))
 	for _, container := range containers {
 		if len(container.ID) != 64 ||
@@ -135,7 +149,7 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 		"--filter", "label="+runnerInstanceLabel+"="+runnerID,
 		"--format", "{{.ID}}",
 	)
-	output, err := command.Output()
+	output, err := runBoundedDockerCommand(command, maxDockerInventoryOutputBytes)
 	if err != nil {
 		return nil, ErrDockerCommandFailed
 	}
@@ -144,6 +158,9 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 		return []DiscoveredDockerContainer{}, nil
 	}
 	lines := strings.Split(trimmed, "\n")
+	if len(lines) > maxRecoveryContainers {
+		return nil, ErrDockerCommandFailed
+	}
 	seen := make(map[string]struct{}, len(lines))
 	ids := make([]string, 0, len(lines))
 	for _, id := range lines {
@@ -168,7 +185,7 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 		args := []string{"inspect", "--format", "{{json .}}"}
 		args = append(args, batch...)
 		inspect := exec.CommandContext(ctx, cli.binary(), args...)
-		inspected, err := inspect.Output()
+		inspected, err := runBoundedDockerCommand(inspect, maxDockerInspectOutputBytes)
 		if err != nil {
 			return nil, ErrDockerCommandFailed
 		}
@@ -218,4 +235,30 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 		containers = append(containers, batchContainers...)
 	}
 	return containers, nil
+}
+
+
+// boundedCommandBuffer rejects output beyond its configured ceiling instead of
+// silently truncating data that is required for exact recovery correlation.
+type boundedCommandBuffer struct {
+	buffer bytes.Buffer
+	limit int
+}
+
+func (buffer *boundedCommandBuffer) Write(value []byte) (int, error) {
+	if len(value) > buffer.limit-buffer.buffer.Len() {
+		return 0, ErrDockerCommandFailed
+	}
+	return buffer.buffer.Write(value)
+}
+
+func runBoundedDockerCommand(command *exec.Cmd, stdoutLimit int) ([]byte, error) {
+	stdout := &boundedCommandBuffer{limit: stdoutLimit}
+	stderr := &boundedCommandBuffer{limit: maxDockerStderrBytes}
+	command.Stdout = stdout
+	command.Stderr = stderr
+	if err := command.Run(); err != nil {
+		return nil, ErrDockerCommandFailed
+	}
+	return stdout.buffer.Bytes(), nil
 }
