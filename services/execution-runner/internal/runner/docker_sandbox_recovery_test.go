@@ -27,6 +27,44 @@ func (fake *fakeLifecycleDiscoverer) DiscoverByRunnerLabel(_ context.Context, ru
 		return append([]DiscoveredDockerContainer(nil), fake.containers...), fake.err
 }
 
+func TestDiscoverPendingDockerLifecyclesRejectsOversizedInventoryFromDiscoverer(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	if _, err := sandbox.journal.Begin(runnerID, "exec_inventory_limit"); err != nil {
+		t.Fatal(err)
+	}
+	containers := make([]DiscoveredDockerContainer, maxRecoveryContainers+1)
+	discoverer := &fakeLifecycleDiscoverer{containers: containers}
+	found, err := DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, runnerID)
+	if err == nil || found != nil {
+		t.Fatalf("oversized discoverer inventory = %+v, %v; want nil findings and error", found, err)
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesRejectsOversizedPendingJournal(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	for i := 0; i <= maxRecoveryContainers; i++ {
+		if _, err := sandbox.journal.Begin(runnerID, fmt.Sprintf("exec_limit_%d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	discoverer := &fakeLifecycleDiscoverer{}
+	found, err := DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, runnerID)
+	if err == nil || found != nil {
+		t.Fatalf("oversized pending journal = %+v, %v; want nil findings and error", found, err)
+	}
+	if discoverer.calls != 0 {
+		t.Fatal("Docker discovery ran after pending journal exceeded safety limit")
+	}
+}
+
 func TestDiscoverPendingDockerLifecyclesIsDryRunAndCorrelatesExactIdentity(t *testing.T) {
 	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
 	if err != nil {
@@ -137,6 +175,42 @@ func TestDiscoverPendingDockerLifecyclesReportsCreateIntentWithoutDeletion(t *te
 	}
 	if len(results) != 1 || results[0].Assessment != "NO_CONTAINER_MATCH — operator review required" {
 		t.Fatalf("create-intent discovery result = %+v", results)
+	}
+}
+
+func TestOSCommandDockerCLIDiscoveryRejectsOversizedInventoryOutput(t *testing.T) {
+	if os.PathSeparator == '\\\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	script := "#!/bin/sh\\nprintf '%*s' " + fmt.Sprint(maxDockerInventoryOutputBytes+1) + " x\\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), strings.Repeat("a", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+		t.Fatalf("oversized inventory = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
+	}
+}
+
+func TestOSCommandDockerCLIDiscoveryRejectsOversizedInspectOutput(t *testing.T) {
+	if os.PathSeparator == '\\\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	id := strings.Repeat("a", 64)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"ps\" ]; then printf '%s\\n' \"" + id + "\"; exit 0; fi",
+		"if [ \"$1\" = \"inspect\" ]; then printf '%*s' " + fmt.Sprint(maxDockerInspectOutputBytes+1) + " x; exit 0; fi",
+		"exit 98",
+	}, "\\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), strings.Repeat("b", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+		t.Fatalf("oversized inspect = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
 	}
 }
 
