@@ -1002,3 +1002,82 @@ func TestOSCommandDockerCLICreateCleansPartialContainerWhenDaemonReturnsFailure(
 			strings.TrimSpace(string(removed)), containerID)
 	}
 }
+
+
+func TestDockerSandboxFailedCreateWithUnconfirmedCleanupRemainsDiscoverable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker sandbox targets Linux hosts")
+	}
+	runnerID := strings.Repeat("c", 32)
+	containerID := strings.Repeat("d", 64)
+	dockerPath := filepath.Join(t.TempDir(), "docker-stub")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"case \"$1\" in",
+		"  create)",
+		"    printf '%s\\n' '" + containerID + "'",
+		"    printf '%s\\n' 'daemon disconnected after container creation' >&2",
+		"    exit 1",
+		"    ;;",
+		"  rm)",
+		"    printf '%s\\n' 'daemon unavailable during cleanup' >&2",
+		"    exit 1",
+		"    ;;",
+		"  ps)",
+		"    printf '%s\\n' '" + containerID + "'",
+		"    exit 0",
+		"    ;;",
+		"  inspect)",
+		"    printf '%s\\n' '{\"Id\":\"" + containerID + "\",\"Config\":{\"Labels\":{\"" + runnerInstanceLabel + "\":\"" + runnerID + "\",\"" + lifecycleIDLabel + "\":\"0123456789abcdef0123456789abcdef\"}},\"State\":{\"Status\":\"created\"}}'",
+		"    exit 0",
+		"    ;;",
+		"esac",
+		"exit 90",
+	}, "\n")
+	if err := os.WriteFile(dockerPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	journal, err := sandboxjournal.Open(privateJournalTestPath(t, "failed-create-recovery.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+	cli := OSCommandDockerCLI{Binary: dockerPath}
+	sandbox, err := NewJournaledDockerSandbox(cli, journal, runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, runErr := sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(runErr, ErrDockerCommandFailed) {
+		t.Fatalf("RunCase error = %v, want Docker command failure", runErr)
+	}
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != "" {
+		t.Fatalf("failed create with unconfirmed cleanup must preserve CREATE_INTENT: %+v", pending)
+	}
+
+	findings, err := DiscoverPendingDockerLifecycles(context.Background(), journal, cli, runnerID)
+	if err != nil {
+		t.Fatalf("discover container after failed create cleanup: %v", err)
+	}
+	if len(findings) != 1 ||
+		findings[0].Assessment != "CREATE_INTENT_MATCH — crash-window candidate; operator review required" ||
+		len(findings[0].Containers) != 1 ||
+		findings[0].Containers[0].ID != containerID {
+		t.Fatalf("failed-create recovery finding = %+v", findings)
+	}
+	pending, err = journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != "" {
+		t.Fatalf("read-only recovery must preserve unresolved CREATE_INTENT: %+v", pending)
+	}
+}
