@@ -956,3 +956,49 @@ func TestDockerSandboxPreservesCreateIntentWhenCreatedRecordRejectsContainerID(t
 		t.Fatalf("failed CREATED transition must preserve unresolved CREATE_INTENT: %+v", pending)
 	}
 }
+
+
+func TestOSCommandDockerCLICreateCleansPartialContainerWhenDaemonReturnsFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker sandbox targets Linux hosts")
+	}
+	directory := t.TempDir()
+	logPath := filepath.Join(directory, "docker-remove.log")
+	binaryPath := filepath.Join(directory, "docker-stub")
+	containerID := strings.Repeat("b", 64)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"create\" ]; then",
+		"  printf '%s\\n' '" + containerID + "'",
+		"  printf '%s\\n' 'daemon disconnected after create' >&2",
+		"  exit 1",
+		"fi",
+		"if [ \"$1\" = \"rm\" ]; then",
+		"  printf '%s\\n' \"$3\" >> \"$DOCKER_TEST_REMOVE_LOG\"",
+		"  exit 0",
+		"fi",
+		"exit 91",
+	}, "\n")
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_TEST_REMOVE_LOG", logPath)
+
+	id, err := (OSCommandDockerCLI{Binary: binaryPath}).Create(
+		context.Background(), []string{"--name", "test"},
+	)
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("failed create error = %v, want ErrDockerCommandFailed", err)
+	}
+	if id != "" {
+		t.Fatalf("failed create returned container ID %q; unresolved create must remain with caller", id)
+	}
+	removed, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatalf("cleanup of partial container was not attempted: %v", readErr)
+	}
+	if strings.TrimSpace(string(removed)) != containerID {
+		t.Fatalf("removed container ID = %q, want exact partial ID %q",
+			strings.TrimSpace(string(removed)), containerID)
+	}
+}
