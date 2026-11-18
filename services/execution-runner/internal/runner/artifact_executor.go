@@ -79,6 +79,9 @@ func (executor *SandboxArtifactExecutor) Execute(
 	ctx context.Context,
 	artifact runnerclient.ExecutionArtifact,
 ) (runnerclient.CompletionInput, error) {
+	if ctx == nil {
+		return runnerclient.CompletionInput{}, ErrExecutionContextRequired
+	}
 	if !executor.Ready() {
 		return runnerclient.CompletionInput{}, ErrSandboxNotConfigured
 	}
