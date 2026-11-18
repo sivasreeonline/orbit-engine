@@ -15,13 +15,13 @@ import (
 )
 
 const (
-	runnerInstanceLabel = "com.skyhigh.runner-instance"
-	lifecycleIDLabel    = "com.skyhigh.lifecycle-id"
-	dockerInspectBatchSize = 32
-	maxRecoveryContainers = 1000
-	maxDockerInventoryOutputBytes = 128 << 10
-	maxDockerInspectOutputBytes = 2 << 20
-	maxDockerStderrBytes = 64 << 10
+	runnerInstanceLabel              = "com.skyhigh.runner-instance"
+	lifecycleIDLabel                 = "com.skyhigh.lifecycle-id"
+	dockerInspectBatchSize           = 32
+	maxRecoveryContainers            = 1000
+	maxDockerInventoryOutputBytes    = 128 << 10
+	maxDockerInspectOutputBytes      = 2 << 20
+	maxDockerStderrBytes              = 64 << 10
 )
 
 // DiscoveredDockerContainer contains only identity and state metadata. It never
@@ -95,7 +95,7 @@ func DiscoverPendingDockerLifecycles(
 			!containerIDPattern.MatchString(container.ID) ||
 			container.RunnerInstanceID != runnerID ||
 			!runnerInstanceIDPattern.MatchString(container.LifecycleID) ||
-			strings.TrimSpace(container.State) == "" {
+			strings.TrimSpace(container.State) == "" || len(container.State) > 64 {
 			return nil, errors.New("Docker discovery returned invalid or foreign container metadata")
 		}
 		if _, exists := seen[container.ID]; exists {
