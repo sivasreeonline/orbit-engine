@@ -259,18 +259,12 @@ func (journal *Journal) recover() error {
 		return fmt.Errorf("read sandbox lifecycle journal: %w", err)
 	}
 	lastNewline := bytes.LastIndexByte(content, '\n')
-	if lastNewline != len(content)-1 {
-		if journal.readOnly {
-			return errors.New("sandbox lifecycle journal has an incomplete final record; read-only inspection refuses repair")
-		}
-		validLength := lastNewline + 1
-		if err := journal.file.Truncate(int64(validLength)); err != nil {
-			return fmt.Errorf("truncate incomplete sandbox lifecycle record: %w", err)
-		}
-		content = content[:validLength]
-		if err := journal.file.Sync(); err != nil {
-			return fmt.Errorf("sync recovered sandbox lifecycle journal: %w", err)
-		}
+	incompleteTail := lastNewline != len(content)-1
+	if incompleteTail {
+		// Validate every complete record before repairing an incomplete tail.
+		// Otherwise a later semantic error could be discovered only after
+		// recovery has already modified the journal on disk.
+		content = content[:lastNewline+1]
 	}
 	var expected uint64 = 1
 	for len(content) > 0 {
@@ -300,6 +294,17 @@ func (journal *Journal) recover() error {
 		}
 		journal.sequence = event.Sequence
 		expected++
+	}
+	if incompleteTail {
+		if journal.readOnly {
+			return errors.New("sandbox lifecycle journal has an incomplete final record; read-only inspection refuses repair")
+		}
+		if err := journal.file.Truncate(int64(lastNewline + 1)); err != nil {
+			return fmt.Errorf("truncate incomplete sandbox lifecycle record: %w", err)
+		}
+		if err := journal.file.Sync(); err != nil {
+			return fmt.Errorf("sync recovered sandbox lifecycle journal: %w", err)
+		}
 	}
 	_, err = journal.file.Seek(0, io.SeekEnd)
 	if err != nil {
