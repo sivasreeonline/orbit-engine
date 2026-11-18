@@ -99,7 +99,7 @@ Load that file through the service manager's environment-file mechanism. Back it
 
 Provision `RUNNER_SANDBOX_JOURNAL_PATH` as a distinct private journal file, for example `/var/lib/skyhigh/sandbox-lifecycle.jsonl`. Its parent directory must be owner-only. The foreground process holds its exclusive lock for the process lifetime, so a second process cannot concurrently own the same lifecycle journal. Do not remove a stale journal lock until the runner is verified stopped.
 
-Set `RUNNER_HOST_LOCK_PATH` to one stable path shared by every Sky High runner process and recovery command on the host, for example `/run/lock/skyhigh-runner-host.lock`. The Linux implementation uses non-blocking kernel `flock`, records PID/runner identity/acquisition and release metadata, and keeps the file descriptor open for the protected lifetime. The lock file is intentionally persistent and must never be deleted or replaced; deleting a held lock file can split ownership across different inodes. A crashed process releases the kernel lock automatically, while its last-acquired metadata remains available for diagnosis. The foreground process and dry-run recovery command both acquire this same host lock before opening the sandbox journal. Different configured paths do not coordinate, so host provisioning must enforce one canonical path.
+Set `RUNNER_HOST_LOCK_PATH` to one stable path shared by every Sky High runner process and recovery command on the host, for example `/var/lib/skyhigh-runner/host.lock`. The Linux implementation uses non-blocking kernel `flock`, records PID/runner identity/acquisition and release metadata, and keeps the file descriptor open for the protected lifetime. The lock file is intentionally persistent and must never be deleted or replaced; deleting a held lock file can split ownership across different inodes. A crashed process releases the kernel lock automatically, while its last-acquired metadata remains available for diagnosis. The foreground process and dry-run recovery command both acquire this same host lock before opening the sandbox journal. Different configured paths do not coordinate, so host provisioning must enforce one canonical path. The lock's parent directory must already exist, be owned by the runner's effective user, and have no group/other permission bits (normally mode `0700`); the lock implementation rejects shared or system-wide directories such as `/run/lock`. Provision `/var/lib/skyhigh-runner` with owner-only access under the runner service account before starting either command.
 
 ## Current runner control-plane client
 
@@ -164,7 +164,7 @@ Example from the execution-runner module directory on the dedicated Linux host:
 ```bash
 RUNNER_INSTANCE_ID='<32-character-installation-id>' \
 RUNNER_SANDBOX_JOURNAL_PATH='/var/lib/skyhigh/sandbox-lifecycle.jsonl' \
-RUNNER_HOST_LOCK_PATH='/run/lock/skyhigh-runner-host.lock' \
+RUNNER_HOST_LOCK_PATH='/var/lib/skyhigh-runner/host.lock' \
 go run ./cmd/sandbox-recovery
 ```
 
