@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
+	"testing"\n\t"time"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/hostlock"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runner"
@@ -357,4 +357,41 @@ func TestRecoveryCommandReportIsStableForEquivalentFindings(t *testing.T) {
 	if !bytes.Equal(firstFindings, secondFindings) {
 		t.Fatalf("equivalent recovery findings changed: first=%s second=%s", firstFindings, secondFindings)
 	}
+}
+
+
+type contextBlockingDiscoverer struct {
+	calls int
+}
+
+func (discoverer *contextBlockingDiscoverer) DiscoverByRunnerLabel(ctx context.Context, _ string) ([]runner.DiscoveredDockerContainer, error) {
+	discoverer.calls++
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestRecoveryCommandDeadlineDuringDockerDiscoveryEmitsNoReport(t *testing.T) {
+	path, _, _ := createPendingJournal(t)
+	discoverer := &contextBlockingDiscoverer{}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	var output bytes.Buffer
+
+	err := run(ctx, recoveryEnvironment(path), discoverer, &output)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("deadline error = %v, want context.DeadlineExceeded", err)
+	}
+	if discoverer.calls != 1 {
+		t.Fatalf("discovery calls = %d, want 1", discoverer.calls)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("deadline during discovery emitted a partial report: %s", output.String())
+	}
+
+	// Cancellation must release both ownership locks for a later operator run.
+	journal, err := sandboxjournal.Open(path)
+	if err != nil {
+		t.Fatalf("journal remained locked after deadline: %v", err)
+	}
+	defer journal.Close()
 }
