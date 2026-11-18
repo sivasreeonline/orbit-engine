@@ -58,7 +58,7 @@ func DiscoverPendingDockerLifecycles(
 	discoverer DockerLifecycleDiscoverer,
 	runnerID string,
 ) ([]LifecycleDiscovery, error) {
-	if journal == nil || discoverer == nil || !runnerInstanceIDPattern.MatchString(runnerID) {
+	if ctx == nil || journal == nil || discoverer == nil || !runnerInstanceIDPattern.MatchString(runnerID) {
 		return nil, ErrSandboxNotConfigured
 	}
 	pending, err := journal.Pending()
