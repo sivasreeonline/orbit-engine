@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 )
@@ -424,6 +425,32 @@ func TestOSCommandDockerCLIDiscoveryRejectsIncompleteOrUntrustedInspectBatches(t
 		})
 	}
 }
+func TestOSCommandDockerCLIDiscoveryHonorsCancellationDuringInspect(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	id := strings.Repeat("a", 64)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		\`if [ "$1" = "ps" ]; then printf '%s\n' "\` + id + \`"; exit 0; fi\`,
+		\`if [ "$1" = "inspect" ]; then sleep 2; exit 0; fi\`,
+		"exit 97",
+	}, "\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(ctx, strings.Repeat("b", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("cancelled inspect error = %v, want ErrDockerCommandFailed", err)
+	}
+	if found != nil {
+		t.Fatalf("cancelled inspect returned partial findings: %+v", found)
+	}
+}
+
 func TestOSCommandDockerCLIDiscoveryHonorsCancellation(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
