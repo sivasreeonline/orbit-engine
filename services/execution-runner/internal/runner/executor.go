@@ -85,6 +85,9 @@ func (executor *SandboxExecutor) Execute(
 	ctx context.Context,
 	request protocol.ExecutionRequest,
 ) (Result, error) {
+	if ctx == nil {
+		return Result{}, ErrExecutionContextRequired
+	}
 	if err := request.Validate(); err != nil {
 		return Result{}, err
 	}
