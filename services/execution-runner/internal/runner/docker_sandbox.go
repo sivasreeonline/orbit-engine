@@ -95,6 +95,9 @@ func (cli OSCommandDockerCLI) Preflight(ctx context.Context, imageRefs []string)
 }
 
 func (cli OSCommandDockerCLI) Create(ctx context.Context, args []string) (string, error) {
+	if ctx == nil {
+		return "", ErrDockerCommandFailed
+	}
 	command := exec.CommandContext(ctx, cli.binary(), append([]string{"create"}, args...)...)
 	output, commandErr := command.Output()
 	id := strings.TrimSpace(string(output))
@@ -117,7 +120,7 @@ func (cli OSCommandDockerCLI) StartAttached(
 	stdout io.Writer,
 	stderr io.Writer,
 ) (int, error) {
-	if !containerIDPattern.MatchString(id) {
+	if ctx == nil || !containerIDPattern.MatchString(id) {
 		return 0, ErrDockerCommandFailed
 	}
 	command := exec.CommandContext(ctx, cli.binary(), "start", "--attach", "--interactive", id)
@@ -136,7 +139,7 @@ func (cli OSCommandDockerCLI) StartAttached(
 }
 
 func (cli OSCommandDockerCLI) Inspect(ctx context.Context, id string) (DockerContainerState, error) {
-	if !containerIDPattern.MatchString(id) {
+	if ctx == nil || !containerIDPattern.MatchString(id) {
 		return DockerContainerState{}, ErrDockerCommandFailed
 	}
 	command := exec.CommandContext(
@@ -159,7 +162,7 @@ func (cli OSCommandDockerCLI) Inspect(ctx context.Context, id string) (DockerCon
 }
 
 func (cli OSCommandDockerCLI) Remove(ctx context.Context, id string) error {
-	if !containerIDPattern.MatchString(id) {
+	if ctx == nil || !containerIDPattern.MatchString(id) {
 		return ErrDockerCommandFailed
 	}
 	command := exec.CommandContext(ctx, cli.binary(), "rm", "--force", id)
