@@ -179,7 +179,7 @@ func TestDiscoverPendingDockerLifecyclesReportsCreateIntentWithoutDeletion(t *te
 }
 
 func TestOSCommandDockerCLIDiscoveryRejectsOversizedInventoryOutput(t *testing.T) {
-	if os.PathSeparator == '\\' {
+	if os.PathSeparator == 92 {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
 	}
 	binary := filepath.Join(t.TempDir(), "docker-stub")
@@ -194,7 +194,7 @@ func TestOSCommandDockerCLIDiscoveryRejectsOversizedInventoryOutput(t *testing.T
 }
 
 func TestOSCommandDockerCLIDiscoveryRejectsOversizedInspectOutput(t *testing.T) {
-	if os.PathSeparator == '\\' {
+	if os.PathSeparator == 92 {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
 	}
 	binary := filepath.Join(t.TempDir(), "docker-stub")
