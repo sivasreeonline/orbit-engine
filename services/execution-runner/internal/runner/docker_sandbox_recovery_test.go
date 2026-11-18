@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -729,4 +731,68 @@ func (discoverer *sequencedLifecycleDiscoverer) DiscoverByRunnerLabel(
 ) ([]DiscoveredDockerContainer, error) {
 	discoverer.calls++
 	return nil, discoverer.err
+}
+
+
+func TestOSCommandDockerCLIDiscoveryTimeoutReapsInventoryProcess(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "docker-stub")
+	pidPath := filepath.Join(directory, "inventory.pid")
+	script := "#!/bin/sh\nprintf '%s' \"$$\" > \"" + pidPath + "\"\nexec sleep 30\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(ctx, strings.Repeat("a", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+		t.Fatalf("timed-out inventory = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
+	}
+	assertRecoveryDockerProcessReaped(t, pidPath)
+}
+
+func TestOSCommandDockerCLIDiscoveryTimeoutReapsInspectProcessWithoutPartialResults(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "docker-stub")
+	pidPath := filepath.Join(directory, "inspect.pid")
+	id := strings.Repeat("a", 64)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"ps\" ]; then printf '%s\\n' \"" + id + "\"; exit 0; fi",
+		"if [ \"$1\" = \"inspect\" ]; then printf '%s' \"$$\" > \"" + pidPath + "\"; exec sleep 30; fi",
+		"exit 98",
+	}, "\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(ctx, strings.Repeat("b", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+		t.Fatalf("timed-out inspect = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
+	}
+	assertRecoveryDockerProcessReaped(t, pidPath)
+}
+
+func assertRecoveryDockerProcessReaped(t *testing.T, pidPath string) {
+	t.Helper()
+	pidBytes, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatalf("Docker stub did not record its process ID: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	if err != nil || pid <= 0 {
+		t.Fatalf("invalid Docker stub process ID %q: %v", pidBytes, err)
+	}
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("Docker subprocess %d still exists after cancellation (kill probe: %v)", pid, err)
+	}
 }
