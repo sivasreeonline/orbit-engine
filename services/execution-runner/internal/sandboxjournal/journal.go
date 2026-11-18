@@ -277,6 +277,9 @@ func (journal *Journal) recover() error {
 		if len(line) == 0 || len(line) > maxRecordSize {
 			return errors.New("sandbox lifecycle journal contains an invalid record size")
 		}
+		if err := rejectDuplicateJSONFields(line); err != nil {
+			return fmt.Errorf("validate sandbox lifecycle record fields: %w", err)
+		}
 		var event Event
 		decoder := json.NewDecoder(bytes.NewReader(line))
 		decoder.DisallowUnknownFields()
@@ -309,6 +312,51 @@ func (journal *Journal) recover() error {
 	_, err = journal.file.Seek(0, io.SeekEnd)
 	if err != nil {
 		return fmt.Errorf("seek sandbox lifecycle journal: %w", err)
+	}
+	return nil
+}
+
+// rejectDuplicateJSONFields prevents encoding/json's default last-value-wins
+// behavior from silently accepting ambiguous lifecycle evidence.
+func rejectDuplicateJSONFields(line []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(line))
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	opening, ok := token.(json.Delim)
+	if !ok || opening != '{' {
+		return errors.New("sandbox lifecycle record must be a JSON object")
+	}
+	seen := make(map[string]struct{})
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return errors.New("sandbox lifecycle record contains a non-string field name")
+		}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("sandbox lifecycle record contains duplicate field %q", key)
+		}
+		seen[key] = struct{}{}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+	}
+	token, err = decoder.Token()
+	if err != nil {
+		return err
+	}
+	closing, ok := token.(json.Delim)
+	if !ok || closing != '}' {
+		return errors.New("sandbox lifecycle record has an invalid object boundary")
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("sandbox lifecycle record contains trailing JSON data")
 	}
 	return nil
 }
