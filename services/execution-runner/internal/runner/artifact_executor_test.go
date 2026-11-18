@@ -72,6 +72,24 @@ func adapterArtifact(action string) runnerclient.ExecutionArtifact {
 	}
 }
 
+func TestSandboxArtifactExecutorRejectsNilContext(t *testing.T) {
+	t.Parallel()
+	sandbox := &conformanceSandbox{}
+	executor, err := NewSandboxArtifactExecutor(sandbox, SandboxArtifactExecutorConfig{
+		Runtime: adapterRuntimeConfig(),
+		Limits: adapterExecutionLimits(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executor.Execute(nil, adapterArtifact("RUN")); !errors.Is(err, ErrExecutionContextRequired) {
+		t.Fatalf("Execute with nil context error = %v, want ErrExecutionContextRequired", err)
+	}
+	if len(sandbox.requests) != 0 {
+		t.Fatal("sandbox was invoked with a nil artifact execution context")
+	}
+}
+
 func TestSandboxArtifactExecutorIsDisabledUnlessExplicitlyEnabled(t *testing.T) {
 	t.Parallel()
 	sandbox := &conformanceSandbox{}
