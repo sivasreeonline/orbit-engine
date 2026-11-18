@@ -65,18 +65,18 @@ func DiscoverPendingDockerLifecycles(
 	if err != nil {
 		return nil, fmt.Errorf("read pending sandbox lifecycles: %w", err)
 	}
+	// Bound the journal side before allocating correlation maps or invoking
+	// Docker. This is an operational safety ceiling (2x the 500-student target),
+	// not a concurrency guarantee.
+	if len(pending) > maxRecoveryContainers {
+		return nil, errors.New("pending sandbox lifecycle count exceeds recovery safety limit")
+	}
 	pendingLifecycleIDs := make(map[string]struct{}, len(pending))
 	for _, lifecycle := range pending {
 		if lifecycle.RunnerInstanceID != runnerID {
 			return nil, errors.New("pending lifecycle belongs to a different runner instance")
 		}
 		pendingLifecycleIDs[lifecycle.LifecycleID] = struct{}{}
-	}
-
-	// Bound the journal side before invoking Docker. This is an operational
-	// safety ceiling (2x the 500-student target), not a concurrency guarantee.
-	if len(pending) > maxRecoveryContainers {
-		return nil, errors.New("pending sandbox lifecycle count exceeds recovery safety limit")
 	}
 
 	// Inventory once, then correlate in memory. A failed or incomplete Docker
