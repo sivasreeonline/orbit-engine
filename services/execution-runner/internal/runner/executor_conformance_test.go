@@ -100,6 +100,18 @@ func conformanceExecutor(t *testing.T, resolver ArtifactResolver, sandbox Sandbo
 	return executor
 }
 
+func TestSandboxExecutorRejectsNilContextBeforeResolvingArtifacts(t *testing.T) {
+	t.Parallel()
+	sandbox := &conformanceSandbox{}
+	executor := conformanceExecutor(t, &conformanceResolver{source: conformanceSource(), bundle: conformanceBundle()}, sandbox)
+	if _, err := executor.Execute(nil, conformanceRequest(protocol.ActionRun, conformanceSource())); !errors.Is(err, ErrExecutionContextRequired) {
+		t.Fatalf("Execute with nil context error = %v, want ErrExecutionContextRequired", err)
+	}
+	if len(sandbox.requests) != 0 {
+		t.Fatal("sandbox was invoked with a nil execution context")
+	}
+}
+
 func TestSandboxExecutorAcceptsAndReturnsOnlyPinnedPublicEvidence(t *testing.T) {
 	t.Parallel()
 	source := conformanceSource()
