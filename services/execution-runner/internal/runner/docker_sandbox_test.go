@@ -103,6 +103,19 @@ func (fake *fakeDockerCLI) Remove(_ context.Context, id string) error {
 	return fake.removeErr
 }
 
+type closeJournalOnRemoveDockerCLI struct {
+	*fakeDockerCLI
+	journal *sandboxjournal.Journal
+}
+
+func (cli *closeJournalOnRemoveDockerCLI) Remove(_ context.Context, id string) error {
+	if id != cli.containerID {
+		return ErrDockerCommandFailed
+	}
+	cli.removed = true
+	return cli.journal.Close()
+}
+
 func privateJournalTestPath(t *testing.T, name string) string {
 	t.Helper()
 	directory := t.TempDir()
@@ -1083,5 +1096,71 @@ func TestDockerSandboxFailedCreateWithUnconfirmedCleanupRemainsDiscoverable(t *t
 	if len(pending) != 1 || pending[0].Created || pending[0].Cleaned ||
 		pending[0].ContainerID != "" {
 		t.Fatalf("read-only recovery must preserve unresolved CREATE_INTENT: %+v", pending)
+	}
+}
+
+
+func TestDockerSandboxRemovalSuccessWithCleanedAppendFailureRemainsPending(t *testing.T) {
+	journalPath := privateJournalTestPath(t, "cleaned-append-failure.jsonl")
+	journal, err := sandboxjournal.Open(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeDockerCLI{
+		stdout: []byte(compileSuccessMarker + "ok"),
+		state: DockerContainerState{Status: "exited", ExitCode: 0},
+	}
+	cli := &closeJournalOnRemoveDockerCLI{fakeDockerCLI: fake, journal: journal}
+	sandbox, err := NewJournaledDockerSandbox(cli, journal, strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	observation, runErr := sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(runErr, ErrDockerCommandFailed) {
+		t.Fatalf("RunCase error = %v, want cleanup-journal persistence failure", runErr)
+	}
+	if !fake.removed {
+		t.Fatal("Docker removal was not confirmed")
+	}
+	if observation.CleanupSucceeded {
+		t.Fatal("cleanup was reported successful without durable CLEANED confirmation")
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatalf("close already-closed journal: %v", err)
+	}
+
+	reopened, err := sandboxjournal.Open(journalPath)
+	if err != nil {
+		t.Fatalf("reopen journal after CLEANED append failure: %v", err)
+	}
+	defer reopened.Close()
+	pending, err := reopened.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || !pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != fake.containerID {
+		t.Fatalf("failed CLEANED append must preserve CREATED lifecycle identity: %+v", pending)
+	}
+
+	findings, err := DiscoverPendingDockerLifecycles(
+		context.Background(), reopened,
+		&fakeLifecycleDiscoverer{}, strings.Repeat("a", 32),
+	)
+	if err != nil {
+		t.Fatalf("inspect pending lifecycle after failed CLEANED append: %v", err)
+	}
+	if len(findings) != 1 ||
+		findings[0].Assessment != "JOURNALED_CONTAINER_NOT_FOUND — operator review required" {
+		t.Fatalf("post-removal recovery assessment = %+v", findings)
+	}
+	pending, err = reopened.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || !pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != fake.containerID {
+		t.Fatalf("read-only recovery must not infer CLEANED from missing inventory: %+v", pending)
 	}
 }
