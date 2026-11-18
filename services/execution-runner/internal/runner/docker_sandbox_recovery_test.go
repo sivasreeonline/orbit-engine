@@ -203,7 +203,7 @@ func TestDiscoverPendingDockerLifecyclesReportsCreateIntentWithoutDeletion(t *te
 func TestOSCommandDockerCLIDiscoveryRejectsNilContextWithoutRunningDocker(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "docker-stub")
 	marker := filepath.Join(t.TempDir(), "docker-invoked")
-	script := "#!/bin/sh\\nprintf invoked > \"" + marker + "\"\\n"
+	script := "#!/bin/sh\nprintf invoked > \"" + marker + "\"\n"
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
