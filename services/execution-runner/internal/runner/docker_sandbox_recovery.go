@@ -114,8 +114,10 @@ func DiscoverPendingDockerLifecycles(
 		sort.Slice(matches, func(i, j int) bool { return matches[i].ID < matches[j].ID })
 		result := LifecycleDiscovery{Lifecycle: lifecycle, Containers: matches}
 		switch {
+		case len(matches) == 0 && !lifecycle.Created:
+			result.Assessment = "CREATE_INTENT_NO_CONTAINER_MATCH — operator review required"
 		case len(matches) == 0:
-			result.Assessment = "NO_CONTAINER_MATCH — operator review required"
+			result.Assessment = "JOURNALED_CONTAINER_NOT_FOUND — operator review required"
 		case len(matches) > 1:
 			result.Assessment = "AMBIGUOUS_MULTIPLE_MATCHES — operator review required"
 		case lifecycle.ContainerID != "" && matches[0].ID != lifecycle.ContainerID:
