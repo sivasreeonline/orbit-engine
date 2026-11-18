@@ -433,8 +433,8 @@ func TestOSCommandDockerCLIDiscoveryHonorsCancellationDuringInspect(t *testing.T
 	id := strings.Repeat("a", 64)
 	script := strings.Join([]string{
 		"#!/bin/sh",
-		\`if [ "$1" = "ps" ]; then printf '%s\n' "\` + id + \`"; exit 0; fi\`,
-		\`if [ "$1" = "inspect" ]; then sleep 2; exit 0; fi\`,
+		`if [ "$1" = "ps" ]; then printf '%s\n' "` + id + `"; exit 0; fi`,
+		`if [ "$1" = "inspect" ]; then sleep 2; exit 0; fi`,
 		"exit 97",
 	}, "\n")
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
