@@ -886,3 +886,53 @@ func assertRecoveryDockerProcessReaped(t *testing.T, pidPath string) {
 		t.Fatalf("Docker subprocess %d still exists after cancellation (kill probe: %v)", pid, err)
 	}
 }
+
+
+func TestOSCommandDockerCLIDiscoveryTreatsDaemonUnavailableAsErrorNotEmptyInventory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"ps\" ]; then",
+		"  printf '%s\\n' 'Cannot connect to the Docker daemon' >&2",
+		"  exit 1",
+		"fi",
+		"exit 99",
+	}, "\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(
+		context.Background(), strings.Repeat("a", 32),
+	)
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("daemon-unavailable inventory error = %v, want ErrDockerCommandFailed", err)
+	}
+	if found != nil {
+		t.Fatalf("daemon-unavailable inventory returned findings: %+v", found)
+	}
+}
+
+func TestOSCommandDockerCLIDiscoveryAcceptsSuccessfulEmptyInventory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	script := "#!/bin/sh\n[ \"$1\" = \"ps\" ] || exit 99\nexit 0\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(
+		context.Background(), strings.Repeat("a", 32),
+	)
+	if err != nil {
+		t.Fatalf("successful empty inventory returned error: %v", err)
+	}
+	if found == nil || len(found) != 0 {
+		t.Fatalf("successful empty inventory = %#v, want non-nil empty slice", found)
+	}
+}
