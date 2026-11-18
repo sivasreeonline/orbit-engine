@@ -328,3 +328,86 @@ func TestReadOnlyJournalRejectsIncompleteTailWithoutTruncating(t *testing.T) {
 		t.Fatalf("failed read-only open left its lock behind: %v", err)
 	}
 }
+
+
+func TestJournalRecoveryPreservesCreatedStateAfterPartialCleanedTail(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "partial-cleaned.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycleID, err := journal.Begin(testRunnerID, testExecutionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Created(lifecycleID, testContainerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a process or storage failure during the CLEANED append:
+	// the final JSONL record has bytes on disk but no terminating newline.
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partialCleaned := `{"version":1,"sequence":3,"type":"CLEANED","lifecycleId":"` + lifecycleID
+	if _, err := file.WriteString(partialCleaned); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := Open(path)
+	if err != nil {
+		t.Fatalf("recover journal with incomplete CLEANED tail: %v", err)
+	}
+	pending, err := recovered.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].LifecycleID != lifecycleID ||
+		!pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != testContainerID {
+		t.Fatalf("partial CLEANED tail must preserve prior CREATED evidence: %+v", pending)
+	}
+	if err := recovered.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(content), partialCleaned) {
+		t.Fatal("incomplete CLEANED bytes were not truncated")
+	}
+
+	// The next valid event must continue from the last durable sequence and
+	// may be appended only as a fresh, complete transition.
+	recovered, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recovered.Cleaned(lifecycleID); err != nil {
+		t.Fatalf("append CLEANED after incomplete-tail recovery: %v", err)
+	}
+	if err := recovered.Close(); err != nil {
+		t.Fatal(err)
+	}
+	final, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer final.Close()
+	pending, err = final.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("valid post-recovery CLEANED transition remained pending: %+v", pending)
+	}
+}
