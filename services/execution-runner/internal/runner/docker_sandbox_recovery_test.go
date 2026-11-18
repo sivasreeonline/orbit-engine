@@ -380,7 +380,7 @@ func TestOSCommandDockerCLIDiscoveryInspectsInBoundedBatches(t *testing.T) {
 
 
 func TestOSCommandDockerCLIDiscoveryRejectsIncompleteOrUntrustedInspectBatches(t *testing.T) {
-	if os.PathSeparator == '\\\\' {
+	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
 	}
 	runnerID := strings.Repeat("b", 32)
@@ -391,23 +391,24 @@ func TestOSCommandDockerCLIDiscoveryRejectsIncompleteOrUntrustedInspectBatches(t
 	}
 
 	tests := []struct {
-		name string
+		name        string
 		secondBatch string
 	}{
-		{name: "second batch command fails", secondBatch: `exit 95`},
-		{name: "second batch omits requested id", secondBatch: `exit 0`},
-		{name: "second batch duplicates requested id", secondBatch: `emit "$1"; emit "$1"`},
-		{name: "second batch returns unexpected id", secondBatch: `emit "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"`},
-		{name: "second batch returns malformed trailing json", secondBatch: `printf '{broken-json}\\n'`},
+		{name: "second batch command fails", secondBatch: \`exit 95\`},
+		{name: "second batch omits requested id", secondBatch: \`exit 0\`},
+		{name: "second batch duplicates requested id", secondBatch: \`emit "$1"; emit "$1"\`},
+		{name: "second batch returns unexpected id", secondBatch: \`emit "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"\`},
+		{name: "second batch returns malformed trailing json", secondBatch: \`printf '{broken-json}\\n'\`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			binary := filepath.Join(t.TempDir(), "docker-stub")
+			emit := fmt.Sprintf(\`emit() { printf '{"Id":"%%s","Config":{"Labels":{"com.skyhigh.runner-instance":"%s","com.skyhigh.lifecycle-id":"%s"}},"State":{"Status":"exited"}}\\n' "$1"; }\`, runnerID, lifecycleID)
 			script := strings.Join([]string{
 				"#!/bin/sh",
-				"emit() { printf '{\\"Id\\":\\"%s\\",\\"Config\\":{\\"Labels\\":{\\"com.skyhigh.runner-instance\\":\\""+runnerID+"\\",\\"com.skyhigh.lifecycle-id\\":\\""+lifecycleID+"\\"}},\\"State\\":{\\"Status\\":\\"exited\\"}}\\n' \\"$1\\"; }",
-				`if [ "$1" = "ps" ]; then printf '%s\\n' '` + strings.Join(ids, "' '") + `'; exit 0; fi`,
-				`if [ "$1" = "inspect" ]; then shift 3; if [ "$#" -eq 1 ]; then ` + test.secondBatch + `; exit 0; fi; for id in "$@"; do emit "$id"; done; exit 0; fi`,
+				emit,
+				\`if [ "$1" = "ps" ]; then printf '%s\\n' '\` + strings.Join(ids, "' '") + \`'; exit 0; fi\`,
+				\`if [ "$1" = "inspect" ]; then shift 3; if [ "$#" -eq 1 ]; then \` + test.secondBatch + \`; exit 0; fi; for id in "$@"; do emit "$id"; done; exit 0; fi\`,
 				"exit 96",
 			}, "\\n")
 			if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
@@ -423,7 +424,6 @@ func TestOSCommandDockerCLIDiscoveryRejectsIncompleteOrUntrustedInspectBatches(t
 		})
 	}
 }
-
 func TestOSCommandDockerCLIDiscoveryHonorsCancellation(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
