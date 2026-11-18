@@ -100,6 +100,14 @@ func conformanceExecutor(t *testing.T, resolver ArtifactResolver, sandbox Sandbo
 	return executor
 }
 
+func TestNilSandboxExecutorReceiverFailsClosed(t *testing.T) {
+	t.Parallel()
+	var executor *SandboxExecutor
+	if _, err := executor.Execute(context.Background(), conformanceRequest(protocol.ActionRun, conformanceSource())); !errors.Is(err, ErrSandboxNotConfigured) {
+		t.Fatalf("nil executor receiver error = %v, want ErrSandboxNotConfigured", err)
+	}
+}
+
 func TestSandboxExecutorRejectsNilContextBeforeResolvingArtifacts(t *testing.T) {
 	t.Parallel()
 	sandbox := &conformanceSandbox{}
