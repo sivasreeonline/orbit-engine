@@ -257,6 +257,20 @@ func testWorker(t *testing.T, control *fakeControlPlane, executor ArtifactExecut
 	return worker
 }
 
+func TestRunOnceRejectsNilContextBeforeControlPlaneCalls(t *testing.T) {
+	t.Parallel()
+	control := newFakeControlPlane()
+	worker := testWorker(t, control, fakeArtifactExecutor{ready: true}, WorkerConfig{})
+	if _, err := worker.RunOnce(nil); !errors.Is(err, ErrExecutionContextRequired) {
+		t.Fatalf("RunOnce with nil context error = %v, want ErrExecutionContextRequired", err)
+	}
+	control.mu.Lock()
+	defer control.mu.Unlock()
+	if len(control.events) != 0 {
+		t.Fatalf("control plane was called with nil context: %v", control.events)
+	}
+}
+
 func TestRunOnceRefusesToClaimUntilExecutorIsReady(t *testing.T) {
 	t.Parallel()
 	control := newFakeControlPlane()
