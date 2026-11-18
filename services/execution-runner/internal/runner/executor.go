@@ -85,6 +85,9 @@ func (executor *SandboxExecutor) Execute(
 	ctx context.Context,
 	request protocol.ExecutionRequest,
 ) (Result, error) {
+	if executor == nil || executor.resolver == nil || executor.sandbox == nil {
+		return Result{}, ErrSandboxNotConfigured
+	}
 	if ctx == nil {
 		return Result{}, ErrExecutionContextRequired
 	}
