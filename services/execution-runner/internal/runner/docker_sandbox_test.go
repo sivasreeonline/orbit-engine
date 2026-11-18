@@ -270,6 +270,36 @@ func TestDockerSandboxPreflightRequiresBothPinnedRuntimeImages(t *testing.T) {
 	}
 }
 
+func TestDockerSandboxRejectsNilContextsWithoutCallingDocker(t *testing.T) {
+	fake := &fakeDockerCLI{}
+	sandbox, err := newJournaledTestSandbox(t, fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimes := RuntimeConfiguration{
+		JavaImageRef:   "registry.example/sky-high/java@sha256:" + strings.Repeat("a", 64),
+		PythonImageRef: "registry.example/sky-high/python@sha256:" + strings.Repeat("b", 64),
+	}
+	if err := sandbox.Preflight(nil, runtimes); !errors.Is(err, ErrSandboxNotConfigured) {
+		t.Fatalf("Preflight with nil context error = %v, want ErrSandboxNotConfigured", err)
+	}
+	if len(fake.preflightImages) != 0 {
+		t.Fatalf("Preflight invoked Docker with nil context: %v", fake.preflightImages)
+	}
+	if _, err := sandbox.RunCase(nil, dockerSandboxTestRequest()); !errors.Is(err, ErrSandboxNotConfigured) {
+		t.Fatalf("RunCase with nil context error = %v, want ErrSandboxNotConfigured", err)
+	}
+	if fake.created {
+		t.Fatal("RunCase created a container with nil context")
+	}
+	if err := (OSCommandDockerCLI{}).Preflight(nil, []string{
+		runtimes.JavaImageRef,
+		runtimes.PythonImageRef,
+	}); !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("Docker CLI Preflight with nil context error = %v, want ErrDockerCommandFailed", err)
+	}
+}
+
 func TestDockerCreateArgumentsApplyRequiredIsolationPolicy(t *testing.T) {
 	t.Parallel()
 	request := dockerSandboxTestRequest()
