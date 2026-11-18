@@ -57,7 +57,7 @@ func (cli OSCommandDockerCLI) binary() string {
 // Preflight verifies that the local daemon exposes runsc and that the exact
 // digest-pinned Java/Python images are already present. It never pulls images.
 func (cli OSCommandDockerCLI) Preflight(ctx context.Context, imageRefs []string) error {
-	if len(imageRefs) != 2 {
+	if ctx == nil || len(imageRefs) != 2 {
 		return ErrDockerCommandFailed
 	}
 	command := exec.CommandContext(ctx, cli.binary(), "info", "--format", "{{json .Runtimes}}")
@@ -204,7 +204,7 @@ func (sandbox *DockerSandbox) Preflight(
 	ctx context.Context,
 	runtimes RuntimeConfiguration,
 ) error {
-	if sandbox == nil || sandbox.cli == nil {
+	if sandbox == nil || sandbox.cli == nil || ctx == nil {
 		return ErrSandboxNotConfigured
 	}
 	if !imageReferencePattern.MatchString(runtimes.JavaImageRef) ||
@@ -221,7 +221,7 @@ func (sandbox *DockerSandbox) RunCase(
 	parent context.Context,
 	request SandboxRequest,
 ) (SandboxObservation, error) {
-	if sandbox == nil || sandbox.cli == nil || sandbox.journal == nil || !runnerInstanceIDPattern.MatchString(sandbox.runnerInstanceID) {
+	if sandbox == nil || sandbox.cli == nil || sandbox.journal == nil || parent == nil || !runnerInstanceIDPattern.MatchString(sandbox.runnerInstanceID) {
 		return SandboxObservation{}, ErrSandboxNotConfigured
 	}
 	if err := validateSandboxRequest(request); err != nil {
