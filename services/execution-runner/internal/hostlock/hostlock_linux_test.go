@@ -76,10 +76,11 @@ func TestHostLockRejectsInvalidOwnerPathSymlinkAndPermissiveFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	link := filepath.Join(dir, "link.lock")
-	if err := os.Symlink(target, link); err == nil {
-		if _, err := Acquire(link, strings.Repeat("a", 32)); err == nil {
-			t.Fatal("symlinked host lock was accepted")
-		}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("create symlink fixture: %v", err)
+	}
+	if _, err := Acquire(link, strings.Repeat("a", 32)); err == nil {
+		t.Fatal("symlinked host lock was accepted")
 	}
 
 	permissive := filepath.Join(dir, "permissive.lock")
@@ -88,6 +89,21 @@ func TestHostLockRejectsInvalidOwnerPathSymlinkAndPermissiveFile(t *testing.T) {
 	}
 	if _, err := Acquire(permissive, strings.Repeat("a", 32)); err == nil {
 		t.Fatal("group/other-readable host lock was accepted")
+	}
+}
+
+func TestHostLockRejectsHardLinkedFile(t *testing.T) {
+	dir := privateLockDir(t)
+	path := filepath.Join(dir, "runner-host.lock")
+	alias := filepath.Join(dir, "runner-host-alias.lock")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(path, alias); err != nil {
+		t.Fatalf("create hard-link fixture: %v", err)
+	}
+	if _, err := Acquire(path, strings.Repeat("e", 32)); err == nil {
+		t.Fatal("hard-linked host lock was accepted")
 	}
 }
 
