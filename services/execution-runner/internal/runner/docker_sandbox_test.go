@@ -292,11 +292,25 @@ func TestDockerSandboxRejectsNilContextsWithoutCallingDocker(t *testing.T) {
 	if fake.created {
 		t.Fatal("RunCase created a container with nil context")
 	}
-	if err := (OSCommandDockerCLI{}).Preflight(nil, []string{
+	cli := OSCommandDockerCLI{}
+	if err := cli.Preflight(nil, []string{
 		runtimes.JavaImageRef,
 		runtimes.PythonImageRef,
 	}); !errors.Is(err, ErrDockerCommandFailed) {
 		t.Fatalf("Docker CLI Preflight with nil context error = %v, want ErrDockerCommandFailed", err)
+	}
+	validContainerID := strings.Repeat("1", 64)
+	if _, err := cli.Create(nil, nil); !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("Docker CLI Create with nil context error = %v, want ErrDockerCommandFailed", err)
+	}
+	if _, err := cli.StartAttached(nil, validContainerID, nil, nil, nil); !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("Docker CLI StartAttached with nil context error = %v, want ErrDockerCommandFailed", err)
+	}
+	if _, err := cli.Inspect(nil, validContainerID); !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("Docker CLI Inspect with nil context error = %v, want ErrDockerCommandFailed", err)
+	}
+	if err := cli.Remove(nil, validContainerID); !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("Docker CLI Remove with nil context error = %v, want ErrDockerCommandFailed", err)
 	}
 }
 
