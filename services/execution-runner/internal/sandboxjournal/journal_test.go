@@ -687,3 +687,47 @@ func TestJournalRecoveryRejectsCompleteInvalidTransitionWithoutMutatingJournal(t
 		})
 	}
 }
+
+
+func TestJournalRejectsDuplicateJSONFieldsWithoutMutatingJournal(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "duplicate-field.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.Begin(testRunnerID, testExecutionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.TrimSuffix(string(original), "\n")
+	if !strings.Contains(line, "\"sequence\":1") {
+		t.Fatal("fixture does not contain the expected sequence field")
+	}
+	mutated := strings.Replace(line, "\"sequence\":1", "\"sequence\":1,\"sequence\":1", 1) + "\n"
+	if err := os.WriteFile(path, []byte(mutated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil {
+		t.Fatal("duplicate JSON field was accepted")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("failed recovery mutated journal containing duplicate fields")
+	}
+	if _, err := os.Stat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed recovery left ownership lock behind: %v", err)
+	}
+}
