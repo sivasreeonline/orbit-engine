@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
@@ -20,6 +21,7 @@ type fakeDockerCLI struct {
 	createArgs     []string
 	containerID    string
 	createErr      error
+	waitCreateForContext bool
 	startExitCode  int
 	startErr       error
 	stdout         []byte
@@ -38,9 +40,13 @@ func (fake *fakeDockerCLI) Preflight(_ context.Context, imageRefs []string) erro
 	return fake.preflightErr
 }
 
-func (fake *fakeDockerCLI) Create(_ context.Context, args []string) (string, error) {
+func (fake *fakeDockerCLI) Create(ctx context.Context, args []string) (string, error) {
 	fake.created = true
 	fake.createArgs = append([]string(nil), args...)
+	if fake.waitCreateForContext {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
 	if fake.createErr != nil {
 		return "", fake.createErr
 	}
@@ -241,6 +247,45 @@ func TestOSCommandDockerCLIPreflightInspectsRunscAndNeverPulls(t *testing.T) {
 	t.Setenv("DOCKER_TEST_IMAGE_FAIL", "1")
 	if err := cli.Preflight(context.Background(), images); !errors.Is(err, ErrDockerCommandFailed) {
 		t.Fatalf("missing digest-pinned image was accepted: %v", err)
+	}
+}
+
+func TestOSCommandDockerCLICreateCancellationCleansPartialContainer(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker sandbox targets Linux hosts")
+	}
+	logPath := filepath.Join(t.TempDir(), "docker-remove.log")
+	binaryPath := filepath.Join(t.TempDir(), "docker-stub")
+	containerID := strings.Repeat("a", 64)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"create\" ]; then",
+		"  printf '%s\\n' '"+containerID+"'",
+		"  exec sleep 5",
+		"fi",
+		"if [ \"$1\" = \"rm\" ]; then",
+		"  printf '%s\\n' \"$3\" >> \"$DOCKER_TEST_REMOVE_LOG\"",
+		"  exit 0",
+		"fi",
+		"exit 91",
+	}, "\n")
+	if err := os.WriteFile(binaryPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_TEST_REMOVE_LOG", logPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	_, err := (OSCommandDockerCLI{Binary: binaryPath}).Create(ctx, []string{"--name", "test"})
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("cancelled create error = %v, want ErrDockerCommandFailed", err)
+	}
+	removed, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatalf("partial container cleanup was not attempted: %v", readErr)
+	}
+	if strings.TrimSpace(string(removed)) != containerID {
+		t.Fatalf("removed container ID = %q, want %q", strings.TrimSpace(string(removed)), containerID)
 	}
 }
 
