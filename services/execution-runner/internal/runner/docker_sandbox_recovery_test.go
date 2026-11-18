@@ -29,6 +29,26 @@ func (fake *fakeLifecycleDiscoverer) DiscoverByRunnerLabel(_ context.Context, ru
 		return append([]DiscoveredDockerContainer(nil), fake.containers...), fake.err
 }
 
+func TestDiscoverPendingDockerLifecyclesRejectsNilContextWithoutCallingDiscoverer(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	if _, err := sandbox.journal.Begin(runnerID, "exec_nil_context"); err != nil {
+		t.Fatal(err)
+	}
+	discoverer := &fakeLifecycleDiscoverer{}
+
+	found, err := DiscoverPendingDockerLifecycles(nil, sandbox.journal, discoverer, runnerID)
+	if !errors.Is(err, ErrSandboxNotConfigured) || found != nil {
+		t.Fatalf("nil-context discovery = %+v, %v; want nil findings and ErrSandboxNotConfigured", found, err)
+	}
+	if discoverer.calls != 0 {
+		t.Fatalf("Docker discovery calls = %d, want 0 for nil context", discoverer.calls)
+	}
+}
+
 func TestDiscoverPendingDockerLifecyclesRejectsOversizedInventoryFromDiscoverer(t *testing.T) {
 	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
 	if err != nil {
