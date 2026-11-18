@@ -124,6 +124,9 @@ func NewWorker(
 // It is intentionally not a poll loop; a future service supervisor may call it
 // repeatedly only after runner key and sandbox configuration are approved.
 func (worker *Worker) RunOnce(ctx context.Context) (WorkResult, error) {
+	if ctx == nil {
+		return WorkResult{}, ErrExecutionContextRequired
+	}
 	if err := ctx.Err(); err != nil {
 		return WorkResult{}, err
 	}
