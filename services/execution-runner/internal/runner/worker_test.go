@@ -257,6 +257,14 @@ func testWorker(t *testing.T, control *fakeControlPlane, executor ArtifactExecut
 	return worker
 }
 
+func TestNilWorkerReceiverFailsClosed(t *testing.T) {
+	t.Parallel()
+	var worker *Worker
+	if _, err := worker.RunOnce(context.Background()); !errors.Is(err, ErrSandboxNotConfigured) {
+		t.Fatalf("nil worker receiver error = %v, want ErrSandboxNotConfigured", err)
+	}
+}
+
 func TestRunOnceRejectsNilContextBeforeControlPlaneCalls(t *testing.T) {
 	t.Parallel()
 	control := newFakeControlPlane()
