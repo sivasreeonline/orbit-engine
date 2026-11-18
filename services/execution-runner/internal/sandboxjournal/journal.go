@@ -328,6 +328,10 @@ func rejectDuplicateJSONFields(line []byte) error {
 	if !ok || opening != '{' {
 		return errors.New("sandbox lifecycle record must be a JSON object")
 	}
+	allowed := map[string]struct{}{
+		"version": {}, "sequence": {}, "type": {}, "lifecycleId": {},
+		"runnerInstanceId": {}, "executionId": {}, "containerId": {}, "at": {},
+	}
 	seen := make(map[string]struct{})
 	for decoder.More() {
 		keyToken, err := decoder.Token()
@@ -337,6 +341,9 @@ func rejectDuplicateJSONFields(line []byte) error {
 		key, ok := keyToken.(string)
 		if !ok {
 			return errors.New("sandbox lifecycle record contains a non-string field name")
+		}
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("sandbox lifecycle record contains unknown or non-canonical field %q", key)
 		}
 		if _, exists := seen[key]; exists {
 			return fmt.Errorf("sandbox lifecycle record contains duplicate field %q", key)
