@@ -63,6 +63,9 @@ func run(
 	discoverer runner.DockerLifecycleDiscoverer,
 	output io.Writer,
 ) (returnErr error) {
+	if ctx == nil {
+		return errors.New("recovery inspection context is required")
+	}
 	if lookup == nil || discoverer == nil || output == nil {
 		return errors.New("recovery inspection dependencies are required")
 	}
