@@ -82,6 +82,9 @@ func run(
 		filepath.Clean(hostLockPath) == string(filepath.Separator) {
 		return errors.New("RUNNER_HOST_LOCK_PATH must be an absolute non-root path")
 	}
+	if err := inspectionContext.Err(); err != nil {
+		return fmt.Errorf("recovery inspection deadline: %w", err)
+	}
 	hostOwnershipLock, err := hostlock.Acquire(hostLockPath, runnerID)
 	if err != nil {
 		return fmt.Errorf("acquire exclusive host ownership lock: %w", err)
@@ -99,6 +102,9 @@ func run(
 	if !ok || journalPath == "" || !filepath.IsAbs(journalPath) ||
 		filepath.Clean(journalPath) == string(filepath.Separator) {
 		return errors.New("RUNNER_SANDBOX_JOURNAL_PATH must be an absolute non-root path")
+	}
+	if err := inspectionContext.Err(); err != nil {
+		return fmt.Errorf("recovery inspection deadline: %w", err)
 	}
 
 	// Recovery must inspect an existing journal, never silently create a new
