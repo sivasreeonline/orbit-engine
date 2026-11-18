@@ -76,6 +76,7 @@ type Journal struct {
 	closed bool
 	readOnly bool
 	appendUncertain bool
+	syncFn func(*os.File) error
 }
 
 func Open(path string) (*Journal, error) {
@@ -423,7 +424,7 @@ func (journal *Journal) appendLocked(event Event) error {
 		journal.appendUncertain = true
 		return fmt.Errorf("%w: append sandbox lifecycle event: %v", ErrAppendUncertain, writeErr)
 	}
-	if err := journal.file.Sync(); err != nil {
+	if err := journal.syncJournalFile(); err != nil {
 		journal.appendUncertain = true
 		return fmt.Errorf("%w: sync sandbox lifecycle event: %v", ErrAppendUncertain, err)
 	}
@@ -478,6 +479,13 @@ func (journal *Journal) apply(event Event) error {
 	return nil
 }
 
+func (journal *Journal) syncJournalFile() error {
+	if journal.syncFn != nil {
+		return journal.syncFn(journal.file)
+	}
+	return journal.file.Sync()
+}
+
 func (journal *Journal) Close() error {
 	if journal == nil {
 		return nil
@@ -488,7 +496,7 @@ func (journal *Journal) Close() error {
 		return nil
 	}
 	if !journal.readOnly {
-		if err := journal.file.Sync(); err != nil {
+		if err := journal.syncJournalFile(); err != nil {
 			return fmt.Errorf("sync sandbox lifecycle journal on close: %w", err)
 		}
 	}
