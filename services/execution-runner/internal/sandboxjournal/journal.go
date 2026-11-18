@@ -28,6 +28,7 @@ var (
 	ErrNotFound = errors.New("sandbox lifecycle record not found")
 	ErrLocked = errors.New("sandbox lifecycle journal already has an owner")
 	ErrReadOnly = errors.New("sandbox lifecycle journal is read-only")
+	ErrAppendUncertain = errors.New("sandbox lifecycle journal append outcome is uncertain; reopen for recovery")
 	runnerIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 	executionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 	containerIDPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -74,6 +75,7 @@ type Journal struct {
 	records map[string]Lifecycle
 	closed bool
 	readOnly bool
+	appendUncertain bool
 }
 
 func Open(path string) (*Journal, error) {
@@ -383,6 +385,9 @@ func (journal *Journal) append(event Event) error {
 }
 
 func (journal *Journal) appendLocked(event Event) error {
+	if journal.appendUncertain {
+		return ErrAppendUncertain
+	}
 	if journal.closed {
 		return ErrClosed
 	}
@@ -415,13 +420,16 @@ func (journal *Journal) appendLocked(event Event) error {
 		writeErr = io.ErrShortWrite
 	}
 	if writeErr != nil {
-		return fmt.Errorf("append sandbox lifecycle event: %w", writeErr)
+		journal.appendUncertain = true
+		return fmt.Errorf("%w: append sandbox lifecycle event: %v", ErrAppendUncertain, writeErr)
 	}
 	if err := journal.file.Sync(); err != nil {
-		return fmt.Errorf("sync sandbox lifecycle event: %w", err)
+		journal.appendUncertain = true
+		return fmt.Errorf("%w: sync sandbox lifecycle event: %v", ErrAppendUncertain, err)
 	}
 	if err := journal.apply(event); err != nil {
-		return fmt.Errorf("apply sandbox lifecycle event: %w", err)
+		journal.appendUncertain = true
+		return fmt.Errorf("%w: apply durable sandbox lifecycle event: %v", ErrAppendUncertain, err)
 	}
 	journal.sequence = event.Sequence
 	return nil
