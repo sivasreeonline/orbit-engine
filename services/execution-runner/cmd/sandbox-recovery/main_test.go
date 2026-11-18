@@ -270,6 +270,59 @@ func TestRecoveryCommandReportsCreateIntentCrashWindowWithoutCleanup(t *testing.
 	}
 }
 
+func TestRecoveryCommandReportsMissingCreateIntentWithoutResolvingIt(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "sandbox-lifecycle.jsonl")
+	journal, err := sandboxjournal.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	lifecycleID, err := journal.Begin(runnerID, "exec_create_without_container")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	discoverer := &fakeDiscoverer{}
+	var output bytes.Buffer
+	if err := run(context.Background(), recoveryEnvironment(path), discoverer, &output); err != nil {
+		t.Fatal(err)
+	}
+	var report recoveryReport
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatalf("decode recovery report: %v; output=%s", err, output.String())
+	}
+	if report.Mode != "DRY_RUN" || report.DeletionPerformed ||
+		report.PendingCount != 1 || len(report.Findings) != 1 ||
+		report.Findings[0].LifecycleID != lifecycleID ||
+		report.Findings[0].Assessment != "CREATE_INTENT_NO_CONTAINER_MATCH — operator review required" {
+		t.Fatalf("missing create-intent report is not conservative: %+v", report)
+	}
+	if discoverer.calls != 1 {
+		t.Fatalf("Docker inventory calls = %d, want 1", discoverer.calls)
+	}
+
+	reopened, err := sandboxjournal.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	pending, err := reopened.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].LifecycleID != lifecycleID ||
+		pending[0].Created || pending[0].Cleaned || pending[0].ContainerID != "" {
+		t.Fatalf("recovery command resolved or mutated the intent: %+v", pending)
+	}
+}
+
 func TestRecoveryCommandDaemonFailureProducesNoCleanReportAndLeavesJournalUsable(t *testing.T) {
 	path, _, _ := createPendingJournal(t)
 	discoverer := &fakeDiscoverer{err: errors.New("docker daemon unavailable")}
