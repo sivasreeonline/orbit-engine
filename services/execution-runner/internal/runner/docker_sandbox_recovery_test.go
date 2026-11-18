@@ -429,18 +429,20 @@ func TestOSCommandDockerCLIDiscoveryHonorsCancellationDuringInspect(t *testing.T
 	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
 	}
-	binary := filepath.Join(t.TempDir(), "docker-stub")
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "docker-stub")
+	marker := filepath.Join(directory, "inspect-started")
 	id := strings.Repeat("a", 64)
 	script := strings.Join([]string{
 		"#!/bin/sh",
 		"if [ \"$1\" = \"ps\" ]; then printf '%s\\n' \"" + id + "\"; exit 0; fi",
-		"if [ \"$1\" = \"inspect\" ]; then sleep 2; exit 0; fi",
+		"if [ \"$1\" = \"inspect\" ]; then printf 'started' > \"" + marker + "\"; exec sleep 2; fi",
 		"exit 97",
 	}, "\n")
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(ctx, strings.Repeat("b", 32))
 	if !errors.Is(err, ErrDockerCommandFailed) {
@@ -449,8 +451,10 @@ func TestOSCommandDockerCLIDiscoveryHonorsCancellationDuringInspect(t *testing.T
 	if found != nil {
 		t.Fatalf("cancelled inspect returned partial findings: %+v", found)
 	}
+	if started, readErr := os.ReadFile(marker); readErr != nil || string(started) != "started" {
+		t.Fatalf("inspect phase was not reached before cancellation: content=%q error=%v", started, readErr)
+	}
 }
-
 func TestOSCommandDockerCLIDiscoveryHonorsCancellation(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
