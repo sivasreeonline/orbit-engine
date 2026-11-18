@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,8 @@ import (
 var runnerIDPattern = regexp.MustCompile("^[a-f0-9]{32}$")
 
 type environment func(string) (string, bool)
+
+const maxRecoveryReportBytes = 8 << 20
 
 type recoveryReport struct {
 	SchemaVersion     int                `json:"schemaVersion"`
@@ -130,9 +133,15 @@ func run(
 			Assessment: finding.Assessment,
 		})
 	}
-	encoder := json.NewEncoder(output)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(report); err != nil {
+	payload, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode recovery inspection report: %w", err)
+	}
+	payload = append(payload, '\n')
+	if len(payload) > maxRecoveryReportBytes {
+		return errors.New("recovery inspection report exceeds output safety limit")
+	}
+	if _, err := io.Copy(output, bytes.NewReader(payload)); err != nil {
 		return fmt.Errorf("write recovery inspection report: %w", err)
 	}
 	return nil
