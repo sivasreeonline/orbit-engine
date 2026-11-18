@@ -139,7 +139,7 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 	ctx context.Context,
 	runnerID string,
 ) ([]DiscoveredDockerContainer, error) {
-	if !runnerInstanceIDPattern.MatchString(runnerID) {
+	if ctx == nil || !runnerInstanceIDPattern.MatchString(runnerID) {
 		return nil, ErrDockerCommandFailed
 	}
 	command := exec.CommandContext(
