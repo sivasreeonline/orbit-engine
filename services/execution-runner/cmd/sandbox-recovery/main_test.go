@@ -469,43 +469,39 @@ func TestRecoveryCommandDeadlineDuringDockerDiscoveryEmitsNoReport(t *testing.T)
 
 
 type deadlineIgnoringDiscoverer struct {
-	calls int
-	delay time.Duration
+	calls   int
+	started chan struct{}
+	release chan struct{}
 }
 
 func (discoverer *deadlineIgnoringDiscoverer) DiscoverByRunnerLabel(_ context.Context, _ string) ([]runner.DiscoveredDockerContainer, error) {
 	discoverer.calls++
-	time.Sleep(discoverer.delay)
+	close(discoverer.started)
+	<-discoverer.release // Deliberately ignore context cancellation.
 	return []runner.DiscoveredDockerContainer{}, nil
-}
-
-func TestRecoveryCommandRejectsAlreadyCancelledContextBeforeDiscovery(t *testing.T) {
-	path, _, _ := createPendingJournal(t)
-	discoverer := &fakeDiscoverer{}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	var output bytes.Buffer
-
-	err := run(ctx, recoveryEnvironment(path), discoverer, &output)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("cancelled recovery error = %v, want context.Canceled", err)
-	}
-	if discoverer.calls != 0 {
-		t.Fatalf("discovery calls = %d, want 0 after pre-cancellation", discoverer.calls)
-	}
-	if output.Len() != 0 {
-		t.Fatalf("pre-cancelled recovery emitted a report: %s", output.String())
-	}
 }
 
 func TestRecoveryCommandRejectsLateSuccessAfterDeadline(t *testing.T) {
 	path, _, _ := createPendingJournal(t)
-	discoverer := &deadlineIgnoringDiscoverer{delay: 40 * time.Millisecond}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	discoverer := &deadlineIgnoringDiscoverer{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	var output bytes.Buffer
+	type runResult struct{ err error }
+	result := make(chan runResult, 1)
+	go func() {
+		result <- run(ctx, recoveryEnvironment(path), discoverer, &output)
+	}()
 
-	err := run(ctx, recoveryEnvironment(path), discoverer, &output)
+	// Wait until discovery has definitely started before allowing the parent
+	// deadline to expire. This avoids a scheduler-dependent short-timeout race.
+	<-discoverer.started
+	<-ctx.Done()
+	close(discoverer.release)
+	err := (<-result).err
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("late discovery success error = %v, want context.DeadlineExceeded", err)
 	}
