@@ -268,11 +268,18 @@ func TestOSCommandDockerCLIDiscoveryRejectsOversizedStderr(t *testing.T) {
 	}{
 		{
 			name: "inventory stderr",
-			script: strings.Join([]string{"#!/bin/sh", "printf '%s\\n' \"\" + id + \"\"", "printf '%*s' \" + fmt.Sprint(maxDockerStderrBytes+1) + \" x >&2"}, "\n"),
+			script: fmt.Sprintf("#!/bin/sh
+printf '%%s\n' "%s"
+printf '%%*s' %d x >&2
+", id, maxDockerStderrBytes+1),
 		},
 		{
 			name: "inspect stderr",
-			script: strings.Join([]string{"#!/bin/sh", "if [ \"$1\" = \"ps\" ]; then printf '%s\\n' \"\" + id + \"\"; exit 0; fi", "if [ \"$1\" = \"inspect\" ]; then printf '%s' '\" + validInspect + \"'; printf '%*s' \" + fmt.Sprint(maxDockerStderrBytes+1) + \" x >&2; exit 0; fi", "exit 99"}, "\n"),
+			script: fmt.Sprintf("#!/bin/sh
+if [ "$1" = "ps" ]; then printf '%%s\n' "%s"; exit 0; fi
+if [ "$1" = "inspect" ]; then printf '%%s' '%s'; printf '%%*s' %d x >&2; exit 0; fi
+exit 99
+", id, validInspect, maxDockerStderrBytes+1),
 		},
 	}
 	for _, test := range tests {
@@ -288,6 +295,7 @@ func TestOSCommandDockerCLIDiscoveryRejectsOversizedStderr(t *testing.T) {
 		})
 	}
 }
+
 func TestOSCommandDockerCLIDiscoveryUsesExactLabelsAndVerifiesInspect(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("Docker lifecycle discovery targets Linux hosts")
