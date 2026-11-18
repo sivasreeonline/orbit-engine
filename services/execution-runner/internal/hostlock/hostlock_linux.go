@@ -38,6 +38,15 @@ func acquirePlatformLock(path, ownerID string) (*Lock, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve host lock directory: %w", err)
 	}
+	directoryInfo, err := os.Stat(directory)
+	if err != nil {
+		return nil, fmt.Errorf("inspect host lock directory: %w", err)
+	}
+	directoryStat, ok := directoryInfo.Sys().(*syscall.Stat_t)
+	if !directoryInfo.IsDir() || directoryInfo.Mode().Perm()&0o077 != 0 ||
+		!ok || directoryStat.Uid != uint32(os.Geteuid()) {
+		return nil, errors.New("host lock directory must be a private directory owned by the runner user")
+	}
 	canonical = filepath.Join(directory, filepath.Base(canonical))
 
 	before, beforeErr := os.Lstat(canonical)
