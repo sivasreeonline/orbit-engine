@@ -281,3 +281,80 @@ func TestRecoveryCommandDaemonFailureProducesNoCleanReportAndLeavesJournalUsable
 		t.Fatalf("daemon failure changed pending journal state: %+v", pending)
 	}
 }
+
+
+type failingRecoveryWriter struct {
+	written int
+}
+
+func (writer *failingRecoveryWriter) Write(value []byte) (int, error) {
+	if writer.written > 0 {
+		return 0, errors.New("injected output failure")
+	}
+	writer.written++
+	return len(value) / 2, errors.New("injected output failure")
+}
+
+func TestRecoveryCommandPropagatesReportWriterFailure(t *testing.T) {
+	path, _, _ := createPendingJournal(t)
+	discoverer := &fakeDiscoverer{containers: []runner.DiscoveredDockerContainer{}}
+	writer := &failingRecoveryWriter{}
+
+	err := run(context.Background(), recoveryEnvironment(path), discoverer, writer)
+	if err == nil {
+		t.Fatal("recovery command ignored report writer failure")
+	}
+	if !strings.Contains(err.Error(), "write recovery inspection report") {
+		t.Fatalf("writer failure was not identified: %v", err)
+	}
+	if discoverer.calls != 1 {
+		t.Fatalf("discovery calls = %d, want 1", discoverer.calls)
+	}
+
+	// A failed report write must still release both ownership locks.
+	journal, err := sandboxjournal.Open(path)
+	if err != nil {
+		t.Fatalf("journal remained locked after report write failure: %v", err)
+	}
+	defer journal.Close()
+}
+
+func TestRecoveryCommandReportIsStableForEquivalentFindings(t *testing.T) {
+	path, lifecycleID, containerID := createPendingJournal(t)
+	runnerID := strings.Repeat("a", 32)
+	discoverer := &fakeDiscoverer{containers: []runner.DiscoveredDockerContainer{{
+		ID: containerID, RunnerInstanceID: runnerID, LifecycleID: lifecycleID, State: "exited",
+	}}}
+
+	var first bytes.Buffer
+	if err := run(context.Background(), recoveryEnvironment(path), discoverer, &first); err != nil {
+		t.Fatal(err)
+	}
+	var second bytes.Buffer
+	if err := run(context.Background(), recoveryEnvironment(path), discoverer, &second); err != nil {
+		t.Fatal(err)
+	}
+
+	var firstReport, secondReport recoveryReport
+	if err := json.Unmarshal(first.Bytes(), &firstReport); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(second.Bytes(), &secondReport); err != nil {
+		t.Fatal(err)
+	}
+	// checkedAt intentionally changes between invocations; the evidence
+	// findings and their serialized order must remain identical.
+	firstReport.CheckedAt = firstReport.CheckedAt.UTC()
+	secondReport.CheckedAt = secondReport.CheckedAt.UTC()
+	firstFindings, err := json.Marshal(firstReport.Findings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondFindings, err := json.Marshal(secondReport.Findings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstFindings, secondFindings) {
+		t.Fatalf("equivalent recovery findings changed: first=%s second=%s", firstFindings, secondFindings)
+	}
+}
