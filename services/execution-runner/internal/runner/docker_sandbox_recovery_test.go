@@ -187,7 +187,8 @@ func TestDiscoverPendingDockerLifecyclesReportsCreateIntentWithoutDeletion(t *te
 		t.Fatal(err)
 	}
 	runnerID := strings.Repeat("a", 32)
-	if _, err := sandbox.journal.Begin(runnerID, "exec_create_gap"); err != nil {
+	lifecycleID, err := sandbox.journal.Begin(runnerID, "exec_create_gap")
+	if err != nil {
 		t.Fatal(err)
 	}
 	discoverer := &fakeLifecycleDiscoverer{}
@@ -195,8 +196,60 @@ func TestDiscoverPendingDockerLifecyclesReportsCreateIntentWithoutDeletion(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) != 1 || results[0].Assessment != "NO_CONTAINER_MATCH — operator review required" {
+	if len(results) != 1 || results[0].Assessment != "CREATE_INTENT_NO_CONTAINER_MATCH — operator review required" {
 		t.Fatalf("create-intent discovery result = %+v", results)
+	}
+	if results[0].Lifecycle.LifecycleID != lifecycleID ||
+		results[0].Lifecycle.Created || results[0].Lifecycle.Cleaned ||
+		results[0].Lifecycle.ContainerID != "" || len(results[0].Containers) != 0 {
+		t.Fatalf("unexpected create-intent recovery finding: %+v", results[0])
+	}
+	pending, err := sandbox.journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].LifecycleID != lifecycleID ||
+		pending[0].Created || pending[0].Cleaned || pending[0].ContainerID != "" {
+		t.Fatalf("dry-run discovery resolved or mutated the ambiguous intent: %+v", pending)
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesReportsMissingJournaledContainerWithoutResolution(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	lifecycleID, err := sandbox.journal.Begin(runnerID, "exec_missing_container")
+	if err != nil {
+		t.Fatal(err)
+	}
+	containerID := strings.Repeat("b", 64)
+	if err := sandbox.journal.Created(lifecycleID, containerID); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := DiscoverPendingDockerLifecycles(
+		context.Background(), sandbox.journal, &fakeLifecycleDiscoverer{}, runnerID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Assessment != "JOURNALED_CONTAINER_NOT_FOUND — operator review required" {
+		t.Fatalf("missing-container discovery result = %+v", results)
+	}
+	if results[0].Lifecycle.ContainerID != containerID ||
+		!results[0].Lifecycle.Created || results[0].Lifecycle.Cleaned ||
+		len(results[0].Containers) != 0 {
+		t.Fatalf("missing-container finding lost journal evidence: %+v", results[0])
+	}
+	pending, err := sandbox.journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].LifecycleID != lifecycleID ||
+		pending[0].ContainerID != containerID || !pending[0].Created || pending[0].Cleaned {
+		t.Fatalf("discovery resolved or mutated missing-container lifecycle: %+v", pending)
 	}
 }
 
