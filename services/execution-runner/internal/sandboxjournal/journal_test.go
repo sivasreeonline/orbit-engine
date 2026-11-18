@@ -1,11 +1,13 @@
 package sandboxjournal
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testRunnerID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -608,5 +610,80 @@ func TestJournalRecoveryPreservesCreatedStateAfterSyncErrorLeavesIncompleteClean
 	}
 	if len(pending) != 0 {
 		t.Fatalf("valid post-recovery CLEANED transition remained pending: %+v", pending)
+	}
+}
+
+
+func TestJournalRecoveryRejectsCompleteInvalidTransitionWithoutMutatingJournal(t *testing.T) {
+	for _, readOnly := range []bool{false, true} {
+		name := "writable"
+		if readOnly {
+			name = "read-only"
+		}
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(privateTempDir(t), "invalid-transition.jsonl")
+			journal, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lifecycleID, err := journal.Begin(testRunnerID, testExecutionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := journal.Created(lifecycleID, testContainerID); err != nil {
+				t.Fatal(err)
+			}
+			if err := journal.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			invalid, err := json.Marshal(Event{
+				Version: formatVersion, Sequence: 3, Type: EventCreated,
+				LifecycleID: lifecycleID, RunnerInstanceID: testRunnerID,
+				ExecutionID: testExecutionID, ContainerID: testContainerID,
+				At: time.Now().UTC(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := file.Write(append(invalid, '\\n')); err != nil {
+				t.Fatal(err)
+			}
+			// Include a partial tail as well: recovery must not truncate it
+			// before discovering the earlier complete semantic violation.
+			if _, err := file.WriteString("{partial"); err != nil {
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if readOnly {
+				_, err = OpenReadOnly(path)
+			} else {
+				_, err = Open(path)
+			}
+			if err == nil {
+				t.Fatal("complete but semantically invalid lifecycle event was accepted")
+			}
+			after, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(after) != string(before) {
+				t.Fatal("failed recovery mutated journal bytes")
+			}
+			if _, statErr := os.Stat(path + ".lock"); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("failed recovery left ownership lock behind: %v", statErr)
+			}
+		})
 	}
 }
