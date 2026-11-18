@@ -823,3 +823,49 @@ func TestJournalRejectsNonCanonicalJSONFieldNames(t *testing.T) {
 		t.Fatalf("failed recovery left ownership lock behind: %v", err)
 	}
 }
+
+
+func TestJournalRejectsNonCanonicalJSONEncodingWithoutMutatingJournal(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "noncanonical-json.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.Begin(testRunnerID, testExecutionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.TrimSuffix(string(content), "\\n")
+	if !strings.HasPrefix(line, "{") {
+		t.Fatal("fixture is not a JSON object")
+	}
+	// Whitespace is legal JSON, but the journal writer never emits it.
+	mutated := "{ " + strings.TrimPrefix(line, "{") + "\\n"
+	if err := os.WriteFile(path, []byte(mutated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil {
+		t.Fatal("non-canonical JSON encoding was accepted")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("failed recovery mutated journal containing non-canonical JSON")
+	}
+	if _, err := os.Stat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed recovery left ownership lock behind: %v", err)
+	}
+}
