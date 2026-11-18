@@ -467,3 +467,57 @@ func TestJournalStopsAppendingAfterWriteOutcomeBecomesUncertain(t *testing.T) {
 		t.Fatalf("failed append must preserve prior CREATED evidence: %+v", pending)
 	}
 }
+
+
+func TestJournalRecoversCompleteCleanedRecordAfterSyncReportsError(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "sync-uncertain-cleaned.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycleID, err := journal.Begin(testRunnerID, testExecutionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Created(lifecycleID, testContainerID); err != nil {
+		t.Fatal(err)
+	}
+
+	injected := errors.New("injected sync acknowledgement failure")
+	calls := 0
+	journal.syncFn = func(file *os.File) error {
+		calls++
+		if calls == 1 {
+			// Persist the complete record, then simulate the filesystem
+			// reporting an error to the caller despite the successful sync.
+			if err := file.Sync(); err != nil {
+				return err
+			}
+			return injected
+		}
+		return file.Sync()
+	}
+
+	if err := journal.Cleaned(lifecycleID); !errors.Is(err, ErrAppendUncertain) {
+		t.Fatalf("CLEANED append error = %v, want ErrAppendUncertain", err)
+	}
+	if err := journal.Cleaned(lifecycleID); !errors.Is(err, ErrAppendUncertain) {
+		t.Fatalf("second CLEANED append error = %v, want poisoned journal rejection", err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatalf("close after recoverable sync uncertainty: %v", err)
+	}
+
+	recovered, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen after sync uncertainty: %v", err)
+	}
+	defer recovered.Close()
+	pending, err := recovered.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("complete durable CLEANED event should be applied on reopen: %+v", pending)
+	}
+}
