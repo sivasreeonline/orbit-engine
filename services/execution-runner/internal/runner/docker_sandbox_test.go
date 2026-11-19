@@ -122,6 +122,26 @@ func (cli *closeJournalOnRemoveDockerCLI) Remove(_ context.Context, id string) e
 	return cli.journal.Close()
 }
 
+type closeJournalOnDeferredRemoveDockerCLI struct {
+	*fakeDockerCLI
+	journal *sandboxjournal.Journal
+}
+
+func (cli *closeJournalOnDeferredRemoveDockerCLI) Remove(_ context.Context, id string) error {
+	if id != cli.containerID {
+		return ErrDockerCommandFailed
+	}
+	cli.removeCalls++
+	cli.removed = true
+	if cli.removeCalls == 1 {
+		return errors.New("transient daemon failure on primary removal")
+	}
+	if cli.removeCalls == 2 {
+		return cli.journal.Close()
+	}
+	return ErrDockerCommandFailed
+}
+
 func privateJournalTestPath(t *testing.T, name string) string {
 	t.Helper()
 	directory := t.TempDir()
@@ -845,6 +865,50 @@ func TestDockerSandboxDeferredCleanupRetryRecordsConfirmedRemoval(t *testing.T) 
 	}
 	if len(pending) != 0 {
 		t.Fatalf("successful deferred removal must be durably recorded as CLEANED: %+v", pending)
+	}
+}
+
+func TestDockerSandboxDeferredRemovalDoesNotHideCleanedJournalFailure(t *testing.T) {
+	journalPath := privateJournalTestPath(t, "deferred-cleaned-append-failure.jsonl")
+	journal, err := sandboxjournal.Open(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+
+	fake := &fakeDockerCLI{
+		stdout: []byte(compileSuccessMarker + "ok"),
+		state: DockerContainerState{Status: "exited", ExitCode: 0},
+	}
+	cli := &closeJournalOnDeferredRemoveDockerCLI{fakeDockerCLI: fake, journal: journal}
+	sandbox, err := NewJournaledDockerSandbox(cli, journal, strings.Repeat("e", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	observation, runErr := sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(runErr, ErrDockerCommandFailed) {
+		t.Fatalf("RunCase error = %v, want conservative Docker failure", runErr)
+	}
+	if observation.CleanupSucceeded {
+		t.Fatal("deferred physical removal without durable CLEANED record must not report cleanup success")
+	}
+	if cli.removeCalls != 2 {
+		t.Fatalf("removal attempts = %d, want primary attempt and deferred retry", cli.removeCalls)
+	}
+
+	reopened, err := sandboxjournal.Open(journalPath)
+	if err != nil {
+		t.Fatalf("reopen journal after deferred CLEANED append failure: %v", err)
+	}
+	defer reopened.Close()
+	pending, err := reopened.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || !pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != fake.containerID {
+		t.Fatalf("failed deferred CLEANED append must preserve CREATED lifecycle evidence: %+v", pending)
 	}
 }
 
