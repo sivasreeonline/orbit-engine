@@ -869,3 +869,51 @@ func TestJournalRejectsNonCanonicalJSONEncodingWithoutMutatingJournal(t *testing
 		t.Fatalf("failed recovery left ownership lock behind: %v", err)
 	}
 }
+
+
+func TestJournalRejectsNonUTCTimestampWithoutMutatingJournal(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "non-utc-timestamp.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.Begin(testRunnerID, testExecutionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := strings.TrimSuffix(string(content), "\\n")
+	if !strings.Contains(line, "\\"at\\":") || !strings.Contains(line, "Z\\"") {
+		t.Fatalf("fixture does not contain a UTC timestamp: %s", line)
+	}
+	mutated := strings.Replace(line, "Z\\"", "+00:00\\"", 1) + "\\n"
+	if mutated == string(content) {
+		t.Fatal("fixture did not replace the UTC timestamp suffix")
+	}
+	if err := os.WriteFile(path, []byte(mutated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil {
+		t.Fatal("non-UTC lifecycle timestamp was accepted")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("failed recovery mutated journal containing non-UTC timestamp")
+	}
+	if _, err := os.Stat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed recovery left ownership lock behind: %v", err)
+	}
+}
