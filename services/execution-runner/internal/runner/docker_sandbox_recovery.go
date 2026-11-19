@@ -61,9 +61,15 @@ func DiscoverPendingDockerLifecycles(
 	if ctx == nil || journal == nil || discoverer == nil || !runnerInstanceIDPattern.MatchString(runnerID) {
 		return nil, ErrSandboxNotConfigured
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("sandbox lifecycle discovery cancelled before journal inspection: %w", err)
+	}
 	pending, err := journal.Pending()
 	if err != nil {
 		return nil, fmt.Errorf("read pending sandbox lifecycles: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("sandbox lifecycle discovery cancelled after journal inspection: %w", err)
 	}
 	// Bound the journal side before allocating correlation maps or invoking
 	// Docker. This is an operational safety ceiling (2x the 500-student target),
@@ -84,6 +90,11 @@ func DiscoverPendingDockerLifecycles(
 	containers, err := discoverer.DiscoverByRunnerLabel(ctx, runnerID)
 	if err != nil {
 		return nil, fmt.Errorf("discover runner containers: %w", err)
+	}
+	// A discoverer implementation may return success after its context has
+	// expired. Never publish a late or cancelled recovery report.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("sandbox lifecycle discovery cancelled during container inventory: %w", err)
 	}
 	byLifecycle := make(map[string][]DiscoveredDockerContainer, len(pending))
 	if len(containers) > maxRecoveryContainers {
