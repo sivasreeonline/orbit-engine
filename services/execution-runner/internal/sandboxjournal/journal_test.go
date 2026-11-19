@@ -2,6 +2,7 @@ package sandboxjournal
 
 import (
 	"encoding/json"
+	"io"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,6 +22,29 @@ func privateTempDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return directory
+}
+
+func TestReadBoundedJournalRejectsGrowthPastSizeLimit(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "oversized.jsonl")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maxJournalSize + 1); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	_, err = readBoundedJournal(file)
+	if err == nil || !strings.Contains(err.Error(), "exceeds size limit") {
+		t.Fatalf("bounded read error = %v, want journal size limit", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestJournalPersistsLifecycleTransitionsAndRecoversPending(t *testing.T) {
