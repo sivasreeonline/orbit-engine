@@ -195,10 +195,16 @@ func acquireLock(path string) (string, error) {
 }
 
 // acquireLockWithSync isolates the directory durability boundary for tests.
-// If the lock file was created but its directory entry cannot be synced, remove
-// the just-created lock using its unguessable token. A failed cleanup sync is
-// still reported; after a crash, a resurrected lock safely fails closed.
 func acquireLockWithSync(path string, syncDir func(string) error) (string, error) {
+	return acquireLockWithHooks(path, syncDir, func(file *os.File) error {
+		return file.Sync()
+	})
+}
+
+// acquireLockWithHooks makes the file and directory durability boundaries
+// independently testable. A failed write, file sync or close must not strand
+// an unusable lock when the path still names the inode created by this call.
+func acquireLockWithHooks(path string, syncDir func(string) error, syncFile func(*os.File) error) (string, error) {
 	tokenBytes := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, tokenBytes); err != nil {
 		return "", fmt.Errorf("generate sandbox journal lock token: %w", err)
@@ -211,24 +217,29 @@ func acquireLockWithSync(path string, syncDir func(string) error) (string, error
 		}
 		return "", fmt.Errorf("create sandbox journal lock: %w", err)
 	}
-	payload, err := json.Marshal(struct {
+	createdInfo, infoErr := file.Stat()
+	payload, marshalErr := json.Marshal(struct {
 		PID int `json:"pid"`
 		Token string `json:"token"`
 		CreatedAt time.Time `json:"createdAt"`
 	}{os.Getpid(), token, time.Now().UTC()})
-	if err == nil {
+	if marshalErr == nil {
 		var written int
-		written, err = file.Write(payload)
-		if err == nil && written != len(payload) {
-			err = io.ErrShortWrite
+		written, marshalErr = file.Write(payload)
+		if marshalErr == nil && written != len(payload) {
+			marshalErr = io.ErrShortWrite
 		}
 	}
-	if err == nil {
-		err = file.Sync()
+	if marshalErr == nil {
+		marshalErr = syncFile(file)
 	}
 	closeErr := file.Close()
-	if err != nil || closeErr != nil {
-		return "", errors.Join(err, closeErr)
+	if infoErr != nil || marshalErr != nil || closeErr != nil {
+		cleanupErr := errors.New("cannot safely identify newly created sandbox journal lock")
+		if infoErr == nil {
+			cleanupErr = removeCreatedLock(path, createdInfo, syncDir)
+		}
+		return "", errors.Join(infoErr, marshalErr, closeErr, cleanupErr)
 	}
 	if err := syncDir(filepath.Dir(path)); err != nil {
 		persistErr := fmt.Errorf("persist sandbox journal lock directory entry: %w", err)
@@ -236,6 +247,29 @@ func acquireLockWithSync(path string, syncDir func(string) error) (string, error
 		return "", errors.Join(persistErr, cleanupErr)
 	}
 	return token, nil
+}
+
+// removeCreatedLock removes a failed acquisition's lock only when the path
+// still identifies the exact inode created by this call. It never removes a
+// replacement owner's file, even if the replacement has malformed contents.
+func removeCreatedLock(path string, createdInfo os.FileInfo, syncDir func(string) error) error {
+	currentInfo, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return syncDir(filepath.Dir(path))
+	}
+	if err != nil {
+		return fmt.Errorf("inspect failed sandbox journal lock: %w", err)
+	}
+	if currentInfo.Mode()&os.ModeSymlink != 0 || !os.SameFile(createdInfo, currentInfo) {
+		return errors.New("sandbox journal lock path changed during failed acquisition")
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("remove failed sandbox journal lock: %w", err)
+	}
+	if err := syncDir(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("persist failed sandbox journal lock cleanup: %w", err)
+	}
+	return nil
 }
 
 func releaseLock(path, token string) error {
