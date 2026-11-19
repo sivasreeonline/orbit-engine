@@ -1114,3 +1114,57 @@ func TestReleaseLockRejectsNonCanonicalOwnershipMetadataWithoutRemovingLock(t *t
 		})
 	}
 }
+
+func TestAcquireLockCleansUpAfterDirectorySyncFailure(t *testing.T) {
+	directory := privateTempDir(t)
+	path := filepath.Join(directory, "journal.lock")
+	injected := errors.New("injected initial directory sync failure")
+	calls := 0
+	syncDir := func(gotDirectory string) error {
+		calls++
+		if gotDirectory != directory {
+			t.Fatalf("sync directory = %q, want %q", gotDirectory, directory)
+		}
+		if calls == 1 {
+			return injected
+		}
+		return syncDirectory(gotDirectory)
+	}
+
+	token, err := acquireLockWithSync(path, syncDir)
+	if token != "" {
+		t.Fatalf("failed acquisition returned an ownership token %q", token)
+	}
+	if !errors.Is(err, injected) {
+		t.Fatalf("acquire error = %v, want injected directory sync failure", err)
+	}
+	if calls != 2 {
+		t.Fatalf("directory sync calls = %d, want initial sync plus cleanup sync", calls)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed acquisition left an unreachable lock file: %v", err)
+	}
+
+	// A subsequent owner can acquire the path normally after cleanup.
+	if _, err := acquireLock(path); err != nil {
+		t.Fatalf("acquire after failed-attempt cleanup: %v", err)
+	}
+	if err := releaseLock(path, mustReadLockToken(t, path)); err != nil {
+		t.Fatalf("release subsequent owner lock: %v", err)
+	}
+}
+
+func mustReadLockToken(t *testing.T, path string) string {
+	t.Helper()
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var owner struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(payload, &owner); err != nil {
+		t.Fatal(err)
+	}
+	return owner.Token
+}
