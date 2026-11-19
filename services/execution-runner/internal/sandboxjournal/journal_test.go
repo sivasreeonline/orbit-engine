@@ -917,3 +917,56 @@ func TestJournalRejectsNonUTCTimestampWithoutMutatingJournal(t *testing.T) {
 		t.Fatalf("failed recovery left ownership lock behind: %v", err)
 	}
 }
+
+
+func TestJournalCloseRetriesAfterSyncFailureWithoutReleasingOwnership(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "close-sync-retry.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.Begin(testRunnerID, testExecutionID); err != nil {
+		t.Fatal(err)
+	}
+
+	injected := errors.New("injected close sync failure")
+	calls := 0
+	journal.syncFn = func(file *os.File) error {
+		calls++
+		if calls == 1 {
+			return injected
+		}
+		return file.Sync()
+	}
+
+	if err := journal.Close(); !errors.Is(err, injected) {
+		t.Fatalf("first close error = %v, want injected sync failure", err)
+	}
+	if _, err := os.Stat(path + ".lock"); err != nil {
+		t.Fatalf("ownership lock must remain after failed close sync: %v", err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatalf("retry close after sync failure: %v", err)
+	}
+	if _, err := os.Stat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("successful close retry left ownership lock behind: %v", err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatalf("repeated close after success must be idempotent: %v", err)
+	}
+}
+
+func TestReleaseLockIsIdempotentAfterLockRemoval(t *testing.T) {
+	directory := privateTempDir(t)
+	path := filepath.Join(directory, "journal.lock")
+	token, err := acquireLock(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := releaseLock(path, token); err != nil {
+		t.Fatalf("first lock release: %v", err)
+	}
+	if err := releaseLock(path, token); err != nil {
+		t.Fatalf("retry after lock removal: %v", err)
+	}
+}
