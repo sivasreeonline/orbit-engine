@@ -30,6 +30,8 @@ type fakeDockerCLI struct {
 	state          DockerContainerState
 	inspectErr     error
 	removeErr      error
+	removeErrors   []error
+	removeCalls    int
 	created        bool
 	removed        bool
 	stdin          []byte
@@ -99,7 +101,11 @@ func (fake *fakeDockerCLI) Remove(_ context.Context, id string) error {
 	if id != fake.containerID {
 		return ErrDockerCommandFailed
 	}
+	fake.removeCalls++
 	fake.removed = true
+	if fake.removeCalls <= len(fake.removeErrors) {
+		return fake.removeErrors[fake.removeCalls-1]
+	}
 	return fake.removeErr
 }
 
@@ -799,6 +805,46 @@ func TestDockerSandboxRecordsCleanupOnlyAfterDockerConfirmsRemoval(t *testing.T)
 	}
 	if len(pending) != 0 {
 		t.Fatalf("confirmed cleanup remained pending: %+v", pending)
+	}
+}
+
+func TestDockerSandboxDeferredCleanupRetryRecordsConfirmedRemoval(t *testing.T) {
+	journal, err := sandboxjournal.Open(privateJournalTestPath(t, "deferred-cleanup-retry.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+
+	fake := &fakeDockerCLI{
+		stdout: []byte(compileSuccessMarker + "ok"),
+		state: DockerContainerState{Status: "exited", ExitCode: 0},
+		removeErrors: []error{
+			errors.New("transient daemon failure on primary removal"),
+			nil,
+		},
+	}
+	sandbox, err := NewJournaledDockerSandbox(fake, journal, strings.Repeat("e", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	observation, runErr := sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	if !errors.Is(runErr, ErrDockerCommandFailed) {
+		t.Fatalf("RunCase error = %v, want conservative Docker failure after primary removal error", runErr)
+	}
+	if observation.CleanupSucceeded {
+		t.Fatal("primary removal failure must not be rewritten as a successful execution observation")
+	}
+	if fake.removeCalls != 2 {
+		t.Fatalf("removal attempts = %d, want primary attempt plus one deferred retry", fake.removeCalls)
+	}
+
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("successful deferred removal must be durably recorded as CLEANED: %+v", pending)
 	}
 }
 
