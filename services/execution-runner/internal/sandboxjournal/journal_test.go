@@ -970,3 +970,47 @@ func TestReleaseLockIsIdempotentAfterLockRemoval(t *testing.T) {
 		t.Fatalf("retry after lock removal: %v", err)
 	}
 }
+
+func TestJournalCloseRetriesAfterLockOwnershipMismatchWithoutRemovingReplacement(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "close-lock-retry.jsonl")
+	journal, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := journal.Begin(testRunnerID, testExecutionID); err != nil {
+		t.Fatal(err)
+	}
+
+	originalLock, err := os.ReadFile(path + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementLock := []byte(`{"pid":99999,"token":"ffffffffffffffffffffffffffffffff","createdAt":"2026-11-19T00:00:00Z"}`)
+	if err := os.WriteFile(path+".lock", replacementLock, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := journal.Close(); err == nil || !strings.Contains(err.Error(), "ownership changed") {
+		t.Fatalf("close with replacement lock error = %v, want ownership mismatch", err)
+	}
+	actualLock, err := os.ReadFile(path + ".lock")
+	if err != nil {
+		t.Fatalf("replacement owner's lock was removed: %v", err)
+	}
+	if string(actualLock) != string(replacementLock) {
+		t.Fatal("close modified the replacement owner's lock")
+	}
+
+	// Restore the original token to model an operator resolving the
+	// ownership discrepancy. Close must remember that the journal file
+	// is already closed and retry only the lock-release operation.
+	if err := os.WriteFile(path+".lock", originalLock, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatalf("retry close after restoring ownership: %v", err)
+	}
+	if _, err := os.Stat(path + ".lock"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("successful close retry left lock behind: %v", err)
+	}
+}
