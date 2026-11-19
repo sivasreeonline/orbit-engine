@@ -1168,3 +1168,70 @@ func mustReadLockToken(t *testing.T, path string) string {
 	}
 	return owner.Token
 }
+
+func TestAcquireLockCleansUpAfterFileSyncFailure(t *testing.T) {
+	directory := privateTempDir(t)
+	path := filepath.Join(directory, "journal.lock")
+	injected := errors.New("injected lock file sync failure")
+	dirSyncCalls := 0
+	syncDir := func(gotDirectory string) error {
+		dirSyncCalls++
+		if gotDirectory != directory {
+			t.Fatalf("sync directory = %q, want %q", gotDirectory, directory)
+		}
+		return syncDirectory(gotDirectory)
+	}
+
+	token, err := acquireLockWithHooks(path, syncDir, func(*os.File) error {
+		return injected
+	})
+	if token != "" {
+		t.Fatalf("failed acquisition returned ownership token %q", token)
+	}
+	if !errors.Is(err, injected) {
+		t.Fatalf("acquire error = %v, want injected file sync failure", err)
+	}
+	if dirSyncCalls != 1 {
+		t.Fatalf("directory sync calls = %d, want one cleanup sync", dirSyncCalls)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed file sync left an unreachable lock: %v", err)
+	}
+
+	if _, err := acquireLock(path); err != nil {
+		t.Fatalf("acquire after failed file sync cleanup: %v", err)
+	}
+	if err := releaseLock(path, mustReadLockToken(t, path)); err != nil {
+		t.Fatalf("release subsequent owner lock: %v", err)
+	}
+}
+
+func TestAcquireLockDoesNotRemoveReplacementAfterFileSyncFailure(t *testing.T) {
+	directory := privateTempDir(t)
+	path := filepath.Join(directory, "journal.lock")
+	replacement := []byte("replacement-owner-lock")
+	injected := errors.New("injected lock file sync failure")
+
+	token, err := acquireLockWithHooks(path, syncDirectory, func(*os.File) error {
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, replacement, 0o600); err != nil {
+			return err
+		}
+		return injected
+	})
+	if token != "" {
+		t.Fatalf("failed acquisition returned ownership token %q", token)
+	}
+	if !errors.Is(err, injected) {
+		t.Fatalf("acquire error = %v, want injected file sync failure", err)
+	}
+	actual, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("replacement owner's lock was removed: %v", err)
+	}
+	if string(actual) != string(replacement) {
+		t.Fatalf("replacement lock changed: %q", actual)
+	}
+}
