@@ -296,7 +296,8 @@ func (journal *Journal) recover() error {
 		if !bytes.Equal(canonical, line) {
 			return errors.New("sandbox lifecycle record is not in canonical JSON encoding")
 		}
-		if event.Version != formatVersion || event.Sequence != expected || event.At.IsZero() {
+		if event.Version != formatVersion || event.Sequence != expected ||
+			event.At.IsZero() || event.At.Location() != time.UTC {
 			return errors.New("sandbox lifecycle journal version, sequence or timestamp is invalid")
 		}
 		if err := journal.apply(event); err != nil {
