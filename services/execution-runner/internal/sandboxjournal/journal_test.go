@@ -1014,3 +1014,39 @@ func TestJournalCloseRetriesAfterLockOwnershipMismatchWithoutRemovingReplacement
 		t.Fatalf("successful close retry left lock behind: %v", err)
 	}
 }
+
+func TestReleaseLockRetriesDirectorySyncAfterSuccessfulRemoval(t *testing.T) {
+	directory := privateTempDir(t)
+	path := filepath.Join(directory, "journal.lock")
+	token, err := acquireLock(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	injected := errors.New("injected directory sync failure")
+	calls := 0
+	syncDir := func(gotDirectory string) error {
+		calls++
+		if gotDirectory != directory {
+			t.Fatalf("sync directory = %q, want %q", gotDirectory, directory)
+		}
+		if calls == 1 {
+			return injected
+		}
+		return syncDirectory(gotDirectory)
+	}
+
+	if err := releaseLockWithSync(path, token, syncDir); !errors.Is(err, injected) {
+		t.Fatalf("first release error = %v, want injected directory sync failure", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lock should be removed before failed directory sync: %v", err)
+	}
+
+	if err := releaseLockWithSync(path, token, syncDir); err != nil {
+		t.Fatalf("retry directory sync after lock removal: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("directory sync calls = %d, want 2", calls)
+	}
+}
