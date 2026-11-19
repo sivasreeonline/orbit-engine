@@ -246,10 +246,21 @@ func releaseLockWithSync(path, token string, syncDir func(string) error) error {
 		return err
 	}
 	var owner struct {
+		PID int `json:"pid"`
 		Token string `json:"token"`
+		CreatedAt time.Time `json:"createdAt"`
 	}
 	if err := json.Unmarshal(payload, &owner); err != nil {
-		return err
+		return fmt.Errorf("decode sandbox lifecycle journal lock: %w", err)
+	}
+	canonical, err := json.Marshal(owner)
+	if err != nil {
+		return fmt.Errorf("re-encode sandbox lifecycle journal lock: %w", err)
+	}
+	if !bytes.Equal(canonical, payload) || owner.PID <= 0 ||
+		owner.CreatedAt.IsZero() || owner.CreatedAt.Location() != time.UTC ||
+		!runnerIDPattern.MatchString(owner.Token) {
+		return errors.New("sandbox lifecycle journal lock metadata is not canonical or valid")
 	}
 	if owner.Token != token || token == "" {
 		return errors.New("sandbox lifecycle journal lock ownership changed")
