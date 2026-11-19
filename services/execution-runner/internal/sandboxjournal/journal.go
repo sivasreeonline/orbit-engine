@@ -323,7 +323,7 @@ func (journal *Journal) recover() error {
 	if info.Size() > maxJournalSize {
 		return errors.New("sandbox lifecycle journal exceeds size limit")
 	}
-	content, err := io.ReadAll(journal.file)
+	content, err := readBoundedJournal(journal.file)
 	if err != nil {
 		return fmt.Errorf("read sandbox lifecycle journal: %w", err)
 	}
@@ -391,6 +391,21 @@ func (journal *Journal) recover() error {
 		return fmt.Errorf("seek sandbox lifecycle journal: %w", err)
 	}
 	return nil
+}
+
+// readBoundedJournal enforces the journal size ceiling while reading, not
+// only from a prior Stat. The ownership lock excludes cooperating writers, but
+// an external writer or unexpected file growth must not turn recovery into an
+// unbounded allocation.
+func readBoundedJournal(file *os.File) ([]byte, error) {
+	content, err := io.ReadAll(io.LimitReader(file, maxJournalSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > maxJournalSize {
+		return nil, errors.New("sandbox lifecycle journal exceeds size limit")
+	}
+	return content, nil
 }
 
 // rejectDuplicateJSONFields prevents encoding/json's default last-value-wins
