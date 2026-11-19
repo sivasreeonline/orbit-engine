@@ -1130,6 +1130,45 @@ func TestOSCommandDockerCLICreateCleansPartialContainerWhenDaemonReturnsFailure(
 }
 
 
+func TestOSCommandDockerCLICreateDoesNotRemoveMalformedContainerID(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker sandbox targets Linux hosts")
+	}
+	directory := t.TempDir()
+	removeLog := filepath.Join(directory, "remove.log")
+	dockerPath := filepath.Join(directory, "docker-stub")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"create\" ]; then",
+		"  printf '%s\\n' 'malformed-container-id'",
+		"  exit 0",
+		"fi",
+		"if [ \"$1\" = \"rm\" ]; then",
+		"  printf '%s\\n' \"$*\" >> \"$DOCKER_TEST_REMOVE_LOG\"",
+		"  exit 0",
+		"fi",
+		"exit 91",
+	}, "\n")
+	if err := os.WriteFile(dockerPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_TEST_REMOVE_LOG", removeLog)
+
+	id, err := (OSCommandDockerCLI{Binary: dockerPath}).Create(
+		context.Background(), []string{"--name", "test"},
+	)
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("malformed create output error = %v, want ErrDockerCommandFailed", err)
+	}
+	if id != "" {
+		t.Fatalf("malformed create output returned container ID %q", id)
+	}
+	if _, statErr := os.Stat(removeLog); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("ambiguous container identity must not be passed to docker rm; log stat error = %v", statErr)
+	}
+}
+
+
 func TestDockerSandboxFailedCreateWithUnconfirmedCleanupRemainsDiscoverable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Docker sandbox targets Linux hosts")
