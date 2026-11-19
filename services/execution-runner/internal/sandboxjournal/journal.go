@@ -191,6 +191,14 @@ func openJournal(path string, readOnly bool) (*Journal, error) {
 }
 
 func acquireLock(path string) (string, error) {
+	return acquireLockWithSync(path, syncDirectory)
+}
+
+// acquireLockWithSync isolates the directory durability boundary for tests.
+// If the lock file was created but its directory entry cannot be synced, remove
+// the just-created lock using its unguessable token. A failed cleanup sync is
+// still reported; after a crash, a resurrected lock safely fails closed.
+func acquireLockWithSync(path string, syncDir func(string) error) (string, error) {
 	tokenBytes := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, tokenBytes); err != nil {
 		return "", fmt.Errorf("generate sandbox journal lock token: %w", err)
@@ -222,8 +230,10 @@ func acquireLock(path string) (string, error) {
 	if err != nil || closeErr != nil {
 		return "", errors.Join(err, closeErr)
 	}
-	if err := syncDirectory(filepath.Dir(path)); err != nil {
-		return "", fmt.Errorf("persist sandbox journal lock directory entry: %w", err)
+	if err := syncDir(filepath.Dir(path)); err != nil {
+		persistErr := fmt.Errorf("persist sandbox journal lock directory entry: %w", err)
+		cleanupErr := releaseLockWithSync(path, token, syncDir)
+		return "", errors.Join(persistErr, cleanupErr)
 	}
 	return token, nil
 }
