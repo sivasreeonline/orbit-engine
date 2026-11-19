@@ -934,6 +934,9 @@ func TestDockerSandboxLeavesCreatedLifecyclePendingWhenRemovalFails(t *testing.T
 	if observation.CleanupSucceeded {
 		t.Fatal("failed removal was reported as successful")
 	}
+	if fake.removeCalls != 2 {
+		t.Fatalf("removal attempts = %d, want primary attempt plus one deferred retry", fake.removeCalls)
+	}
 	pending, err := journal.Pending()
 	if err != nil {
 		t.Fatal(err)
