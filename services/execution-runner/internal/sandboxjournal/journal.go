@@ -74,6 +74,8 @@ type Journal struct {
 	sequence uint64
 	records map[string]Lifecycle
 	closed bool
+	fileClosed bool
+	lockReleased bool
 	readOnly bool
 	appendUncertain bool
 	syncFn func(*os.File) error
@@ -228,6 +230,12 @@ func acquireLock(path string) (string, error) {
 
 func releaseLock(path, token string) error {
 	payload, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		// A previous release attempt may have removed the lock successfully
+		// but failed while syncing the directory entry. Re-syncing makes a
+		// retry safe and idempotent without touching a replacement owner's lock.
+		return syncDirectory(filepath.Dir(path))
+	}
 	if err != nil {
 		return err
 	}
@@ -563,16 +571,26 @@ func (journal *Journal) Close() error {
 	if journal.closed {
 		return nil
 	}
-	if !journal.readOnly {
-		if err := journal.syncJournalFile(); err != nil {
-			return fmt.Errorf("sync sandbox lifecycle journal on close: %w", err)
+	if !journal.fileClosed {
+		if !journal.readOnly {
+			if err := journal.syncJournalFile(); err != nil {
+				return fmt.Errorf("sync sandbox lifecycle journal on close: %w", err)
+			}
+		}
+		// os.File.Close invalidates the handle even when it reports an error.
+		// Remember that transition so a later Close retry can still release
+		// the ownership lock without syncing or closing an invalid handle.
+		closeErr := journal.file.Close()
+		journal.fileClosed = true
+		if closeErr != nil {
+			return fmt.Errorf("close sandbox lifecycle journal: %w", closeErr)
 		}
 	}
-	if err := journal.file.Close(); err != nil {
-		return fmt.Errorf("close sandbox lifecycle journal: %w", err)
-	}
-	if err := releaseLock(journal.lockPath, journal.lockToken); err != nil {
-		return fmt.Errorf("release sandbox lifecycle journal lock: %w", err)
+	if !journal.lockReleased {
+		if err := releaseLock(journal.lockPath, journal.lockToken); err != nil {
+			return fmt.Errorf("release sandbox lifecycle journal lock: %w", err)
+		}
+		journal.lockReleased = true
 	}
 	journal.closed = true
 	return nil
