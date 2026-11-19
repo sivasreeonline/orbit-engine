@@ -1050,3 +1050,67 @@ func TestReleaseLockRetriesDirectorySyncAfterSuccessfulRemoval(t *testing.T) {
 		t.Fatalf("directory sync calls = %d, want 2", calls)
 	}
 }
+
+func TestReleaseLockRejectsNonCanonicalOwnershipMetadataWithoutRemovingLock(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		mutate func(string) string
+	}{
+		{
+			name: "duplicate token field",
+			mutate: func(payload string) string {
+				return strings.Replace(payload, `"token":"`, `"token":"00000000000000000000000000000000","token":"`, 1)
+			},
+		},
+		{
+			name: "unknown field",
+			mutate: func(payload string) string {
+				return strings.TrimSuffix(payload, "}") + `, "extra":true}`
+			},
+		},
+		{
+			name: "noncanonical whitespace",
+			mutate: func(payload string) string {
+				return "{ " + strings.TrimPrefix(payload, "{")
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(privateTempDir(t), "journal.lock")
+			token, err := acquireLock(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			original, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mutated := test.mutate(string(original))
+			if mutated == string(original) {
+				t.Fatal("lock fixture mutation did not change payload")
+			}
+			if err := os.WriteFile(path, []byte(mutated), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := releaseLock(path, token); err == nil {
+				t.Fatal("noncanonical lock ownership metadata was accepted")
+			}
+			actual, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("malformed lock was removed: %v", err)
+			}
+			if string(actual) != mutated {
+				t.Fatal("failed lock release modified ownership metadata")
+			}
+
+			// Restore the exact owner record so the fixture leaves no stale lock.
+			if err := os.WriteFile(path, original, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := releaseLock(path, token); err != nil {
+				t.Fatalf("release after restoring canonical owner record: %v", err)
+			}
+		})
+	}
+}
