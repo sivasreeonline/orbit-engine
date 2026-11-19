@@ -229,12 +229,18 @@ func acquireLock(path string) (string, error) {
 }
 
 func releaseLock(path, token string) error {
+	return releaseLockWithSync(path, token, syncDirectory)
+}
+
+// releaseLockWithSync isolates the directory durability boundary so a failed
+// directory sync after unlink can be tested deterministically.
+func releaseLockWithSync(path, token string, syncDir func(string) error) error {
 	payload, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		// A previous release attempt may have removed the lock successfully
 		// but failed while syncing the directory entry. Re-syncing makes a
 		// retry safe and idempotent without touching a replacement owner's lock.
-		return syncDirectory(filepath.Dir(path))
+		return syncDir(filepath.Dir(path))
 	}
 	if err != nil {
 		return err
@@ -251,7 +257,7 @@ func releaseLock(path, token string) error {
 	if err := os.Remove(path); err != nil {
 		return err
 	}
-	return syncDirectory(filepath.Dir(path))
+	return syncDir(filepath.Dir(path))
 }
 
 func (journal *Journal) recover() error {
