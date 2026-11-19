@@ -22,12 +22,44 @@ type fakeLifecycleDiscoverer struct {
 	err error
 	calls int
 	runnerID string
+	cancel context.CancelFunc
 	}
 
 func (fake *fakeLifecycleDiscoverer) DiscoverByRunnerLabel(_ context.Context, runnerID string) ([]DiscoveredDockerContainer, error) {
 	fake.calls++
 	fake.runnerID = runnerID
-		return append([]DiscoveredDockerContainer(nil), fake.containers...), fake.err
+	if fake.cancel != nil {
+		fake.cancel()
+	}
+	return append([]DiscoveredDockerContainer(nil), fake.containers...), fake.err
+}
+
+func TestDiscoverPendingDockerLifecyclesRejectsLateSuccessAfterCancellation(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	lifecycleID, err := sandbox.journal.Begin(runnerID, "exec_cancelled_discovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoverer := &fakeLifecycleDiscoverer{
+		containers: []DiscoveredDockerContainer{{
+			ID: strings.Repeat("b", 64), RunnerInstanceID: runnerID,
+			LifecycleID: lifecycleID, State: "running",
+		}},
+		cancel: cancel,
+	}
+	results, err := DiscoverPendingDockerLifecycles(ctx, sandbox.journal, discoverer, runnerID)
+	if !errors.Is(err, context.Canceled) || results != nil {
+		t.Fatalf("cancelled late-success discovery = %+v, %v; want nil results and context.Canceled", results, err)
+	}
+	if discoverer.calls != 1 {
+		t.Fatalf("discoverer calls = %d, want 1", discoverer.calls)
+	}
 }
 
 func TestDiscoverPendingDockerLifecyclesRejectsNilContextWithoutCallingDiscoverer(t *testing.T) {
