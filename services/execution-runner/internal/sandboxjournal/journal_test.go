@@ -888,11 +888,11 @@ func TestJournalRejectsNonUTCTimestampWithoutMutatingJournal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	line := strings.TrimSuffix(string(content), "\\n")
-	if !strings.Contains(line, "\\"at\\":") || !strings.Contains(line, "Z\\"") {
+	line := strings.TrimSuffix(string(content), "\n")
+	if !strings.Contains(line, "\"at\":") || !strings.Contains(line, "Z\"") {
 		t.Fatalf("fixture does not contain a UTC timestamp: %s", line)
 	}
-	mutated := strings.Replace(line, "Z\\"", "+00:00\\"", 1) + "\\n"
+	mutated := strings.Replace(line, "Z\"", "+00:00\"", 1) + "\n"
 	if mutated == string(content) {
 		t.Fatal("fixture did not replace the UTC timestamp suffix")
 	}
