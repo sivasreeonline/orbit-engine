@@ -40,7 +40,7 @@ The manifest authenticates the raw inventory index and every raw page response.
 8. Require every verified standard digest in the requested window to appear in the inventory.
 9. Require the report's S3 VersionId to equal the unique current `IsLatest` object version from the inventory.
 10. Reject a current delete marker for a digest key in the requested window.
-11. Detect backfill digest keys separately. If any are present, standard-chain inventory can be reconciled, but overall completeness remains false until the separate backfill chain is verified.
+11. Detect backfill digest keys separately. If any are present, require a matching verified `BACKFILL` report chain and exact latest S3 VersionId before overall captured-inventory completeness can be true.
 
 ## Result semantics
 
