@@ -158,6 +158,9 @@ jobs:
 
       - name: Verify read-only AWS CloudTrail/S3 adapters (synthetic only)
         run: python ../../scripts/test_m0_fence_cloudtrail_readonly_adapters.py
+
+      - name: Verify AWS STS caller identity binding (synthetic only)
+        run: python ../../scripts/test_m0_fence_aws_sts_caller_identity.py
  
       - name: Verify FENCE-001 AWS read-only qualification preflight
         run: python ../../scripts/inspect_m0_fence_aws_qualification_environment.py --self-test
