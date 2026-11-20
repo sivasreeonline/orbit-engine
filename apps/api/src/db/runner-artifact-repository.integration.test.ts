@@ -140,7 +140,7 @@ describe.skipIf(!databaseUrl)("runner private artifact PostgreSQL integration", 
         canonicalTestBundleSha256(runArtifact.testCases),
       );
 
-      const submit = await createClaimedDispatch(runnerId, actorId, "SUBMIT");
+      const submit = await createClaimedDispatch(runnerId, randomUUID(), "SUBMIT");
       await acceptAndStart(runnerId, keyId, submit.created, submit.dispatch);
       const submitArtifact = await artifacts.fetch({
         dispatchId: submit.dispatch.id,
