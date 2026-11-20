@@ -1286,6 +1286,46 @@ func TestOSCommandDockerCLICreateBoundsStderrAndCleansExactContainer(t *testing.
 }
 
 
+
+func TestOSCommandDockerCLIStartAttachedHonorsContextDeadline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker sandbox targets Linux hosts")
+	}
+	dockerPath := filepath.Join(t.TempDir(), "docker-stub")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"start\" ]; then",
+		"  while :; do :; done",
+		"fi",
+		"exit 91",
+	}, "\n")
+	if err := os.WriteFile(dockerPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	startedAt := time.Now()
+	exitCode, err := (OSCommandDockerCLI{Binary: dockerPath}).StartAttached(
+		ctx, strings.Repeat("d", 64), strings.NewReader(""), io.Discard, io.Discard,
+	)
+	elapsed := time.Since(startedAt)
+
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("StartAttached error = %v, want ErrDockerCommandFailed", err)
+	}
+	if exitCode != 0 {
+		t.Fatalf("cancelled StartAttached exit code = %d, want 0", exitCode)
+	}
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("start context error = %v, want deadline exceeded", ctx.Err())
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("StartAttached exceeded bounded cancellation window: %s", elapsed)
+	}
+}
+
+
 func TestOSCommandDockerCLIRemoveHonorsContextDeadline(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Docker sandbox targets Linux hosts")
