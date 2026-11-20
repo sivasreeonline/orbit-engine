@@ -46,7 +46,7 @@ def main() -> None:
         client, expected_account_id=ACCOUNT, expected_role_arn=ROLE_ARN
     )
     evidence = verifier.verify()
-    result = evidence.to_dict(test_only=True)
+    result = evidence.to_dict(test_only=True, identity_role="COLLECTOR")
     assert client.calls == 1
     assert result["verified"] is True
     assert result["callerAccountId"] == ACCOUNT
@@ -110,7 +110,8 @@ def main() -> None:
     )
     print("PASS wrong account, role, user principal and missing request ID are rejected")
 
-    rejected(lambda: evidence.to_dict(test_only="false"), "non-boolean testOnly")
+    rejected(lambda: evidence.to_dict(test_only="false", identity_role="COLLECTOR"), "non-boolean testOnly")
+    rejected(lambda: evidence.to_dict(test_only=True, identity_role="OTHER"), "invalid identity role")
     print("STS identity tests passed; synthetic client only, no AWS credentials or API calls.")
 
 
