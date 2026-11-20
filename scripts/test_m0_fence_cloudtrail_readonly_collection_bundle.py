@@ -197,6 +197,7 @@ def main() -> None:
     assert summary["completeWithinCapturedInventory"] is True
     assert bundle.verification_report["digestCount"] == 1
     assert bundle.verification_report["logCount"] == 1
+    assert bundle.verification_report["digests"][0]["digestEndTime"] == "2026-11-20T01:00:00Z"
     assert bundle.collector_identity["identityRole"] == "COLLECTOR"
     assert bundle.verifier_identity["identityRole"] == "INDEPENDENT_VERIFIER"
     assert collector_sts.calls == verifier_sts.calls == 1
