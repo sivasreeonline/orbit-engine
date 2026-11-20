@@ -38,7 +38,7 @@ AWS documents the signature input as the digest end timestamp, original S3 bucke
 This prototype hashes the decompressed digest JSON bytes as supplied and represents a null starting-chain previous signature as an empty string. Those byte-level and genesis-value interpretations are synthetic test assumptions until they are cross-checked against AWS's official `cloudtrail validate-logs` implementation and a real, independently acquired AWS digest fixture. Do not use this prototype to issue a provider qualification PASS or make a production security claim.
 
 Before any real qualification:
-- compare the byte-level digest hash and genesis signing input against AWS CLI `cloudtrail validate-logs` for the same exact digest objects;
+- run a differential fixture against AWS CLI `cloudtrail validate-logs` for the same exact digest objects, including a starting digest whose `previousDigestSignature` is null;
 - test current digest signature metadata versus predecessor signatures carried in the next digest;
 - test key rotation and overlapping regional public-key validity intervals;
 - test standard and backfill chains separately;
