@@ -22,6 +22,14 @@ import {
   RunnerAcceptanceUnauthorizedError,
 } from "./db/runner-acceptance-repository";
 import { authenticateRunnerRequest } from "./services/runner-request-authenticator";
+import type { PostgresRunnerStartRepository } from "./db/runner-start-repository";
+import {
+  RunnerStartConflictError,
+  RunnerStartNotAcceptedError,
+  RunnerStartNotFoundError,
+  RunnerStartStaleLeaseError,
+  RunnerStartUnauthorizedError,
+} from "./db/runner-start-repository";
 
 type ExecutionIntakeRepository = {
   create(input: CreateExecutionInput, idempotencyKey: string): Promise<{
@@ -39,6 +47,7 @@ interface ApiDependencies {
   readonly runnerIdentityRepository?: Pick<PostgresRunnerIdentityRepository, "findActivePublicKey" | "consumeNonce">;
   readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner">;
   readonly runnerAcceptanceRepository?: Pick<PostgresRunnerAcceptanceRepository, "record">;
+  readonly runnerStartRepository?: Pick<PostgresRunnerStartRepository, "start">;
   readonly runtimeVersions?: { readonly java: string; readonly python: string };
   readonly allowedOrigins?: string;
 }
@@ -384,6 +393,124 @@ export function createApiHandler(dependencies: ApiDependencies) {
         console.error("runner_acceptance_failed", { correlationId: requestId });
         return errorResponse("INTERNAL_ERROR",
           "The runner acceptance receipt could not be saved.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
+
+    if (request.method === "POST" && path === "/internal/v1/runner/start") {
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerStartRepository) {
+        return errorResponse(
+          "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Runner start is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner start request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let startBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 2048);
+        startBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner start request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner start request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const startFields = ["dispatchId", "executionId", "attemptId", "leaseToken"];
+      if (!isRecord(startBody) ||
+          Object.keys(startBody).length !== startFields.length ||
+          Object.keys(startBody).some((key) => !startFields.includes(key)) ||
+          startFields.some((key) => typeof startBody[key] !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+              .test(startBody[key] as string))) {
+        return errorResponse("INVALID_RUNNER_START",
+          "The runner start request contains invalid identifiers or fields.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const started = await dependencies.runnerStartRepository.start({
+          dispatchId: startBody.dispatchId as string,
+          executionId: startBody.executionId as string,
+          attemptId: startBody.attemptId as string,
+          leaseToken: startBody.leaseToken as string,
+          runnerId: authenticatedRunner.runnerId,
+          keyId: authenticatedRunner.keyId,
+        });
+        return jsonResponse({
+          data: {
+            started: true,
+            replayed: started.replayed,
+            dispatchId: started.dispatchId,
+            executionId: started.executionId,
+            attemptId: started.attemptId,
+            eventId: started.eventId,
+            startedAt: started.startedAt,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof RunnerStartUnauthorizedError) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner identity is no longer authorized.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerStartNotFoundError) {
+          return errorResponse("RUNNER_DISPATCH_NOT_FOUND",
+            "The dispatch does not match this start request.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerStartNotAcceptedError) {
+          return errorResponse("RUNNER_ACCEPTANCE_REQUIRED",
+            "The current dispatch lease must be durably accepted before it can start.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerStartStaleLeaseError) {
+          return errorResponse("RUNNER_LEASE_STALE",
+            "The runner lease is no longer active.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerStartConflictError) {
+          return errorResponse("RUNNER_START_CONFLICT",
+            "The dispatch lease already has a different start receipt.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Runner start is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_start_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The runner dispatch could not be started.", 500, true,
           requestId, origin, allowedOrigins);
       }
     }
