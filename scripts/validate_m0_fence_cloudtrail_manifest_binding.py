@@ -296,7 +296,7 @@ def validate_cloudtrail_manifest(
         raise ValueError("manifest must contain exactly one CloudTrail verification report artifact")
     report_artifact = reports[0]
     report_bytes = _read_artifact(root, report_artifact["artifactId"])
-    report = json.loads(report_bytes.decode("utf-8", errors="strict"))
+    report = _strict_json(report_bytes, "CloudTrail verification report")
     if not isinstance(report, dict):
         raise ValueError("CloudTrail verification report root must be an object")
     validate_report(report, body)
@@ -619,15 +619,17 @@ def run_fixture_tests() -> int:
         validate_cloudtrail_manifest(envelope, trusted, root, allow_test_only=True)
         cases += 1
 
-        (root / "log-001").write_bytes(b"tampered raw log")
-        try:
-            validate_cloudtrail_manifest(envelope, trusted, root, allow_test_only=True)
-        except ValueError as error:
-            if "SHA-256 mismatch" not in str(error):
-                raise
-            cases += 1
-        else:
-            raise AssertionError("tampered raw CloudTrail log artifact was accepted")
+        for filename, label in (("log-001", "raw log"), ("digest-001", "raw digest"), ("public-key-001", "DER public key")):
+            envelope, trusted = _fixture(root)
+            (root / filename).write_bytes(b"tampered " + label.encode("ascii"))
+            try:
+                validate_cloudtrail_manifest(envelope, trusted, root, allow_test_only=True)
+            except ValueError as error:
+                if "SHA-256 mismatch" not in str(error):
+                    raise
+                cases += 1
+            else:
+                raise AssertionError(f"tampered {label} artifact was accepted")
 
         envelope, trusted = _fixture(root)
         report_path = root / "report-001"
@@ -649,6 +651,38 @@ def run_fixture_tests() -> int:
             raise AssertionError("null S3 VersionId in signed report was accepted")
 
         envelope, trusted = _fixture(root)
+        report_path = root / "report-001"
+        report = json.loads(report_path.read_text())
+        report["digests"][0]["uncompressedSha256"] = "c" * 64
+        report_bytes = json.dumps(report, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        report_path.write_bytes(report_bytes)
+        report_artifact = next(item for item in envelope["manifestBody"]["artifacts"] if item["artifactType"] == "CLOUDTRAIL_VERIFICATION_REPORT")
+        report_artifact["sha256"] = sha(report_bytes)
+        report_artifact["byteCount"] = len(report_bytes)
+        envelope, trusted = _signed_manifest(envelope["manifestBody"])
+        try:
+            validate_cloudtrail_manifest(envelope, trusted, root, allow_test_only=True)
+        except ValueError as error:
+            if "uncompressed measurements do not match" not in str(error):
+                raise
+            cases += 1
+        else:
+            raise AssertionError("signed report with false digest measurements was accepted")
+
+        envelope, trusted = _fixture(root)
+        digest_artifact = next(item for item in envelope["manifestBody"]["artifacts"] if item["artifactType"] == "CLOUDTRAIL_DIGEST")
+        digest_artifact["objectVersion"] = "different-version"
+        envelope, trusted = _signed_manifest(envelope["manifestBody"])
+        try:
+            validate_cloudtrail_manifest(envelope, trusted, root, allow_test_only=True)
+        except ValueError as error:
+            if "inventory does not exactly match" not in str(error):
+                raise
+            cases += 1
+        else:
+            raise AssertionError("wrong S3 object version in signed manifest was accepted")
+
+        envelope, trusted = _fixture(root)
         body = envelope["manifestBody"]
         body["providerScope"]["region"] = "us-west-2"
         envelope, trusted = _signed_manifest(body)
@@ -661,7 +695,6 @@ def run_fixture_tests() -> int:
         else:
             raise AssertionError("report/manifest Region mismatch was accepted")
     return cases
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
