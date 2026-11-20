@@ -108,7 +108,7 @@ def run_negative_tests() -> None:
         raise AssertionError(f"valid synthetic bucket prerequisites were rejected: {error}")
 
     try:
-        store.get_exact_version("key", "latest", reader_identity="independent-verifier")
+        store.get_exact_version("key", "latest", reader_identity="synthetic-verifier")
     except ValueError:
         pass
     else:
