@@ -2,6 +2,17 @@ import type { Authenticator, ProblemRepository } from "./contracts";
 import { DatabaseUnavailableError } from "./db/database-errors";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
 import {
+  ExecutionEvidenceConflictError,
+  ExecutionEvidenceNotFoundError,
+  RunnerCompletionConflictError,
+  RunnerCompletionNotAcceptedError,
+  RunnerCompletionNotStartedError,
+  RunnerCompletionUnauthorizedError,
+  StaleExecutionLeaseError,
+  type RecordRunnerExecutionResultInput,
+} from "./db/execution-evidence-repository";
+
+import {
   ExecutionProblemNotFoundError,
   IdempotencyConflictError,
   type CreateExecutionInput,
@@ -22,6 +33,39 @@ import {
   RunnerAcceptanceUnauthorizedError,
 } from "./db/runner-acceptance-repository";
 import { authenticateRunnerRequest } from "./services/runner-request-authenticator";
+import type { PostgresRunnerArtifactRepository } from "./db/runner-artifact-repository";
+import {
+  RunnerArtifactIntegrityError,
+  RunnerArtifactNotFoundError,
+  RunnerArtifactNotStartedError,
+  RunnerArtifactStaleLeaseError,
+  RunnerArtifactStorageUnavailableError,
+  RunnerArtifactUnauthorizedError,
+} from "./db/runner-artifact-repository";
+import type { PostgresRunnerHeartbeatRepository } from "./db/runner-heartbeat-repository";
+import {
+  RunnerHeartbeatConflictError,
+  RunnerHeartbeatNotFoundError,
+  RunnerHeartbeatNotStartedError,
+  RunnerHeartbeatStaleLeaseError,
+  RunnerHeartbeatUnauthorizedError,
+} from "./db/runner-heartbeat-repository";
+import type { PostgresRunnerStartRepository } from "./db/runner-start-repository";
+import {
+  RunnerStartConflictError,
+  RunnerStartNotAcceptedError,
+  RunnerStartNotFoundError,
+  RunnerStartStaleLeaseError,
+  RunnerStartUnauthorizedError,
+} from "./db/runner-start-repository";
+import type { PostgresCodingEvidenceRepository, CodingEvidenceRecordInput } from "./db/coding-evidence-repository";
+import {
+  CodingEvidenceConflictError,
+  CodingEvidenceSequenceConflictError,
+  CodingEvidenceSessionClosedError,
+  CodingEvidenceSessionNotFoundError,
+  InvalidCodingEvidenceInputError,
+} from "./db/coding-evidence-repository";
 
 type ExecutionIntakeRepository = {
   create(input: CreateExecutionInput, idempotencyKey: string): Promise<{
@@ -39,6 +83,11 @@ interface ApiDependencies {
   readonly runnerIdentityRepository?: Pick<PostgresRunnerIdentityRepository, "findActivePublicKey" | "consumeNonce">;
   readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner">;
   readonly runnerAcceptanceRepository?: Pick<PostgresRunnerAcceptanceRepository, "record">;
+  readonly codingEvidenceRepository?: Pick<PostgresCodingEvidenceRepository, "createSession" | "appendBatch">;
+  readonly runnerStartRepository?: Pick<PostgresRunnerStartRepository, "start">;
+  readonly runnerHeartbeatRepository?: Pick<PostgresRunnerHeartbeatRepository, "renew">;
+  readonly runnerArtifactRepository?: Pick<PostgresRunnerArtifactRepository, "fetch">;
+  readonly runnerCompletionRepository?: Pick<PostgresExecutionEvidenceRepository, "recordRunnerResult">;
   readonly runtimeVersions?: { readonly java: string; readonly python: string };
   readonly allowedOrigins?: string;
 }
@@ -388,6 +437,564 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
     }
 
+    if (request.method === "POST" && path === "/internal/v1/runner/start") {
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerStartRepository) {
+        return errorResponse(
+          "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Runner start is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner start request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let startBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 2048);
+        startBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner start request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner start request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const startFields = ["dispatchId", "executionId", "attemptId", "leaseToken"];
+      if (!isRecord(startBody) ||
+          Object.keys(startBody).length !== startFields.length ||
+          Object.keys(startBody).some((key) => !startFields.includes(key)) ||
+          startFields.some((key) => typeof startBody[key] !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+              .test(startBody[key] as string))) {
+        return errorResponse("INVALID_RUNNER_START",
+          "The runner start request contains invalid identifiers or fields.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const started = await dependencies.runnerStartRepository.start({
+          dispatchId: startBody.dispatchId as string,
+          executionId: startBody.executionId as string,
+          attemptId: startBody.attemptId as string,
+          leaseToken: startBody.leaseToken as string,
+          runnerId: authenticatedRunner.runnerId,
+          keyId: authenticatedRunner.keyId,
+        });
+        return jsonResponse({
+          data: {
+            started: true,
+            replayed: started.replayed,
+            dispatchId: started.dispatchId,
+            executionId: started.executionId,
+            attemptId: started.attemptId,
+            eventId: started.eventId,
+            startedAt: started.startedAt,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof RunnerStartUnauthorizedError) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner identity is no longer authorized.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerStartNotFoundError) {
+          return errorResponse("RUNNER_DISPATCH_NOT_FOUND",
+            "The dispatch does not match this start request.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerStartNotAcceptedError) {
+          return errorResponse("RUNNER_ACCEPTANCE_REQUIRED",
+            "The current dispatch lease must be durably accepted before it can start.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerStartStaleLeaseError) {
+          return errorResponse("RUNNER_LEASE_STALE",
+            "The runner lease is no longer active.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerStartConflictError) {
+          return errorResponse("RUNNER_START_CONFLICT",
+            "The dispatch lease already has a different start receipt.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Runner start is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_start_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The runner dispatch could not be started.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
+
+    if (request.method === "POST" && path === "/internal/v1/runner/heartbeat") {
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerHeartbeatRepository) {
+        return errorResponse(
+          "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Runner lease renewal is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner heartbeat request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let heartbeatBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 2048);
+        heartbeatBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner heartbeat request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner heartbeat request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const heartbeatFields = [
+        "heartbeatId", "dispatchId", "executionId", "attemptId", "leaseToken",
+      ];
+      if (!isRecord(heartbeatBody) ||
+          Object.keys(heartbeatBody).length !== heartbeatFields.length ||
+          Object.keys(heartbeatBody).some((key) => !heartbeatFields.includes(key)) ||
+          heartbeatFields.some((key) => typeof heartbeatBody[key] !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+              .test(heartbeatBody[key] as string))) {
+        return errorResponse("INVALID_RUNNER_HEARTBEAT",
+          "The runner heartbeat contains invalid identifiers or fields.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const renewed = await dependencies.runnerHeartbeatRepository.renew({
+          heartbeatId: heartbeatBody.heartbeatId as string,
+          dispatchId: heartbeatBody.dispatchId as string,
+          executionId: heartbeatBody.executionId as string,
+          attemptId: heartbeatBody.attemptId as string,
+          leaseToken: heartbeatBody.leaseToken as string,
+          runnerId: authenticatedRunner.runnerId,
+          keyId: authenticatedRunner.keyId,
+        });
+        return jsonResponse({
+          data: {
+            renewed: true,
+            replayed: renewed.replayed,
+            heartbeatId: renewed.heartbeatId,
+            dispatchId: renewed.dispatchId,
+            executionId: renewed.executionId,
+            leaseExpiresAt: renewed.leaseExpiresAt,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof RunnerHeartbeatUnauthorizedError) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner identity is no longer authorized.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerHeartbeatNotFoundError) {
+          return errorResponse("RUNNER_DISPATCH_NOT_FOUND",
+            "The dispatch does not match this heartbeat.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerHeartbeatNotStartedError) {
+          return errorResponse("RUNNER_START_REQUIRED",
+            "The dispatch must be durably started before its lease can be renewed.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerHeartbeatStaleLeaseError) {
+          return errorResponse("RUNNER_LEASE_STALE",
+            "The runner lease has expired or no longer belongs to this runner.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerHeartbeatConflictError) {
+          return errorResponse("RUNNER_HEARTBEAT_CONFLICT",
+            "The heartbeat identifier was reused for a different lease.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Runner lease renewal is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_heartbeat_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The runner lease could not be renewed.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
+
+
+    if (request.method === "POST" && path === "/internal/v1/runner/complete") {
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerCompletionRepository) {
+        return errorResponse(
+          "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Runner result submission is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner completion request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let completionBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 16 * 1024);
+        completionBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner completion request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner completion request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const requiredFields = [
+        "dispatchId", "executionId", "attemptId", "leaseToken",
+        "infrastructureStatus", "compilationStatus", "verdict", "cleanupStatus",
+        "testsTotal", "testsPassed", "elapsedMs", "runnerVersion",
+        "resultSha256", "startedAt", "completedAt",
+      ];
+      const optionalFields = [
+        "infrastructureErrorCode", "peakMemoryBytes", "runtimeImageDigest",
+      ];
+      const completionFields = [...requiredFields, ...optionalFields];
+      const identifiers = ["dispatchId", "executionId", "attemptId", "leaseToken"];
+      const numericFields = ["testsTotal", "testsPassed", "elapsedMs"];
+      const validNumber = (value: unknown): value is number =>
+        typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+      const compilations = ["NOT_STARTED", "SUCCEEDED", "FAILED"];
+      const verdicts = [
+        "NOT_EVALUATED", "ACCEPTED", "WRONG_ANSWER", "COMPILATION_ERROR",
+        "RUNTIME_ERROR", "TIME_LIMIT_EXCEEDED", "MEMORY_LIMIT_EXCEEDED",
+        "OUTPUT_LIMIT_EXCEEDED", "INTERNAL_ERROR",
+      ];
+      const cleanupStatuses = ["SUCCEEDED", "FAILED", "UNKNOWN"];
+      const validTimestamp = (value: unknown): value is string =>
+        typeof value === "string" && value.length <= 40 &&
+        Number.isFinite(Date.parse(value)) &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value);
+      const isValidCompletion = isRecord(completionBody) &&
+        requiredFields.every((field) => Object.hasOwn(completionBody, field)) &&
+        Object.keys(completionBody).every((field) => completionFields.includes(field)) &&
+        identifiers.every((field) => typeof completionBody[field] === "string" &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+            .test(completionBody[field] as string)) &&
+        (completionBody.infrastructureStatus === "SUCCEEDED" || completionBody.infrastructureStatus === "FAILED") &&
+        compilations.includes(String(completionBody.compilationStatus)) &&
+        verdicts.includes(String(completionBody.verdict)) &&
+        cleanupStatuses.includes(String(completionBody.cleanupStatus)) &&
+        numericFields.every((field) => validNumber(completionBody[field])) &&
+        (completionBody.testsPassed as number) <= (completionBody.testsTotal as number) &&
+        typeof completionBody.runnerVersion === "string" &&
+        /^[A-Za-z0-9._+-]{1,64}$/.test(completionBody.runnerVersion) &&
+        typeof completionBody.resultSha256 === "string" &&
+        /^[0-9a-f]{64}$/.test(completionBody.resultSha256) &&
+        validTimestamp(completionBody.startedAt) &&
+        validTimestamp(completionBody.completedAt) &&
+        Date.parse(completionBody.startedAt) <= Date.parse(completionBody.completedAt) &&
+        (completionBody.infrastructureErrorCode === undefined ||
+          (typeof completionBody.infrastructureErrorCode === "string" &&
+            /^[A-Z][A-Z0-9_]{0,63}$/.test(completionBody.infrastructureErrorCode))) &&
+        (completionBody.peakMemoryBytes === undefined || validNumber(completionBody.peakMemoryBytes)) &&
+        (completionBody.runtimeImageDigest === undefined ||
+          (typeof completionBody.runtimeImageDigest === "string" &&
+            /^[0-9a-f]{64}$/.test(completionBody.runtimeImageDigest)));
+
+      if (!isValidCompletion) {
+        return errorResponse("INVALID_RUNNER_COMPLETION",
+          "The runner completion request contains invalid or unsupported result fields.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+      const validatedCompletion = completionBody as Record<string, unknown>;
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const resultInput: RecordRunnerExecutionResultInput = {
+          dispatchId: validatedCompletion.dispatchId as string,
+          executionId: validatedCompletion.executionId as string,
+          attemptId: validatedCompletion.attemptId as string,
+          leaseToken: validatedCompletion.leaseToken as string,
+          leaseOwner: authenticatedRunner.runnerId,
+          keyId: authenticatedRunner.keyId,
+          infrastructureStatus: validatedCompletion.infrastructureStatus as "SUCCEEDED" | "FAILED",
+          ...(validatedCompletion.infrastructureErrorCode !== undefined
+            ? { infrastructureErrorCode: validatedCompletion.infrastructureErrorCode as string }
+            : {}),
+          compilationStatus: validatedCompletion.compilationStatus as RecordRunnerExecutionResultInput["compilationStatus"],
+          verdict: validatedCompletion.verdict as RecordRunnerExecutionResultInput["verdict"],
+          cleanupStatus: validatedCompletion.cleanupStatus as RecordRunnerExecutionResultInput["cleanupStatus"],
+          testsTotal: validatedCompletion.testsTotal as number,
+          testsPassed: validatedCompletion.testsPassed as number,
+          elapsedMs: validatedCompletion.elapsedMs as number,
+          ...(validatedCompletion.peakMemoryBytes !== undefined
+            ? { peakMemoryBytes: validatedCompletion.peakMemoryBytes as number }
+            : {}),
+          runnerVersion: validatedCompletion.runnerVersion as string,
+          ...(validatedCompletion.runtimeImageDigest !== undefined
+            ? { runtimeImageDigest: validatedCompletion.runtimeImageDigest as string }
+            : {}),
+          resultSha256: validatedCompletion.resultSha256 as string,
+          startedAt: validatedCompletion.startedAt as string,
+          completedAt: validatedCompletion.completedAt as string,
+        };
+        const recorded = await dependencies.runnerCompletionRepository.recordRunnerResult({
+          ...resultInput,
+          dispatchId: validatedCompletion.dispatchId as string,
+          keyId: authenticatedRunner.keyId,
+        });
+        return jsonResponse({
+          data: {
+            completed: true,
+            replayed: recorded.replayed,
+            executionId: recorded.executionId,
+            attemptId: recorded.attemptId,
+            state: recorded.state,
+            resultSha256: recorded.resultSha256,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof RunnerCompletionUnauthorizedError) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner identity is no longer authorized.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof ExecutionEvidenceNotFoundError) {
+          return errorResponse("RUNNER_DISPATCH_NOT_FOUND",
+            "The dispatch does not match this completion result.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerCompletionNotAcceptedError) {
+          return errorResponse("RUNNER_ACCEPTANCE_REQUIRED",
+            "The dispatch must have a durable acceptance receipt before completion.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerCompletionNotStartedError) {
+          return errorResponse("RUNNER_START_REQUIRED",
+            "The dispatch must have a durable start receipt before completion.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof StaleExecutionLeaseError) {
+          return errorResponse("RUNNER_LEASE_STALE",
+            "The runner lease has expired or no longer belongs to this runner.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerCompletionConflictError ||
+            error instanceof ExecutionEvidenceConflictError) {
+          return errorResponse("RUNNER_COMPLETION_CONFLICT",
+            "A different terminal result already exists for this execution lease.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Runner result submission is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof Error &&
+            (error.message.startsWith("invalid_") ||
+             error.message.startsWith("compilation_") ||
+             error.message === "accepted_verdict_requires_all_tests_to_pass")) {
+          return errorResponse("INVALID_RUNNER_COMPLETION",
+            "The runner completion result violates the execution result contract.", 400, false,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_completion_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The runner result could not be saved.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
+
+
+
+    if (request.method === "POST" && path === "/internal/v1/runner/artifact") {
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerArtifactRepository) {
+        return errorResponse(
+          "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Private runner artifact retrieval is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner artifact request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let artifactBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 2048);
+        artifactBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner artifact request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner artifact request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const artifactFields = ["dispatchId", "executionId", "attemptId", "leaseToken"];
+      if (!isRecord(artifactBody) ||
+          Object.keys(artifactBody).length !== artifactFields.length ||
+          Object.keys(artifactBody).some((key) => !artifactFields.includes(key)) ||
+          artifactFields.some((key) => typeof artifactBody[key] !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+              .test(artifactBody[key] as string))) {
+        return errorResponse("INVALID_RUNNER_ARTIFACT_REQUEST",
+          "The runner artifact request contains invalid identifiers or fields.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const artifact = await dependencies.runnerArtifactRepository.fetch({
+          dispatchId: artifactBody.dispatchId as string,
+          executionId: artifactBody.executionId as string,
+          attemptId: artifactBody.attemptId as string,
+          leaseToken: artifactBody.leaseToken as string,
+          runnerId: authenticatedRunner.runnerId,
+          keyId: authenticatedRunner.keyId,
+        });
+        return jsonResponse({ data: artifact }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof RunnerArtifactUnauthorizedError) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner identity is no longer authorized.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerArtifactNotFoundError) {
+          return errorResponse("RUNNER_DISPATCH_NOT_FOUND",
+            "The dispatch does not match this artifact request.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerArtifactNotStartedError) {
+          return errorResponse("RUNNER_START_REQUIRED",
+            "The dispatch must be durably accepted and started before artifact retrieval.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerArtifactStaleLeaseError) {
+          return errorResponse("RUNNER_LEASE_STALE",
+            "The runner lease has expired or no longer belongs to this runner.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerArtifactStorageUnavailableError) {
+          return errorResponse("RUNNER_ARTIFACT_STORAGE_UNAVAILABLE",
+            "The artifact storage backend is not available to this runner yet.", 503, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerArtifactIntegrityError) {
+          return errorResponse("RUNNER_ARTIFACT_INTEGRITY_FAILED",
+            "The source or test bundle failed integrity validation.", 500, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Private runner artifact retrieval is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_artifact_fetch_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The runner artifact could not be retrieved.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
+
+
     if (request.method === "POST" && path === "/internal/v1/runner/claim") {
       if (!dependencies.runnerIdentityRepository || !dependencies.runnerDispatchLeaseRepository) {
         return errorResponse(
@@ -484,6 +1091,10 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
     }
 
+    const isEvidenceSessionCreate = request.method === "POST" && path === "/api/v1/evidence/sessions";
+    const evidenceEventsMatch = request.method === "POST"
+      ? path.match(/^\/api\/v1\/evidence\/sessions\/([^/]+)\/events$/)
+      : null;
     const isExecutionCreate = request.method === "POST" && path === "/api/v1/executions";
     const isProblemList = request.method === "GET" && path === "/api/v1/problems";
     const problemMatch = request.method === "GET"
@@ -499,7 +1110,8 @@ export function createApiHandler(dependencies: ApiDependencies) {
       ? path.match(/^\/api\/v1\/executions\/([^/]+)\/status$/)
       : null;
 
-    if (!isExecutionCreate && !isProblemList && !problemMatch && !attemptHistoryMatch &&
+    if (!isExecutionCreate && !isEvidenceSessionCreate && !evidenceEventsMatch &&
+        !isProblemList && !problemMatch && !attemptHistoryMatch &&
         !executionEventsMatch && !executionStatusMatch) {
       return errorResponse(
         "NOT_FOUND",
@@ -562,6 +1174,177 @@ export function createApiHandler(dependencies: ApiDependencies) {
         origin,
         allowedOrigins,
       );
+    }
+
+    if (isEvidenceSessionCreate) {
+      if (!dependencies.codingEvidenceRepository) {
+        return errorResponse("CODING_EVIDENCE_NOT_CONFIGURED",
+          "Coding evidence capture is temporarily unavailable.", 503, true,
+          requestId, origin, allowedOrigins);
+      }
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The evidence session request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+      let body: unknown;
+      try {
+        body = await readJsonBody(request, 4096);
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The evidence session request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The evidence session request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+      if (!isRecord(body) || Object.keys(body).length !== 3 ||
+          Object.keys(body).some((key) => !["problemSlug", "language", "noticeVersion"].includes(key)) ||
+          typeof body.problemSlug !== "string" || !isValidSlug(body.problemSlug) ||
+          (body.language !== "java" && body.language !== "python") ||
+          typeof body.noticeVersion !== "string" ||
+          !/^[A-Za-z0-9._-]{1,32}$/.test(body.noticeVersion)) {
+        return errorResponse("INVALID_EVIDENCE_SESSION",
+          "The evidence session requires a valid problemSlug, language and noticeVersion.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const session = await dependencies.codingEvidenceRepository.createSession({
+          principal,
+          problemSlug: body.problemSlug,
+          language: body.language,
+          noticeVersion: body.noticeVersion,
+        });
+        return jsonResponse({
+          data: {
+            sessionId: session.sessionId,
+            startedAt: session.startedAt,
+            lastSequence: session.lastSequence,
+            capturePolicy: {
+              changedSnapshotIntervalSeconds: 120,
+              checkpointIntervalSeconds: 300,
+            },
+          },
+        }, 201, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof CodingEvidenceSessionNotFoundError) {
+          return errorResponse("PROBLEM_NOT_FOUND",
+            "The requested published problem was not found.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof InvalidCodingEvidenceInputError) {
+          return errorResponse("INVALID_EVIDENCE_SESSION",
+            "The evidence session request is invalid.", 400, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("DATABASE_UNAVAILABLE",
+            "The evidence session could not be created right now.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("coding_evidence_session_create_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The evidence session could not be created.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
+
+    if (evidenceEventsMatch) {
+      if (!dependencies.codingEvidenceRepository) {
+        return errorResponse("CODING_EVIDENCE_NOT_CONFIGURED",
+          "Coding evidence synchronization is temporarily unavailable.", 503, true,
+          requestId, origin, allowedOrigins);
+      }
+      const sessionId = evidenceEventsMatch[1] ?? "";
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId)) {
+        return errorResponse("INVALID_EVIDENCE_SESSION_ID",
+          "The evidence session identifier is invalid.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The evidence batch request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+      let body: unknown;
+      try {
+        body = await readJsonBody(request, 2 * 1024 * 1024);
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The evidence batch exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The evidence batch must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+      if (!isRecord(body) || Object.keys(body).length !== 1 ||
+          Object.keys(body)[0] !== "events" || !Array.isArray(body.events) ||
+          body.events.length < 1 || body.events.length > 20) {
+        return errorResponse("INVALID_EVIDENCE_BATCH",
+          "The evidence batch must contain between 1 and 20 events.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const result = await dependencies.codingEvidenceRepository.appendBatch({
+          principal,
+          sessionId,
+          events: body.events as CodingEvidenceRecordInput[],
+        });
+        return jsonResponse({
+          data: {
+            accepted: result.accepted,
+            replayed: result.replayed,
+            sequenceGaps: result.sequenceGaps,
+            lastSequence: result.lastSequence,
+            sessionEnded: result.sessionEnded,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof CodingEvidenceSessionNotFoundError) {
+          return errorResponse("EVIDENCE_SESSION_NOT_FOUND",
+            "The evidence session was not found for this student.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof CodingEvidenceSessionClosedError) {
+          return errorResponse("EVIDENCE_SESSION_CLOSED",
+            "The evidence session has already ended.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof CodingEvidenceConflictError) {
+          return errorResponse("EVIDENCE_EVENT_CONFLICT",
+            "An event identifier was reused with different evidence.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof CodingEvidenceSequenceConflictError) {
+          return errorResponse("EVIDENCE_SEQUENCE_CONFLICT",
+            "The evidence sequence conflicts with previously received events.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof InvalidCodingEvidenceInputError) {
+          return errorResponse("INVALID_EVIDENCE_BATCH",
+            "The evidence batch contains invalid event or snapshot data.", 400, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("DATABASE_UNAVAILABLE",
+            "The evidence batch could not be saved right now.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("coding_evidence_batch_append_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The evidence batch could not be saved.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
     }
 
     if (isExecutionCreate) {

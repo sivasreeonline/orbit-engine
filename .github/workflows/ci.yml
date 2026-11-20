@@ -291,6 +291,96 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/runner-acceptance-repository.integration.test.ts
 
+      - name: Apply and re-apply continuous editor evidence migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0009_continuous_editor_evidence.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0009_continuous_editor_evidence.sql
+
+      - name: Verify continuous editor evidence SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0009_continuous_editor_evidence.sql
+
+      - name: Verify coding evidence session and event ingestion against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/coding-evidence-repository.integration.test.ts
+
+      - name: Apply and re-apply lease-fenced runner start migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0010_runner_dispatch_starts.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0010_runner_dispatch_starts.sql
+
+      - name: Verify lease-fenced runner start SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0010_runner_dispatch_starts.sql
+
+      - name: Verify accepted runner start and lease fencing against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-start-repository.integration.test.ts
+
+      - name: Apply and re-apply runner lease heartbeat migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0011_runner_dispatch_lease_heartbeats.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0011_runner_dispatch_lease_heartbeats.sql
+
+      - name: Verify runner lease heartbeat SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0011_runner_dispatch_lease_heartbeats.sql
+
+      - name: Verify runner lease renewals and idempotent heartbeats against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-heartbeat-repository.integration.test.ts
+
+      - name: Verify lease-fenced runner artifact retrieval against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-artifact-repository.integration.test.ts
+
+      - name: Apply and re-apply authenticated runner completion migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0012_runner_dispatch_completions.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0012_runner_dispatch_completions.sql
+
+      - name: Verify runner completion receipt SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0012_runner_dispatch_completions.sql
+
+      - name: Verify authenticated runner completion and result replay against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-completion-repository.integration.test.ts
+
+      - name: Apply and re-apply expired runner lease recovery migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0013_runner_dispatch_expiry_recovery.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0013_runner_dispatch_expiry_recovery.sql
+
+      - name: Verify expired runner lease recovery SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0013_runner_dispatch_expiry_recovery.sql
+
+      - name: Verify expired runner lease recovery and retries against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npx vitest run src/db/runner-recovery-repository.integration.test.ts
+
       - name: Worker deployment dry run
         run: npx wrangler deploy --dry-run
 

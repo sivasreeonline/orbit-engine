@@ -14,10 +14,45 @@ import type {
   RecordRunnerAcceptanceInput,
   RecordedRunnerAcceptance,
 } from "./db/runner-acceptance-repository";
+import {
+  RunnerStartNotAcceptedError,
+} from "./db/runner-start-repository";
+import type {
+  RecordRunnerStartInput,
+  RecordedRunnerStart,
+} from "./db/runner-start-repository";
+import {
+  RunnerArtifactNotStartedError,
+} from "./db/runner-artifact-repository";
+import type {
+  FetchRunnerArtifactInput,
+  RunnerExecutionArtifact,
+} from "./db/runner-artifact-repository";
+import {
+  RunnerHeartbeatNotStartedError,
+} from "./db/runner-heartbeat-repository";
+import type {
+  RecordRunnerHeartbeatInput,
+  RecordedRunnerHeartbeat,
+} from "./db/runner-heartbeat-repository";
 import { canonicalRunnerRequestMessage } from "./security/runner-request-signature";
 import { RUNNER_AUTH_HEADERS } from "./services/runner-request-authenticator";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
+import {
+  RunnerCompletionNotStartedError,
+} from "./db/execution-evidence-repository";
+import type {
+  RecordRunnerExecutionResultInput,
+  RecordedExecutionResult,
+} from "./db/execution-evidence-repository";
+
 import type { CreateExecutionInput } from "./db/execution-intake-repository";
+import type {
+  CreateCodingEvidenceSessionInput,
+  CreatedCodingEvidenceSession,
+  AppendCodingEvidenceBatchInput,
+  AppendedCodingEvidenceBatch,
+} from "./db/coding-evidence-repository";
 
 type ExecutionEvidenceReadRepository = Pick<
   PostgresExecutionEvidenceRepository,
@@ -84,6 +119,22 @@ interface HarnessOptions {
   runnerAcceptanceRepository?: {
     record(input: RecordRunnerAcceptanceInput): Promise<RecordedRunnerAcceptance>;
   };
+  codingEvidenceRepository?: {
+    createSession(input: CreateCodingEvidenceSessionInput): Promise<CreatedCodingEvidenceSession>;
+    appendBatch(input: AppendCodingEvidenceBatchInput): Promise<AppendedCodingEvidenceBatch>;
+  };
+  runnerCompletionRepository?: {
+    recordRunnerResult(input: RecordRunnerExecutionResultInput): Promise<RecordedExecutionResult>;
+  };
+  runnerArtifactRepository?: {
+    fetch(input: FetchRunnerArtifactInput): Promise<RunnerExecutionArtifact>;
+  };
+  runnerHeartbeatRepository?: {
+    renew(input: RecordRunnerHeartbeatInput): Promise<RecordedRunnerHeartbeat>;
+  };
+  runnerStartRepository?: {
+    start(input: RecordRunnerStartInput): Promise<RecordedRunnerStart>;
+  };
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -117,6 +168,21 @@ function makeHarness(options: HarnessOptions = {}) {
       : {}),
     ...(options.runnerAcceptanceRepository
       ? { runnerAcceptanceRepository: options.runnerAcceptanceRepository }
+      : {}),
+    ...(options.codingEvidenceRepository
+      ? { codingEvidenceRepository: options.codingEvidenceRepository }
+      : {}),
+    ...(options.runnerCompletionRepository
+      ? { runnerCompletionRepository: options.runnerCompletionRepository }
+      : {}),
+    ...(options.runnerArtifactRepository
+      ? { runnerArtifactRepository: options.runnerArtifactRepository }
+      : {}),
+    ...(options.runnerHeartbeatRepository
+      ? { runnerHeartbeatRepository: options.runnerHeartbeatRepository }
+      : {}),
+    ...(options.runnerStartRepository
+      ? { runnerStartRepository: options.runnerStartRepository }
       : {}),
     allowedOrigins: allowedOrigin,
   });
@@ -902,5 +968,824 @@ describe("authenticated runner acceptance endpoint", () => {
 
     expect(response.status).toBe(400);
     expect(findActivePublicKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("Continuous editor evidence API", () => {
+  it("creates an explicitly noticed evidence session for the authenticated owner", async () => {
+    const createSession = vi.fn(async (_input: CreateCodingEvidenceSessionInput) => ({
+      sessionId: "90000000-0000-4000-8000-000000000001",
+      startedAt: "2026-11-13T05:00:00.000Z",
+      lastSequence: 0,
+    }));
+    const { handler, authenticator } = makeHarness({
+      codingEvidenceRepository: {
+        createSession,
+        appendBatch: vi.fn(),
+      },
+    });
+
+    const response = await handler(makeRequest("/api/v1/evidence/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        problemSlug: "two-sum",
+        language: "java",
+        noticeVersion: "notice-v1",
+      }),
+    }));
+
+    expect(response.status).toBe(201);
+    expect(await readJson(response)).toMatchObject({
+      data: {
+        sessionId: "90000000-0000-4000-8000-000000000001",
+        lastSequence: 0,
+        capturePolicy: {
+          changedSnapshotIntervalSeconds: 120,
+          checkpointIntervalSeconds: 300,
+        },
+      },
+    });
+    expect(createSession).toHaveBeenCalledWith({
+      principal: authenticated.principal,
+      problemSlug: "two-sum",
+      language: "java",
+      noticeVersion: "notice-v1",
+    });
+    expect(authenticator.authenticate).toHaveBeenCalledOnce();
+  });
+
+  it("rejects missing notice version and extra session fields", async () => {
+    const createSession = vi.fn(async () => ({
+      sessionId: "90000000-0000-4000-8000-000000000001",
+      startedAt: "2026-11-13T05:00:00.000Z",
+      lastSequence: 0,
+    }));
+    const { handler } = makeHarness({
+      codingEvidenceRepository: { createSession, appendBatch: vi.fn() },
+    });
+
+    const response = await handler(makeRequest("/api/v1/evidence/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        problemSlug: "two-sum",
+        language: "java",
+        unexpected: "not allowed",
+      }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_EVIDENCE_SESSION", retryable: false },
+    });
+    expect(createSession).not.toHaveBeenCalled();
+  });
+
+  it("appends an owner-scoped batch and reports sequence gaps", async () => {
+    const appendBatch = vi.fn(async (_input: AppendCodingEvidenceBatchInput) => ({
+      accepted: 2,
+      replayed: 1,
+      sequenceGaps: [4],
+      lastSequence: 4,
+      sessionEnded: false,
+    }));
+    const { handler } = makeHarness({
+      codingEvidenceRepository: {
+        createSession: vi.fn(),
+        appendBatch,
+      },
+    });
+    const sessionId = "90000000-0000-4000-8000-000000000001";
+    const events = [
+      {
+        event: {
+          eventId: "91000000-0000-4000-8000-000000000001",
+          sessionId,
+          sequence: 1,
+          eventType: "SESSION_STARTED",
+          occurredAt: "2026-11-13T05:00:00.000Z",
+          language: "java",
+        },
+      },
+    ];
+
+    const response = await handler(makeRequest(`/api/v1/evidence/sessions/${sessionId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      data: {
+        accepted: 2,
+        replayed: 1,
+        sequenceGaps: [4],
+        lastSequence: 4,
+        sessionEnded: false,
+      },
+    });
+    expect(appendBatch).toHaveBeenCalledWith({
+      principal: authenticated.principal,
+      sessionId,
+      events,
+    });
+  });
+
+  it("rejects malformed event batches before persistence", async () => {
+    const appendBatch = vi.fn(async () => ({
+      accepted: 0, replayed: 0, sequenceGaps: [], lastSequence: 0, sessionEnded: false,
+    }));
+    const { handler } = makeHarness({
+      codingEvidenceRepository: { createSession: vi.fn(), appendBatch },
+    });
+    const sessionId = "90000000-0000-4000-8000-000000000001";
+
+    const response = await handler(makeRequest(`/api/v1/evidence/sessions/${sessionId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events: [] }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_EVIDENCE_BATCH", retryable: false },
+    });
+    expect(appendBatch).not.toHaveBeenCalled();
+  });
+
+  it("requires an authenticated student before creating an evidence session", async () => {
+    const createSession = vi.fn(async () => ({
+      sessionId: "90000000-0000-4000-8000-000000000001",
+      startedAt: "2026-11-13T05:00:00.000Z",
+      lastSequence: 0,
+    }));
+    const { handler } = makeHarness({
+      auth: { authenticated: false, reason: "missing" },
+      codingEvidenceRepository: { createSession, appendBatch: vi.fn() },
+    });
+
+    const response = await handler(makeRequest("/api/v1/evidence/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        problemSlug: "two-sum", language: "java", noticeVersion: "notice-v1",
+      }),
+    }));
+
+    expect(response.status).toBe(401);
+    expect(createSession).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("authenticated runner start endpoint", () => {
+  const runnerId = "40000000-0000-4000-8000-000000000001";
+  const startReceipt = {
+    dispatchId: "50000000-0000-4000-8000-000000000001",
+    executionId: "60000000-0000-4000-8000-000000000001",
+    attemptId: "70000000-0000-4000-8000-000000000001",
+    leaseToken: "80000000-0000-4000-8000-000000000001",
+  };
+
+  function encodeBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).split("+").join("-").split("/").join("_").replace(/=+$/g, "");
+  }
+
+  async function signedStartRequest(bodyValue: Record<string, string>) {
+    const now = new Date();
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const nonce = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+    const bodyText = JSON.stringify(bodyValue);
+    const body = new TextEncoder().encode(bodyText);
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "Ed25519" }, true, ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const message = await canonicalRunnerRequestMessage({
+      keyId: "runner-start-key",
+      method: "POST",
+      path: "/internal/v1/runner/start",
+      timestamp,
+      nonce,
+      body,
+    });
+    const signature = new Uint8Array(await crypto.subtle.sign(
+      "Ed25519", keyPair.privateKey, new Uint8Array(message),
+    ));
+    return {
+      request: new Request("https://api.skyhigh.example/internal/v1/runner/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [RUNNER_AUTH_HEADERS.keyId]: "runner-start-key",
+          [RUNNER_AUTH_HEADERS.timestamp]: timestamp,
+          [RUNNER_AUTH_HEADERS.nonce]: nonce,
+          [RUNNER_AUTH_HEADERS.signature]: encodeBase64Url(signature),
+        },
+        body: bodyText,
+      }),
+      publicKey,
+    };
+  }
+
+  it("authenticates the machine and returns the durable lease-fenced start receipt", async () => {
+    const signed = await signedStartRequest(startReceipt);
+    const start = vi.fn(async (input: RecordRunnerStartInput) => ({
+      dispatchId: input.dispatchId,
+      executionId: input.executionId,
+      attemptId: input.attemptId,
+      eventId: "a1000000-0000-4000-8000-000000000001",
+      startedAt: "2026-11-13T08:30:00.000Z",
+      replayed: false,
+    }));
+    const findActivePublicKey = vi.fn(async () => ({
+      keyId: "runner-start-key",
+      runnerId,
+      publicKey: signed.publicKey,
+    }));
+    const consumeNonce = vi.fn(async () => true);
+    const { handler, authenticator } = makeHarness({
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
+      runnerStartRepository: { start },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      data: {
+        started: true,
+        replayed: false,
+        dispatchId: startReceipt.dispatchId,
+        executionId: startReceipt.executionId,
+        attemptId: startReceipt.attemptId,
+        eventId: "a1000000-0000-4000-8000-000000000001",
+      },
+    });
+    expect(start).toHaveBeenCalledWith({
+      ...startReceipt,
+      runnerId,
+      keyId: "runner-start-key",
+    });
+    expect(findActivePublicKey).toHaveBeenCalledOnce();
+    expect(consumeNonce).toHaveBeenCalledOnce();
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+  });
+
+  it("rejects extra fields before public-key lookup", async () => {
+    const signedBody = { ...startReceipt, sourceCode: "source must never be sent to start" };
+    const findActivePublicKey = vi.fn(async () => null);
+    const start = vi.fn(async () => {
+      throw new Error("must_not_start");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey,
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerStartRepository: { start },
+    });
+
+    const response = await handler(makeRequest("/internal/v1/runner/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedBody),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_RUNNER_START", retryable: false },
+    });
+    expect(findActivePublicKey).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("rejects a replayed nonce before attempting to start work", async () => {
+    const signed = await signedStartRequest(startReceipt);
+    const start = vi.fn(async () => {
+      throw new Error("must_not_start");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-start-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => false),
+      },
+      runnerStartRepository: { start },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(401);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_AUTHENTICATION_FAILED" },
+    });
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("requires a durable acceptance receipt before changing job state", async () => {
+    const signed = await signedStartRequest(startReceipt);
+    const start = vi.fn(async () => {
+      throw new RunnerStartNotAcceptedError();
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-start-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerStartRepository: { start },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_ACCEPTANCE_REQUIRED", retryable: false },
+    });
+    expect(start).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("authenticated runner heartbeat endpoint", () => {
+  const runnerId = "40000000-0000-4000-8000-000000000001";
+  const heartbeatReceipt = {
+    heartbeatId: "95000000-0000-4000-8000-000000000001",
+    dispatchId: "50000000-0000-4000-8000-000000000001",
+    executionId: "60000000-0000-4000-8000-000000000001",
+    attemptId: "70000000-0000-4000-8000-000000000001",
+    leaseToken: "80000000-0000-4000-8000-000000000001",
+  };
+
+  function encodeBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).split("+").join("-").split("/").join("_").replace(/=+$/g, "");
+  }
+
+  async function signedHeartbeatRequest(bodyValue: Record<string, string>) {
+    const now = new Date();
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const nonce = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+    const bodyText = JSON.stringify(bodyValue);
+    const body = new TextEncoder().encode(bodyText);
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "Ed25519" }, true, ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const message = await canonicalRunnerRequestMessage({
+      keyId: "runner-heartbeat-key",
+      method: "POST",
+      path: "/internal/v1/runner/heartbeat",
+      timestamp,
+      nonce,
+      body,
+    });
+    const signature = new Uint8Array(await crypto.subtle.sign(
+      "Ed25519", keyPair.privateKey, new Uint8Array(message),
+    ));
+    return {
+      request: new Request("https://api.skyhigh.example/internal/v1/runner/heartbeat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [RUNNER_AUTH_HEADERS.keyId]: "runner-heartbeat-key",
+          [RUNNER_AUTH_HEADERS.timestamp]: timestamp,
+          [RUNNER_AUTH_HEADERS.nonce]: nonce,
+          [RUNNER_AUTH_HEADERS.signature]: encodeBase64Url(signature),
+        },
+        body: bodyText,
+      }),
+      publicKey,
+    };
+  }
+
+  it("authenticates the runner and returns the renewed bounded lease expiry", async () => {
+    const signed = await signedHeartbeatRequest(heartbeatReceipt);
+    const renew = vi.fn(async (input: RecordRunnerHeartbeatInput) => ({
+      heartbeatId: input.heartbeatId,
+      dispatchId: input.dispatchId,
+      executionId: input.executionId,
+      leaseExpiresAt: "2026-11-13T08:32:00.000Z",
+      replayed: false,
+    }));
+    const findActivePublicKey = vi.fn(async () => ({
+      keyId: "runner-heartbeat-key",
+      runnerId,
+      publicKey: signed.publicKey,
+    }));
+    const consumeNonce = vi.fn(async () => true);
+    const { handler, authenticator } = makeHarness({
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
+      runnerHeartbeatRepository: { renew },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      data: {
+        renewed: true,
+        replayed: false,
+        heartbeatId: heartbeatReceipt.heartbeatId,
+        dispatchId: heartbeatReceipt.dispatchId,
+        executionId: heartbeatReceipt.executionId,
+        leaseExpiresAt: "2026-11-13T08:32:00.000Z",
+      },
+    });
+    expect(renew).toHaveBeenCalledWith({
+      ...heartbeatReceipt,
+      runnerId,
+      keyId: "runner-heartbeat-key",
+    });
+    expect(consumeNonce).toHaveBeenCalledOnce();
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+  });
+
+  it("rejects extra heartbeat fields before public-key lookup", async () => {
+    const findActivePublicKey = vi.fn(async () => null);
+    const renew = vi.fn(async () => {
+      throw new Error("must_not_renew");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey,
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerHeartbeatRepository: { renew },
+    });
+
+    const response = await handler(makeRequest("/internal/v1/runner/heartbeat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...heartbeatReceipt, sourceCode: "never send source in heartbeat" }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_RUNNER_HEARTBEAT", retryable: false },
+    });
+    expect(findActivePublicKey).not.toHaveBeenCalled();
+    expect(renew).not.toHaveBeenCalled();
+  });
+
+  it("rejects replayed request nonces before lease renewal", async () => {
+    const signed = await signedHeartbeatRequest(heartbeatReceipt);
+    const renew = vi.fn(async () => {
+      throw new Error("must_not_renew");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-heartbeat-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => false),
+      },
+      runnerHeartbeatRepository: { renew },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(401);
+    expect(renew).not.toHaveBeenCalled();
+  });
+
+  it("requires a durable start receipt before extending a lease", async () => {
+    const signed = await signedHeartbeatRequest(heartbeatReceipt);
+    const renew = vi.fn(async () => {
+      throw new RunnerHeartbeatNotStartedError();
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-heartbeat-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerHeartbeatRepository: { renew },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_START_REQUIRED", retryable: false },
+    });
+  });
+});
+
+
+describe("authenticated runner private artifact endpoint", () => {
+  const runnerId = "40000000-0000-4000-8000-000000000001";
+  const artifactRequest = {
+    dispatchId: "50000000-0000-4000-8000-000000000001",
+    executionId: "60000000-0000-4000-8000-000000000001",
+    attemptId: "70000000-0000-4000-8000-000000000001",
+    leaseToken: "80000000-0000-4000-8000-000000000001",
+  };
+
+  function encodeBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).split("+").join("-").split("/").join("_").replace(/=+$/g, "");
+  }
+
+  async function signedArtifactRequest(bodyValue: Record<string, string>) {
+    const now = new Date();
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const nonce = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+    const bodyText = JSON.stringify(bodyValue);
+    const body = new TextEncoder().encode(bodyText);
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "Ed25519" }, true, ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const message = await canonicalRunnerRequestMessage({
+      keyId: "runner-artifact-key",
+      method: "POST",
+      path: "/internal/v1/runner/artifact",
+      timestamp,
+      nonce,
+      body,
+    });
+    const signature = new Uint8Array(await crypto.subtle.sign(
+      "Ed25519", keyPair.privateKey, new Uint8Array(message),
+    ));
+    return {
+      request: new Request("https://api.skyhigh.example/internal/v1/runner/artifact", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [RUNNER_AUTH_HEADERS.keyId]: "runner-artifact-key",
+          [RUNNER_AUTH_HEADERS.timestamp]: timestamp,
+          [RUNNER_AUTH_HEADERS.nonce]: nonce,
+          [RUNNER_AUTH_HEADERS.signature]: encodeBase64Url(signature),
+        },
+        body: bodyText,
+      }),
+      publicKey,
+    };
+  }
+
+  it("returns private source and the action-scoped test bundle only to an authenticated runner", async () => {
+    const signed = await signedArtifactRequest(artifactRequest);
+    const artifact: RunnerExecutionArtifact = {
+      executionId: artifactRequest.executionId,
+      attemptId: artifactRequest.attemptId,
+      problemVersionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      problemSlug: "two-sum",
+      problemTitle: "Two Sum",
+      action: "SUBMIT",
+      language: "java",
+      runtimeVersion: "25",
+      sourceArtifactId: "a2000000-0000-4000-8000-000000000001",
+      sourceSha256: "a".repeat(64),
+      sourceCode: "public class Main {}",
+      testBundleId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1-submit-1234567890abcdef",
+      testBundleSha256: "b".repeat(64),
+      testCases: [{
+        testCaseId: "a3000000-0000-4000-8000-000000000001",
+        sequence: 1,
+        visibility: "HIDDEN",
+        input: "4 9\n2 7 11 15",
+        expectedOutput: "0 1",
+      }],
+    };
+    const fetchArtifact = vi.fn(async (_input: FetchRunnerArtifactInput) => artifact);
+    const findActivePublicKey = vi.fn(async () => ({
+      keyId: "runner-artifact-key", runnerId, publicKey: signed.publicKey,
+    }));
+    const consumeNonce = vi.fn(async () => true);
+    const { handler, authenticator } = makeHarness({
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
+      runnerArtifactRepository: { fetch: fetchArtifact },
+    });
+
+    const response = await handler(signed.request);
+    const body = await readJson<{ data: RunnerExecutionArtifact }>(response);
+
+    expect(response.status).toBe(200);
+    expect(body.data).toEqual(artifact);
+    expect(fetchArtifact).toHaveBeenCalledWith({
+      ...artifactRequest,
+      runnerId,
+      keyId: "runner-artifact-key",
+    });
+    expect(consumeNonce).toHaveBeenCalledOnce();
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+  });
+
+  it("rejects extra fields before machine key lookup", async () => {
+    const findActivePublicKey = vi.fn(async () => null);
+    const fetchArtifact = vi.fn(async () => {
+      throw new Error("must_not_fetch");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey,
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerArtifactRepository: { fetch: fetchArtifact },
+    });
+
+    const response = await handler(makeRequest("/internal/v1/runner/artifact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...artifactRequest, sourceCode: "must not be requested" }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_RUNNER_ARTIFACT_REQUEST", retryable: false },
+    });
+    expect(findActivePublicKey).not.toHaveBeenCalled();
+    expect(fetchArtifact).not.toHaveBeenCalled();
+  });
+
+  it("requires a durable start receipt before artifact retrieval", async () => {
+    const signed = await signedArtifactRequest(artifactRequest);
+    const fetchArtifact = vi.fn(async () => {
+      throw new RunnerArtifactNotStartedError();
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-artifact-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerArtifactRepository: { fetch: fetchArtifact },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_START_REQUIRED", retryable: false },
+    });
+  });
+});
+
+
+describe("authenticated runner completion endpoint", () => {
+  const runnerId = "40000000-0000-4000-8000-000000000001";
+  const completionBody = {
+    dispatchId: "50000000-0000-4000-8000-000000000001",
+    executionId: "60000000-0000-4000-8000-000000000001",
+    attemptId: "70000000-0000-4000-8000-000000000001",
+    leaseToken: "80000000-0000-4000-8000-000000000001",
+    infrastructureStatus: "SUCCEEDED",
+    compilationStatus: "SUCCEEDED",
+    verdict: "ACCEPTED",
+    cleanupStatus: "SUCCEEDED",
+    testsTotal: 4,
+    testsPassed: 4,
+    elapsedMs: 125,
+    peakMemoryBytes: 4096,
+    runnerVersion: "go-runner-test",
+    runtimeImageDigest: "a".repeat(64),
+    resultSha256: "b".repeat(64),
+    startedAt: "2026-11-13T08:00:00.000Z",
+    completedAt: "2026-11-13T08:00:00.125Z",
+  };
+
+  function encodeBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).split("+").join("-").split("/").join("_").replace(/=+$/g, "");
+  }
+
+  async function signedCompletionRequest(bodyValue: Record<string, unknown>) {
+    const now = new Date();
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const nonce = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+    const bodyText = JSON.stringify(bodyValue);
+    const body = new TextEncoder().encode(bodyText);
+    const keyPair = await crypto.subtle.generateKey(
+      { name: "Ed25519" }, true, ["sign", "verify"],
+    ) as CryptoKeyPair;
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+    const message = await canonicalRunnerRequestMessage({
+      keyId: "runner-complete-key",
+      method: "POST",
+      path: "/internal/v1/runner/complete",
+      timestamp,
+      nonce,
+      body,
+    });
+    const signature = new Uint8Array(await crypto.subtle.sign(
+      "Ed25519", keyPair.privateKey, new Uint8Array(message),
+    ));
+    return {
+      request: new Request("https://api.skyhigh.example/internal/v1/runner/complete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [RUNNER_AUTH_HEADERS.keyId]: "runner-complete-key",
+          [RUNNER_AUTH_HEADERS.timestamp]: timestamp,
+          [RUNNER_AUTH_HEADERS.nonce]: nonce,
+          [RUNNER_AUTH_HEADERS.signature]: encodeBase64Url(signature),
+        },
+        body: bodyText,
+      }),
+      publicKey,
+    };
+  }
+
+  it("authenticates the runner and stores a lease-bound terminal result", async () => {
+    const signed = await signedCompletionRequest(completionBody);
+    const recordRunnerResult = vi.fn(async (input: RecordRunnerExecutionResultInput) => ({
+      executionId: input.executionId,
+      attemptId: input.attemptId,
+      state: "COMPLETED" as const,
+      resultSha256: input.resultSha256,
+      replayed: false,
+    }));
+    const findActivePublicKey = vi.fn(async () => ({
+      keyId: "runner-complete-key", runnerId, publicKey: signed.publicKey,
+    }));
+    const consumeNonce = vi.fn(async () => true);
+    const { handler, authenticator } = makeHarness({
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
+      runnerCompletionRepository: { recordRunnerResult },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      data: {
+        completed: true,
+        replayed: false,
+        executionId: completionBody.executionId,
+        attemptId: completionBody.attemptId,
+        state: "COMPLETED",
+        resultSha256: completionBody.resultSha256,
+      },
+    });
+    expect(recordRunnerResult).toHaveBeenCalledWith({
+      ...completionBody,
+      leaseOwner: runnerId,
+      keyId: "runner-complete-key",
+    });
+    expect(consumeNonce).toHaveBeenCalledOnce();
+    expect(authenticator.authenticate).not.toHaveBeenCalled();
+  });
+
+  it("rejects extra terminal-result fields before machine-key lookup", async () => {
+    const findActivePublicKey = vi.fn(async () => null);
+    const recordRunnerResult = vi.fn(async () => {
+      throw new Error("must_not_record");
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey,
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerCompletionRepository: { recordRunnerResult },
+    });
+
+    const response = await handler(makeRequest("/internal/v1/runner/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...completionBody, stdout: "must not be accepted" }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_RUNNER_COMPLETION", retryable: false },
+    });
+    expect(findActivePublicKey).not.toHaveBeenCalled();
+    expect(recordRunnerResult).not.toHaveBeenCalled();
+  });
+
+  it("does not complete a dispatch that has not reached RUNNER_STARTED", async () => {
+    const signed = await signedCompletionRequest(completionBody);
+    const recordRunnerResult = vi.fn(async () => {
+      throw new RunnerCompletionNotStartedError();
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-complete-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerCompletionRepository: { recordRunnerResult },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_START_REQUIRED", retryable: false },
+    });
   });
 });
