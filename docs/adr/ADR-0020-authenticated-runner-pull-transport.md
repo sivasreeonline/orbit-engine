@@ -1,4 +1,4 @@
-# ADR-0019: Authenticated runner pull transport
+# ADR-0020: Authenticated runner pull transport
 
 - **Status:** Proposed — design review required before implementation or provisioning
 - **Date:** 2026-11-13
