@@ -261,27 +261,40 @@ def validate_cloudtrail_manifest(
 
 
 def _signed_manifest(body: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, str]]]:
-    attestations = []
-    trusted = []
+    import base64
+
+    signer_material: list[tuple[str, str, Ed25519PrivateKey, bytes, str]] = []
+    trusted: list[dict[str, str]] = []
     for role, identity in (("COLLECTOR", "collector-test"), ("INDEPENDENT_VERIFIER", "verifier-test")):
         private = Ed25519PrivateKey.generate()
         public = private.public_key().public_bytes(
             encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
         )
         key_id = sha(public)
+        signer_material.append((role, identity, private, public, key_id))
         trusted.append({
             "keyId": key_id,
             "identity": identity,
             "role": role,
-            "publicKeyBase64Url": __import__("base64").urlsafe_b64encode(public).decode("ascii").rstrip("="),
+            "publicKeyBase64Url": base64.urlsafe_b64encode(public).decode("ascii").rstrip("="),
         })
+
+    key_ids = {role: key_id for role, _, _, _, key_id in signer_material}
+    for artifact in body["artifacts"]:
+        artifact["collectorIdentity"] = "collector-test"
+        artifact["collectorKeyId"] = key_ids["COLLECTOR"]
+        artifact["independentVerifierIdentity"] = "verifier-test"
+        artifact["verifierKeyId"] = key_ids["INDEPENDENT_VERIFIER"]
+
+    digest = sha(rfc8785.dumps(body))
+    attestations = []
+    for role, identity, private, _public, key_id in signer_material:
         payload = {
-            "manifestDigest": sha(rfc8785.dumps(body)),
+            "manifestDigest": digest,
             "role": role,
             "signerIdentity": identity,
             "keyId": key_id,
         }
-        import base64
         signature = private.sign(SIGNATURE_PREFIX + rfc8785.dumps(payload))
         attestations.append({
             "role": role,
@@ -291,10 +304,9 @@ def _signed_manifest(body: dict[str, Any]) -> tuple[dict[str, Any], list[dict[st
         })
     return {
         "manifestBody": body,
-        "manifestDigest": sha(rfc8785.dumps(body)),
+        "manifestDigest": digest,
         "attestations": attestations,
     }, trusted
-
 
 def _artifact(
     artifact_id: str, artifact_type: str, object_ref_value: str, object_version: str,
