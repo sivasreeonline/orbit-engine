@@ -129,6 +129,9 @@ jobs:
       - name: Verify FENCE-001 immutable evidence object-store contract
         run: python ../../scripts/validate_m0_fence_evidence_object_store.py
 
+      - name: Verify guarded AWS S3 COMPLIANCE evidence adapter (synthetic API only)
+        run: python ../../scripts/aws_s3_evidence_object_store.py --self-test
+
       - name: Verify FENCE-001 privileged retention-bypass and evidence-isolation contract
         run: python ../../scripts/validate_m0_fence_evidence_isolation.py
 
