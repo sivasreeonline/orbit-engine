@@ -238,6 +238,49 @@ def build_manifest(
         )
 
     add(report_id, "CLOUDTRAIL_VERIFICATION_REPORT", "cloudtrail-verification-report://verification-v1", "report-v1", ["CT-006"])
+
+    # Preserve inventory pagination and identity/provider-call provenance in the same signed envelope.
+    add(
+        "cloudtrail-inventory-index.json",
+        "CLOUDTRAIL_DIGEST_INVENTORY",
+        f"s3-inventory://{index['bucket']}/{index['prefix']}",
+        "inventory-v1",
+        ["CT-007"],
+        provider_exchange.get("inventoryListObjectVersionsRequestIds", []),
+    )
+    for page_id in sorted(name for name in index["artifacts"] if name.startswith("cloudtrail-inventory-page-")):
+        add(
+            page_id,
+            "CLOUDTRAIL_INVENTORY_PAGE",
+            f"s3-inventory-page://{index['bucket']}/{index['prefix']}/{page_id}",
+            "page-v1",
+            ["CT-007"],
+            provider_exchange.get("inventoryListObjectVersionsRequestIds", []),
+        )
+    add(
+        "aws-sts-collector-identity.json",
+        "AWS_STS_CALLER_IDENTITY",
+        f"aws-sts-identity://{collector_identity}",
+        "sts-v1",
+        ["CT-008"],
+        [],
+    )
+    add(
+        "aws-sts-independent-verifier-identity.json",
+        "AWS_STS_CALLER_IDENTITY",
+        f"aws-sts-identity://{verifier_identity}",
+        "sts-v1",
+        ["CT-008"],
+        [],
+    )
+    add(
+        "cloudtrail-provider-exchange.json",
+        "RAW_PROVIDER_EXCHANGE",
+        f"aws-provider-exchange://cloudtrail/{report['accountId']}/{report['region']}",
+        "exchange-v1",
+        ["CT-009"],
+        request_ids,
+    )
     if not records:
         raise ValueError("no CloudTrail evidence artifacts were bound")
     artifact_ids = [item["artifactId"] for item in records]
