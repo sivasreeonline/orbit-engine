@@ -20,5 +20,6 @@ ADRs capture decisions that constrain implementation. A decision marked Proposed
 | ADR-0014 | Versioned asynchronous REST API | Accepted |
 | ADR-0015 | Console-mode problem contract for M1 | Accepted for initial slice |
 | ADR-0017 | Layered automated security scanning | Accepted |
+| ADR-0018 | Evidence-driven student capability intelligence | Accepted; implementation and rollout validation-gated |
 
 Review a decision before introducing a dependency or implementation that contradicts it.
