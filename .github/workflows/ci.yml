@@ -167,6 +167,9 @@ jobs:
 
       - name: Verify combined CloudTrail custody and identity gate (synthetic only)
         run: python ../../scripts/validate_m0_fence_cloudtrail_qualified_manifest.py
+
+      - name: Assemble read-only CloudTrail collection bundle (synthetic only)
+        run: python ../../scripts/test_m0_fence_cloudtrail_readonly_collection_bundle.py
  
       - name: Verify FENCE-001 AWS read-only qualification preflight
         run: python ../../scripts/inspect_m0_fence_aws_qualification_environment.py --self-test
