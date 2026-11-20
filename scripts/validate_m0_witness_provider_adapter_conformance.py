@@ -375,8 +375,9 @@ def run_conformance(adapter_factory: Callable[[], WitnessAdapter]) -> list[Confo
     def concurrent_compare_and_append_has_one_winner() -> None:
         adapter = fresh()
         first = append_genesis(adapter)
+        digest_characters = "abcdef01"
         contenders = [
-            checkpoint(2, f"concurrent-{index}", chr(ord("a") + index), first.checkpoint_digest)
+            checkpoint(2, f"concurrent-{index}", digest_characters[index], first.checkpoint_digest)
             for index in range(8)
         ]
 
