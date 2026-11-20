@@ -129,7 +129,10 @@ class S3EvidenceObjectStore:
         actual_metadata = head.get("Metadata", {})
         for name, expected in expected_metadata.items():
             if actual_metadata.get(name) != expected:
-                raise RuntimeError("existing S3 object does not match the exact idempotent request")
+                from validate_m0_fence_evidence_object_store import ObjectIdempotencyConflict
+                raise ObjectIdempotencyConflict(
+                    "idempotency key is already bound to different S3 object content or metadata"
+                )
         if head.get("ObjectLockMode") != REQUIRED_OBJECT_LOCK_MODE:
             raise RuntimeError("existing S3 object is not protected by COMPLIANCE retention")
         actual_retention = head.get("ObjectLockRetainUntilDate")
@@ -192,17 +195,21 @@ class S3EvidenceObjectStore:
             version_id = response.get("VersionId")
             if not isinstance(version_id, str) or not version_id or version_id == "null":
                 raise RuntimeError("S3 put did not return an immutable VersionId")
-            head = self._head_existing(physical_key, metadata, retention)
-            if head.get("VersionId") != version_id:
-                raise RuntimeError("S3 HEAD version differs from the successful PUT VersionId")
         except Exception as error:
             # A conditional conflict or lost acknowledgement is recoverable
             # only if HEAD proves that the exact deterministic object exists.
             try:
                 head = self._head_existing(physical_key, metadata, retention)
-            except Exception:
+            except Exception as reconcile_error:
+                from validate_m0_fence_evidence_object_store import ObjectIdempotencyConflict
+                if isinstance(reconcile_error, ObjectIdempotencyConflict):
+                    raise reconcile_error
                 raise error
             version_id = head["VersionId"]
+        else:
+            head = self._head_existing(physical_key, metadata, retention)
+            if head.get("VersionId") != version_id:
+                raise RuntimeError("S3 HEAD version differs from the successful PUT VersionId")
 
         return ObjectVersion(
             object_key=physical_key,
