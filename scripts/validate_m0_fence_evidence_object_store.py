@@ -190,7 +190,7 @@ def run_conformance(factory: Callable[[], EvidenceObjectStore]) -> list[Result]:
         try:
             store.put_immutable(
                 "qualification/run-001/artifact-001", b"changed bytes",
-                retention_until=9_000, idempotency_key="artifact-001-key",
+                retention_until=test_retention_until, idempotency_key="artifact-001-key",
                 writer_identity="collector-identity",
             )
         except ObjectIdempotencyConflict:
@@ -203,7 +203,7 @@ def run_conformance(factory: Callable[[], EvidenceObjectStore]) -> list[Result]:
         first = put(store)
         second = store.put_immutable(
             first.object_key, b"new distinct evidence version",
-            retention_until=9_000, idempotency_key="artifact-002-key",
+            retention_until=test_retention_until, idempotency_key="artifact-002-key",
             writer_identity="collector-identity",
         )
         require(first.version_id != second.version_id, "new evidence version reused an immutable version ID")
@@ -248,7 +248,7 @@ def run_conformance(factory: Callable[[], EvidenceObjectStore]) -> list[Result]:
             return store.put_immutable(
                 "qualification/run-001/concurrent-artifact",
                 b"same immutable bytes",
-                retention_until=9_000,
+                retention_until=test_retention_until,
                 idempotency_key="concurrent-idempotency-key",
                 writer_identity="collector-identity",
             )
