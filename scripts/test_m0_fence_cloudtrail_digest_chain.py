@@ -67,7 +67,9 @@ def gzip_bytes(value: bytes) -> bytes:
 
 
 def sign_digest(private_key: Any, document: dict[str, Any], bucket: str, key: str, uncompressed: bytes) -> str:
-    previous_signature = document.get("previousDigestSignature") or ""
+    previous_signature = document.get("previousDigestSignature")
+    if previous_signature is None:
+        previous_signature = "null"
     data_to_sign = (
         f"{document['digestEndTime']}\n"
         f"{bucket}/{key}\n"
