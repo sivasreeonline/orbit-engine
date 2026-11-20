@@ -130,9 +130,9 @@ describe("CodingEvidenceApiClient", () => {
       "eventType",
       "language",
       "occurredAt",
+      "sequence",
       "sessionId",
       "snapshotId",
-      "sequence",
     ]);
     expect(Object.keys(body.events[0]?.snapshot ?? {}).sort()).toEqual([
       "capturedAt",
