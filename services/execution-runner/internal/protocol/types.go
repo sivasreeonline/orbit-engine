@@ -1,5 +1,7 @@
 package protocol
 
+import "time"
+
 type Action string
 
 const (
@@ -27,6 +29,7 @@ type ResourceLimits struct {
 // Artifact references must be opaque IDs resolved by an authenticated service.
 type ExecutionRequest struct {
 	ProtocolVersion  string         `json:"protocolVersion"`
+	RequestID        string         `json:"requestId"`
 	ExecutionID      string         `json:"executionId"`
 	AttemptID        string         `json:"attemptId"`
 	ProblemVersionID string         `json:"problemVersionId"`
@@ -35,6 +38,10 @@ type ExecutionRequest struct {
 	RuntimeVersion   string         `json:"runtimeVersion"`
 	SourceArtifactID string         `json:"sourceArtifactId"`
 	SourceSHA256     string         `json:"sourceSha256"`
+	SourceByteLength int64          `json:"sourceByteLength"`
 	TestBundleID     string         `json:"testBundleId"`
+	TraceID          string         `json:"traceId"`
+	IssuedAt         time.Time      `json:"issuedAt"`
+	ExpiresAt        time.Time      `json:"expiresAt"`
 	Limits           ResourceLimits `json:"limits"`
 }

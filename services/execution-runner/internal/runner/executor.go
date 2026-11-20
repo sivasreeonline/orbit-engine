@@ -129,6 +129,15 @@ func (executor *SandboxExecutor) Execute(
 			startedAt,
 		), nil
 	}
+	if int64(len(source)) != request.SourceByteLength {
+		return executor.infrastructureFailure(
+			request,
+			runtimeDigest,
+			"SOURCE_LENGTH_MISMATCH",
+			CleanupUnknown,
+			startedAt,
+		), nil
+	}
 
 	sourceDigest := sha256.Sum256(source)
 	actualSourceDigest := hex.EncodeToString(sourceDigest[:])
