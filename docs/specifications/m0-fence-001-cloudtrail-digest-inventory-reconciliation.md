@@ -45,7 +45,8 @@ The manifest authenticates the raw inventory index and every raw page response.
 ## Result semantics
 
 - `STANDARD_CHAIN_INVENTORY_RECONCILED`: every standard digest key in the captured inventory window matches the verified chain and exact current version; no backfill keys were found.
-- `STANDARD_CHAIN_RECONCILED_BACKFILL_PRESENT`: standard digests reconcile, but backfill keys exist and are not verified by this standard-chain verifier.
+- `STANDARD_CHAIN_RECONCILED_BACKFILL_UNVERIFIED`: standard digests reconcile, but one or more backfill keys lack a matching verified backfill-chain report.
+- `STANDARD_AND_BACKFILL_INVENTORY_RECONCILED`: standard and backfill digest keys both match their separately verified chains and exact current versions.
 
 Even the first status is deliberately scoped to the captured inventory. The result records:
 
