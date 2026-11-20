@@ -144,7 +144,13 @@
                     "WIT-011",
                     "WIT-012",
                     "WIT-013",
-                    "WIT-014"
+                    "WIT-014",
+                    "CT-001",
+                    "CT-002",
+                    "CT-003",
+                    "CT-004",
+                    "CT-005",
+                    "CT-006"
                   ]
                 }
               },
@@ -157,7 +163,11 @@
                   "CONFIGURATION_ATTESTATION",
                   "INDEPENDENCE_ATTESTATION",
                   "RESTORE_TRACE",
-                  "CONTRACT_EVIDENCE"
+                  "CONTRACT_EVIDENCE",
+                  "CLOUDTRAIL_DIGEST",
+                  "CLOUDTRAIL_LOG",
+                  "CLOUDTRAIL_PUBLIC_KEY",
+                  "CLOUDTRAIL_VERIFICATION_REPORT"
                 ]
               },
               "objectRef": {
