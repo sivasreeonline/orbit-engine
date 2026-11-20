@@ -164,6 +164,9 @@ jobs:
 
       - name: Verify dual-principal AWS STS manifest binding (synthetic only)
         run: python ../../scripts/validate_m0_fence_aws_identity_manifest.py
+
+      - name: Verify combined CloudTrail custody and identity gate (synthetic only)
+        run: python ../../scripts/validate_m0_fence_cloudtrail_qualified_manifest.py
  
       - name: Verify FENCE-001 AWS read-only qualification preflight
         run: python ../../scripts/inspect_m0_fence_aws_qualification_environment.py --self-test
