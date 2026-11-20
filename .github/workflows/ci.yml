@@ -170,6 +170,9 @@ jobs:
 
       - name: Assemble read-only CloudTrail collection bundle (synthetic only)
         run: python ../../scripts/test_m0_fence_cloudtrail_readonly_collection_bundle.py
+
+      - name: Build and verify dual-signed CloudTrail evidence manifest (synthetic only)
+        run: python ../../scripts/test_m0_fence_cloudtrail_evidence_manifest_builder.py
  
       - name: Verify FENCE-001 AWS read-only qualification preflight
         run: python ../../scripts/inspect_m0_fence_aws_qualification_environment.py --self-test

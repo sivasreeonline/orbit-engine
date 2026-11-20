@@ -68,6 +68,21 @@ class CloudTrailReadOnlyEvidenceBundle:
     verifier_identity: dict[str, Any]
     provider_exchange: dict[str, Any]
 
+    def write_to(self, destination: Any) -> None:
+        """Materialize the bundle using exclusive, path-safe file creation."""
+        from pathlib import Path
+        root = Path(destination)
+        root.mkdir(parents=True, exist_ok=True)
+        resolved_root = root.resolve(strict=True)
+        for artifact_id, payload in self.artifacts.items():
+            if not artifact_id or Path(artifact_id).name != artifact_id or artifact_id in {".", ".."}:
+                raise ValueError("bundle artifact ID must be a single safe filename")
+            target = resolved_root / artifact_id
+            if target.exists() or target.is_symlink():
+                raise FileExistsError(f"refusing to overwrite existing bundle artifact: {artifact_id}")
+            with target.open("xb") as handle:
+                handle.write(payload)
+
     def summary(self) -> dict[str, Any]:
         return {
             "profile": "sky-high-cloudtrail-readonly-collection-bundle-v1",
