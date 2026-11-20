@@ -138,16 +138,21 @@ def _load_run_bound_approval(config: dict[str, str]) -> None:
             raise RuntimeError("AWS preflight report does not preserve its no-mutation/no-admission boundary")
 
 
-def _physical_key(prefix: str, object_key: str, idempotency_key: str) -> tuple[str, str, str]:
+def _storage_key(prefix: str, object_key: str) -> tuple[str, str]:
     if not isinstance(object_key, str) or not object_key.strip() or len(object_key.encode("utf-8")) > 1024:
         raise ValueError("object_key must be non-empty and at most 1024 UTF-8 bytes")
+    logical_hash = hashlib.sha256(object_key.encode("utf-8")).hexdigest()
+    return f"{prefix.rstrip('/')}/{logical_hash[:2]}/{logical_hash}", logical_hash
+
+
+def _physical_key(prefix: str, object_key: str, idempotency_key: str) -> tuple[str, str, str]:
     if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key.encode("utf-8")) > 512:
         raise ValueError("idempotency_key must be non-empty and at most 512 UTF-8 bytes")
-    logical_hash = hashlib.sha256(object_key.encode("utf-8")).hexdigest()
+    key, logical_hash = _storage_key(prefix, object_key)
     idempotency_hash = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
-    # All logical versions of one object share one stable key. Idempotency is
-    # resolved by metadata on immutable S3 versions, not by changing object key.
-    return f"{prefix.rstrip('/')}/{logical_hash[:2]}/{logical_hash}", logical_hash, idempotency_hash
+    # All logical versions of one caller key share one S3 key. The opaque
+    # physical path never escapes through the public EvidenceObjectStore DTO.
+    return key, logical_hash, idempotency_hash
 
 class AWSS3EvidenceObjectStore:
     """S3 general-purpose bucket adapter using conditional immutable writes.
@@ -226,7 +231,7 @@ class AWSS3EvidenceObjectStore:
         )
 
     def _version_from_existing(
-        self, object_key: str, version_id: str, *, requested_sha: str,
+        self, object_key: str, public_object_key: str, version_id: str, *, requested_sha: str,
         requested_bytes: bytes, logical_hash: str, idempotency_hash: str,
         requested_retention: int, writer_identity: str,
     ) -> Any:
@@ -246,10 +251,10 @@ class AWSS3EvidenceObjectStore:
         stored = self._read(object_key, version_id)
         if stored != requested_bytes or hashlib.sha256(stored).hexdigest() != requested_sha:
             raise _contract_types().ObjectIdempotencyConflict("S3 exact version bytes differ from the idempotent retry")
-        return _contract_types().ObjectVersion(object_key, version_id, requested_sha, len(requested_bytes))
+        return _contract_types().ObjectVersion(public_object_key, version_id, requested_sha, len(requested_bytes))
 
     def _find_idempotency_version(
-        self, object_key: str, *, requested_sha: str, requested_bytes: bytes,
+        self, object_key: str, public_object_key: str, *, requested_sha: str, requested_bytes: bytes,
         logical_hash: str, idempotency_hash: str, requested_retention: int,
         writer_identity: str,
     ) -> Any | None:
@@ -269,7 +274,7 @@ class AWSS3EvidenceObjectStore:
             metadata = head.get("Metadata", {})
             if metadata.get("idempotency-key-sha256") == idempotency_hash:
                 matches.append(self._version_from_existing(
-                    object_key, version_id, requested_sha=requested_sha, requested_bytes=requested_bytes,
+                    object_key, public_object_key, version_id, requested_sha=requested_sha, requested_bytes=requested_bytes,
                     logical_hash=logical_hash, idempotency_hash=idempotency_hash,
                     requested_retention=requested_retention, writer_identity=writer_identity,
                 ))
@@ -320,7 +325,7 @@ class AWSS3EvidenceObjectStore:
         # number of times. Exact idempotency retries return the original VersionId.
         for _attempt in range(5):
             prior = self._find_idempotency_version(
-                key, requested_sha=sha, requested_bytes=content, logical_hash=logical_hash,
+                key, object_key, requested_sha=sha, requested_bytes=content, logical_hash=logical_hash,
                 idempotency_hash=idempotency_hash, requested_retention=retention_until,
                 writer_identity=writer_identity,
             )
@@ -353,12 +358,12 @@ class AWSS3EvidenceObjectStore:
             version_id = response.get("VersionId")
             if not isinstance(version_id, str) or not version_id or version_id == "null":
                 raise RuntimeError("S3 PutObject returned no immutable VersionId")
-            return _contract_types().ObjectVersion(key, version_id, sha, len(content))
+            return _contract_types().ObjectVersion(object_key, version_id, sha, len(content))
 
         # A bounded optimistic retry is safer than silently falling back to a
         # non-conditional write when concurrent version creators keep racing.
         prior = self._find_idempotency_version(
-            key, requested_sha=sha, requested_bytes=content, logical_hash=logical_hash,
+            key, object_key, requested_sha=sha, requested_bytes=content, logical_hash=logical_hash,
             idempotency_hash=idempotency_hash, requested_retention=retention_until,
             writer_identity=writer_identity,
         )
@@ -368,23 +373,35 @@ class AWSS3EvidenceObjectStore:
     def get_exact_version(self, object_key: str, version_id: str, *, reader_identity: str) -> bytes:
         if reader_identity != self._verifier_identity or reader_identity == self._writer_identity:
             raise PermissionError("evidence readback must use the independently authenticated verifier principal")
-        content = self._read(object_key, version_id)
-        metadata = self._metadata(object_key, version_id)
+        physical_key, _logical_hash = _storage_key(self._prefix, object_key)
+        content = self._read(physical_key, version_id)
+        metadata = self._metadata(physical_key, version_id)
         if len(content) != metadata.byte_count or hashlib.sha256(content).hexdigest() != metadata.sha256:
             raise RuntimeError("S3 exact-version readback failed SHA-256 or byte-count verification")
         return content
 
     def head_exact_version(self, object_key: str, version_id: str) -> Any:
-        return self._metadata(object_key, version_id)
+        physical_key, _logical_hash = _storage_key(self._prefix, object_key)
+        metadata = self._metadata(physical_key, version_id)
+        return _contract_types().ObjectMetadata(
+            object_key=object_key,
+            version_id=metadata.version_id,
+            sha256=metadata.sha256,
+            byte_count=metadata.byte_count,
+            retention_until=metadata.retention_until,
+            object_lock_mode=metadata.object_lock_mode,
+            writer_identity=metadata.writer_identity,
+        )
 
     def delete_version(self, object_key: str, version_id: str) -> None:
-        metadata = self._metadata(object_key, version_id)
+        physical_key, _logical_hash = _storage_key(self._prefix, object_key)
+        metadata = self._metadata(physical_key, version_id)
         if metadata.object_lock_mode != "COMPLIANCE" or metadata.retention_until <= int(datetime.now(timezone.utc).timestamp()):
             raise RuntimeError("refusing to characterize a non-retained or expired S3 object as protected")
         try:
             self._writer.delete_object(
                 Bucket=self._bucket,
-                Key=object_key,
+                Key=physical_key,
                 VersionId=version_id,
                 BypassGovernanceRetention=True,
             )
