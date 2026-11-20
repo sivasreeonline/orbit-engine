@@ -558,7 +558,8 @@ def _fixture(root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
     }
     digest_content = json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
     digest_raw = gzip.compress(digest_content, mtime=0)
-    data_to_sign = f"{end}\\n{bucket}/{digest_key}\\n{sha(digest_content)}\\n".encode("utf-8")
+    # AWS CLI's genesis-chain signing input uses the literal JSON-null token.
+    data_to_sign = f"{end}\\n{bucket}/{digest_key}\\n{sha(digest_content)}\\nnull".encode("utf-8")
     signature_hex = private_key.sign(data_to_sign, padding.PKCS1v15(), hashes.SHA256()).hex()
     report = {
         "profile": "sky-high-cloudtrail-digest-verification-v1",
