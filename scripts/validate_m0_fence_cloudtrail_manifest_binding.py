@@ -193,6 +193,12 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
         raise ValueError("CloudTrail report must contain at least one verified digest")
     if report.get("digestCount") != len(digests):
         raise ValueError("CloudTrail report digestCount mismatch")
+    standard_count = sum(item.get("chainType", "STANDARD") == "STANDARD" for item in digests if isinstance(item, dict))
+    backfill_count = sum(item.get("chainType", "STANDARD") == "BACKFILL" for item in digests if isinstance(item, dict))
+    if report.get("standardDigestCount", standard_count) != standard_count:
+        raise ValueError("CloudTrail report standardDigestCount mismatch")
+    if report.get("backfillDigestCount", backfill_count) != backfill_count:
+        raise ValueError("CloudTrail report backfillDigestCount mismatch")
     log_count = sum(len(item.get("logs", [])) for item in digests if isinstance(item, dict))
     if report.get("logCount") != log_count:
         raise ValueError("CloudTrail report logCount mismatch")
