@@ -55,7 +55,7 @@ The manifest remains the single dual-signed custody envelope. No separate weaker
 - The chain verifier walks predecessor links reachable from the selected latest digest. It does not enumerate the S3 prefix or prove no unreferenced digest is missing.
 - This binding proves that the local materialized bytes match the dual-signed manifest. It does not independently prove the AWS principal that acquired them, remote S3 Object Lock behavior, or provider-origin authenticity.
 - The verifier currently excludes CloudTrail backfill chains; they require a separate chain profile.
-- The verifier's byte-level signature and genesis handling still require comparison with the official AWS CLI `cloudtrail validate-logs` and an independently acquired real digest fixture.
+- The verifier's byte-level signature and genesis handling are now aligned with the AWS CLI source implementation at `awscli/customizations/cloudtrail/validation.py` (the null starting-chain `previousDigestSignature` is represented as the literal `null`). An independently acquired real digest fixture is still required before provider qualification.
 - A valid manifest is not equivalent to a completed FENCE-001 provider qualification. `testOnly=true` is rejected for external qualification mode.
 
 ## Synthetic validation
