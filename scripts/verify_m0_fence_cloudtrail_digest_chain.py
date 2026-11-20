@@ -161,9 +161,10 @@ def _load_public_key(
     provider: PublicKeyProvider,
     region: str,
     fingerprint: str,
+    digest_start: datetime,
     digest_end: datetime,
 ) -> rsa.RSAPublicKey:
-    records = provider.list_public_keys(region, digest_end, digest_end)
+    records = provider.list_public_keys(region, digest_start, digest_end)
     matches = [item for item in records if item.get("Fingerprint") == fingerprint]
     if len(matches) != 1:
         raise DigestVerificationError("regional CloudTrail public-key fingerprint is missing or ambiguous")
@@ -206,6 +207,7 @@ def _verify_digest_signature(
         raise DigestVerificationError("digestPublicKeyFingerprint is missing")
     digest_end_text = document.get("digestEndTime")
     digest_end = _parse_time(digest_end_text, "digestEndTime")
+    digest_start = _parse_time(document.get("digestStartTime"), "digestStartTime")
     previous_signature = document.get("previousDigestSignature")
     if previous_signature is None:
         previous_signature = ""
@@ -225,7 +227,7 @@ def _verify_digest_signature(
         f"{digest_hash}\n"
         f"{previous_signature}"
     ).encode("utf-8")
-    public_key = _load_public_key(provider, region, fingerprint, digest_end)
+    public_key = _load_public_key(provider, region, fingerprint, digest_start, digest_end)
     try:
         public_key.verify(
             bytes.fromhex(signature_hex),
