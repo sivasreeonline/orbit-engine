@@ -196,6 +196,7 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
         raise ValueError("CloudTrail report logCount mismatch")
 
     previous_end: datetime | None = None
+    pinned_digest_bucket: str | None = None
     seen_digests: set[tuple[str, str, str]] = set()
     seen_logs: set[tuple[str, str, str]] = set()
     for digest in digests:
@@ -204,6 +205,10 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
         bucket, key, version = digest.get("bucket"), digest.get("key"), digest.get("versionId")
         if not all(isinstance(value, str) and value for value in (bucket, key)) or not safe_version(version):
             raise ValueError("CloudTrail digest report must pin bucket, key and exact non-null VersionId")
+        if pinned_digest_bucket is None:
+            pinned_digest_bucket = bucket
+        elif bucket != pinned_digest_bucket:
+            raise ValueError("CloudTrail digest chain spans more than the configured digest bucket")
         identity = (bucket, key, version)
         if identity in seen_digests:
             raise ValueError("duplicate digest object/version in CloudTrail report")
