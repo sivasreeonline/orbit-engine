@@ -66,6 +66,8 @@ class VerifiedDigest:
     public_key_der_byte_count: int
     public_key_validity_start: str
     public_key_validity_end: str
+    digest_start_time: str
+    digest_end_time: str
     logs: tuple[VerifiedLog, ...]
 
 
