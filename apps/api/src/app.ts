@@ -29,7 +29,7 @@ import {
   RunnerStartNotFoundError,
   RunnerStartStaleLeaseError,
   RunnerStartUnauthorizedError,
-} from "./db/runner-start-repository";import { authenticateRunnerRequest } from "./services/runner-request-authenticator";
+} from "./db/runner-start-repository";
 import type { PostgresCodingEvidenceRepository, CodingEvidenceRecordInput } from "./db/coding-evidence-repository";
 import {
   CodingEvidenceConflictError,
@@ -524,7 +524,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
     }
 
-    if (request.method === "POST" && path === "/internal/v1/runner/claim") {    if (request.method === "POST" && path === "/internal/v1/runner/claim") {
+    if (request.method === "POST" && path === "/internal/v1/runner/claim") {
       if (!dependencies.runnerIdentityRepository || !dependencies.runnerDispatchLeaseRepository) {
         return errorResponse(
           "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
