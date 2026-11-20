@@ -63,7 +63,7 @@ def object_ref(bucket: str, key: str) -> str:
 def _read_artifact(root: Path, artifact_id: str) -> bytes:
     if not isinstance(artifact_id, str) or not artifact_id or artifact_id in {".", ".."}:
         raise ValueError("unsafe manifest artifact ID")
-    if any(ch in artifact_id for ch in ("/", "\\\\", "\\x00")):
+    if any(ch in artifact_id for ch in ("/", "\\", "\x00")):
         raise ValueError("manifest artifact ID must be a flat local filename")
     candidate = root / artifact_id
     if candidate.is_symlink() or not candidate.is_file():
