@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import copy
 import gzip
 import hashlib
@@ -370,6 +372,12 @@ def validate_cloudtrail_manifest(
         )
         digest_bytes = _read_artifact(root, actual[digest_identity]["artifactId"])
         key_bytes = _read_artifact(root, actual[key_identity]["artifactId"])
+        try:
+            report_key_bytes = base64.b64decode(key["derBase64"], validate=True)
+        except (KeyError, ValueError, binascii.Error) as error:
+            raise ValueError("CloudTrail report does not preserve canonical public-key DER bytes") from error
+        if report_key_bytes != key_bytes:
+            raise ValueError("CloudTrail report public-key DER bytes differ from manifested key artifact")
         document = _verify_materialized_digest(
             digest, digest_bytes, key_bytes, body["providerScope"]["account"],
             body["providerScope"]["region"],
