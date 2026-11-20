@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,19 @@ def require(condition: bool, message: str) -> None:
 
 def is_sha(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(ch in HEX for ch in value)
+
+
+def parse_utc(value: Any, field: str) -> datetime:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{field} must be an ISO-8601 timestamp")
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as error:
+        raise ValueError(f"{field} is not a valid ISO-8601 timestamp") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{field} must include a UTC offset")
+    return parsed.astimezone(timezone.utc)
 
 
 def safe_version(value: Any) -> bool:
@@ -181,7 +195,7 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
     if report.get("logCount") != log_count:
         raise ValueError("CloudTrail report logCount mismatch")
 
-    previous_end = None
+    previous_end: datetime | None = None
     seen_digests: set[tuple[str, str, str]] = set()
     seen_logs: set[tuple[str, str, str]] = set()
     for digest in digests:
@@ -205,24 +219,32 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
         signature = digest.get("signatureHex")
         if not isinstance(signature, str) or not signature or len(signature) % 2 or any(ch not in HEX for ch in signature):
             raise ValueError("CloudTrail digest signature evidence is malformed")
-        start, end = digest.get("digestStartTime"), digest.get("digestEndTime")
-        if not isinstance(start, str) or not isinstance(end, str) or not start or not end:
-            raise ValueError("CloudTrail digest time interval is missing")
+        start_text, end_text = digest.get("digestStartTime"), digest.get("digestEndTime")
+        start = parse_utc(start_text, "digestStartTime")
+        end = parse_utc(end_text, "digestEndTime")
+        if start >= end:
+            raise ValueError("CloudTrail digestStartTime must precede digestEndTime")
         if previous_end is not None and end >= previous_end:
             raise ValueError("CloudTrail digest report is not ordered latest-to-oldest")
         previous_end = end
+        if f"/{account_id}/CloudTrail-Digest/{provider['region']}/" not in f"/{key}":
+            raise ValueError("CloudTrail digest key is outside the signed account/Region prefix")
 
         public_key = digest.get("publicKey")
         if not isinstance(public_key, dict) or public_key.get("region") != provider["region"]:
             raise ValueError("CloudTrail regional public-key evidence is missing or scoped incorrectly")
+        if not isinstance(digest.get("signatureFingerprint"), str) or not digest["signatureFingerprint"]:
+            raise ValueError("CloudTrail digest signer fingerprint is missing")
         if public_key.get("fingerprint") != digest.get("signatureFingerprint"):
             raise ValueError("CloudTrail public-key fingerprint differs from digest signer fingerprint")
         if not is_sha(public_key.get("derSha256")):
             raise ValueError("CloudTrail public-key DER SHA-256 is malformed")
         if type(public_key.get("derByteCount")) is not int or public_key["derByteCount"] < 1:
             raise ValueError("CloudTrail public-key DER byte count is invalid")
-        if not isinstance(public_key.get("validityStartTime"), str) or not isinstance(public_key.get("validityEndTime"), str):
-            raise ValueError("CloudTrail public-key validity interval is missing")
+        key_start = parse_utc(public_key.get("validityStartTime"), "publicKey.validityStartTime")
+        key_end = parse_utc(public_key.get("validityEndTime"), "publicKey.validityEndTime")
+        if not key_start <= end <= key_end:
+            raise ValueError("CloudTrail public key was not valid at digestEndTime")
 
         logs = digest.get("logs")
         if not isinstance(logs, list):
@@ -233,6 +255,10 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
             log_bucket, log_key, log_version = log.get("bucket"), log.get("key"), log.get("versionId")
             if not all(isinstance(value, str) and value for value in (log_bucket, log_key)) or not safe_version(log_version):
                 raise ValueError("CloudTrail log report must pin bucket, key and exact non-null VersionId")
+            if log_bucket != bucket:
+                raise ValueError("CloudTrail log bucket differs from digest bucket")
+            if f"/{account_id}/CloudTrail/{provider['region']}/" not in f"/{log_key}":
+                raise ValueError("CloudTrail log key is outside the signed account/Region prefix")
             log_identity = (log_bucket, log_key, log_version)
             if log_identity in seen_logs:
                 raise ValueError("duplicate CloudTrail log object/version in report")
