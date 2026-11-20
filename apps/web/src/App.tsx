@@ -94,9 +94,6 @@ export default function App() {
       setEvidencePendingCount(pending);
       setEvidenceSyncState(pending === 0 ? "synced" : "pending");
       evidenceSyncBlocked.current = false;
-      if (pending === 0 && !evidenceCollector.current && evidenceQueue.current === queue) {
-        evidenceQueue.current = null;
-      }
     } catch (error) {
       const pending = queue.getPendingCount();
       setEvidencePendingCount(pending);
@@ -166,12 +163,13 @@ export default function App() {
       });
       evidenceCollector.current = collector;
       setEvidenceCaptureActive(true);
-      setEvidenceSyncState(queue.getPendingCount() === 0 ? "syncing" : "pending");
+      await flushEvidenceQueue(queue);
       setEvidencePendingCount(queue.getPendingCount());
     } catch (error) {
       evidenceCollector.current = null;
-      evidenceQueue.current = null;
       setEvidenceCaptureActive(false);
+      const pending = evidenceQueue.current?.getPendingCount() ?? 0;
+      setEvidencePendingCount(pending);
       setEvidenceSyncState("error");
       setEvidenceCaptureError(error instanceof CodingEvidenceApiError
         ? `${error.message} (${error.code})`
@@ -355,7 +353,7 @@ export default function App() {
           pendingCount={evidencePendingCount}
           syncState={evidenceSyncState}
           syncError={evidenceCaptureError}
-          sessionId={evidenceQueue.current ? (evidenceCollector.current?.getSummary().sessionId ?? null) : null}
+          sessionId={evidenceQueue.current?.getSessionId() ?? null}
           onStart={() => void startEvidenceCapture()}
           onStop={() => void stopEvidenceCapture()}
           onRetry={() => void retryEvidenceSync()}
