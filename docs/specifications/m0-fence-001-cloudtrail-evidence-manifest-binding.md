@@ -42,8 +42,11 @@ The validator:
 5. Requires the report to state that chain and referenced-object verification succeeded while explicitly retaining `NOT_ESTABLISHED_BY_CHAIN_WALK` as its completeness status.
 6. Requires every digest/log record to carry an exact non-null S3 VersionId and both raw and uncompressed measurements.
 7. Requires each digest's regional public-key fingerprint, DER digest, DER byte count and validity interval.
-8. Matches the report's full digest/log/public-key inventory exactly against manifest artifact type, object reference, object version, raw SHA-256 and byte count. Extra, duplicate or missing source artifacts fail.
-9. Verifies the report's own raw serialized bytes against the manifest artifact record.
+8. Re-decompresses the manifested raw digest and log bytes and independently checks the reported uncompressed hashes and byte counts.
+9. Re-verifies each digest RSA signature using the manifested DER public key and checks that the raw digest JSON fields and log inventory agree with the report.
+10. Checks predecessor bucket/key/hash/signature linkage in latest-to-oldest report order and requires the final item to be a complete starting digest.
+11. Matches the report's full digest/log/public-key inventory exactly against manifest artifact type, object reference, object version, raw SHA-256 and byte count. Extra, duplicate or missing source artifacts fail.
+12. Verifies the report's own raw serialized bytes against the manifest artifact record.
 
 The manifest remains the single dual-signed custody envelope. No separate weaker unsigned mapping file is introduced.
 
