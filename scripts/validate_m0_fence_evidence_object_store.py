@@ -211,6 +211,7 @@ def run_conformance(factory: Callable[[], EvidenceObjectStore]) -> list[Result]:
             retention_until=CONTRACT_RETENTION_UNTIL, idempotency_key="artifact-002-key",
             writer_identity="collector-identity",
         )
+        require(first.object_key == second.object_key, "a later logical version changed the stable object key")
         require(first.version_id != second.version_id, "new evidence version reused an immutable version ID")
         old = store.get_exact_version(first.object_key, first.version_id, reader_identity="independent-verifier")
         new = store.get_exact_version(second.object_key, second.version_id, reader_identity="independent-verifier")
