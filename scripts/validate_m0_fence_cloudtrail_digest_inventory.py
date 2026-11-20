@@ -414,6 +414,44 @@ def run_fixture_tests() -> int:
         cases += 1
 
         report_artifact = next(item for item in envelope["manifestBody"]["artifacts"] if item["artifactType"] == "CLOUDTRAIL_VERIFICATION_REPORT")
+        report_for_backfill = _strict_json((root / report_artifact["artifactId"]).read_bytes(), "fixture report")
+        inventory_for_backfill = _strict_json(
+            (root / next(item for item in envelope["manifestBody"]["artifacts"] if item["artifactType"] == INDEX_TYPE)["artifactId"]).read_bytes(),
+            "fixture inventory",
+        )
+        page_docs_for_backfill = [
+            _strict_json((root / entry["artifactId"]).read_bytes(), "fixture page")
+            for entry in inventory_for_backfill["pages"]
+        ]
+        backfill_key = (
+            f"{inventory_for_backfill['prefix']}2026/11/20/"
+            "123456789012_CloudTrail-Digest_us-east-1_fixture-trail_us-east-1_"
+            "20261120T020000Z_backfill.json.gz"
+        )
+        backfill_digest = json.loads(json.dumps(report_for_backfill["digests"][0]))
+        backfill_digest["chainType"] = "BACKFILL"
+        backfill_digest["backfillGenerationTimestamp"] = "2026-11-20T03:00:00Z"
+        backfill_digest["key"] = backfill_key
+        backfill_digest["versionId"] = "backfill-version-001"
+        backfill_digest["digestEndTime"] = "2026-11-20T02:00:00Z"
+        report_for_backfill["digests"].append(backfill_digest)
+        page_docs_for_backfill[1]["Versions"].append({
+            "Key": backfill_key, "VersionId": "backfill-version-001", "IsLatest": True,
+            "LastModified": "2026-11-20T02:01:00Z", "Size": 100,
+        })
+        reconciled_backfill = reconcile_inventory(
+            report_for_backfill, inventory_for_backfill, page_docs_for_backfill
+        )
+        if not reconciled_backfill["completeWithinCapturedInventory"] or not reconciled_backfill["backfillVerified"]:
+            raise AssertionError("separately verified backfill chain did not reconcile with inventory")
+        cases += 1
+
+        unverified_backfill = json.loads(json.dumps(report_for_backfill))
+        unverified_backfill["digests"] = unverified_backfill["digests"][:1]
+        partial = reconcile_inventory(unverified_backfill, inventory_for_backfill, page_docs_for_backfill)
+        if partial["completeWithinCapturedInventory"] or partial["backfillVerified"]:
+            raise AssertionError("inventory with an unverified backfill chain was reported complete")
+        cases += 1
         report = _strict_json((root / report_artifact["artifactId"]).read_bytes(), "fixture report")
         inventory_artifact = next(item for item in envelope["manifestBody"]["artifacts"] if item["artifactType"] == INDEX_TYPE)
         inventory = _strict_json((root / inventory_artifact["artifactId"]).read_bytes(), "fixture inventory")
