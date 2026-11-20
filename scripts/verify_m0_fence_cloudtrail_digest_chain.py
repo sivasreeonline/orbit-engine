@@ -119,6 +119,8 @@ class VerificationReport:
                     "signatureHex": digest.signature_hex,
                     "signatureAlgorithm": digest.signature_algorithm,
                     "signatureFingerprint": digest.signature_fingerprint,
+                    "digestStartTime": digest.digest_start_time,
+                    "digestEndTime": digest.digest_end_time,
                     "publicKey": {
                         "region": self.region,
                         "fingerprint": digest.signature_fingerprint,
