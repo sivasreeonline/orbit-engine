@@ -64,10 +64,24 @@ def main() -> None:
             }],
             "testOnly": True,
         }))
+        page_id = "cloudtrail-inventory-page-0001.json"
+        (root / page_id).write_text(json.dumps({
+            "Name": BUCKET, "Prefix": f"AWSLogs/{ACCOUNT}/CloudTrail-Digest/{REGION}/",
+            "IsTruncated": False, "Versions": [], "DeleteMarkers": [],
+            "RequestId": "s3-listversions-001",
+        }))
+        (root / "cloudtrail-inventory-index.json").write_text(json.dumps({
+            "profile": "sky-high-cloudtrail-digest-inventory-v1",
+            "schemaVersion": 1, "testOnly": True, "accountId": ACCOUNT,
+            "region": REGION, "bucket": BUCKET,
+            "prefix": f"AWSLogs/{ACCOUNT}/CloudTrail-Digest/{REGION}/",
+            "collectionEndTime": "2026-11-20T02:06:00Z",
+            "pages": [{"artifactId": page_id}],
+        }))
         artifacts = [
             digest_id, log_id, public_key_id, "cloudtrail-verification-report.json",
             "aws-sts-collector-identity.json", "aws-sts-independent-verifier-identity.json",
-            "cloudtrail-provider-exchange.json",
+            "cloudtrail-provider-exchange.json", "cloudtrail-inventory-index.json", page_id,
         ]
         (root / "collection-bundle-index.json").write_text(json.dumps({
             "testOnly": True, "accountId": ACCOUNT, "region": REGION,
@@ -85,7 +99,7 @@ def main() -> None:
         result = validate_cloudtrail_manifest(envelope, trust, root, allow_test_only=True)
         assert result["digestCount"] == 1
         assert result["logCount"] == 1
-        assert len(envelope["manifestBody"]["artifacts"]) == 4
+        assert len(envelope["manifestBody"]["artifacts"]) == 9
         assert {x["role"] for x in envelope["attestations"]} == {"COLLECTOR", "INDEPENDENT_VERIFIER"}
         assert len({x["keyId"] for x in envelope["attestations"]}) == 2
         assert envelope["manifestBody"]["testOnly"] is True
