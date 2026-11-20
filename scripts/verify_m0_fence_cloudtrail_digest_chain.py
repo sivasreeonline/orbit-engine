@@ -215,8 +215,12 @@ def _verify_digest_signature(
         previous_signature = "null"
     if not isinstance(previous_signature, str):
         raise DigestVerificationError("previousDigestSignature must be hex text or null")
-    if previous_signature and (len(previous_signature) % 2 or not re.fullmatch(r"[0-9a-f]+", previous_signature)):
-        raise DigestVerificationError("previousDigestSignature is not lowercase hexadecimal")
+    if previous_signature != "null" and (
+        not previous_signature
+        or len(previous_signature) % 2
+        or not re.fullmatch(r"[0-9a-f]+", previous_signature)
+    ):
+        raise DigestVerificationError("previousDigestSignature is neither the genesis literal null nor lowercase hexadecimal")
     if not isinstance(signature_hex, str) or not signature_hex or len(signature_hex) % 2:
         raise DigestVerificationError("digest signature metadata is missing or malformed")
     if not re.fullmatch(r"[0-9a-f]+", signature_hex):
