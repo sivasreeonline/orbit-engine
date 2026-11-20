@@ -152,6 +152,9 @@ jobs:
 
       - name: Verify CloudTrail report-to-manifest custody binding (synthetic only)
         run: python ../../scripts/validate_m0_fence_cloudtrail_manifest_binding.py
+
+      - name: Reconcile CloudTrail digest inventory completeness (synthetic only)
+        run: python ../../scripts/validate_m0_fence_cloudtrail_digest_inventory.py
  
       - name: Verify FENCE-001 AWS read-only qualification preflight
         run: python ../../scripts/inspect_m0_fence_aws_qualification_environment.py --self-test
