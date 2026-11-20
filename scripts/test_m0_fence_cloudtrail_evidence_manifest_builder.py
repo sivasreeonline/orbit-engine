@@ -85,6 +85,8 @@ def main() -> None:
         ]
         (root / "collection-bundle-index.json").write_text(json.dumps({
             "testOnly": True, "accountId": ACCOUNT, "region": REGION,
+            "bucket": BUCKET,
+            "prefix": f"AWSLogs/{ACCOUNT}/CloudTrail-Digest/{REGION}/",
             "collectionEndTime": "2026-11-20T02:06:00Z", "artifacts": artifacts,
         }))
 
