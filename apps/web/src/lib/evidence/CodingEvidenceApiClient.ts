@@ -1,7 +1,5 @@
 import type {
   CapturedEvidence,
-  EditorEvidenceEvent,
-  EditorEvidenceSnapshot,
   EvidenceLanguage,
 } from "./EditorEvidenceCollector";
 
