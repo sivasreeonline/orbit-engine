@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sivasreeonline.github.io/orbit-engine/schemas/m0-verification-audit-record.schema.json",
+  "title": "M0 Verification Audit Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sequence", "record_id", "previous_sha256", "recorded_at", "report", "record_sha256"],
+  "properties": {
+    "sequence": {"type": "integer", "minimum": 1},
+    "record_id": {"type": "string", "minLength": 1},
+    "previous_sha256": {"type": "string", "pattern": "^(|[A-Fa-f0-9]{64})$"},
+    "recorded_at": {"type": "string", "format": "date-time"},
+    "report": {
+      "type": "object",
+      "required": ["policy_id", "policy_version", "qualification_id", "verified_at", "ready", "findings"],
+      "properties": {
+        "policy_id": {"type": "string", "minLength": 1},
+        "policy_version": {"type": "string", "minLength": 1},
+        "qualification_id": {"type": "string", "minLength": 1},
+        "manifest_sha256": {"type": "string"},
+        "evidence_checked": {"type": "integer", "minimum": 0},
+        "reviewer_identity": {"type": "string"},
+        "reviewer_key_id": {"type": "string"},
+        "verified_at": {"type": "string", "format": "date-time"},
+        "ready": {"type": "boolean"},
+        "findings": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "record_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+  }
+}
