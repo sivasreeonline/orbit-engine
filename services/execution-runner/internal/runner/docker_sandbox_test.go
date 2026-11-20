@@ -1141,6 +1141,7 @@ func TestOSCommandDockerCLICreateRejectsAmbiguousContainerIdentityWithoutCleanup
 	}{
 		{name: "malformed ID", output: "malformed-container-id\n"},
 		{name: "valid ID with trailing diagnostic", output: validID + "\ndaemon warning: response is ambiguous\n"},
+		{name: "oversized output", output: strings.Repeat("x", maxDockerCreateOutputBytes+1)},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -1180,6 +1181,52 @@ func TestOSCommandDockerCLICreateRejectsAmbiguousContainerIdentityWithoutCleanup
 		})
 	}
 }
+
+func TestOSCommandDockerCLICreateBoundsStderrAndCleansExactContainer(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker sandbox targets Linux hosts")
+	}
+	directory := t.TempDir()
+	removeLog := filepath.Join(directory, "remove.log")
+	dockerPath := filepath.Join(directory, "docker-stub")
+	containerID := strings.Repeat("b", 64)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"create\" ]; then",
+		"  printf '%s\\n' '" + containerID + "'",
+		"  printf '%s' \"$DOCKER_TEST_CREATE_STDERR\" >&2",
+		"  exit 0",
+		"fi",
+		"if [ \"$1\" = \"rm\" ]; then",
+		"  printf '%s\\n' \"$3\" >> \"$DOCKER_TEST_REMOVE_LOG\"",
+		"  exit 0",
+		"fi",
+		"exit 91",
+	}, "\n")
+	if err := os.WriteFile(dockerPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_TEST_CREATE_STDERR", strings.Repeat("e", maxDockerCommandStderrBytes+1))
+	t.Setenv("DOCKER_TEST_REMOVE_LOG", removeLog)
+
+	id, err := (OSCommandDockerCLI{Binary: dockerPath}).Create(
+		context.Background(), []string{"--name", "test"},
+	)
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("oversized Docker stderr error = %v, want ErrDockerCommandFailed", err)
+	}
+	if id != "" {
+		t.Fatalf("create returned container ID %q after oversized stderr", id)
+	}
+	removed, readErr := os.ReadFile(removeLog)
+	if readErr != nil {
+		t.Fatalf("exact container cleanup was not attempted: %v", readErr)
+	}
+	if strings.TrimSpace(string(removed)) != containerID {
+		t.Fatalf("cleanup ID = %q, want exact ID %q", strings.TrimSpace(string(removed)), containerID)
+	}
+}
+
 
 func TestDockerSandboxFailedCreateWithUnconfirmedCleanupRemainsDiscoverable(t *testing.T) {
 	if runtime.GOOS == "windows" {
