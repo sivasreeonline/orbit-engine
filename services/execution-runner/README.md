@@ -19,7 +19,8 @@ The canonical Go module path is `github.com/sivasreeonline/orbit-engine/services
 - No endpoint accepts source code or starts a process.
 - The acceptance journal stores only opaque IDs, lease identity and receipt lifecycle metadata; it never stores source code, hidden tests or execution artifacts.
 - A single runner process must own a journal file. Journal files are created with owner-only permissions (0600), and incomplete trailing records are truncated during recovery.
-- No Docker, containerd, gVisor or host command is invoked.
+- The default `cmd/runner` health process never invokes Docker, containerd, gVisor or host execution commands.
+- The sandbox adapter is an injectable library component and is not constructed by `cmd/runner`.
 - The unconfigured executor always returns `ErrSandboxNotConfigured`.
 - The HTTP server refuses non-loopback bind addresses until an authenticated private transport is implemented.
 - Student source code is referenced by an opaque artifact ID and SHA-256 digest; it is not included in the runner request body.
@@ -57,6 +58,49 @@ The local journal is a write-ahead record for the future runner protocol:
 
 The journal is append-only JSONL with a 64 MiB initial size ceiling. It rejects malformed complete records and only truncates an incomplete final line left by a crash. A definitive signed `409 RUNNER_LEASE_STALE` response appends an `ABANDONED` event for that exact acceptance receipt; the record remains auditable but is excluded from future retries. Transport failures, 5xx responses and other unknown errors are never treated as abandonment.
 
+## Acceptance journal process ownership
+
+The acceptance journal enforces one process owner per canonical journal path. Opening a journal atomically creates a sibling `<journal-path>.lock` directory with a private owner record. A second process is rejected with `ErrJournalLocked` until the owner closes cleanly. Relative paths and symlinked parent-directory aliases are canonicalized before the lock is acquired.
+
+A clean close flushes the journal, closes its file descriptor, verifies the lock's private owner record and token, and then removes the lock directory. If the process crashes or lock ownership becomes uncertain, the lock is deliberately left in place. The runner never guesses that a lock is stale and never removes it automatically. An operator must first verify that no runner process still owns the journal, then remove the stale `.lock` directory before restarting. Do not delete a lock directory while a runner may still be active.
+
+The lock directory and owner record are created with owner-only permissions. Linux directory fsync is used to persist lock creation and release. Windows remains a local-development target only; its directory-sync helper is intentionally a no-op, and production runner durability remains Linux-only.
+
+## Machine identity private-key file
+
+The `runnerauth.LoadPrivateKeyFile` helper provides the strict Linux file-loading boundary for the runner's Ed25519 machine identity. The file contains the standard-base64 encoding of exactly one 64-byte Ed25519 private key, optionally followed by a single LF newline. It must be a regular non-symlink file, owned by the runner's effective user, have exactly one hard link, and grant no group/other permissions. Owner-read-only (0400) and owner-read/write (0600) modes are accepted. The loader opens without following symlinks, verifies the opened file matches the inspected path, and checks that the public half matches the seed.
+
+Provision the file through a trusted local secret-management process. Never commit it, print it, include it in diagnostics or pass the key contents through command-line arguments. Non-Linux builds deliberately return `ErrPrivateKeyFileUnsupported`; they do not weaken the production file checks. This helper is not yet wired into `cmd/runner`, which remains health-only.
+
+## Typed runner identity configuration
+
+The `internal/runnerconfig` package validates the environment contract for a future foreground runner mode:
+
+- `RUNNER_CONTROL_PLANE_URL`: an HTTPS origin; HTTP is accepted only for a loopback development endpoint.
+- `RUNNER_KEY_ID`: a bounded key identifier matching the signed-request protocol.
+- `RUNNER_PRIVATE_KEY_FILE`: an absolute path to a private key file accepted by the strict Linux `runnerauth.LoadPrivateKeyFile` loader.
+- `RUNNER_JOURNAL_PATH`: an absolute, non-root path for the append-only acceptance journal.
+- `RUNNER_SANDBOX_JOURNAL_PATH`: a separate absolute, non-root path for the append-only Docker lifecycle journal; it must not alias the acceptance journal.
+- `RUNNER_HOST_LOCK_PATH`: an absolute path to the persistent Linux host-ownership lock file. Every runner process and recovery command on the same host must use the exact same path.
+- `RUNNER_INSTANCE_ID`: a stable, installation-specific 32-character lowercase-hex identifier. It is distinct from the signing key ID and is used to scope sandbox lifecycle labels and recovery ownership.
+
+All seven settings are mandatory. The loader rejects credentialed URLs, URL paths, query strings, fragments, invalid key IDs and relative file paths. It never returns key contents in errors. Call `Config.Destroy()` when the configuration is no longer needed; it overwrites the in-memory private-key bytes and clears the reference.
+
+This package is a validated configuration boundary. The foreground process loads and validates the stable runner instance ID alongside its signing identity. Provision the ID once using a cryptographically secure random generator, store it in a root/runner-owned environment file with mode `0600`, and preserve it across restarts. Do not generate a new ID on every process start. Example on the dedicated Linux host:
+
+```bash
+install -d -m 0700 /etc/skyhigh
+umask 077
+printf 'RUNNER_INSTANCE_ID=%s\n' "$(openssl rand -hex 16)" > /etc/skyhigh/runner-instance.env
+chmod 0600 /etc/skyhigh/runner-instance.env
+```
+
+Load that file through the service manager's environment-file mechanism. Back it up as installation metadata (not as a signing secret); replacing the runner installation requires an explicit identity-rotation and orphan-reconciliation procedure. The foreground process first acquires the shared host lock, then opens and holds the sandbox lifecycle journal and constructs the journaled Docker adapter with this stable ID. The adapter is deliberately not passed to the worker; the worker still receives `UnconfiguredArtifactExecutor` and the qualification gate remains closed. No Docker preflight, container creation, student execution or automatic cleanup is enabled.
+
+Provision `RUNNER_SANDBOX_JOURNAL_PATH` as a distinct private journal file, for example `/var/lib/skyhigh/sandbox-lifecycle.jsonl`. Its parent directory must be owner-only. The foreground process holds its exclusive lock for the process lifetime, so a second process cannot concurrently own the same lifecycle journal. Do not remove a stale journal lock until the runner is verified stopped.
+
+Set `RUNNER_HOST_LOCK_PATH` to one stable path shared by every Sky High runner process and recovery command on the host, for example `/var/lib/skyhigh-runner/host.lock`. The Linux implementation uses non-blocking kernel `flock`, records PID/runner identity/acquisition and release metadata, and keeps the file descriptor open for the protected lifetime. The lock file is intentionally persistent and must never be deleted or replaced; deleting a held lock file can split ownership across different inodes. A crashed process releases the kernel lock automatically, while its last-acquired metadata remains available for diagnosis. The foreground process and dry-run recovery command both acquire this same host lock before opening the sandbox journal. Different configured paths do not coordinate, so host provisioning must enforce one canonical path. The lock's parent directory must already exist, be owned by the runner's effective user, and have no group/other permission bits (normally mode `0700`); the lock implementation rejects shared or system-wide directories such as `/run/lock`. Provision `/var/lib/skyhigh-runner` with owner-only access under the runner service account before starting either command.
+
 ## Current runner control-plane client
 
 The Go client exposes separate methods for:
@@ -89,11 +133,79 @@ This coordinator is a library operation, not a polling daemon. It claims at most
 
 The `cmd/runner` entry point remains health-only and loopback-bound. It does not construct a runner identity, open the acceptance journal for production work, start the coordinator, or execute student code. The coordinator is not yet connected to a real OCI/gVisor executor.
 
+## Draft artifact-backed runsc sandbox adapter
+
+The Go library now includes `SandboxArtifactExecutor`, which adapts the authenticated `ExecutionArtifact` returned by the runner client into the existing execution contract. It rechecks source integrity, binds fixtures to the exact execution/attempt/problem version and uses separately configured resource limits.
+
+The `DockerSandbox` adapter creates a fresh container per testcase with:
+- the `runsc` runtime, network and IPC disabled, read-only root filesystem;
+- a non-root UID/GID (65532:65532), all Linux capabilities dropped and no-new-privileges;
+- bounded memory/swap, CPU quota, PID count, wall time and combined stdout/stderr;
+- a non-executable, nodev/nosuid `/workspace` tmpfs and bounded `/tmp` tmpfs;
+- forced container removal is attempted after completion, timeout, cancellation or output overflow; failures are surfaced. A read-only exact-label discovery library correlates pending journal entries with independently inspected container labels, but it does not delete containers and is not wired to a CLI or startup path.
+
+Student source is not written to a host temporary file or bind-mounted from the host. The runner sends the source bytes first over the container's attached stdin; a fixed wrapper consumes exactly the known source-byte count into `/workspace`, verifies the byte count, makes the file and workspace directory read-only, then leaves the remaining stdin stream for the testcase input. Student source is never interpolated into shell text.
+
+The execution adapter currently uses exact-byte output comparison. The artifact contract does not yet carry a versioned comparison mode, so whitespace-normalizing comparison is deliberately not inferred.
+
+**This remains a draft, not a live sandbox proof.** Execution requires `NewJournaledDockerSandbox` with a durable sandbox lifecycle journal and a stable runner-instance ID. The Docker CLI and execution contract tests use fakes. CI does not start Docker or run a gVisor container. Runtime images have not been built, signed or qualified. Peak-memory sampling is not implemented. The sandbox adapter is disabled unless its caller explicitly sets `Enabled: true`; enabling it also requires a successful Docker/runsc/image preflight. It is not wired into the health-only command. Do not set that flag for student workloads until the real Linux/runsc and adversarial gates below pass.
+
+## Operator sandbox recovery inspection (dry-run only)
+
+The separate `cmd/sandbox-recovery` command performs read-only correlation between the existing sandbox lifecycle journal and Docker containers. It queries Docker once for all containers carrying the exact runner-instance label, then inspects full container IDs in bounded batches of at most 32 per Docker CLI process. Every returned object must match exactly one requested full ID and must carry both the expected runner-instance and lifecycle labels; omitted, duplicate, unexpected or malformed inspect records fail closed. The complete inventory is then correlated with pending journal records in memory. It emits a versioned JSON report with pending lifecycle IDs, exact container IDs, state and an operator-review assessment.
+
+Recovery resource ceilings are deliberately fail-closed: at most 1,000 pending lifecycle records and 1,000 runner-owned containers are accepted (twice the current 500-student concurrency target; this is not a capacity guarantee). The Docker inventory response is capped at 128 KiB, each 32-ID inspect batch at 2 MiB, Docker stderr at 64 KiB, and the encoded JSON report at 8 MiB. Output is rejected rather than truncated, and an oversized inventory or report produces no recovery findings. These ceilings protect the operator inspection path from unbounded memory use; they do not establish that 500 concurrent student executions are qualified.
+ It also fails closed if the inventory contains a runner-owned container with no corresponding pending journal lifecycle, rather than silently omitting an orphan.
+
+Run it only after stopping the foreground runner on the dedicated host. It first acquires the same persistent host lock as the foreground runner, then opens the exact same existing sandbox journal in strict read-only mode and acquires its exclusive journal lock before querying Docker. If any Sky High process owns the shared host lock, inspection fails before journal or Docker discovery. It refuses a missing journal or a symlink and never creates an empty journal that could be mistaken for a clean recovery state. An incomplete final journal record is reported as an error and is never truncated or repaired by this command.
+
+Example from the execution-runner module directory on the dedicated Linux host:
+
+```bash
+RUNNER_INSTANCE_ID='<32-character-installation-id>' \
+RUNNER_SANDBOX_JOURNAL_PATH='/var/lib/skyhigh/sandbox-lifecycle.jsonl' \
+RUNNER_HOST_LOCK_PATH='/var/lib/skyhigh-runner/host.lock' \
+go run ./cmd/sandbox-recovery
+```
+
+The command has no deletion operation. It does not stop, kill, remove, prune, or modify containers or journal records. Every finding remains an operator-review item; create-intent crash windows, missing matches, multiple matches and ID mismatches are not deletion authorization. Preserve the JSON report as incident evidence.
+
+If the runner crashed and left a stale `.lock` file, first preserve its contents and independently verify at the OS level that no process can still own the journal. Only then may the operator remove that exact sibling lock file; the command never steals or clears stale locks. If the journal has an incomplete final record, preserve a copy and stop for explicit operator review rather than using this inspection command to repair it.
+
+The host lock coordinates only processes configured with the same lock path; it cannot protect against unrelated software or an administrator bypassing the lock. Keep the runner host dedicated and ensure every Sky High runner installation uses the same canonical path. Independently verify process/daemon ownership before manual recovery. The shared Linux host lock is implemented for foreground startup and dry-run inspection. Container deletion and automatic cleanup remain unimplemented and prohibited. This command does not enable student execution.
+
 ## M0 next gates
-1. Add reviewed machine key loading/permissions and a single-process journal owner.
+1. Add reviewed machine-key file loading and verify owner-only key permissions on the supported Linux host.
 2. Integrate claim → accept → start → heartbeat → artifact retrieval → execute → complete in a bounded runner lifecycle with backoff, cancellation and graceful shutdown.
 3. Select a supported Linux host and architecture.
-4. Select OCI engine and validate gVisor compatibility.
-5. Implement and qualify the ephemeral sandbox lifecycle behind the Executor interface.
-6. Enforce network denial, non-root identity, CPU, memory, PID, wall-clock, filesystem and output limits.
-7. Add cleanup attestation and adversarial tests; keep execution disabled until the full sandbox/security review passes.
+4. Provision a disposable supported Linux host with a pinned Docker/OCI engine and install/verify the exact `runsc` runtime.
+5. Build, sign and pin Java/Python runtime images; verify their digests and runtime versions on the host.
+6. Run real Java/Python smoke tests and the full adversarial matrix: network/DNS, host filesystem traversal, process exhaustion, memory exhaustion, infinite loops, output floods, cancellation and cleanup failures.
+7. Verify container cleanup and lease-loss cancellation under real process execution; implement measured peak-memory sampling.
+8. Complete an independent security review and cleanup attestation design. Keep the adapter disabled until all gates pass.
+
+
+## Opt-in real runsc qualification suite
+
+The default CI suite uses a fake Docker boundary and never runs student code. A separate Linux-only integration suite is available for an operator-controlled host with gVisor `runsc` and both digest-pinned runtime images already loaded locally.
+
+The suite verifies, inside real containers:
+- UID 65532 (non-root execution);
+- outbound IP and DNS isolation;
+- absence of the Docker daemon socket from the workload;
+- read-only container root filesystem and student workspace after source staging;
+- bounded output and wall-clock cancellation;
+- process-count enforcement and cleanup;
+- memory-pressure containment under the configured container memory ceiling, with cleanup after the workload is killed.
+
+It never pulls images. Supply the exact digest references and versions that were independently reviewed:
+
+```bash
+export SKYHIGH_JAVA_IMAGE_REF='registry.example/sky-high/java@sha256:<64-hex-digest>'
+export SKYHIGH_PYTHON_IMAGE_REF='registry.example/sky-high/python@sha256:<64-hex-digest>'
+export SKYHIGH_JAVA_VERSION='25'
+export SKYHIGH_PYTHON_VERSION='3.14'
+go test -tags=sandboxqualification -run '^TestRunsc(HostileWorkload|MemoryPressure)' ./internal/runner -count=1 -v
+```
+
+Run this only on a disposable, dedicated Linux qualification host. It invokes the local Docker daemon with the exact `runsc` runtime. The test is not run by ordinary CI and does not itself authorize student execution. A successful run is one evidence input; memory-pressure behavior, host escape review, kernel/runtime patch level, cleanup after daemon failure, and independent security review remain release gates.
