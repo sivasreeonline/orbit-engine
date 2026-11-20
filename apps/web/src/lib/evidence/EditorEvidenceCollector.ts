@@ -54,6 +54,7 @@ export interface EditorEvidenceCollectorOptions {
   readonly initialSequence?: number;
   /** Defaults to true for preview/debugging; set false when a sync queue owns records. */
   readonly retainRecords?: boolean;
+  readonly captureMode?: "in-memory-preview" | "authenticated-api";
   readonly onRecord?: (record: CapturedEvidence) => void;
   readonly now?: () => number;
   readonly createId?: () => string;
@@ -152,7 +153,7 @@ export class EditorEvidenceCollector {
     const collector = new EditorEvidenceCollector(options);
     collector.emit({
       eventType: "SESSION_STARTED",
-      metadata: { captureMode: "in-memory-preview", changeIntervalSeconds: 120, checkpointSeconds: 300 },
+      metadata: { captureMode: options.captureMode ?? "in-memory-preview", changeIntervalSeconds: 120, checkpointSeconds: 300 },
     });
     await collector.captureSnapshot("SESSION_START");
     collector.scheduleNext();
