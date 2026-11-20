@@ -13,7 +13,7 @@ from threading import Lock
 from typing import Any
 
 from aws_s3_evidence_object_store import S3EvidenceObjectStore
-from validate_m0_fence_evidence_object_store import ObjectIdempotencyConflict, run_conformance
+from validate_m0_fence_evidence_object_store import ObjectIdempotencyConflict, ObjectVersionNotFound, run_conformance
 
 
 class FakeS3Error(Exception):
@@ -112,7 +112,7 @@ def run_negative_tests() -> None:
 
     try:
         store.get_exact_version("key", "latest", reader_identity="synthetic-verifier")
-    except ValueError:
+    except ObjectVersionNotFound:
         pass
     else:
         raise AssertionError("mutable latest alias was accepted as an exact version")
