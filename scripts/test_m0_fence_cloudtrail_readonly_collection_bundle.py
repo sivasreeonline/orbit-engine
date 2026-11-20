@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from aws_cloudtrail_readonly_collection_bundle import AwsCloudTrailReadOnlyCollection
+from verify_m0_fence_cloudtrail_digest_chain import DigestVerificationError
 
 
 ACCOUNT = "123456789012"
@@ -175,7 +176,7 @@ def make_collection() -> tuple[AwsCloudTrailReadOnlyCollection, FakeSts, FakeSts
 def rejected(action, label: str) -> None:
     try:
         action()
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, DigestVerificationError):
         return
     raise AssertionError(f"expected fail-closed rejection: {label}")
 
