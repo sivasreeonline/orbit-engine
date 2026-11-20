@@ -109,6 +109,64 @@ func (fake *fakeDockerCLI) Remove(_ context.Context, id string) error {
 	return fake.removeErr
 }
 
+
+type contextBoundedDockerRemoveCLI struct {
+	*fakeDockerCLI
+}
+
+func (cli *contextBoundedDockerRemoveCLI) Remove(ctx context.Context, id string) error {
+	if id != cli.containerID {
+		return ErrDockerCommandFailed
+	}
+	cli.removeCalls++
+	<-ctx.Done()
+	return ErrDockerCommandFailed
+}
+
+func TestDockerSandboxUnresponsiveRemovalPreservesPendingLifecycle(t *testing.T) {
+	journal, err := sandboxjournal.Open(privateJournalTestPath(t, "unresponsive-remove.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Close()
+
+	fake := &fakeDockerCLI{
+		stdout: []byte(compileSuccessMarker + "ok"),
+		state:  DockerContainerState{Status: "exited", ExitCode: 0},
+	}
+	cli := &contextBoundedDockerRemoveCLI{fakeDockerCLI: fake}
+	sandbox, err := NewJournaledDockerSandbox(cli, journal, strings.Repeat("a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sandbox.cleanupTimeout = 25 * time.Millisecond
+
+	startedAt := time.Now()
+	observation, runErr := sandbox.RunCase(context.Background(), dockerSandboxTestRequest())
+	elapsed := time.Since(startedAt)
+	if !errors.Is(runErr, ErrDockerCommandFailed) {
+		t.Fatalf("RunCase error = %v, want Docker command failure", runErr)
+	}
+	if observation.CleanupSucceeded {
+		t.Fatal("unresponsive Docker removal must not report successful cleanup")
+	}
+	if cli.removeCalls != 2 {
+		t.Fatalf("Docker removal attempts = %d, want primary and deferred bounded attempts", cli.removeCalls)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("unresponsive cleanup exceeded bounded attempts: %s", elapsed)
+	}
+
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || !pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != fake.containerID {
+		t.Fatalf("unresponsive cleanup must preserve the exact pending CREATED lifecycle: %+v", pending)
+	}
+}
+
 type closeJournalOnRemoveDockerCLI struct {
 	*fakeDockerCLI
 	journal *sandboxjournal.Journal
