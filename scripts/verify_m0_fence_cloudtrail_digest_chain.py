@@ -210,7 +210,9 @@ def _verify_digest_signature(
     digest_start = _parse_time(document.get("digestStartTime"), "digestStartTime")
     previous_signature = document.get("previousDigestSignature")
     if previous_signature is None:
-        previous_signature = ""
+        # Match the AWS CLI's documented-reference implementation: JSON null
+        # is represented as the literal string "null" in the signing payload.
+        previous_signature = "null"
     if not isinstance(previous_signature, str):
         raise DigestVerificationError("previousDigestSignature must be hex text or null")
     if previous_signature and (len(previous_signature) % 2 or not re.fullmatch(r"[0-9a-f]+", previous_signature)):
