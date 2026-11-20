@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import io
-import json
+import importlib
 import re
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -21,6 +21,15 @@ from typing import Any
 SAFE_PREFIX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9!_.*'()/:-]{0,199}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 REQUIRED_OBJECT_LOCK_MODE = "COMPLIANCE"
+
+
+def _contract_types() -> Any:
+    """Preserve the active conformance module's exception/dataclass identity."""
+    main_module = sys.modules.get("__main__")
+    required = ("ObjectIdempotencyConflict", "ObjectMutationDenied", "ObjectMetadata", "ObjectVersion")
+    if main_module is not None and all(hasattr(main_module, name) for name in required):
+        return main_module
+    return importlib.import_module("validate_m0_fence_evidence_object_store")
 
 
 def _sha256(value: bytes) -> str:
@@ -59,6 +68,7 @@ class S3EvidenceObjectStore:
         bucket_name: str,
         key_prefix: str,
         writer_identity: str,
+        verifier_identity: str,
     ) -> None:
         if not isinstance(bucket_name, str) or not bucket_name.strip():
             raise ValueError("bucket_name is required")
@@ -66,6 +76,10 @@ class S3EvidenceObjectStore:
             raise ValueError("key_prefix must be a safe non-empty S3 prefix")
         if not isinstance(writer_identity, str) or not writer_identity.strip():
             raise ValueError("writer_identity is required")
+        if not isinstance(verifier_identity, str) or not verifier_identity.strip():
+            raise ValueError("verifier_identity is required")
+        if verifier_identity == writer_identity:
+            raise ValueError("writer and verifier identities must be distinct")
         if writer_client is None or verifier_client is None:
             raise ValueError("separate writer and verifier S3 clients are required")
         if writer_client is verifier_client:
@@ -76,6 +90,7 @@ class S3EvidenceObjectStore:
         self._bucket = bucket_name
         self._prefix = key_prefix.rstrip("/")
         self._writer_identity = writer_identity
+        self._verifier_identity = verifier_identity
         self._verify_bucket_prerequisites()
 
     def _verify_bucket_prerequisites(self) -> None:
@@ -129,8 +144,7 @@ class S3EvidenceObjectStore:
         actual_metadata = head.get("Metadata", {})
         for name, expected in expected_metadata.items():
             if actual_metadata.get(name) != expected:
-                from validate_m0_fence_evidence_object_store import ObjectIdempotencyConflict
-                raise ObjectIdempotencyConflict(
+                raise _contract_types().ObjectIdempotencyConflict(
                     "idempotency key is already bound to different S3 object content or metadata"
                 )
         if head.get("ObjectLockMode") != REQUIRED_OBJECT_LOCK_MODE:
@@ -158,9 +172,6 @@ class S3EvidenceObjectStore:
         idempotency_key: str,
         writer_identity: str,
     ) -> Any:
-        # Imported lazily so synthetic contract tests do not need an AWS session.
-        from validate_m0_fence_evidence_object_store import ObjectVersion
-
         if not isinstance(content, bytes) or not content:
             raise ValueError("evidence content must be non-empty bytes")
         if not isinstance(writer_identity, str) or writer_identity != self._writer_identity:
@@ -201,8 +212,7 @@ class S3EvidenceObjectStore:
             try:
                 head = self._head_existing(physical_key, metadata, retention)
             except Exception as reconcile_error:
-                from validate_m0_fence_evidence_object_store import ObjectIdempotencyConflict
-                if isinstance(reconcile_error, ObjectIdempotencyConflict):
+                if isinstance(reconcile_error, _contract_types().ObjectIdempotencyConflict):
                     raise reconcile_error
                 raise error
             version_id = head["VersionId"]
@@ -211,7 +221,7 @@ class S3EvidenceObjectStore:
             if head.get("VersionId") != version_id:
                 raise RuntimeError("S3 HEAD version differs from the successful PUT VersionId")
 
-        return ObjectVersion(
+        return _contract_types().ObjectVersion(
             object_key=physical_key,
             version_id=version_id,
             sha256=_sha256(content),
@@ -219,10 +229,8 @@ class S3EvidenceObjectStore:
         )
 
     def get_exact_version(self, object_key: str, version_id: str, *, reader_identity: str) -> bytes:
-        if not isinstance(reader_identity, str) or not reader_identity.strip():
-            raise PermissionError("independent verifier identity is required")
-        if reader_identity == self._writer_identity:
-            raise PermissionError("readback must use a distinct independent verifier identity")
+        if not isinstance(reader_identity, str) or reader_identity != self._verifier_identity:
+            raise PermissionError("readback identity does not match the configured independent verifier principal")
         if not isinstance(version_id, str) or not version_id or version_id == "latest" or version_id == "null":
             raise ValueError("an exact non-null S3 VersionId is required")
         response = self._verifier.get_object(
@@ -239,8 +247,6 @@ class S3EvidenceObjectStore:
         return content
 
     def head_exact_version(self, object_key: str, version_id: str) -> Any:
-        from validate_m0_fence_evidence_object_store import ObjectMetadata
-
         if not isinstance(version_id, str) or not version_id or version_id in {"latest", "null"}:
             raise ValueError("an exact non-null S3 VersionId is required")
         response = self._verifier.head_object(
@@ -255,7 +261,7 @@ class S3EvidenceObjectStore:
             raise RuntimeError("exact S3 version lacks compliance retention metadata")
         if retention.tzinfo is None:
             retention = retention.replace(tzinfo=timezone.utc)
-        return ObjectMetadata(
+        return _contract_types().ObjectMetadata(
             object_key=object_key,
             version_id=version_id,
             sha256=metadata.get("fence-content-sha256", ""),
@@ -267,4 +273,6 @@ class S3EvidenceObjectStore:
 
     def delete_version(self, object_key: str, version_id: str) -> None:
         # Deliberately no DeleteObject call is exposed by this adapter.
-        raise PermissionError("evidence deletion is not an adapter capability; retention bypass requires a separate governed test")
+        raise _contract_types().ObjectMutationDenied(
+            "evidence deletion is not an adapter capability; retention bypass requires a separate governed test"
+        )
