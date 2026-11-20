@@ -234,7 +234,7 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
         if previous_end is not None and end >= previous_end:
             raise ValueError("CloudTrail digest report is not ordered latest-to-oldest")
         previous_end = end
-        if f"/{account_id}/CloudTrail-Digest/{provider['region']}/" not in f"/{key}":
+        if f"/{provider["account"]}/CloudTrail-Digest/{provider['region']}/" not in f"/{key}":
             raise ValueError("CloudTrail digest key is outside the signed account/Region prefix")
 
         public_key = digest.get("publicKey")
@@ -264,7 +264,7 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
                 raise ValueError("CloudTrail log report must pin bucket, key and exact non-null VersionId")
             if log_bucket != bucket:
                 raise ValueError("CloudTrail log bucket differs from digest bucket")
-            if f"/{account_id}/CloudTrail/{provider['region']}/" not in f"/{log_key}":
+            if f"/{provider["account"]}/CloudTrail/{provider['region']}/" not in f"/{log_key}":
                 raise ValueError("CloudTrail log key is outside the signed account/Region prefix")
             log_identity = (log_bucket, log_key, log_version)
             if log_identity in seen_logs:
