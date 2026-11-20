@@ -80,7 +80,7 @@ def adapter_factory() -> S3EvidenceObjectStore:
         FakeS3Client(backend),
         bucket_name="synthetic-fence-evidence",
         key_prefix="qualification-test",
-        writer_identity="synthetic-collector",
+        writer_identity="collector-identity",
         verifier_identity="independent-verifier",
     )
 
