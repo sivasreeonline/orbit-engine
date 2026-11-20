@@ -132,6 +132,11 @@ def main() -> None:
     assert len(cloudtrail_client.calls) == 2
     assert cloudtrail_client.calls[0]["StartTime"] == START
     assert cloudtrail_client.calls[1]["NextToken"] == "page-two"
+    public_keys.list_public_keys(REGION, START, END)
+    assert public_keys.last_request_ids == (
+        "cloudtrail-request-001", "cloudtrail-request-002",
+        "cloudtrail-request-001", "cloudtrail-request-002",
+    )
     rejected(
         lambda: public_keys.list_public_keys("us-west-2", START, END),
         "wrong CloudTrail Region",
