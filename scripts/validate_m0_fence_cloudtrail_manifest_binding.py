@@ -526,7 +526,7 @@ def _fixture(root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
     import gzip
 
     account, region, bucket = "123456789012", "us-east-1", "fixture-cloudtrail-bucket"
-    digest_key = f"AWSLogs/{account}/CloudTrail-Digest/{region}/2026/11/20/digest.json.gz"
+    digest_key = f"AWSLogs/{account}/CloudTrail-Digest/{region}/2026/11/20/{account}_CloudTrail-Digest_{region}_fixture-trail_{region}_20261120T010000Z.json.gz"
     log_key = f"AWSLogs/{account}/CloudTrail/{region}/2026/11/20/log.json.gz"
     log_content = b'{"Records":[{"eventName":"SyntheticFixtureEvent","eventSource":"fixture.amazonaws.com"}]}'
     log_raw = gzip.compress(log_content, mtime=0)

@@ -150,7 +150,9 @@
                     "CT-003",
                     "CT-004",
                     "CT-005",
-                    "CT-006"
+                    "CT-006",
+                    "CT-007",
+                    "CT-008"
                   ]
                 }
               },
@@ -167,7 +169,9 @@
                   "CLOUDTRAIL_DIGEST",
                   "CLOUDTRAIL_LOG",
                   "CLOUDTRAIL_PUBLIC_KEY",
-                  "CLOUDTRAIL_VERIFICATION_REPORT"
+                  "CLOUDTRAIL_VERIFICATION_REPORT",
+                  "CLOUDTRAIL_DIGEST_INVENTORY",
+                  "CLOUDTRAIL_INVENTORY_PAGE"
                 ]
               },
               "objectRef": {
