@@ -204,7 +204,8 @@ func TestSourceByteLengthMismatchFailsBeforeSandbox(t *testing.T) {
 
 func TestSourceHashMismatchFailsBeforeSandbox(t *testing.T) {
 	t.Parallel()
-	source := []byte("different source")
+	source := append([]byte(nil), conformanceSource()...)
+	source[0] = 'x' // Preserve byte length so this test isolates digest validation.
 	sandbox := &conformanceSandbox{}
 	executor := conformanceExecutor(t, &conformanceResolver{source: source, bundle: conformanceBundle()}, sandbox)
 
