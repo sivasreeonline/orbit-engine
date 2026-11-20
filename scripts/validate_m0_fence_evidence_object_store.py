@@ -10,6 +10,7 @@ import importlib
 import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from threading import Lock
 from typing import Callable, Protocol
 
@@ -144,6 +145,7 @@ class Result:
 
 def run_conformance(factory: Callable[[], EvidenceObjectStore]) -> list[Result]:
     results: list[Result] = []
+    test_retention_until = int(datetime.now(timezone.utc).timestamp()) + 3600
 
     def case(name: str, action: Callable[[], None]) -> None:
         try:
@@ -159,7 +161,7 @@ def run_conformance(factory: Callable[[], EvidenceObjectStore]) -> list[Result]:
         return store.put_immutable(
             "qualification/run-001/artifact-001",
             content,
-            retention_until=9_000,
+            retention_until=test_retention_until,
             idempotency_key="artifact-001-key",
             writer_identity="collector-identity",
         )
@@ -216,7 +218,7 @@ def run_conformance(factory: Callable[[], EvidenceObjectStore]) -> list[Result]:
         version = put(store)
         metadata = store.head_exact_version(version.object_key, version.version_id)
         require(metadata.object_lock_mode == "COMPLIANCE", "object version is not under compliance-mode retention")
-        require(metadata.retention_until >= 9_000, "retention deadline is shorter than requested")
+        require(metadata.retention_until >= test_retention_until, "retention deadline is shorter than requested")
         require(metadata.writer_identity == "collector-identity", "writer identity missing from immutable metadata")
     case("compliance retention mode and deadline", compliance_retention_metadata)
 
