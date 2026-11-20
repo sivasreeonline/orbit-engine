@@ -103,7 +103,7 @@ class AwsCloudTrailPublicKeyProvider:
                 })
             next_token = response.get("NextToken")
             if next_token is None:
-                self.last_request_ids = tuple(request_ids)
+                self.last_request_ids = self.last_request_ids + tuple(request_ids)
                 return records
             if not isinstance(next_token, str) or not next_token or next_token in seen_tokens:
                 raise ValueError("CloudTrail ListPublicKeys returned an invalid or repeated NextToken")
