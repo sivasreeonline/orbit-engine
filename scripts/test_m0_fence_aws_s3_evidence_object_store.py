@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import uuid
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Any
 
 from aws_s3_evidence_object_store import S3EvidenceObjectStore
@@ -25,6 +26,7 @@ class FakeS3Backend:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str, str], dict[str, Any]] = {}
         self.current: dict[tuple[str, str], str] = {}
+        self.lock = Lock()
 
 
 class FakeS3Client:
@@ -40,19 +42,20 @@ class FakeS3Client:
     def put_object(self, **kwargs: Any) -> dict[str, str]:
         bucket, key = kwargs["Bucket"], kwargs["Key"]
         current_key = (bucket, key)
-        if kwargs.get("IfNoneMatch") == "*" and current_key in self.backend.current:
-            raise FakeS3Error("PreconditionFailed")
-        version_id = "fake-" + uuid.uuid4().hex
-        body = kwargs["Body"]
-        self.backend.objects[(bucket, key, version_id)] = {
-            "Body": body,
-            "Metadata": dict(kwargs["Metadata"]),
-            "ObjectLockMode": kwargs["ObjectLockMode"],
-            "ObjectLockRetainUntilDate": kwargs["ObjectLockRetainUntilDate"],
-            "ContentLength": kwargs["ContentLength"],
-        }
-        self.backend.current[current_key] = version_id
-        return {"VersionId": version_id}
+        with self.backend.lock:
+            if kwargs.get("IfNoneMatch") == "*" and current_key in self.backend.current:
+                raise FakeS3Error("PreconditionFailed")
+            version_id = "fake-" + uuid.uuid4().hex
+            body = kwargs["Body"]
+            self.backend.objects[(bucket, key, version_id)] = {
+                "Body": body,
+                "Metadata": dict(kwargs["Metadata"]),
+                "ObjectLockMode": kwargs["ObjectLockMode"],
+                "ObjectLockRetainUntilDate": kwargs["ObjectLockRetainUntilDate"],
+                "ContentLength": kwargs["ContentLength"],
+            }
+            self.backend.current[current_key] = version_id
+            return {"VersionId": version_id}
 
     def head_object(self, *, Bucket: str, Key: str, VersionId: str | None = None) -> dict[str, Any]:
         version = VersionId or self.backend.current.get((Bucket, Key))
