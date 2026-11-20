@@ -29,7 +29,7 @@ const (
 	maxDockerRuntimeInfoBytes = 64 * 1024
 	maxDockerImageIDBytes = 128
 	maxDockerCreateOutputBytes = 128
-	maxDockerInspectOutputBytes = 8 * 1024
+	maxDockerCLIInspectOutputBytes = 8 * 1024
 	maxDockerCommandStderrBytes = 8 * 1024
 )
 
@@ -158,7 +158,7 @@ func (cli OSCommandDockerCLI) Inspect(ctx context.Context, id string) (DockerCon
 	}
 	output, err, stdoutExceeded, stderrExceeded := runDockerCommandBounded(
 		ctx, cli.binary(), []string{"inspect", "--format", "{{json .State}}", id},
-		maxDockerInspectOutputBytes,
+		maxDockerCLIInspectOutputBytes,
 	)
 	if err != nil || stdoutExceeded || stderrExceeded {
 		return DockerContainerState{}, ErrDockerCommandFailed
@@ -181,13 +181,13 @@ func (cli OSCommandDockerCLI) Remove(ctx context.Context, id string) error {
 	return nil
 }
 
-type boundedCommandBuffer struct {
+type boundedDockerCLIOutput struct {
 	buffer   bytes.Buffer
 	maximum  int
 	exceeded bool
 }
 
-func (capture *boundedCommandBuffer) Write(value []byte) (int, error) {
+func (capture *boundedDockerCLIOutput) Write(value []byte) (int, error) {
 	originalLength := len(value)
 	remaining := capture.maximum - capture.buffer.Len()
 	if remaining > 0 {
@@ -203,7 +203,7 @@ func (capture *boundedCommandBuffer) Write(value []byte) (int, error) {
 	return originalLength, nil
 }
 
-func (capture *boundedCommandBuffer) Bytes() []byte {
+func (capture *boundedDockerCLIOutput) Bytes() []byte {
 	return append([]byte(nil), capture.buffer.Bytes()...)
 }
 
@@ -217,8 +217,8 @@ func runDockerCommandBounded(
 		return nil, ErrDockerCommandFailed, false, false
 	}
 	command := exec.CommandContext(ctx, binary, args...)
-	stdout := &boundedCommandBuffer{maximum: stdoutLimit}
-	stderr := &boundedCommandBuffer{maximum: maxDockerCommandStderrBytes}
+	stdout := &boundedDockerCLIOutput{maximum: stdoutLimit}
+	stderr := &boundedDockerCLIOutput{maximum: maxDockerCommandStderrBytes}
 	command.Stdout = stdout
 	command.Stderr = stderr
 	err := command.Run()
