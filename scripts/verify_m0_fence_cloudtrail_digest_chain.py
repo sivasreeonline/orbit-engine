@@ -14,7 +14,7 @@ import io
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -53,6 +53,8 @@ class VerifiedLog:
 
 @dataclass(frozen=True)
 class VerifiedDigest:
+    chain_type: str
+    backfill_generation_timestamp: str | None
     bucket: str
     key: str
     version_id: str
@@ -100,9 +102,13 @@ class VerificationReport:
             "verificationStatus": "CHAIN_AND_REFERENCED_OBJECTS_VERIFIED",
             "completenessStatus": "NOT_ESTABLISHED_BY_CHAIN_WALK",
             "digestCount": self.digest_count,
+            "standardDigestCount": sum(item.chain_type == "STANDARD" for item in self.digests),
+            "backfillDigestCount": sum(item.chain_type == "BACKFILL" for item in self.digests),
             "logCount": self.log_count,
             "digests": [
                 {
+                    "chainType": digest.chain_type,
+                    "backfillGenerationTimestamp": digest.backfill_generation_timestamp,
                     "bucket": digest.bucket,
                     "key": digest.key,
                     "versionId": digest.version_id,
@@ -210,7 +216,10 @@ def _parse_digest(raw: bytes, bucket: str, key: str) -> tuple[dict[str, Any], by
     return document, uncompressed
 
 
-def _validate_scope(document: dict[str, Any], bucket: str, key: str, account_id: str, region: str) -> None:
+def _validate_scope(
+    document: dict[str, Any], bucket: str, key: str, account_id: str, region: str,
+    *, is_backfill: bool,
+) -> None:
     if document.get("awsAccountId") != account_id:
         raise DigestVerificationError("digest account ID differs from the pinned qualification account")
     if document.get("digestS3Bucket") != bucket:
@@ -218,8 +227,8 @@ def _validate_scope(document: dict[str, Any], bucket: str, key: str, account_id:
     marker = f"/{account_id}/CloudTrail-Digest/{region}/"
     if marker not in f"/{key}":
         raise DigestVerificationError("digest object path is outside the pinned account/Region digest prefix")
-    if key.endswith("_backfill.json.gz"):
-        raise DigestVerificationError("backfill digest chains are a separate qualification scope")
+    if key.endswith("_backfill.json.gz") is not is_backfill:
+        raise DigestVerificationError("digest key standard/backfill classification differs from the requested chain")
 
 
 def _load_public_key(
@@ -264,6 +273,7 @@ def _verify_digest_signature(
     signature_hex: str,
     provider: PublicKeyProvider,
     region: str,
+    public_key_time_range: tuple[datetime, datetime] | None = None,
 ) -> tuple[str, bytes, datetime, datetime]:
     if document.get("digestSignatureAlgorithm") != "SHA256withRSA":
         raise DigestVerificationError("unsupported CloudTrail digest signature algorithm")
@@ -296,8 +306,9 @@ def _verify_digest_signature(
         f"{digest_hash}\n"
         f"{previous_signature}"
     ).encode("utf-8")
+    key_start, key_end = public_key_time_range or (digest_start, digest_end)
     public_key, public_key_der, key_valid_from, key_valid_to = _load_public_key(
-        provider, region, fingerprint, digest_start, digest_end
+        provider, region, fingerprint, key_start, key_end
     )
     try:
         public_key.verify(
@@ -399,6 +410,7 @@ class CloudTrailDigestChainVerifier:
         latest_key: str,
         *,
         latest_version_id: str,
+        is_backfill: bool = False,
     ) -> VerificationReport:
         if latest_bucket != self._bucket:
             raise DigestVerificationError("latest digest bucket differs from the pinned bucket")
@@ -425,7 +437,10 @@ class CloudTrailDigestChainVerifier:
             visited.add(identity)
 
             document, uncompressed = _parse_digest(read.body, bucket, key)
-            _validate_scope(document, bucket, key, self._account, self._region)
+            _validate_scope(
+                document, bucket, key, self._account, self._region,
+                is_backfill=is_backfill,
+            )
             start = _parse_time(document.get("digestStartTime"), "digestStartTime")
             end = _parse_time(document.get("digestEndTime"), "digestEndTime")
             if start >= end:
@@ -441,12 +456,26 @@ class CloudTrailDigestChainVerifier:
                 signature = read.metadata.get("signature")
             if not isinstance(signature, str) or not signature:
                 raise DigestVerificationError("current digest S3 object metadata has no signature")
+            backfill_generation_timestamp: str | None = None
+            key_time_range = None
+            if is_backfill:
+                backfill_generation_timestamp = read.metadata.get("backfill-generation-timestamp")
+                generation_time = _parse_time(
+                    backfill_generation_timestamp, "backfill-generation-timestamp"
+                )
+                key_time_range = (
+                    generation_time - timedelta(hours=1),
+                    generation_time + timedelta(hours=1),
+                )
             fingerprint, public_key_der, key_valid_from, key_valid_to = _verify_digest_signature(
-                document, uncompressed, bucket, key, signature, self._public_keys, self._region
+                document, uncompressed, bucket, key, signature, self._public_keys,
+                self._region, key_time_range,
             )
             logs = _verify_logs(document, self._reader, self._account, self._region)
             verified.append(
                 VerifiedDigest(
+                    chain_type="BACKFILL" if is_backfill else "STANDARD",
+                    backfill_generation_timestamp=backfill_generation_timestamp,
                     bucket=bucket,
                     key=key,
                     version_id=read.version_id,
@@ -491,6 +520,32 @@ class CloudTrailDigestChainVerifier:
             expected_predecessor_hash = previous_hash
 
         raise DigestVerificationError("CloudTrail digest chain exceeds the configured maximum depth")
+
+    def verify_standard_and_backfill(
+        self,
+        *,
+        standard: tuple[str, str, str],
+        backfill: tuple[str, str, str] | None = None,
+    ) -> VerificationReport:
+        """Verify the standard chain and, when supplied, the separate backfill chain.
+
+        Each tuple is (bucket, key, exact latest VersionId). Backfill keys are
+        verified independently using the S3 backfill-generation-timestamp
+        metadata and the AWS CLI's +/- one-hour regional public-key lookup.
+        """
+        standard_report = self.verify_chain(
+            standard[0], standard[1], latest_version_id=standard[2], is_backfill=False
+        )
+        if backfill is None:
+            return standard_report
+        backfill_report = self.verify_chain(
+            backfill[0], backfill[1], latest_version_id=backfill[2], is_backfill=True
+        )
+        return VerificationReport(
+            self._account,
+            self._region,
+            standard_report.digests + backfill_report.digests,
+        )
 
 
 def main() -> None:

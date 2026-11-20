@@ -29,13 +29,13 @@ For each digest in the supplied latest-to-oldest chain, the verifier:
 9. Follows the exact previous digest bucket/key/signature/hash binding, checks predecessor hash and chronological order, and rejects partial links, cycles and excessive chain depth.
 10. Records exact object version IDs, hashes and byte counts in the verification report.
 
-An empty `logFiles` array is valid; it represents a digest interval in which no log files were delivered. Backfill digests are explicitly rejected by this first slice because AWS documents them as a separate chain.
+An empty `logFiles` array is valid; it represents a digest interval in which no log files were delivered. Standard and backfill digest chains are now verified through separate invocations. Backfill digest keys must end in `_backfill.json.gz`, and every backfill digest object must carry the S3 user metadata `backfill-generation-timestamp`. Regional public keys are requested for the one-hour window before and after that generation timestamp, matching the AWS CLI behavior. The report labels each digest `STANDARD` or `BACKFILL` and preserves the generation timestamp.
 
 ## Important AWS compatibility qualification
 
 AWS documents the signature input as the digest end timestamp, original S3 bucket/key, SHA-256 of the current digest file content, and previous digest signature. It documents regional RSA public keys and SHA-256 hashes over uncompressed CloudTrail log contents.
 
-This prototype hashes the decompressed digest JSON bytes as supplied and represents a null starting-chain previous signature as an empty string. Those byte-level and genesis-value interpretations are synthetic test assumptions until they are cross-checked against AWS's official `cloudtrail validate-logs` implementation and a real, independently acquired AWS digest fixture. Do not use this prototype to issue a provider qualification PASS or make a production security claim.
+The digest hash is computed over the decompressed digest JSON bytes. The starting-chain null `previousDigestSignature` is encoded as the literal string `null` in the signature input, matching the AWS CLI implementation in `awscli/customizations/cloudtrail/validation.py` (`Sha256RSADigestValidator._create_string_to_sign`). This is source-level compatibility evidence; a real independently acquired AWS digest fixture is still required before provider qualification. Do not use this prototype to issue a provider qualification PASS or make a production security claim.
 
 Before any real qualification:
 - run a differential fixture against AWS CLI `cloudtrail validate-logs` for the same exact digest objects, including a starting digest whose `previousDigestSignature` is null;
