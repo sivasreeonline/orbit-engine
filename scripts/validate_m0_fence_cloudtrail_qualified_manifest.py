@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import tempfile
 from pathlib import Path
@@ -10,11 +11,10 @@ from typing import Any
 
 from validate_m0_fence_cloudtrail_manifest_binding import (
     _artifact,
-    _identity_report if False else _artifact,
+    _signed_manifest,
+    validate_cloudtrail_manifest,
 )
-from validate_m0_fence_cloudtrail_manifest_binding import _signed_manifest
 from validate_m0_fence_cloudtrail_digest_inventory import _inventory_fixture, validate_inventory_manifest
-from validate_m0_fence_cloudtrail_manifest_binding import validate_cloudtrail_manifest
 from validate_m0_fence_aws_identity_manifest import (
     IDENTITY_TYPE,
     _identity_report,
@@ -109,7 +109,7 @@ def run_fixture_tests() -> int:
         raw = json.dumps(report, sort_keys=True, separators=(",", ":")).encode("utf-8")
         verifier_path.write_bytes(raw)
         artifact = next(item for item in envelope["manifestBody"]["artifacts"] if item["artifactId"] == "qualified-sts-identity-002")
-        artifact["sha256"] = __import__("hashlib").sha256(raw).hexdigest()
+        artifact["sha256"] = hashlib.sha256(raw).hexdigest()
         artifact["byteCount"] = len(raw)
         envelope, trusted = _signed_manifest(envelope["manifestBody"])
         try:
