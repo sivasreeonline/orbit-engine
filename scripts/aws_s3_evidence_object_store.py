@@ -145,9 +145,9 @@ def _physical_key(prefix: str, object_key: str, idempotency_key: str) -> tuple[s
         raise ValueError("idempotency_key must be non-empty and at most 512 UTF-8 bytes")
     logical_hash = hashlib.sha256(object_key.encode("utf-8")).hexdigest()
     idempotency_hash = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
-    # Deterministic per-idempotency key: an exact retry reaches the same S3 key.
-    return f"{prefix.rstrip('/')}/{idempotency_hash[:2]}/{idempotency_hash}", logical_hash, idempotency_hash
-
+    # All logical versions of one object share one stable key. Idempotency is
+    # resolved by metadata on immutable S3 versions, not by changing object key.
+    return f"{prefix.rstrip('/')}/{logical_hash[:2]}/{logical_hash}", logical_hash, idempotency_hash
 
 class AWSS3EvidenceObjectStore:
     """S3 general-purpose bucket adapter using conditional immutable writes.
@@ -248,31 +248,20 @@ class AWSS3EvidenceObjectStore:
             raise _contract_types().ObjectIdempotencyConflict("S3 exact version bytes differ from the idempotent retry")
         return _contract_types().ObjectVersion(object_key, version_id, requested_sha, len(requested_bytes))
 
-    def _resolve_existing(self, object_key: str, *, requested_sha: str, requested_bytes: bytes,
-                          logical_hash: str, idempotency_hash: str, requested_retention: int,
-                          writer_identity: str) -> Any:
-        # Prefer HEAD of the current version. If a delete marker hides it, inspect
-        # every version for this deterministic key and recover only one exact match.
-        try:
-            current = self._verifier.head_object(Bucket=self._bucket, Key=object_key)
-            version_id = current.get("VersionId")
-            if not version_id or version_id == "null":
-                raise RuntimeError("S3 bucket did not return an immutable version ID")
-            return self._version_from_existing(
-                object_key, version_id, requested_sha=requested_sha, requested_bytes=requested_bytes,
-                logical_hash=logical_hash, idempotency_hash=idempotency_hash,
-                requested_retention=requested_retention, writer_identity=writer_identity,
-            )
-        except ClientError as exc:
-            if not _is_not_found(exc):
-                raise
-
-        response = self._verifier.list_object_versions(Bucket=self._bucket, Prefix=object_key, MaxKeys=1000)
+    def _find_idempotency_version(
+        self, object_key: str, *, requested_sha: str, requested_bytes: bytes,
+        logical_hash: str, idempotency_hash: str, requested_retention: int,
+        writer_identity: str,
+    ) -> Any | None:
+        response = self._verifier.list_object_versions(
+            Bucket=self._bucket, Prefix=object_key, MaxKeys=1000
+        )
         if response.get("IsTruncated") is True:
-            raise RuntimeError("S3 idempotency recovery has more than 1000 versions; refusing ambiguous lookup")
+            raise RuntimeError("S3 version history exceeds 1000 entries; refusing incomplete idempotency lookup")
         matches: list[Any] = []
-        candidates = [item for item in response.get("Versions", []) if item.get("Key") == object_key]
-        for item in candidates:
+        for item in response.get("Versions", []):
+            if item.get("Key") != object_key:
+                continue
             version_id = item.get("VersionId")
             if not version_id or version_id == "null":
                 raise RuntimeError("S3 version listing contains a null version ID")
@@ -284,9 +273,24 @@ class AWSS3EvidenceObjectStore:
                     logical_hash=logical_hash, idempotency_hash=idempotency_hash,
                     requested_retention=requested_retention, writer_identity=writer_identity,
                 ))
-        if len(matches) != 1:
-            raise _contract_types().ObjectIdempotencyConflict("S3 exact-version history is missing or ambiguous for this idempotency key")
-        return matches[0]
+        if len(matches) > 1:
+            raise _contract_types().ObjectIdempotencyConflict(
+                "S3 version history contains multiple versions for the same idempotency key"
+            )
+        return matches[0] if matches else None
+
+    def _current_etag(self, object_key: str) -> str | None:
+        try:
+            current = self._verifier.head_object(Bucket=self._bucket, Key=object_key)
+        except ClientError as exc:
+            if _is_not_found(exc):
+                return None
+            raise
+        version_id = current.get("VersionId")
+        etag = current.get("ETag")
+        if not version_id or version_id == "null" or not isinstance(etag, str) or not etag:
+            raise RuntimeError("current S3 object lacks a non-null version ID or ETag")
+        return etag
 
     def put_immutable(
         self, object_key: str, content: bytes, *, retention_until: int,
@@ -309,33 +313,58 @@ class AWSS3EvidenceObjectStore:
             "logical-object-key-sha256": logical_hash,
             "idempotency-key-sha256": idempotency_hash,
         }
-        try:
-            response = self._writer.put_object(
-                Bucket=self._bucket,
-                Key=key,
-                Body=content,
-                ContentLength=len(content),
-                ContentType="application/octet-stream",
-                ChecksumSHA256=checksum,
-                IfNoneMatch="*",
-                ObjectLockMode="COMPLIANCE",
-                ObjectLockRetainUntilDate=retain_until,
-                Metadata=metadata,
-            )
-        except ClientError as exc:
-            if _error_code(exc) not in {"PreconditionFailed", "ConditionalRequestConflict", "412", "409"}:
-                raise
-            return self._resolve_existing(
+
+        # S3 object versioning is the history mechanism: first put is conditional
+        # on absence; subsequent logical versions are conditional on the exact
+        # current ETag. A 409/412 refreshes the history and retries only a bounded
+        # number of times. Exact idempotency retries return the original VersionId.
+        for _attempt in range(5):
+            prior = self._find_idempotency_version(
                 key, requested_sha=sha, requested_bytes=content, logical_hash=logical_hash,
                 idempotency_hash=idempotency_hash, requested_retention=retention_until,
                 writer_identity=writer_identity,
             )
+            if prior is not None:
+                return prior
 
-        version_id = response.get("VersionId")
-        if not isinstance(version_id, str) or not version_id or version_id == "null":
-            raise RuntimeError("S3 PutObject returned no immutable VersionId")
-        return _contract_types().ObjectVersion(key, version_id, sha, len(content))
+            current_etag = self._current_etag(key)
+            request = {
+                "Bucket": self._bucket,
+                "Key": key,
+                "Body": content,
+                "ContentLength": len(content),
+                "ContentType": "application/octet-stream",
+                "ChecksumSHA256": checksum,
+                "ObjectLockMode": "COMPLIANCE",
+                "ObjectLockRetainUntilDate": retain_until,
+                "Metadata": metadata,
+            }
+            if current_etag is None:
+                request["IfNoneMatch"] = "*"
+            else:
+                request["IfMatch"] = current_etag
+            try:
+                response = self._writer.put_object(**request)
+            except ClientError as exc:
+                if _error_code(exc) in {"PreconditionFailed", "ConditionalRequestConflict", "412", "409"}:
+                    continue
+                raise
 
+            version_id = response.get("VersionId")
+            if not isinstance(version_id, str) or not version_id or version_id == "null":
+                raise RuntimeError("S3 PutObject returned no immutable VersionId")
+            return _contract_types().ObjectVersion(key, version_id, sha, len(content))
+
+        # A bounded optimistic retry is safer than silently falling back to a
+        # non-conditional write when concurrent version creators keep racing.
+        prior = self._find_idempotency_version(
+            key, requested_sha=sha, requested_bytes=content, logical_hash=logical_hash,
+            idempotency_hash=idempotency_hash, requested_retention=retention_until,
+            writer_identity=writer_identity,
+        )
+        if prior is not None:
+            return prior
+        raise RuntimeError("S3 conditional version append kept conflicting; no non-conditional fallback was attempted")
     def get_exact_version(self, object_key: str, version_id: str, *, reader_identity: str) -> bytes:
         if reader_identity != self._verifier_identity or reader_identity == self._writer_identity:
             raise PermissionError("evidence readback must use the independently authenticated verifier principal")
@@ -483,19 +512,23 @@ class FakeS3Client:
 
     def put_object(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(("put_object", kwargs))
-        if kwargs.get("IfNoneMatch") != "*" or kwargs.get("ObjectLockMode") != "COMPLIANCE":
-            raise AssertionError("S3 writes must be conditional and request COMPLIANCE Object Lock")
+        if ("IfNoneMatch" not in kwargs and "IfMatch" not in kwargs) or kwargs.get("ObjectLockMode") != "COMPLIANCE":
+            raise AssertionError("S3 writes must use If-None-Match or If-Match and request COMPLIANCE Object Lock")
         if kwargs.get("ChecksumSHA256") != base64.b64encode(hashlib.sha256(kwargs["Body"]).digest()).decode("ascii"):
             raise AssertionError("S3 write checksum does not match the exact request bytes")
         key = kwargs["Key"]
         with self._state.lock:
             versions = self._state.versions.setdefault(key, [])
-            if versions and not versions[-1].get("delete_marker"):
+            current = versions[-1] if versions and not versions[-1].get("delete_marker") else None
+            if "IfNoneMatch" in kwargs and current is not None:
+                raise self._error("PreconditionFailed")
+            if "IfMatch" in kwargs and (current is None or current["ETag"] != kwargs["IfMatch"]):
                 raise self._error("PreconditionFailed")
             version_id = "s3-version-" + uuid.uuid4().hex
             record = {
                 "Key": key,
                 "VersionId": version_id,
+                "ETag": '"' + hashlib.md5(kwargs["Body"]).hexdigest() + '"',
                 "Body": bytes(kwargs["Body"]),
                 "Metadata": dict(kwargs["Metadata"]),
                 "ObjectLockMode": kwargs["ObjectLockMode"],
@@ -521,7 +554,7 @@ class FakeS3Client:
         self.calls.append(("head_object", kwargs))
         item = self._find(kwargs["Key"], kwargs.get("VersionId"))
         return {name: item[name] for name in (
-            "VersionId", "Metadata", "ObjectLockMode", "ObjectLockRetainUntilDate", "ContentLength"
+            "VersionId", "ETag", "Metadata", "ObjectLockMode", "ObjectLockRetainUntilDate", "ContentLength"
         )}
 
     def get_object(self, **kwargs: Any) -> dict[str, Any]:
