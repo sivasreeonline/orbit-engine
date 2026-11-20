@@ -35,7 +35,7 @@ func signedFixture(t *testing.T) (QualificationEvidenceManifest, memoryEvidence,
 	private := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x5a}, ed25519.SeedSize))
 	public := private.Public().(ed25519.PublicKey)
 	manifest.Review.Attestation = EvidenceReference{
-		Path:     "evidence/review.json",
+		Path:      "evidence/review.json",
 		MediaType: "application/json",
 	}
 	signingBytes, err := manifestSigningBytes(manifest)
