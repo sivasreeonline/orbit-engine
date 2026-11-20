@@ -230,8 +230,8 @@ class S3EvidenceObjectStore:
     def get_exact_version(self, object_key: str, version_id: str, *, reader_identity: str) -> bytes:
         if not isinstance(reader_identity, str) or reader_identity != self._verifier_identity:
             raise PermissionError("readback identity does not match the configured independent verifier principal")
-        if not isinstance(version_id, str) or not version_id or version_id == "latest" or version_id == "null":
-            raise ValueError("an exact non-null S3 VersionId is required")
+        if not isinstance(version_id, str) or not version_id or version_id in {"latest", "null"}:
+            raise _contract_types().ObjectVersionNotFound("an exact non-null S3 VersionId is required")
         response = self._verifier.get_object(
             Bucket=self._bucket,
             Key=object_key,
