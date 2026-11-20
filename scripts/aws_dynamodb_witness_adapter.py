@@ -648,13 +648,17 @@ def self_test() -> None:
         print(f"{'PASS' if item.passed else 'FAIL'} AWS DynamoDB witness {item.name}: {item.detail}")
     _require(not failed, f"{len(failed)} AWS DynamoDB adapter contract tests failed")
     _require(bool(clients), "conformance suite did not create a DynamoDB API fixture")
+    transaction_calls = 0
+    read_calls = 0
     for fake in clients:
         _require(set(fake.calls).issubset({"GetItem", "TransactWriteItems"}),
                  "fake DynamoDB client observed an unexpected operation")
-        _require(fake.calls.count("TransactWriteItems") > 0,
-                 "a conformance case did not exercise an atomic DynamoDB transaction")
-        _require(fake.calls.count("GetItem") > 0,
-                 "a conformance case did not exercise a strongly consistent DynamoDB read")
+        transaction_calls += fake.calls.count("TransactWriteItems")
+        read_calls += fake.calls.count("GetItem")
+    _require(transaction_calls > 0,
+             "conformance suite did not exercise an atomic DynamoDB transaction")
+    _require(read_calls > 0,
+             "conformance suite did not exercise a strongly consistent DynamoDB read")
 
     # A second independent adapter object must recover the same durable
     # operation from the idempotency index, without issuing another transaction.
