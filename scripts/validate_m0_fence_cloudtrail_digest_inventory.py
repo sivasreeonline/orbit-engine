@@ -509,7 +509,7 @@ def run_fixture_tests() -> int:
         try:
             reconcile_inventory(report, inventory, bad_pages)
         except ValueError as error:
-            if "not covered by the verified chain" not in str(error):
+            if "not covered by the verified standard chain" not in str(error):
                 raise
             cases += 1
         else:
