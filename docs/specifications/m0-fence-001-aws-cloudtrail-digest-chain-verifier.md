@@ -29,7 +29,7 @@ For each digest in the supplied latest-to-oldest chain, the verifier:
 9. Follows the exact previous digest bucket/key/signature/hash binding, checks predecessor hash and chronological order, and rejects partial links, cycles and excessive chain depth.
 10. Records exact object version IDs, hashes and byte counts in the verification report.
 
-An empty `logFiles` array is valid; it represents a digest interval in which no log files were delivered. Backfill digests are explicitly rejected by this first slice because AWS documents them as a separate chain.
+An empty `logFiles` array is valid; it represents a digest interval in which no log files were delivered. Standard and backfill digest chains are now verified through separate invocations. Backfill digest keys must end in `_backfill.json.gz`, and every backfill digest object must carry the S3 user metadata `backfill-generation-timestamp`. Regional public keys are requested for the one-hour window before and after that generation timestamp, matching the AWS CLI behavior. The report labels each digest `STANDARD` or `BACKFILL` and preserves the generation timestamp.
 
 ## Important AWS compatibility qualification
 
