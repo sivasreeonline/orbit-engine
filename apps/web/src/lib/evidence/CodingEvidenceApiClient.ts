@@ -150,10 +150,33 @@ export class CodingEvidenceApiClient {
     }
     const payload = {
       events: events.map((record) => ({
-        event: record.event as EditorEvidenceEvent,
-        ...(record.snapshot
-          ? { snapshot: record.snapshot as EditorEvidenceSnapshot }
-          : {}),
+        // The browser collector retains problem/version metadata for local
+        // context. The API session already owns that identity, so send only
+        // the server's allowlisted event fields.
+        event: {
+          eventId: record.event.eventId,
+          sessionId: record.event.sessionId,
+          sequence: record.event.sequence,
+          eventType: record.event.eventType,
+          occurredAt: record.event.occurredAt,
+          language: record.event.language,
+          ...(record.event.snapshotId ? { snapshotId: record.event.snapshotId } : {}),
+          ...(record.event.contentSha256 ? { contentSha256: record.event.contentSha256 } : {}),
+          ...(record.event.metadata ? { metadata: record.event.metadata } : {}),
+        },
+        ...(record.snapshot ? {
+          snapshot: {
+            snapshotId: record.snapshot.snapshotId,
+            sessionId: record.snapshot.sessionId,
+            sequence: record.snapshot.sequence,
+            kind: record.snapshot.kind,
+            language: record.snapshot.language,
+            sourceCode: record.snapshot.sourceCode,
+            sourceByteLength: record.snapshot.sourceByteLength,
+            contentSha256: record.snapshot.contentSha256,
+            capturedAt: record.snapshot.capturedAt,
+          },
+        } : {}),
       })),
     };
     const response = await this.request(
