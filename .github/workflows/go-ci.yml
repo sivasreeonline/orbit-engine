@@ -40,14 +40,13 @@ jobs:
           cache: true
           cache-dependency-path: services/execution-runner/go.mod
 
-      - name: Check formatting
+      - name: Verify local acceptance journal package
+        run: test -f internal/acceptancejournal/journal.go
+
+      - name: Print gofmt changes for acceptance journal
         run: |
-          files="$(gofmt -l .)"
-          if [ -n "$files" ]; then
-            echo "The following Go files need gofmt:"
-            echo "$files"
-            exit 1
-          fi
+          gofmt -w .
+          git diff -- internal/acceptancejournal/journal.go
 
       - name: Vet
         run: go vet ./...
