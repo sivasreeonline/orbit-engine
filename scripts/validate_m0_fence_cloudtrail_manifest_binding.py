@@ -343,7 +343,19 @@ def validate_cloudtrail_manifest(
             digest, digest_bytes, key_bytes, body["providerScope"]["account"],
             body["providerScope"]["region"],
         )
-        for log in digest["logs"]:
+        source_logs = document.get("logFiles")
+        if not isinstance(source_logs, list) or len(source_logs) != len(digest["logs"]):
+            raise ValueError("CloudTrail digest logFiles inventory differs from the verification report")
+        report_logs = {(item["bucket"], item["key"]): item for item in digest["logs"]}
+        for source_log in source_logs:
+            if not isinstance(source_log, dict):
+                raise ValueError("CloudTrail digest logFiles entry is malformed")
+            source_identity = (source_log.get("s3Bucket"), source_log.get("s3Object"))
+            log = report_logs.get(source_identity)
+            if log is None:
+                raise ValueError("CloudTrail report omits a log referenced by the signed digest")
+            if source_log.get("hashAlgorithm") != "SHA-256" or source_log.get("hashValue") != log["uncompressedSha256"]:
+                raise ValueError("CloudTrail log report hash differs from the digest's signed log hash")
             log_identity = (
                 "CLOUDTRAIL_LOG", object_ref(log["bucket"], log["key"]),
                 log["versionId"], log["rawSha256"],
@@ -370,6 +382,8 @@ def validate_cloudtrail_manifest(
             predecessor = report["digests"][index + 1]
             if previous_bucket != predecessor["bucket"] or previous != predecessor["key"]:
                 raise ValueError("CloudTrail report order does not match previous digest bucket/key linkage")
+            if document.get("previousDigestHashAlgorithm") != "SHA-256":
+                raise ValueError("CloudTrail previousDigestHashAlgorithm is not SHA-256")
             if previous_hash != predecessor["uncompressedSha256"]:
                 raise ValueError("CloudTrail previousDigestHashValue does not match predecessor evidence")
             if previous_signature != predecessor["signatureHex"]:
