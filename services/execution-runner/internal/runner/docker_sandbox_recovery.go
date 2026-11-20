@@ -251,18 +251,31 @@ func (cli OSCommandDockerCLI) DiscoverByRunnerLabel(
 }
 
 
-// boundedCommandBuffer rejects output beyond its configured ceiling instead of
-// silently truncating data that is required for exact recovery correlation.
+// boundedCommandBuffer retains at most its configured ceiling while
+// continuing to drain the subprocess pipe. Returning a write error on overflow
+// would stop io.Copy and could leave a verbose child blocked on a full pipe.
 type boundedCommandBuffer struct {
-	buffer bytes.Buffer
-	limit int
+	buffer   bytes.Buffer
+	limit    int
+	exceeded bool
 }
 
 func (buffer *boundedCommandBuffer) Write(value []byte) (int, error) {
-	if len(value) > buffer.limit-buffer.buffer.Len() {
-		return 0, ErrDockerCommandFailed
+	originalLength := len(value)
+	remaining := buffer.limit - buffer.buffer.Len()
+	if remaining > 0 {
+		toWrite := value
+		if len(toWrite) > remaining {
+			toWrite = toWrite[:remaining]
+		}
+		_, _ = buffer.buffer.Write(toWrite)
 	}
-	return buffer.buffer.Write(value)
+	if originalLength > remaining {
+		buffer.exceeded = true
+	}
+	// Report the full write as consumed so os/exec keeps draining the pipe.
+	// The command is rejected after it exits if either stream exceeded its cap.
+	return originalLength, nil
 }
 
 func runBoundedDockerCommand(command *exec.Cmd, stdoutLimit int) ([]byte, error) {
@@ -270,7 +283,7 @@ func runBoundedDockerCommand(command *exec.Cmd, stdoutLimit int) ([]byte, error)
 	stderr := &boundedCommandBuffer{limit: maxDockerStderrBytes}
 	command.Stdout = stdout
 	command.Stderr = stderr
-	if err := command.Run(); err != nil {
+	if err := command.Run(); err != nil || stdout.exceeded || stderr.exceeded {
 		return nil, ErrDockerCommandFailed
 	}
 	return stdout.buffer.Bytes(), nil
