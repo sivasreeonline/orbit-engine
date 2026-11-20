@@ -152,7 +152,8 @@
                     "CT-005",
                     "CT-006",
                     "CT-007",
-                    "CT-008"
+                    "CT-008",
+                    "CT-009"
                   ]
                 }
               },
@@ -171,7 +172,8 @@
                   "CLOUDTRAIL_PUBLIC_KEY",
                   "CLOUDTRAIL_VERIFICATION_REPORT",
                   "CLOUDTRAIL_DIGEST_INVENTORY",
-                  "CLOUDTRAIL_INVENTORY_PAGE"
+                  "CLOUDTRAIL_INVENTORY_PAGE",
+                  "AWS_STS_CALLER_IDENTITY"
                 ]
               },
               "objectRef": {
