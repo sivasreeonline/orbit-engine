@@ -78,6 +78,7 @@ def adapter_factory() -> S3EvidenceObjectStore:
         bucket_name="synthetic-fence-evidence",
         key_prefix="qualification-test",
         writer_identity="synthetic-collector",
+        verifier_identity="synthetic-verifier",
     )
 
 
@@ -93,6 +94,7 @@ def run_negative_tests() -> None:
     store = S3EvidenceObjectStore(
         writer, verifier, bucket_name="synthetic-fence-evidence",
         key_prefix="qualification-test", writer_identity="synthetic-collector",
+        verifier_identity="synthetic-verifier",
     )
 
     try:
