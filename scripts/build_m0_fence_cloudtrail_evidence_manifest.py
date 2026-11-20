@@ -305,7 +305,7 @@ def build_manifest(
         "createdAt": acquired_at,
         "testOnly": index["testOnly"],
         "providerScope": {
-            "name": "AWS CloudTrail log file integrity validation",
+            "name": "aws",
             "account": report["accountId"],
             "region": report["region"],
             "service": "cloudtrail",
