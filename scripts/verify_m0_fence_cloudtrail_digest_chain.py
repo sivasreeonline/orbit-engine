@@ -7,6 +7,7 @@ ListPublicKeys provider. CI exercises only synthetic RSA keys and gzip files.
 """
 from __future__ import annotations
 
+import base64
 import gzip
 import hashlib
 import io
@@ -64,6 +65,7 @@ class VerifiedDigest:
     signature_fingerprint: str
     public_key_der_sha256: str
     public_key_der_byte_count: int
+    public_key_der_base64: str
     public_key_validity_start: str
     public_key_validity_end: str
     digest_start_time: str
@@ -116,6 +118,7 @@ class VerificationReport:
                         "fingerprint": digest.signature_fingerprint,
                         "derSha256": digest.public_key_der_sha256,
                         "derByteCount": digest.public_key_der_byte_count,
+                        "derBase64": digest.public_key_der_base64,
                         "validityStartTime": digest.public_key_validity_start,
                         "validityEndTime": digest.public_key_validity_end,
                     },
@@ -452,6 +455,7 @@ class CloudTrailDigestChainVerifier:
                     signature_fingerprint=fingerprint,
                     public_key_der_sha256=hashlib.sha256(public_key_der).hexdigest(),
                     public_key_der_byte_count=len(public_key_der),
+                    public_key_der_base64=base64.b64encode(public_key_der).decode("ascii"),
                     public_key_validity_start=key_valid_from.isoformat().replace("+00:00", "Z"),
                     public_key_validity_end=key_valid_to.isoformat().replace("+00:00", "Z"),
                     digest_start_time=document["digestStartTime"],
