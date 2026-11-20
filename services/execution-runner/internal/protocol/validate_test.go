@@ -95,7 +95,13 @@ func TestExecutionRequestValidateAtRejectsExpiredAndFutureRequests(t *testing.T)
 		mutate func(*ExecutionRequest)
 	}{
 		{"expired", func(r *ExecutionRequest) { r.ExpiresAt = now }},
-		{"issued too far in future", func(r *ExecutionRequest) { r.IssuedAt = now.Add(maximumFutureClockSkew + time.Second); r.ExpiresAt = now.Add(time.Hour) }},
+		{
+			"issued too far in future",
+			func(r *ExecutionRequest) {
+				r.IssuedAt = now.Add(maximumFutureClockSkew + time.Second)
+				r.ExpiresAt = now.Add(time.Hour)
+			},
+		},
 		{"expiry before issue", func(r *ExecutionRequest) { r.IssuedAt = now.Add(time.Minute); r.ExpiresAt = now.Add(time.Second) }},
 		{"missing expiry", func(r *ExecutionRequest) { r.ExpiresAt = time.Time{} }},
 		{"non UTC issue time", func(r *ExecutionRequest) { r.IssuedAt = r.IssuedAt.In(time.FixedZone("UTC+1", 3600)) }},
