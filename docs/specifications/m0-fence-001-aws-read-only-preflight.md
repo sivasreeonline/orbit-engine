@@ -161,11 +161,15 @@ DynamoDB Local is a development/test service. Passing these tests validates adap
 ### Live AWS mode safety boundary
 
 The adapter never creates a live table. Without a loopback endpoint, it refuses to initialize unless the operator supplies the exact live-write opt-in token plus:
-- a pinned 12-digit AWS account and assumed-role ARN prefix;
-- an existing ACTIVE witness table whose ARN matches the pinned account and Region;
-- a unique qualification run ID and an approval ID explicitly bound to that run;
-- an unexpired timezone-aware approval; and
+- a pinned 12-digit AWS account, Region, exact table ARN and assumed-role ARN prefix;
+- an existing ACTIVE witness table whose ARN, Region and `PK`/`SK` key schema match the pinned configuration;
+- a unique qualification run ID and approval ID;
+- a non-symlink approval JSON file that binds the approval profile, run, account, Region, table ARN, caller-role prefix, operation, approver identity and validity window;
+- the SHA-256 of the exact read-only preflight report bytes inside that approval file;
+- a preflight report whose result is `READY_FOR_READ_ONLY_AWS_ADAPTER_IMPLEMENTATION`, whose run/account/Region/table pins match, and whose mutation, privileged-attempt, restore, production-approval and host-admission flags are all false; and
 - explicit `environment=QUALIFICATION`, `disposable=true`, `production=false`, and `admissionEnabled=false` flags.
+
+The approval file is a local operator guard, not a cryptographically signed independent-review attestation. It does not replace the separate provider approval, independent verifier, evidence-retention attestations or security review required by FENCE-001. CI tests valid scope binding, report tampering, expiry, overlong approval windows, mutation claims and default refusal to enter live mode using synthetic files only.
 
 This code path has not been used. No AWS account or credentials are available in the current development environment, so live mode remains untested and is not considered qualified.
 
