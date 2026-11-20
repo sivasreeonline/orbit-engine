@@ -173,22 +173,24 @@ def reconcile_inventory(
                 inventory_standard[key] = current
 
     report_standard: dict[str, dict[str, Any]] = {}
+    report_backfill: dict[str, dict[str, Any]] = {}
     for digest in report.get("digests", []):
         if not isinstance(digest, dict):
             raise ValueError("verification report digest entry is malformed")
         digest_end = parse_utc(digest.get("digestEndTime"), "digestEndTime")
         if start <= digest_end <= end:
             key = digest.get("key")
-            if key in report_standard:
+            target = report_backfill if digest.get("chainType", "STANDARD") == "BACKFILL" else report_standard
+            if key in target:
                 raise ValueError("verification report contains duplicate digest keys in requested range")
-            report_standard[key] = digest
+            target[key] = digest
 
     unlinked = sorted(set(inventory_standard) - set(report_standard))
     if unlinked:
-        raise ValueError(f"inventory contains digest keys not covered by the verified chain: {unlinked}")
+        raise ValueError(f"inventory contains digest keys not covered by the verified standard chain: {unlinked}")
     missing = sorted(set(report_standard) - set(inventory_standard))
     if missing:
-        raise ValueError(f"verified chain contains digest keys missing from inventory: {missing}")
+        raise ValueError(f"verified standard chain contains digest keys missing from inventory: {missing}")
 
     for key, current in inventory_standard.items():
         digest = report_standard[key]
@@ -199,7 +201,29 @@ def reconcile_inventory(
         if key_end != digest_end:
             raise ValueError(f"digest filename timestamp differs from digestEndTime: {key}")
 
+    unverified_backfill = sorted(set(inventory_backfill) - set(report_backfill))
+    missing_backfill = sorted(set(report_backfill) - set(inventory_backfill))
+    if missing_backfill:
+        raise ValueError(f"verified backfill chain contains digest keys missing from inventory: {missing_backfill}")
+    for key in set(inventory_backfill) & set(report_backfill):
+        current = versions_by_key[key]
+        latest = next(item for item in current if item["isLatest"])
+        digest = report_backfill[key]
+        if digest.get("versionId") != latest["versionId"]:
+            raise ValueError(f"verified backfill digest did not use the latest S3 version: {key}")
+        key_end, _ = _digest_key_time(key)
+        if key_end != parse_utc(digest.get("digestEndTime"), "digestEndTime"):
+            raise ValueError(f"backfill digest filename timestamp differs from digestEndTime: {key}")
+
     backfill_present = bool(inventory_backfill)
+    backfill_verified = backfill_present and not unverified_backfill
+    complete = not backfill_present or backfill_verified
+    if backfill_verified:
+        status = "STANDARD_AND_BACKFILL_INVENTORY_RECONCILED"
+    elif backfill_present:
+        status = "STANDARD_CHAIN_RECONCILED_BACKFILL_UNVERIFIED"
+    else:
+        status = "STANDARD_CHAIN_INVENTORY_RECONCILED"
     return {
         "profile": "sky-high-cloudtrail-digest-inventory-reconciliation-v1",
         "schemaVersion": 1,
@@ -209,20 +233,24 @@ def reconcile_inventory(
         "bucket": bucket,
         "requestedStartTime": inventory["requestedStartTime"],
         "requestedEndTime": inventory["requestedEndTime"],
-        "status": "STANDARD_CHAIN_RECONCILED_BACKFILL_PRESENT" if backfill_present else "STANDARD_CHAIN_INVENTORY_RECONCILED",
-        "completeWithinCapturedStandardInventory": not backfill_present,
+        "status": status,
+        "completeWithinCapturedStandardInventory": True,
+        "completeWithinCapturedInventory": complete,
+        "backfillVerified": backfill_verified,
         "absoluteSnapshotCompleteness": "NOT_PROVEN_NON_ATOMIC_LISTOBJECTVERSIONS_PAGINATION",
         "paginationPageCount": len(pages),
         "inventoryKeyCountInRange": len(inventory_standard) + len(inventory_backfill),
         "verifiedStandardDigestCountInRange": len(report_standard),
+        "verifiedBackfillDigestCountInRange": len(report_backfill),
         "backfillDigestCountInRange": len(inventory_backfill),
+        "unverifiedBackfillDigestKeys": unverified_backfill,
         "objectVersionCount": version_count,
         "deleteMarkerKeysInRange": delete_marker_keys,
         "unlinkedStandardDigestKeys": unlinked,
         "missingInventoryDigestKeys": missing,
         "limitations": [
             "ListObjectVersions pagination is captured and internally reconciled but is not an atomic snapshot across pages.",
-            "Backfill digests are detected but not verified by the standard-chain verifier.",
+            "Backfill digests are a separate chain and are only considered reconciled when their own verified report records are present.",
             "This result does not establish that CloudTrail delivered every event or that no delivery gap occurred outside the captured S3 inventory scope.",
         ],
     }
