@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os/exec"
 	"regexp"
@@ -14,12 +15,22 @@ import (
 	"time"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 )
 
 var (
 	ErrDockerCommandFailed = errors.New("docker sandbox command failed")
-	containerIDPattern     = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
-	imageIDPattern         = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	containerIDPattern = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+	imageIDPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	runnerInstanceIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
+)
+
+const (
+	maxDockerRuntimeInfoBytes = 64 * 1024
+	maxDockerImageIDBytes = 128
+	maxDockerCreateOutputBytes = 128
+	maxDockerCLIInspectOutputBytes = 8 * 1024
+	maxDockerCommandStderrBytes = 8 * 1024
 )
 
 const compileSuccessMarker = "__SKYHIGH_COMPILE_OK__\n"
@@ -54,12 +65,14 @@ func (cli OSCommandDockerCLI) binary() string {
 // Preflight verifies that the local daemon exposes runsc and that the exact
 // digest-pinned Java/Python images are already present. It never pulls images.
 func (cli OSCommandDockerCLI) Preflight(ctx context.Context, imageRefs []string) error {
-	if len(imageRefs) != 2 {
+	if ctx == nil || len(imageRefs) != 2 {
 		return ErrDockerCommandFailed
 	}
-	command := exec.CommandContext(ctx, cli.binary(), "info", "--format", "{{json .Runtimes}}")
-	output, err := command.Output()
-	if err != nil {
+	output, err, stdoutExceeded, stderrExceeded := runDockerCommandBounded(
+		ctx, cli.binary(), []string{"info", "--format", "{{json .Runtimes}}"},
+		maxDockerRuntimeInfoBytes,
+	)
+	if err != nil || stdoutExceeded || stderrExceeded {
 		return ErrDockerCommandFailed
 	}
 	var runtimes map[string]struct {
@@ -82,9 +95,12 @@ func (cli OSCommandDockerCLI) Preflight(ctx context.Context, imageRefs []string)
 			continue
 		}
 		seen[imageRef] = struct{}{}
-		inspect := exec.CommandContext(ctx, cli.binary(), "image", "inspect", "--format", "{{.Id}}", imageRef)
-		imageID, err := inspect.Output()
-		if err != nil || !imageIDPattern.MatchString(strings.TrimSpace(string(imageID))) {
+		imageID, err, stdoutExceeded, stderrExceeded := runDockerCommandBounded(
+			ctx, cli.binary(), []string{"image", "inspect", "--format", "{{.Id}}", imageRef},
+			maxDockerImageIDBytes,
+		)
+		if err != nil || stdoutExceeded || stderrExceeded ||
+			!imageIDPattern.MatchString(strings.TrimSpace(string(imageID))) {
 			return ErrDockerCommandFailed
 		}
 	}
@@ -92,13 +108,17 @@ func (cli OSCommandDockerCLI) Preflight(ctx context.Context, imageRefs []string)
 }
 
 func (cli OSCommandDockerCLI) Create(ctx context.Context, args []string) (string, error) {
-	command := exec.CommandContext(ctx, cli.binary(), append([]string{"create"}, args...)...)
-	output, commandErr := command.Output()
-	id := strings.TrimSpace(string(output))
-	if !containerIDPattern.MatchString(id) {
+	if ctx == nil {
 		return "", ErrDockerCommandFailed
 	}
-	if commandErr != nil {
+	output, commandErr, stdoutExceeded, stderrExceeded := runDockerCommandBounded(
+		ctx, cli.binary(), append([]string{"create"}, args...), maxDockerCreateOutputBytes,
+	)
+	id := strings.TrimSpace(string(output))
+	if stdoutExceeded || !containerIDPattern.MatchString(id) {
+		return "", ErrDockerCommandFailed
+	}
+	if commandErr != nil || stderrExceeded {
 		cleanupContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = cli.Remove(cleanupContext, id)
 		cancel()
@@ -114,7 +134,7 @@ func (cli OSCommandDockerCLI) StartAttached(
 	stdout io.Writer,
 	stderr io.Writer,
 ) (int, error) {
-	if !containerIDPattern.MatchString(id) {
+	if ctx == nil || !containerIDPattern.MatchString(id) {
 		return 0, ErrDockerCommandFailed
 	}
 	command := exec.CommandContext(ctx, cli.binary(), "start", "--attach", "--interactive", id)
@@ -133,19 +153,14 @@ func (cli OSCommandDockerCLI) StartAttached(
 }
 
 func (cli OSCommandDockerCLI) Inspect(ctx context.Context, id string) (DockerContainerState, error) {
-	if !containerIDPattern.MatchString(id) {
+	if ctx == nil || !containerIDPattern.MatchString(id) {
 		return DockerContainerState{}, ErrDockerCommandFailed
 	}
-	command := exec.CommandContext(
-		ctx,
-		cli.binary(),
-		"inspect",
-		"--format",
-		"{{json .State}}",
-		id,
+	output, err, stdoutExceeded, stderrExceeded := runDockerCommandBounded(
+		ctx, cli.binary(), []string{"inspect", "--format", "{{json .State}}", id},
+		maxDockerCLIInspectOutputBytes,
 	)
-	output, err := command.Output()
-	if err != nil {
+	if err != nil || stdoutExceeded || stderrExceeded {
 		return DockerContainerState{}, ErrDockerCommandFailed
 	}
 	var state DockerContainerState
@@ -156,7 +171,7 @@ func (cli OSCommandDockerCLI) Inspect(ctx context.Context, id string) (DockerCon
 }
 
 func (cli OSCommandDockerCLI) Remove(ctx context.Context, id string) error {
-	if !containerIDPattern.MatchString(id) {
+	if ctx == nil || !containerIDPattern.MatchString(id) {
 		return ErrDockerCommandFailed
 	}
 	command := exec.CommandContext(ctx, cli.binary(), "rm", "--force", id)
@@ -166,9 +181,55 @@ func (cli OSCommandDockerCLI) Remove(ctx context.Context, id string) error {
 	return nil
 }
 
+type boundedDockerCLIOutput struct {
+	buffer   bytes.Buffer
+	maximum  int
+	exceeded bool
+}
+
+func (capture *boundedDockerCLIOutput) Write(value []byte) (int, error) {
+	originalLength := len(value)
+	remaining := capture.maximum - capture.buffer.Len()
+	if remaining > 0 {
+		toWrite := value
+		if len(toWrite) > remaining {
+			toWrite = toWrite[:remaining]
+		}
+		_, _ = capture.buffer.Write(toWrite)
+	}
+	if originalLength > remaining {
+		capture.exceeded = true
+	}
+	return originalLength, nil
+}
+
+func (capture *boundedDockerCLIOutput) Bytes() []byte {
+	return append([]byte(nil), capture.buffer.Bytes()...)
+}
+
+func runDockerCommandBounded(
+	ctx context.Context,
+	binary string,
+	args []string,
+	stdoutLimit int,
+) ([]byte, error, bool, bool) {
+	if ctx == nil || stdoutLimit <= 0 {
+		return nil, ErrDockerCommandFailed, false, false
+	}
+	command := exec.CommandContext(ctx, binary, args...)
+	stdout := &boundedDockerCLIOutput{maximum: stdoutLimit}
+	stderr := &boundedDockerCLIOutput{maximum: maxDockerCommandStderrBytes}
+	command.Stdout = stdout
+	command.Stderr = stderr
+	err := command.Run()
+	return stdout.Bytes(), err, stdout.exceeded, stderr.exceeded
+}
+
 type DockerSandbox struct {
-	cli            DockerCLI
+	cli DockerCLI
 	cleanupTimeout time.Duration
+	journal *sandboxjournal.Journal
+	runnerInstanceID string
 }
 
 // NewDockerSandbox configures the OCI CLI adapter. Source bytes are streamed
@@ -183,13 +244,23 @@ func NewDockerSandbox(cli DockerCLI) (*DockerSandbox, error) {
 	}, nil
 }
 
+
+ // NewJournaledDockerSandbox creates an execution-capable sandbox. RunCase
+ // refuses to execute unless every container lifecycle is durably journaled.
+func NewJournaledDockerSandbox(cli DockerCLI, journal *sandboxjournal.Journal, runnerInstanceID string) (*DockerSandbox, error) {
+	if cli == nil || journal == nil || !runnerInstanceIDPattern.MatchString(runnerInstanceID) {
+		return nil, ErrSandboxNotConfigured
+	}
+	return &DockerSandbox{cli: cli, cleanupTimeout: 5 * time.Second, journal: journal, runnerInstanceID: runnerInstanceID}, nil
+}
+
 // Preflight is required before the artifact executor may report ready.
 // It checks local prerequisites only and intentionally does not pull images.
 func (sandbox *DockerSandbox) Preflight(
 	ctx context.Context,
 	runtimes RuntimeConfiguration,
 ) error {
-	if sandbox == nil || sandbox.cli == nil {
+	if sandbox == nil || sandbox.cli == nil || ctx == nil {
 		return ErrSandboxNotConfigured
 	}
 	if !imageReferencePattern.MatchString(runtimes.JavaImageRef) ||
@@ -206,6 +277,9 @@ func (sandbox *DockerSandbox) RunCase(
 	parent context.Context,
 	request SandboxRequest,
 ) (SandboxObservation, error) {
+	if sandbox == nil || sandbox.cli == nil || sandbox.journal == nil || parent == nil || !runnerInstanceIDPattern.MatchString(sandbox.runnerInstanceID) {
+		return SandboxObservation{}, ErrSandboxNotConfigured
+	}
 	if err := validateSandboxRequest(request); err != nil {
 		return SandboxObservation{}, err
 	}
@@ -219,6 +293,14 @@ func (sandbox *DockerSandbox) RunCase(
 	if err != nil {
 		return SandboxObservation{}, err
 	}
+	lifecycleID, err := sandbox.journal.Begin(sandbox.runnerInstanceID, request.ExecutionID)
+	if err != nil {
+		return SandboxObservation{}, fmt.Errorf("persist sandbox create intent: %w", err)
+	}
+	args = append(args,
+		"--label", "com.skyhigh.runner-instance="+sandbox.runnerInstanceID,
+		"--label", "com.skyhigh.lifecycle-id="+lifecycleID,
+	)
 	containerID, err := sandbox.cli.Create(runContext, args)
 	if err != nil {
 		if parent.Err() != nil {
@@ -232,12 +314,25 @@ func (sandbox *DockerSandbox) RunCase(
 	if !containerIDPattern.MatchString(containerID) {
 		return SandboxObservation{}, ErrDockerCommandFailed
 	}
+	if err := sandbox.journal.Created(lifecycleID, containerID); err != nil {
+		cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), sandbox.cleanupTimeout)
+		removeErr := sandbox.cli.Remove(cleanupContext, containerID)
+		cleanupCancel()
+		return SandboxObservation{}, errors.Join(
+			fmt.Errorf("persist created sandbox container: %w", err),
+			wrapDockerCleanupError(removeErr),
+		)
+	}
 	containerRemoved := false
 	defer func() {
 		if !containerRemoved {
 			cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), sandbox.cleanupTimeout)
-			_ = sandbox.cli.Remove(cleanupContext, containerID)
+			removeErr := sandbox.cli.Remove(cleanupContext, containerID)
 			cleanupCancel()
+			if removeErr == nil {
+				containerRemoved = true
+				_ = sandbox.journal.Cleaned(lifecycleID)
+			}
 		}
 	}()
 
@@ -269,6 +364,9 @@ func (sandbox *DockerSandbox) RunCase(
 	cleanupCancel()
 	if removeErr == nil {
 		containerRemoved = true
+		if journalErr := sandbox.journal.Cleaned(lifecycleID); journalErr != nil {
+			removeErr = fmt.Errorf("persist sandbox cleanup confirmation: %w", journalErr)
+		}
 	}
 
 	cleanupSucceeded := removeErr == nil
@@ -327,6 +425,13 @@ func (sandbox *DockerSandbox) RunCase(
 		observation.Status = SandboxRuntimeError
 	}
 	return observation, nil
+}
+
+func wrapDockerCleanupError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("remove container after lifecycle journal failure: %w", err)
 }
 
 func validateSandboxRequest(request SandboxRequest) error {

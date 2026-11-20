@@ -44,6 +44,9 @@ func NewSupervisor(worker workerRunner, gate ReadinessGate, config SupervisorCon
 // Run never invokes RunOnce unless the independent qualification gate is true.
 // Cancellation exits promptly; resource ownership remains with the process.
 func (s *Supervisor) Run(ctx context.Context) error {
+	if ctx == nil {
+		return ErrExecutionContextRequired
+	}
 	if s == nil || s.worker == nil || s.gate == nil {
 		return errors.New("runner supervisor is not configured")
 	}

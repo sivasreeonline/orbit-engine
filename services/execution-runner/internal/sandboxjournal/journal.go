@@ -1,0 +1,673 @@
+package sandboxjournal
+
+import (
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	formatVersion = 1
+	maxJournalSize = 64 << 20
+	maxRecordSize = 1 << 20
+)
+
+var (
+	ErrClosed = errors.New("sandbox lifecycle journal is closed")
+	ErrConflict = errors.New("sandbox lifecycle transition conflict")
+	ErrNotFound = errors.New("sandbox lifecycle record not found")
+	ErrLocked = errors.New("sandbox lifecycle journal already has an owner")
+	ErrReadOnly = errors.New("sandbox lifecycle journal is read-only")
+	ErrAppendUncertain = errors.New("sandbox lifecycle journal append outcome is uncertain; reopen for recovery")
+	runnerIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
+	executionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+	containerIDPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
+
+type EventType string
+
+const (
+	EventCreateIntent EventType = "CREATE_INTENT"
+	EventCreated EventType = "CREATED"
+	EventCleaned EventType = "CLEANED"
+)
+
+// Event is append-only. It intentionally contains identifiers and lifecycle
+// metadata only; source code, stdin, outputs and test fixtures never belong here.
+type Event struct {
+	Version int `json:"version"`
+	Sequence uint64 `json:"sequence"`
+	Type EventType `json:"type"`
+	LifecycleID string `json:"lifecycleId"`
+	RunnerInstanceID string `json:"runnerInstanceId"`
+	ExecutionID string `json:"executionId"`
+	ContainerID string `json:"containerId,omitempty"`
+	At time.Time `json:"at"`
+}
+
+type Lifecycle struct {
+	LifecycleID string
+	RunnerInstanceID string
+	ExecutionID string
+	ContainerID string
+	Created bool
+	Cleaned bool
+	LastSequence uint64
+}
+
+type Journal struct {
+	mu sync.Mutex
+	file *os.File
+	path string
+	lockPath string
+	lockToken string
+	sequence uint64
+	records map[string]Lifecycle
+	closed bool
+	fileClosed bool
+	lockReleased bool
+	readOnly bool
+	appendUncertain bool
+	syncFn func(*os.File) error
+}
+
+func Open(path string) (*Journal, error) {
+	return openJournal(path, false)
+}
+
+// OpenReadOnly acquires the journal ownership lock and validates the existing
+// journal without repairing or truncating it. An incomplete final record is
+// reported as an error for operator review.
+func OpenReadOnly(path string) (*Journal, error) {
+	return openJournal(path, true)
+}
+
+func openJournal(path string, readOnly bool) (*Journal, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("sandbox lifecycle journal path is required")
+	}
+	directory, err := filepath.Abs(filepath.Dir(path))
+	if err != nil {
+		return nil, fmt.Errorf("resolve sandbox journal directory: %w", err)
+	}
+	if !readOnly {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			return nil, fmt.Errorf("create sandbox journal directory: %w", err)
+		}
+	}
+	resolvedDirectory, err := filepath.EvalSymlinks(directory)
+	if err != nil {
+		return nil, fmt.Errorf("resolve sandbox journal directory symlinks: %w", err)
+	}
+	directory = resolvedDirectory
+	directoryInfo, err := os.Stat(directory)
+	if err != nil {
+		return nil, fmt.Errorf("inspect sandbox journal directory: %w", err)
+	}
+	if !directoryInfo.IsDir() || directoryInfo.Mode().Perm()&0o077 != 0 {
+		return nil, errors.New("sandbox lifecycle journal directory must be private to its owner")
+	}
+	canonical := filepath.Join(directory, filepath.Base(path))
+	lockPath := canonical + ".lock"
+	token, err := acquireLock(lockPath)
+	if err != nil {
+		return nil, err
+	}
+	releaseOnError := true
+	defer func() {
+		if releaseOnError {
+			_ = releaseLock(lockPath, token)
+		}
+	}()
+
+	initialInfo, statBeforeOpenErr := os.Lstat(canonical)
+	if statBeforeOpenErr == nil {
+		if initialInfo.Mode()&os.ModeSymlink != 0 || !initialInfo.Mode().IsRegular() {
+			return nil, errors.New("sandbox lifecycle journal must be a regular non-symlink file")
+		}
+		if initialInfo.Mode().Perm()&0o077 != 0 {
+			return nil, errors.New("sandbox lifecycle journal permissions must exclude group and other access")
+		}
+	} else if !errors.Is(statBeforeOpenErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("inspect sandbox lifecycle journal: %w", statBeforeOpenErr)
+	}
+	var file *os.File
+	if readOnly {
+		if errors.Is(statBeforeOpenErr, os.ErrNotExist) {
+			return nil, errors.New("sandbox lifecycle journal does not exist")
+		}
+		file, err = os.Open(canonical)
+	} else {
+		file, err = os.OpenFile(canonical, os.O_CREATE|os.O_RDWR, 0o600)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open sandbox lifecycle journal: %w", err)
+	}
+	openedInfo, statErr := file.Stat()
+	if statErr != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("stat opened sandbox lifecycle journal: %w", statErr)
+	}
+	currentInfo, pathStatErr := os.Lstat(canonical)
+	if pathStatErr != nil || currentInfo.Mode()&os.ModeSymlink != 0 ||
+		!currentInfo.Mode().IsRegular() || !os.SameFile(openedInfo, currentInfo) ||
+		(statBeforeOpenErr == nil && !os.SameFile(initialInfo, openedInfo)) {
+		_ = file.Close()
+		return nil, errors.New("sandbox lifecycle journal path changed during open")
+	}
+	if !readOnly {
+		if err := file.Chmod(0o600); err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("secure sandbox lifecycle journal: %w", err)
+		}
+	}
+	if !readOnly && errors.Is(statBeforeOpenErr, os.ErrNotExist) {
+		if err := syncDirectory(directory); err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("persist sandbox lifecycle journal directory entry: %w", err)
+		}
+	}
+	journal := &Journal{
+		file: file, path: canonical, lockPath: lockPath, lockToken: token,
+		records: make(map[string]Lifecycle),
+		readOnly: readOnly,
+	}
+	if err := journal.recover(); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	releaseOnError = false
+	return journal, nil
+}
+
+func acquireLock(path string) (string, error) {
+	return acquireLockWithSync(path, syncDirectory)
+}
+
+// acquireLockWithSync isolates the directory durability boundary for tests.
+func acquireLockWithSync(path string, syncDir func(string) error) (string, error) {
+	return acquireLockWithHooks(path, syncDir, func(file *os.File) error {
+		return file.Sync()
+	})
+}
+
+// acquireLockWithHooks makes the file and directory durability boundaries
+// independently testable. A failed write, file sync or close must not strand
+// an unusable lock when the path still names the inode created by this call.
+func acquireLockWithHooks(path string, syncDir func(string) error, syncFile func(*os.File) error) (string, error) {
+	tokenBytes := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, tokenBytes); err != nil {
+		return "", fmt.Errorf("generate sandbox journal lock token: %w", err)
+	}
+	token := hex.EncodeToString(tokenBytes)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return "", fmt.Errorf("%w: %s", ErrLocked, path)
+		}
+		return "", fmt.Errorf("create sandbox journal lock: %w", err)
+	}
+	createdInfo, infoErr := file.Stat()
+	payload, marshalErr := json.Marshal(struct {
+		PID int `json:"pid"`
+		Token string `json:"token"`
+		CreatedAt time.Time `json:"createdAt"`
+	}{os.Getpid(), token, time.Now().UTC()})
+	if marshalErr == nil {
+		var written int
+		written, marshalErr = file.Write(payload)
+		if marshalErr == nil && written != len(payload) {
+			marshalErr = io.ErrShortWrite
+		}
+	}
+	if marshalErr == nil {
+		marshalErr = syncFile(file)
+	}
+	closeErr := file.Close()
+	if infoErr != nil || marshalErr != nil || closeErr != nil {
+		cleanupErr := errors.New("cannot safely identify newly created sandbox journal lock")
+		if infoErr == nil {
+			cleanupErr = removeCreatedLock(path, createdInfo, syncDir)
+		}
+		return "", errors.Join(infoErr, marshalErr, closeErr, cleanupErr)
+	}
+	if err := syncDir(filepath.Dir(path)); err != nil {
+		persistErr := fmt.Errorf("persist sandbox journal lock directory entry: %w", err)
+		cleanupErr := releaseLockWithSync(path, token, syncDir)
+		return "", errors.Join(persistErr, cleanupErr)
+	}
+	return token, nil
+}
+
+// removeCreatedLock removes a failed acquisition's lock only when the path
+// still identifies the exact inode created by this call. It never removes a
+// replacement owner's file, even if the replacement has malformed contents.
+func removeCreatedLock(path string, createdInfo os.FileInfo, syncDir func(string) error) error {
+	currentInfo, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return syncDir(filepath.Dir(path))
+	}
+	if err != nil {
+		return fmt.Errorf("inspect failed sandbox journal lock: %w", err)
+	}
+	if currentInfo.Mode()&os.ModeSymlink != 0 || !os.SameFile(createdInfo, currentInfo) {
+		return errors.New("sandbox journal lock path changed during failed acquisition")
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("remove failed sandbox journal lock: %w", err)
+	}
+	if err := syncDir(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("persist failed sandbox journal lock cleanup: %w", err)
+	}
+	return nil
+}
+
+func releaseLock(path, token string) error {
+	return releaseLockWithSync(path, token, syncDirectory)
+}
+
+// releaseLockWithSync isolates the directory durability boundary so a failed
+// directory sync after unlink can be tested deterministically.
+func releaseLockWithSync(path, token string, syncDir func(string) error) error {
+	payload, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		// A previous release attempt may have removed the lock successfully
+		// but failed while syncing the directory entry. Re-syncing makes a
+		// retry safe and idempotent without touching a replacement owner's lock.
+		return syncDir(filepath.Dir(path))
+	}
+	if err != nil {
+		return err
+	}
+	var owner struct {
+		PID int `json:"pid"`
+		Token string `json:"token"`
+		CreatedAt time.Time `json:"createdAt"`
+	}
+	if err := json.Unmarshal(payload, &owner); err != nil {
+		return fmt.Errorf("decode sandbox lifecycle journal lock: %w", err)
+	}
+	canonical, err := json.Marshal(owner)
+	if err != nil {
+		return fmt.Errorf("re-encode sandbox lifecycle journal lock: %w", err)
+	}
+	if !bytes.Equal(canonical, payload) || owner.PID <= 0 ||
+		owner.CreatedAt.IsZero() || owner.CreatedAt.Location() != time.UTC ||
+		!runnerIDPattern.MatchString(owner.Token) {
+		return errors.New("sandbox lifecycle journal lock metadata is not canonical or valid")
+	}
+	if owner.Token != token || token == "" {
+		return errors.New("sandbox lifecycle journal lock ownership changed")
+	}
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	return syncDir(filepath.Dir(path))
+}
+
+func (journal *Journal) recover() error {
+	info, err := journal.file.Stat()
+	if err != nil {
+		return fmt.Errorf("stat sandbox lifecycle journal: %w", err)
+	}
+	if info.Size() > maxJournalSize {
+		return errors.New("sandbox lifecycle journal exceeds size limit")
+	}
+	content, err := readBoundedJournal(journal.file)
+	if err != nil {
+		return fmt.Errorf("read sandbox lifecycle journal: %w", err)
+	}
+	lastNewline := bytes.LastIndexByte(content, '\n')
+	incompleteTail := lastNewline != len(content)-1
+	if incompleteTail {
+		// Validate every complete record before repairing an incomplete tail.
+		// Otherwise a later semantic error could be discovered only after
+		// recovery has already modified the journal on disk.
+		content = content[:lastNewline+1]
+	}
+	var expected uint64 = 1
+	for len(content) > 0 {
+		lineEnd := bytes.IndexByte(content, '\n')
+		if lineEnd < 0 {
+			return errors.New("sandbox lifecycle journal recovery found unterminated record")
+		}
+		line := content[:lineEnd]
+		content = content[lineEnd+1:]
+		if len(line) == 0 || len(line) > maxRecordSize {
+			return errors.New("sandbox lifecycle journal contains an invalid record size")
+		}
+		if err := rejectDuplicateJSONFields(line); err != nil {
+			return fmt.Errorf("validate sandbox lifecycle record fields: %w", err)
+		}
+		var event Event
+		decoder := json.NewDecoder(bytes.NewReader(line))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&event); err != nil {
+			return fmt.Errorf("decode sandbox lifecycle record: %w", err)
+		}
+		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			return errors.New("sandbox lifecycle record contains trailing JSON data")
+		}
+		canonical, err := json.Marshal(event)
+		if err != nil {
+			return fmt.Errorf("re-encode sandbox lifecycle record: %w", err)
+		}
+		if !bytes.Equal(canonical, line) {
+			return errors.New("sandbox lifecycle record is not in canonical JSON encoding")
+		}
+		if event.Version != formatVersion || event.Sequence != expected ||
+			event.At.IsZero() || event.At.Location() != time.UTC {
+			return errors.New("sandbox lifecycle journal version, sequence or timestamp is invalid")
+		}
+		if err := journal.apply(event); err != nil {
+			return fmt.Errorf("recover sandbox lifecycle transition: %w", err)
+		}
+		journal.sequence = event.Sequence
+		expected++
+	}
+	if incompleteTail {
+		if journal.readOnly {
+			return errors.New("sandbox lifecycle journal has an incomplete final record; read-only inspection refuses repair")
+		}
+		if err := journal.file.Truncate(int64(lastNewline + 1)); err != nil {
+			return fmt.Errorf("truncate incomplete sandbox lifecycle record: %w", err)
+		}
+		if err := journal.file.Sync(); err != nil {
+			return fmt.Errorf("sync recovered sandbox lifecycle journal: %w", err)
+		}
+	}
+	_, err = journal.file.Seek(0, io.SeekEnd)
+	if err != nil {
+		return fmt.Errorf("seek sandbox lifecycle journal: %w", err)
+	}
+	return nil
+}
+
+// readBoundedJournal enforces the journal size ceiling while reading, not
+// only from a prior Stat. The ownership lock excludes cooperating writers, but
+// an external writer or unexpected file growth must not turn recovery into an
+// unbounded allocation.
+func readBoundedJournal(file *os.File) ([]byte, error) {
+	content, err := io.ReadAll(io.LimitReader(file, maxJournalSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > maxJournalSize {
+		return nil, errors.New("sandbox lifecycle journal exceeds size limit")
+	}
+	return content, nil
+}
+
+// rejectDuplicateJSONFields prevents encoding/json's default last-value-wins
+// behavior from silently accepting ambiguous lifecycle evidence.
+func rejectDuplicateJSONFields(line []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(line))
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	opening, ok := token.(json.Delim)
+	if !ok || opening != '{' {
+		return errors.New("sandbox lifecycle record must be a JSON object")
+	}
+	allowed := map[string]struct{}{
+		"version": {}, "sequence": {}, "type": {}, "lifecycleId": {},
+		"runnerInstanceId": {}, "executionId": {}, "containerId": {}, "at": {},
+	}
+	seen := make(map[string]struct{})
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return errors.New("sandbox lifecycle record contains a non-string field name")
+		}
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("sandbox lifecycle record contains unknown or non-canonical field %q", key)
+		}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("sandbox lifecycle record contains duplicate field %q", key)
+		}
+		seen[key] = struct{}{}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+	}
+	token, err = decoder.Token()
+	if err != nil {
+		return err
+	}
+	closing, ok := token.(json.Delim)
+	if !ok || closing != '}' {
+		return errors.New("sandbox lifecycle record has an invalid object boundary")
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("sandbox lifecycle record contains trailing JSON data")
+	}
+	return nil
+}
+
+func (journal *Journal) Begin(runnerInstanceID, executionID string) (string, error) {
+	if !runnerIDPattern.MatchString(runnerInstanceID) || !executionIDPattern.MatchString(executionID) {
+		return "", errors.New("invalid runner instance or execution identifier")
+	}
+	idBytes := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, idBytes); err != nil {
+		return "", fmt.Errorf("generate sandbox lifecycle ID: %w", err)
+	}
+	id := hex.EncodeToString(idBytes)
+	event := Event{
+		Type: EventCreateIntent, LifecycleID: id,
+		RunnerInstanceID: runnerInstanceID, ExecutionID: executionID,
+	}
+	if err := journal.append(event); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func (journal *Journal) Created(lifecycleID, containerID string) error {
+	if !runnerIDPattern.MatchString(lifecycleID) || !containerIDPattern.MatchString(containerID) {
+		return errors.New("invalid lifecycle or container identifier")
+	}
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	current, ok := journal.records[lifecycleID]
+	if !ok || current.Created || current.Cleaned {
+		return ErrConflict
+	}
+	return journal.appendLocked(Event{
+		Type: EventCreated, LifecycleID: lifecycleID,
+		RunnerInstanceID: current.RunnerInstanceID, ExecutionID: current.ExecutionID,
+		ContainerID: containerID,
+	})
+}
+
+func (journal *Journal) Cleaned(lifecycleID string) error {
+	if !runnerIDPattern.MatchString(lifecycleID) {
+		return errors.New("invalid lifecycle identifier")
+	}
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	current, ok := journal.records[lifecycleID]
+	if !ok {
+		return ErrNotFound
+	}
+	if !current.Created || current.Cleaned {
+		return ErrConflict
+	}
+	return journal.appendLocked(Event{
+		Type: EventCleaned, LifecycleID: lifecycleID,
+		RunnerInstanceID: current.RunnerInstanceID, ExecutionID: current.ExecutionID,
+		ContainerID: current.ContainerID,
+	})
+}
+
+func (journal *Journal) Pending() ([]Lifecycle, error) {
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	if journal.closed {
+		return nil, ErrClosed
+	}
+	pending := make([]Lifecycle, 0)
+	for _, record := range journal.records {
+		if !record.Cleaned {
+			pending = append(pending, record)
+		}
+	}
+	return pending, nil
+}
+
+func (journal *Journal) append(event Event) error {
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	return journal.appendLocked(event)
+}
+
+func (journal *Journal) appendLocked(event Event) error {
+	if journal.appendUncertain {
+		return ErrAppendUncertain
+	}
+	if journal.closed {
+		return ErrClosed
+	}
+	if journal.readOnly {
+		return ErrReadOnly
+	}
+	if journal.sequence >= maxJournalSize {
+		return errors.New("sandbox lifecycle journal sequence limit reached")
+	}
+	event.Version = formatVersion
+	event.Sequence = journal.sequence + 1
+	event.At = time.Now().UTC()
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("encode sandbox lifecycle event: %w", err)
+	}
+	if len(payload)+1 > maxRecordSize {
+		return errors.New("sandbox lifecycle event exceeds record size limit")
+	}
+	info, err := journal.file.Stat()
+	if err != nil {
+		return fmt.Errorf("stat sandbox lifecycle journal before append: %w", err)
+	}
+	if info.Size()+int64(len(payload)+1) > maxJournalSize {
+		return errors.New("sandbox lifecycle journal reached its size limit")
+	}
+	payload = append(payload, '\n')
+	written, writeErr := journal.file.Write(payload)
+	if writeErr == nil && written != len(payload) {
+		writeErr = io.ErrShortWrite
+	}
+	if writeErr != nil {
+		journal.appendUncertain = true
+		return fmt.Errorf("%w: append sandbox lifecycle event: %v", ErrAppendUncertain, writeErr)
+	}
+	if err := journal.syncJournalFile(); err != nil {
+		journal.appendUncertain = true
+		return fmt.Errorf("%w: sync sandbox lifecycle event: %v", ErrAppendUncertain, err)
+	}
+	if err := journal.apply(event); err != nil {
+		journal.appendUncertain = true
+		return fmt.Errorf("%w: apply durable sandbox lifecycle event: %v", ErrAppendUncertain, err)
+	}
+	journal.sequence = event.Sequence
+	return nil
+}
+
+func (journal *Journal) apply(event Event) error {
+	if !runnerIDPattern.MatchString(event.LifecycleID) ||
+		!runnerIDPattern.MatchString(event.RunnerInstanceID) ||
+		!executionIDPattern.MatchString(event.ExecutionID) {
+		return errors.New("sandbox lifecycle event has invalid identifiers")
+	}
+	current, exists := journal.records[event.LifecycleID]
+	switch event.Type {
+	case EventCreateIntent:
+		if exists || event.ContainerID != "" {
+			return ErrConflict
+		}
+		journal.records[event.LifecycleID] = Lifecycle{
+			LifecycleID: event.LifecycleID, RunnerInstanceID: event.RunnerInstanceID,
+			ExecutionID: event.ExecutionID, LastSequence: event.Sequence,
+		}
+	case EventCreated:
+		if !exists || current.Created || current.Cleaned ||
+			current.RunnerInstanceID != event.RunnerInstanceID ||
+			current.ExecutionID != event.ExecutionID ||
+			!containerIDPattern.MatchString(event.ContainerID) {
+			return ErrConflict
+		}
+		current.ContainerID = event.ContainerID
+		current.Created = true
+		current.LastSequence = event.Sequence
+		journal.records[event.LifecycleID] = current
+	case EventCleaned:
+		if !exists || !current.Created || current.Cleaned ||
+			current.RunnerInstanceID != event.RunnerInstanceID ||
+			current.ExecutionID != event.ExecutionID ||
+			current.ContainerID != event.ContainerID {
+			return ErrConflict
+		}
+		current.Cleaned = true
+		current.LastSequence = event.Sequence
+		journal.records[event.LifecycleID] = current
+	default:
+		return errors.New("unknown sandbox lifecycle event type")
+	}
+	return nil
+}
+
+func (journal *Journal) syncJournalFile() error {
+	if journal.syncFn != nil {
+		return journal.syncFn(journal.file)
+	}
+	return journal.file.Sync()
+}
+
+func (journal *Journal) Close() error {
+	if journal == nil {
+		return nil
+	}
+	journal.mu.Lock()
+	defer journal.mu.Unlock()
+	if journal.closed {
+		return nil
+	}
+	if !journal.fileClosed {
+		if !journal.readOnly {
+			if err := journal.syncJournalFile(); err != nil {
+				return fmt.Errorf("sync sandbox lifecycle journal on close: %w", err)
+			}
+		}
+		// os.File.Close invalidates the handle even when it reports an error.
+		// Remember that transition so a later Close retry can still release
+		// the ownership lock without syncing or closing an invalid handle.
+		closeErr := journal.file.Close()
+		journal.fileClosed = true
+		if closeErr != nil {
+			return fmt.Errorf("close sandbox lifecycle journal: %w", closeErr)
+		}
+	}
+	if !journal.lockReleased {
+		if err := releaseLock(journal.lockPath, journal.lockToken); err != nil {
+			return fmt.Errorf("release sandbox lifecycle journal lock: %w", err)
+		}
+		journal.lockReleased = true
+	}
+	journal.closed = true
+	return nil
+}

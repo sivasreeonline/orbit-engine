@@ -2,9 +2,12 @@ package runner
 
 import (
 	"context"
+	"errors"
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
 )
+
+var ErrExecutionContextRequired = errors.New("execution context is required")
 
 type SandboxStatus string
 

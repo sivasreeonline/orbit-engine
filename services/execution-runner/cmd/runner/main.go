@@ -14,9 +14,11 @@ import (
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/acceptancejournal"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/httpapi"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/hostlock"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runner"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerclient"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerconfig"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
 )
 
 func main() {
@@ -95,6 +97,16 @@ func runForeground(ctx context.Context, server *http.Server) (returnErr error) {
 	}
 	defer config.Destroy()
 
+	hostOwnershipLock, err := hostlock.Acquire(config.HostLockPath, config.RunnerInstanceID)
+	if err != nil {
+		return fmt.Errorf("acquire exclusive host ownership lock: %w", err)
+	}
+	defer func() {
+		if err := hostOwnershipLock.Close(); err != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("release host ownership lock: %w", err))
+		}
+	}()
+
 	client, err := runnerclient.New(runnerclient.Config{
 		ControlPlaneURL: config.ControlPlaneURL,
 		KeyID:           config.KeyID,
@@ -111,6 +123,22 @@ func runForeground(ctx context.Context, server *http.Server) (returnErr error) {
 			returnErr = errors.Join(returnErr, err)
 		}
 	}()
+
+	sandboxLifecycleJournal, err := sandboxjournal.Open(config.SandboxJournalPath)
+	if err != nil {
+		return fmt.Errorf("open durable sandbox lifecycle journal: %w", err)
+	}
+	defer func() {
+		if err := sandboxLifecycleJournal.Close(); err != nil {
+			returnErr = errors.Join(returnErr, err)
+		}
+	}()
+
+	// Bind the provisioned runner identity to the journaled Docker adapter.
+	// The adapter is deliberately not passed to the worker: execution remains disabled.
+	if _, err := runner.NewJournaledDockerSandbox(runner.OSCommandDockerCLI{}, sandboxLifecycleJournal, config.RunnerInstanceID); err != nil {
+		return fmt.Errorf("initialize journaled sandbox lifecycle boundary: %w", err)
+	}
 
 	journal, err := acceptancejournal.Open(config.JournalPath)
 	if err != nil {
@@ -142,7 +170,7 @@ func runForeground(ctx context.Context, server *http.Server) (returnErr error) {
 		serverDone <- server.ListenAndServe()
 	}()
 
-	log.Printf("runner foreground process listening on %s; identity and journal initialized; qualification gate is CLOSED and dispatch claims are disabled", server.Addr)
+	log.Printf("runner foreground process listening on %s; host ownership lock, identity and both journals initialized; runner identity bound to the disabled sandbox adapter; qualification gate is CLOSED and dispatch claims are disabled", server.Addr)
 
 	select {
 	case <-ctx.Done():
