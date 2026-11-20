@@ -197,7 +197,7 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
     if report.get("logCount") != log_count:
         raise ValueError("CloudTrail report logCount mismatch")
 
-    previous_end: datetime | None = None
+    previous_end_by_chain: dict[str, datetime] = {}
     pinned_digest_bucket: str | None = None
     seen_digests: set[tuple[str, str, str]] = set()
     seen_logs: set[tuple[str, str, str]] = set()
@@ -207,6 +207,16 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
         bucket, key, version = digest.get("bucket"), digest.get("key"), digest.get("versionId")
         if not all(isinstance(value, str) and value for value in (bucket, key)) or not safe_version(version):
             raise ValueError("CloudTrail digest report must pin bucket, key and exact non-null VersionId")
+        chain_type = digest.get("chainType", "STANDARD")
+        if chain_type not in {"STANDARD", "BACKFILL"}:
+            raise ValueError("CloudTrail digest chainType must be STANDARD or BACKFILL")
+        backfill_generation = digest.get("backfillGenerationTimestamp")
+        if chain_type == "BACKFILL":
+            parse_utc(backfill_generation, "backfillGenerationTimestamp")
+            if not key.endswith("_backfill.json.gz"):
+                raise ValueError("BACKFILL digest record does not use a backfill digest key")
+        elif backfill_generation is not None or key.endswith("_backfill.json.gz"):
+            raise ValueError("STANDARD digest record contains backfill metadata or a backfill key")
         if pinned_digest_bucket is None:
             pinned_digest_bucket = bucket
         elif bucket != pinned_digest_bucket:
@@ -231,9 +241,10 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
         end = parse_utc(end_text, "digestEndTime")
         if start >= end:
             raise ValueError("CloudTrail digestStartTime must precede digestEndTime")
+        previous_end = previous_end_by_chain.get(chain_type)
         if previous_end is not None and end >= previous_end:
-            raise ValueError("CloudTrail digest report is not ordered latest-to-oldest")
-        previous_end = end
+            raise ValueError(f"CloudTrail {chain_type.lower()} digest report is not ordered latest-to-oldest")
+        previous_end_by_chain[chain_type] = end
         if f"/{provider['account']}/CloudTrail-Digest/{provider['region']}/" not in f"/{key}":
             raise ValueError("CloudTrail digest key is outside the signed account/Region prefix")
 
@@ -250,8 +261,9 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
             raise ValueError("CloudTrail public-key DER byte count is invalid")
         key_start = parse_utc(public_key.get("validityStartTime"), "publicKey.validityStartTime")
         key_end = parse_utc(public_key.get("validityEndTime"), "publicKey.validityEndTime")
-        if not key_start <= end <= key_end:
-            raise ValueError("CloudTrail public key was not valid at digestEndTime")
+        key_validation_time = parse_utc(backfill_generation, "backfillGenerationTimestamp") if chain_type == "BACKFILL" else end
+        if not key_start <= key_validation_time <= key_end:
+            raise ValueError("CloudTrail public key was not valid at the digest signing time")
 
         logs = digest.get("logs")
         if not isinstance(logs, list):
@@ -401,38 +413,42 @@ def validate_cloudtrail_manifest(
             )
             _verify_materialized_log(log, _read_artifact(root, actual[log_identity]["artifactId"]))
 
-    for index, digest in enumerate(report["digests"]):
-        document = _strict_json(
-            _bounded_uncompress(
-                _read_artifact(root, actual[(
-                    "CLOUDTRAIL_DIGEST", object_ref(digest["bucket"], digest["key"]),
-                    digest["versionId"], digest["rawSha256"],
-                )]["artifactId"]),
-                maximum=16 * 1024 * 1024,
-                label="CloudTrail digest",
-            ),
-            "CloudTrail digest",
-        )
-        previous = document.get("previousDigestS3Object")
-        previous_bucket = document.get("previousDigestS3Bucket")
-        previous_hash = document.get("previousDigestHashValue")
-        previous_signature = document.get("previousDigestSignature")
-        if index + 1 < len(report["digests"]):
-            predecessor = report["digests"][index + 1]
-            if previous_bucket != predecessor["bucket"] or previous != predecessor["key"]:
-                raise ValueError("CloudTrail report order does not match previous digest bucket/key linkage")
-            if document.get("previousDigestHashAlgorithm") != "SHA-256":
-                raise ValueError("CloudTrail previousDigestHashAlgorithm is not SHA-256")
-            if previous_hash != predecessor["uncompressedSha256"]:
-                raise ValueError("CloudTrail previousDigestHashValue does not match predecessor evidence")
-            if previous_signature != predecessor["signatureHex"]:
-                raise ValueError("CloudTrail previousDigestSignature does not match predecessor signature evidence")
-        elif any(value is not None for value in (
-            previous_bucket, previous, previous_hash,
-            document.get("previousDigestHashAlgorithm"), previous_signature,
-        )):
-            raise ValueError("CloudTrail report does not terminate at a complete starting digest")
-
+    chains: dict[str, list[dict[str, Any]]] = {}
+    for digest in report["digests"]:
+        chains.setdefault(digest.get("chainType", "STANDARD"), []).append(digest)
+    for chain_type, chain in chains.items():
+        for index, digest in enumerate(chain):
+            document = _strict_json(
+                _bounded_uncompress(
+                    _read_artifact(root, actual[(
+                        "CLOUDTRAIL_DIGEST", object_ref(digest["bucket"], digest["key"]),
+                        digest["versionId"], digest["rawSha256"],
+                    )]["artifactId"]),
+                    maximum=16 * 1024 * 1024,
+                    label="CloudTrail digest",
+                ),
+                "CloudTrail digest",
+            )
+            previous = document.get("previousDigestS3Object")
+            previous_bucket = document.get("previousDigestS3Bucket")
+            previous_hash = document.get("previousDigestHashValue")
+            previous_signature = document.get("previousDigestSignature")
+            previous_fields = (
+                previous_bucket, previous, previous_hash,
+                document.get("previousDigestHashAlgorithm"), previous_signature,
+            )
+            if index + 1 < len(chain):
+                predecessor = chain[index + 1]
+                if previous_bucket != predecessor["bucket"] or previous != predecessor["key"]:
+                    raise ValueError(f"CloudTrail {chain_type.lower()} report order does not match previous digest bucket/key linkage")
+                if document.get("previousDigestHashAlgorithm") != "SHA-256":
+                    raise ValueError("CloudTrail previousDigestHashAlgorithm is not SHA-256")
+                if previous_hash != predecessor["uncompressedSha256"]:
+                    raise ValueError("CloudTrail previousDigestHashValue does not match predecessor evidence")
+                if previous_signature != predecessor["signatureHex"]:
+                    raise ValueError("CloudTrail previousDigestSignature does not match predecessor signature evidence")
+            elif any(value is not None for value in previous_fields):
+                raise ValueError(f"CloudTrail {chain_type.lower()} report does not terminate at a complete starting digest")
     if not REQUIRED_TEST_IDS["CLOUDTRAIL_VERIFICATION_REPORT"].issubset(set(report_artifact["testIds"])):
         raise ValueError("CloudTrail verification report artifact lacks CT-006")
     if report_artifact["objectVersion"] != "report-v1":
