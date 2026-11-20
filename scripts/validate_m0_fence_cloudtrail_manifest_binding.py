@@ -469,16 +469,44 @@ def _artifact(
 
 
 def _fixture(root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    import base64
+    import gzip
+
     account, region, bucket = "123456789012", "us-east-1", "fixture-cloudtrail-bucket"
     digest_key = f"AWSLogs/{account}/CloudTrail-Digest/{region}/2026/11/20/digest.json.gz"
     log_key = f"AWSLogs/{account}/CloudTrail/{region}/2026/11/20/log.json.gz"
-    digest_raw = b"synthetic raw compressed digest bytes"
-    log_raw = b"synthetic raw compressed log bytes"
-    key_der = rsa.generate_private_key(public_exponent=65537, key_size=2048).public_key().public_bytes(
+    log_content = b'{"Records":[{"eventName":"SyntheticFixtureEvent","eventSource":"fixture.amazonaws.com"}]}'
+    log_raw = gzip.compress(log_content, mtime=0)
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    key_der = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.DER, format=serialization.PublicFormat.PKCS1
     )
     start, end = "2026-11-20T00:00:00Z", "2026-11-20T01:00:00Z"
     fingerprint = "fixture-cloudtrail-key"
+    document = {
+        "awsAccountId": account,
+        "digestStartTime": start,
+        "digestEndTime": end,
+        "digestS3Bucket": bucket,
+        "digestS3Object": digest_key,
+        "digestPublicKeyFingerprint": fingerprint,
+        "digestSignatureAlgorithm": "SHA256withRSA",
+        "previousDigestS3Bucket": None,
+        "previousDigestS3Object": None,
+        "previousDigestHashValue": None,
+        "previousDigestHashAlgorithm": None,
+        "previousDigestSignature": None,
+        "logFiles": [{
+            "s3Bucket": bucket,
+            "s3Object": log_key,
+            "hashValue": sha(log_content),
+            "hashAlgorithm": "SHA-256",
+        }],
+    }
+    digest_content = json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    digest_raw = gzip.compress(digest_content, mtime=0)
+    data_to_sign = f"{end}\\n{bucket}/{digest_key}\\n{sha(digest_content)}\\n".encode("utf-8")
+    signature_hex = private_key.sign(data_to_sign, padding.PKCS1v15(), hashes.SHA256()).hex()
     report = {
         "profile": "sky-high-cloudtrail-digest-verification-v1",
         "schemaVersion": 1,
@@ -492,8 +520,8 @@ def _fixture(root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
         "digests": [{
             "bucket": bucket, "key": digest_key, "versionId": "digest-version-001",
             "rawSha256": sha(digest_raw), "rawByteCount": len(digest_raw),
-            "uncompressedSha256": "a" * 64, "uncompressedByteCount": 72,
-            "signatureHex": "ab" * 256, "signatureAlgorithm": "SHA256withRSA",
+            "uncompressedSha256": sha(digest_content), "uncompressedByteCount": len(digest_content),
+            "signatureHex": signature_hex, "signatureAlgorithm": "SHA256withRSA",
             "signatureFingerprint": fingerprint,
             "digestStartTime": start, "digestEndTime": end,
             "publicKey": {
@@ -505,7 +533,7 @@ def _fixture(root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
             "logs": [{
                 "bucket": bucket, "key": log_key, "versionId": "log-version-001",
                 "rawSha256": sha(log_raw), "rawByteCount": len(log_raw),
-                "uncompressedSha256": "b" * 64, "uncompressedByteCount": 44,
+                "uncompressedSha256": sha(log_content), "uncompressedByteCount": len(log_content),
             }],
         }],
     }
@@ -542,7 +570,6 @@ def _fixture(root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
     }
     envelope, trust = _signed_manifest(body)
     return envelope, trust
-
 
 def run_fixture_tests() -> int:
     cases = 0
