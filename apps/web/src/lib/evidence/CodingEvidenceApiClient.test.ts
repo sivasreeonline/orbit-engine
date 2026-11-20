@@ -124,6 +124,27 @@ describe("CodingEvidenceApiClient", () => {
     expect(body.events).toHaveLength(1);
     expect(body.events[0]?.event.sequence).toBe(2);
     expect(body.events[0]?.snapshot.sourceCode).toBe(sourceCode);
+    expect(Object.keys(body.events[0]?.event ?? {}).sort()).toEqual([
+      "contentSha256",
+      "eventId",
+      "eventType",
+      "language",
+      "occurredAt",
+      "sessionId",
+      "snapshotId",
+      "sequence",
+    ]);
+    expect(Object.keys(body.events[0]?.snapshot ?? {}).sort()).toEqual([
+      "capturedAt",
+      "contentSha256",
+      "kind",
+      "language",
+      "sequence",
+      "sessionId",
+      "snapshotId",
+      "sourceByteLength",
+      "sourceCode",
+    ]);
   });
 
   it("rejects invalid server session and event acknowledgements", async () => {
