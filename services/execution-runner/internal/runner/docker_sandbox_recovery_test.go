@@ -1,0 +1,999 @@
+package runner
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/sandboxjournal"
+)
+
+type fakeLifecycleDiscoverer struct {
+	containers []DiscoveredDockerContainer
+	err error
+	calls int
+	runnerID string
+	cancel context.CancelFunc
+	}
+
+func (fake *fakeLifecycleDiscoverer) DiscoverByRunnerLabel(_ context.Context, runnerID string) ([]DiscoveredDockerContainer, error) {
+	fake.calls++
+	fake.runnerID = runnerID
+	if fake.cancel != nil {
+		fake.cancel()
+	}
+	return append([]DiscoveredDockerContainer(nil), fake.containers...), fake.err
+}
+
+func TestDiscoverPendingDockerLifecyclesRejectsLateSuccessAfterCancellation(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	lifecycleID, err := sandbox.journal.Begin(runnerID, "exec_cancelled_discovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoverer := &fakeLifecycleDiscoverer{
+		containers: []DiscoveredDockerContainer{{
+			ID: strings.Repeat("b", 64), RunnerInstanceID: runnerID,
+			LifecycleID: lifecycleID, State: "running",
+		}},
+		cancel: cancel,
+	}
+	results, err := DiscoverPendingDockerLifecycles(ctx, sandbox.journal, discoverer, runnerID)
+	if !errors.Is(err, context.Canceled) || results != nil {
+		t.Fatalf("cancelled late-success discovery = %+v, %v; want nil results and context.Canceled", results, err)
+	}
+	if discoverer.calls != 1 {
+		t.Fatalf("discoverer calls = %d, want 1", discoverer.calls)
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesRejectsNilContextWithoutCallingDiscoverer(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	if _, err := sandbox.journal.Begin(runnerID, "exec_nil_context"); err != nil {
+		t.Fatal(err)
+	}
+	discoverer := &fakeLifecycleDiscoverer{}
+
+	found, err := DiscoverPendingDockerLifecycles(nil, sandbox.journal, discoverer, runnerID)
+	if !errors.Is(err, ErrSandboxNotConfigured) || found != nil {
+		t.Fatalf("nil-context discovery = %+v, %v; want nil findings and ErrSandboxNotConfigured", found, err)
+	}
+	if discoverer.calls != 0 {
+		t.Fatalf("Docker discovery calls = %d, want 0 for nil context", discoverer.calls)
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesRejectsOversizedInventoryFromDiscoverer(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	if _, err := sandbox.journal.Begin(runnerID, "exec_inventory_limit"); err != nil {
+		t.Fatal(err)
+	}
+	containers := make([]DiscoveredDockerContainer, maxRecoveryContainers+1)
+	discoverer := &fakeLifecycleDiscoverer{containers: containers}
+	found, err := DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, runnerID)
+	if err == nil || found != nil {
+		t.Fatalf("oversized discoverer inventory = %+v, %v; want nil findings and error", found, err)
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesRejectsOversizedPendingJournal(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	for i := 0; i <= maxRecoveryContainers; i++ {
+		if _, err := sandbox.journal.Begin(runnerID, fmt.Sprintf("exec_limit_%d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	discoverer := &fakeLifecycleDiscoverer{}
+	found, err := DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, runnerID)
+	if err == nil || found != nil {
+		t.Fatalf("oversized pending journal = %+v, %v; want nil findings and error", found, err)
+	}
+	if discoverer.calls != 0 {
+		t.Fatal("Docker discovery ran after pending journal exceeded safety limit")
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesIsDryRunAndCorrelatesExactIdentity(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	lifecycleID, err := sandbox.journal.Begin(runnerID, "exec_recovery_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	containerID := strings.Repeat("b", 64)
+	if err := sandbox.journal.Created(lifecycleID, containerID); err != nil {
+		t.Fatal(err)
+	}
+	discoverer := &fakeLifecycleDiscoverer{containers: []DiscoveredDockerContainer{{
+		ID: containerID, RunnerInstanceID: runnerID, LifecycleID: lifecycleID, State: "exited",
+	}}}
+
+	results, err := DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Assessment != "PENDING_CONTAINER_MATCH — operator review required" {
+		t.Fatalf("discovery result = %+v", results)
+	}
+	if discoverer.calls != 1 || discoverer.runnerID != runnerID {
+		t.Fatalf("discovery did not use exact journal identity: %+v", discoverer)
+	}
+	pending, err := sandbox.journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Cleaned {
+		t.Fatalf("dry-run discovery mutated journal state: %+v", pending)
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesUsesOneInventoryForMultiplePendingRecords(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	firstLifecycle, err := sandbox.journal.Begin(runnerID, "exec_first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sandbox.journal.Created(firstLifecycle, strings.Repeat("b", 64)); err != nil {
+		t.Fatal(err)
+	}
+	secondLifecycle, err := sandbox.journal.Begin(runnerID, "exec_second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	containers := []DiscoveredDockerContainer{
+		{ID: strings.Repeat("b", 64), RunnerInstanceID: runnerID, LifecycleID: firstLifecycle, State: "exited"},
+		{ID: strings.Repeat("c", 64), RunnerInstanceID: runnerID, LifecycleID: secondLifecycle, State: "created"},
+	}
+	discoverer := &fakeLifecycleDiscoverer{containers: containers}
+	results, err := DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if discoverer.calls != 1 {
+		t.Fatalf("Docker inventory calls = %d, want one for both lifecycles", discoverer.calls)
+	}
+	if len(results) != 2 {
+		t.Fatalf("recovery findings = %+v, want two", results)
+	}
+	for _, result := range results {
+		if len(result.Containers) != 1 || result.Containers[0].LifecycleID != result.Lifecycle.LifecycleID {
+			t.Fatalf("container was not correlated to its exact lifecycle: %+v", result)
+		}
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesFailsClosedOnRunnerMismatch(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sandbox.journal.Begin(strings.Repeat("a", 32), "exec_recovery_test"); err != nil {
+		t.Fatal(err)
+	}
+	discoverer := &fakeLifecycleDiscoverer{}
+	_, err = DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, strings.Repeat("c", 32))
+	if err == nil {
+		t.Fatal("runner identity mismatch was accepted")
+	}
+	if discoverer.calls != 0 {
+		t.Fatal("Docker discovery ran after runner identity mismatch")
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesReportsCreateIntentWithoutDeletion(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	lifecycleID, err := sandbox.journal.Begin(runnerID, "exec_create_gap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	discoverer := &fakeLifecycleDiscoverer{}
+	results, err := DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Assessment != "CREATE_INTENT_NO_CONTAINER_MATCH — operator review required" {
+		t.Fatalf("create-intent discovery result = %+v", results)
+	}
+	if results[0].Lifecycle.LifecycleID != lifecycleID ||
+		results[0].Lifecycle.Created || results[0].Lifecycle.Cleaned ||
+		results[0].Lifecycle.ContainerID != "" || len(results[0].Containers) != 0 {
+		t.Fatalf("unexpected create-intent recovery finding: %+v", results[0])
+	}
+	pending, err := sandbox.journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].LifecycleID != lifecycleID ||
+		pending[0].Created || pending[0].Cleaned || pending[0].ContainerID != "" {
+		t.Fatalf("dry-run discovery resolved or mutated the ambiguous intent: %+v", pending)
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesReportsMissingJournaledContainerWithoutResolution(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	lifecycleID, err := sandbox.journal.Begin(runnerID, "exec_missing_container")
+	if err != nil {
+		t.Fatal(err)
+	}
+	containerID := strings.Repeat("b", 64)
+	if err := sandbox.journal.Created(lifecycleID, containerID); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := DiscoverPendingDockerLifecycles(
+		context.Background(), sandbox.journal, &fakeLifecycleDiscoverer{}, runnerID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Assessment != "JOURNALED_CONTAINER_NOT_FOUND — operator review required" {
+		t.Fatalf("missing-container discovery result = %+v", results)
+	}
+	if results[0].Lifecycle.ContainerID != containerID ||
+		!results[0].Lifecycle.Created || results[0].Lifecycle.Cleaned ||
+		len(results[0].Containers) != 0 {
+		t.Fatalf("missing-container finding lost journal evidence: %+v", results[0])
+	}
+	pending, err := sandbox.journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].LifecycleID != lifecycleID ||
+		pending[0].ContainerID != containerID || !pending[0].Created || pending[0].Cleaned {
+		t.Fatalf("discovery resolved or mutated missing-container lifecycle: %+v", pending)
+	}
+}
+
+func TestOSCommandDockerCLIDiscoveryRejectsNilContextWithoutRunningDocker(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	marker := filepath.Join(t.TempDir(), "docker-invoked")
+	script := "#!/bin/sh\nprintf invoked > \"" + marker + "\"\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(nil, strings.Repeat("a", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+		t.Fatalf("nil-context discovery = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Docker command ran despite nil context (marker stat error: %v)", err)
+	}
+}
+
+func TestOSCommandDockerCLIDiscoveryRejectsOversizedInventoryOutput(t *testing.T) {
+	if os.PathSeparator == 92 {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	script := "#!/bin/sh\nprintf '%*s' " + fmt.Sprint(maxDockerInventoryOutputBytes+1) + " x\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), strings.Repeat("a", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+		t.Fatalf("oversized inventory = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
+	}
+}
+
+func TestOSCommandDockerCLIDiscoveryRejectsOversizedInspectOutput(t *testing.T) {
+	if os.PathSeparator == 92 {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	id := strings.Repeat("a", 64)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"ps\" ]; then printf '%s\n' \"" + id + "\"; exit 0; fi",
+		"if [ \"$1\" = \"inspect\" ]; then printf '%*s' " + fmt.Sprint(maxDockerInspectOutputBytes+1) + " x; exit 0; fi",
+		"exit 98",
+	}, "\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), strings.Repeat("b", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+		t.Fatalf("oversized inspect = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
+	}
+}
+
+func TestOSCommandDockerCLIDiscoveryUsesExactLabelsAndVerifiesInspect(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	id := strings.Repeat("a", 64)
+	runnerID := strings.Repeat("b", 32)
+	lifecycleID := strings.Repeat("c", 32)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"ps\" ]; then",
+		"  [ \"$2\" = \"--all\" ] || exit 81",
+		"  [ \"$3\" = \"--no-trunc\" ] || exit 82",
+		"  [ \"$4\" = \"--filter\" ] || exit 83",
+		"  [ \"$5\" = \"label=com.skyhigh.runner-instance=" + runnerID + "\" ] || exit 84",
+		"  [ \"$6\" = \"--format\" ] || exit 85",
+		"  [ \"$7\" = \"{{.ID}}\" ] || exit 86",
+		"  printf '%s\n' \"" + id + "\"",
+		"  exit 0",
+		"fi",
+		"if [ \"$1\" = \"inspect\" ]; then",
+		"  [ \"$4\" = \"" + id + "\" ] || exit 87",
+		"  printf '%s' '{\"Id\":\"" + id + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"" + lifecycleID + "\"}},\"State\":{\"Status\":\"exited\"}}'",
+		"  exit 0",
+		"fi",
+		"exit 88",
+	}, "\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].ID != id || found[0].State != "exited" {
+		t.Fatalf("discovered containers = %+v", found)
+	}
+}
+
+func TestOSCommandDockerCLIDiscoveryRejectsInspectLabelMismatch(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	id := strings.Repeat("a", 64)
+	runnerID := strings.Repeat("b", 32)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"ps\" ]; then printf '%s\n' \"" + id + "\"; exit 0; fi",
+		"if [ \"$1\" = \"inspect\" ]; then printf '%s' '{\"Id\":\"" + id + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"wrong\"}},\"State\":{\"Status\":\"exited\"}}'; exit 0; fi",
+		"exit 89",
+	}, "\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("mismatched inspect labels error = %v, want ErrDockerCommandFailed", err)
+	}
+}
+
+
+func TestDiscoverPendingDockerLifecyclesFlagsAmbiguousAndMismatchedContainers(t *testing.T) {
+	tests := []struct {
+		name string
+		containers []DiscoveredDockerContainer
+		want string
+	}{
+		{
+			name: "multiple exact-label matches",
+			containers: []DiscoveredDockerContainer{
+				{ID: strings.Repeat("b", 64), State: "running"},
+				{ID: strings.Repeat("c", 64), State: "exited"},
+			},
+			want: "AMBIGUOUS_MULTIPLE_MATCHES — operator review required",
+		},
+		{
+			name: "journal container ID differs",
+			containers: []DiscoveredDockerContainer{
+				{ID: strings.Repeat("c", 64), State: "exited"},
+			},
+			want: "CONTAINER_ID_MISMATCH — operator review required",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			runnerID := strings.Repeat("a", 32)
+			lifecycleID, err := sandbox.journal.Begin(runnerID, "exec_recovery_test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := sandbox.journal.Created(lifecycleID, strings.Repeat("b", 64)); err != nil {
+				t.Fatal(err)
+			}
+			containers := test.containers
+			for i := range containers {
+				containers[i].RunnerInstanceID = runnerID
+				containers[i].LifecycleID = lifecycleID
+			}
+			discoverer := &fakeLifecycleDiscoverer{containers: containers}
+			results, err := DiscoverPendingDockerLifecycles(context.Background(), sandbox.journal, discoverer, runnerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(results) != 1 || results[0].Assessment != test.want {
+				t.Fatalf("assessment = %+v, want %q", results, test.want)
+			}
+		})
+	}
+}
+
+
+func TestOSCommandDockerCLIDiscoveryFailsClosedOnUntrustedDockerResponses(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	id := strings.Repeat("a", 64)
+	runnerID := strings.Repeat("b", 32)
+	lifecycleID := strings.Repeat("c", 32)
+	validInspect := `{"Id":"` + id + `","Config":{"Labels":{"com.skyhigh.runner-instance":"` + runnerID + `","com.skyhigh.lifecycle-id":"` + lifecycleID + `"}},"State":{"Status":"exited"}}`
+
+	tests := []struct {
+		name string
+		script string
+	}{
+		{
+			name: "daemon unavailable during list",
+			script: "#!/bin/sh\nexit 41\n",
+		},
+		{
+			name: "malformed short container id",
+			script: "#!/bin/sh\nprintf 'abc123\n'\n",
+		},
+		{
+			name: "duplicate container ids",
+			script: "#!/bin/sh\nprintf '" + id + "\n" + id + "\n'\n",
+		},
+		{
+			name: "daemon unavailable during inspect",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\n'; exit 0; fi\nexit 42\n",
+		},
+		{
+			name: "malformed inspect json",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\n'; exit 0; fi\nprintf '{not-json'\n",
+		},
+		{
+			name: "inspect id differs from queried id",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\n'; exit 0; fi\nprintf '%s' '{\"Id\":\"" + strings.Repeat("d", 64) + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"" + lifecycleID + "\"}},\"State\":{\"Status\":\"exited\"}}'\n",
+		},
+		{
+			name: "inspect state missing",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\n'; exit 0; fi\nprintf '%s' '{\"Id\":\"" + id + "\",\"Config\":{\"Labels\":{\"com.skyhigh.runner-instance\":\"" + runnerID + "\",\"com.skyhigh.lifecycle-id\":\"" + lifecycleID + "\"}},\"State\":{}}'\n",
+		},
+		{
+			name: "inspect valid ownership",
+			script: "#!/bin/sh\nif [ \"$1\" = \"ps\" ]; then printf '" + id + "\n'; exit 0; fi\nprintf '%s' '" + validInspect + "'\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			binary := filepath.Join(t.TempDir(), "docker-stub")
+			if err := os.WriteFile(binary, []byte(test.script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
+			if test.name == "inspect valid ownership" {
+				if err != nil || len(found) != 1 || found[0].ID != id {
+					t.Fatalf("valid discovery = %+v, %v", found, err)
+				}
+				return
+			}
+			if !errors.Is(err, ErrDockerCommandFailed) {
+				t.Fatalf("discovery error = %v, want ErrDockerCommandFailed", err)
+			}
+			if len(found) != 0 {
+				t.Fatalf("untrusted Docker response produced findings: %+v", found)
+			}
+		})
+	}
+}
+
+
+func TestOSCommandDockerCLIDiscoveryInspectsInBoundedBatches(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "docker-stub")
+	logPath := filepath.Join(directory, "inspect-calls.log")
+	runnerID := strings.Repeat("b", 32)
+	lifecycleID := strings.Repeat("c", 32)
+	ids := make([]string, dockerInspectBatchSize+1)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%064x", i+1)
+	}
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		`if [ "$1" = "ps" ]; then printf '%s\n' '` + strings.Join(ids, "' '") + `'; exit 0; fi`,
+		`if [ "$1" = "inspect" ]; then`,
+		`  [ "$2" = "--format" ] || exit 91`,
+		`  [ "$3" = "{{json .}}" ] || exit 92`,
+		`  shift 3`,
+		`  [ "$#" -ge 1 ] && [ "$#" -le ` + fmt.Sprint(dockerInspectBatchSize) + ` ] || exit 93`,
+		`  printf 'call\n' >> '` + logPath + `'`,
+		`  for id in "$@"; do printf '{"Id":"%s","Config":{"Labels":{"com.skyhigh.runner-instance":"` + runnerID + `","com.skyhigh.lifecycle-id":"` + lifecycleID + `"}},"State":{"Status":"exited"}}\n' "$id"; done`,
+		"  exit 0",
+		"fi",
+		"exit 94",
+	}, "\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
+	if err != nil {
+		t.Fatalf("batched Docker discovery failed: %v\\nfixture:\\n%s", err, script)
+	}
+	if len(found) != len(ids) {
+		t.Fatalf("discovered %d containers, want %d", len(found), len(ids))
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(calls), "call"); got != 2 {
+		t.Fatalf("inspect process count = %d, want 2 bounded batches", got)
+	}
+	for i, container := range found {
+		if container.ID != ids[i] || container.RunnerInstanceID != runnerID ||
+			container.LifecycleID != lifecycleID || container.State != "exited" {
+			t.Fatalf("container %d failed exact identity validation: %+v", i, container)
+		}
+	}
+}
+
+
+func TestOSCommandDockerCLIDiscoveryRejectsIncompleteOrUntrustedInspectBatches(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	runnerID := strings.Repeat("b", 32)
+	lifecycleID := strings.Repeat("c", 32)
+	ids := make([]string, dockerInspectBatchSize+1)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%064x", i+1)
+	}
+
+	tests := []struct {
+		name        string
+		secondBatch string
+	}{
+		{name: "second batch command fails", secondBatch: `exit 95`},
+		{name: "second batch omits requested id", secondBatch: `exit 0`},
+		{name: "second batch duplicates requested id", secondBatch: `emit "$1"; emit "$1"`},
+		{name: "second batch returns unexpected id", secondBatch: `emit "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"`},
+		{name: "second batch returns malformed trailing json", secondBatch: `printf '{broken-json}\n'`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			binary := filepath.Join(t.TempDir(), "docker-stub")
+			emit := fmt.Sprintf(`emit() { printf '{"Id":"%%s","Config":{"Labels":{"com.skyhigh.runner-instance":"%s","com.skyhigh.lifecycle-id":"%s"}},"State":{"Status":"exited"}}\n' "$1"; }`, runnerID, lifecycleID)
+			script := strings.Join([]string{
+				"#!/bin/sh",
+				emit,
+				`if [ "$1" = "ps" ]; then printf '%s\n' '` + strings.Join(ids, "' '") + `'; exit 0; fi`,
+				`if [ "$1" = "inspect" ]; then shift 3; if [ "$#" -eq 1 ]; then ` + test.secondBatch + `; exit 0; fi; for id in "$@"; do emit "$id"; done; exit 0; fi`,
+				"exit 96",
+			}, "\n")
+			if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(context.Background(), runnerID)
+			if !errors.Is(err, ErrDockerCommandFailed) {
+				t.Fatalf("discovery error = %v, want ErrDockerCommandFailed", err)
+			}
+			if found != nil {
+				t.Fatalf("untrusted second batch returned partial findings: %+v", found)
+			}
+		})
+	}
+}
+func TestOSCommandDockerCLIDiscoveryHonorsCancellationDuringInspect(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "docker-stub")
+	marker := filepath.Join(directory, "inspect-started")
+	id := strings.Repeat("a", 64)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"ps\" ]; then printf '%s\\n' \"" + id + "\"; exit 0; fi",
+		"if [ \"$1\" = \"inspect\" ]; then printf 'started' > \"" + marker + "\"; exec sleep 2; fi",
+		"exit 97",
+	}, "\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(ctx, strings.Repeat("b", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("cancelled inspect error = %v, want ErrDockerCommandFailed", err)
+	}
+	if found != nil {
+		t.Fatalf("cancelled inspect returned partial findings: %+v", found)
+	}
+	if started, readErr := os.ReadFile(marker); readErr != nil || string(started) != "started" {
+		t.Fatalf("inspect phase was not reached before cancellation: content=%q error=%v", started, readErr)
+	}
+}
+func TestOSCommandDockerCLIDiscoveryHonorsCancellation(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\nsleep 2\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(ctx, strings.Repeat("a", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("cancelled discovery error = %v, want ErrDockerCommandFailed", err)
+	}
+}
+
+
+
+func TestCreateIntentSurvivesAbruptProcessExitAndIsDiscoverableAfterOperatorUnlock(t *testing.T) {
+	if os.Getenv("SKYHIGH_CREATE_CRASH_HELPER") == "1" {
+		journalPath := os.Getenv("SKYHIGH_CREATE_CRASH_JOURNAL")
+		markerPath := os.Getenv("SKYHIGH_CREATE_CRASH_MARKER")
+		runnerID := strings.Repeat("a", 32)
+		journal, err := sandboxjournal.Open(journalPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lifecycleID, err := journal.Begin(runnerID, "exec_process_crash")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Simulate Docker returning a full container ID after CREATE_INTENT
+		// was fsynced, then terminate before journal.Created can be appended.
+		containerID := strings.Repeat("d", 64)
+		if err := os.WriteFile(markerPath, []byte(lifecycleID+"\n"+containerID), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		os.Exit(0)
+	}
+
+	journalPath := privateJournalTestPath(t, "process-crash.jsonl")
+	markerPath := filepath.Join(filepath.Dir(journalPath), "docker-created.marker")
+	command := exec.Command(os.Args[0], "-test.run=^TestCreateIntentSurvivesAbruptProcessExitAndIsDiscoverableAfterOperatorUnlock$")
+	command.Env = append(os.Environ(),
+		"SKYHIGH_CREATE_CRASH_HELPER=1",
+		"SKYHIGH_CREATE_CRASH_JOURNAL="+journalPath,
+		"SKYHIGH_CREATE_CRASH_MARKER="+markerPath,
+	)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("crash helper failed: %v\n%s", err, output)
+	}
+
+	marker, err := os.ReadFile(markerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(strings.TrimSpace(string(marker)), "\n")
+	if len(parts) != 2 {
+		t.Fatalf("crash marker = %q, want lifecycle and container IDs", marker)
+	}
+	lifecycleID, containerID := parts[0], parts[1]
+	if len(lifecycleID) != 32 || len(containerID) != 64 {
+		t.Fatalf("crash marker contains invalid IDs: %q", marker)
+	}
+
+	// The journal's exclusive lock is deliberately not stolen by Open.
+	// The operator may remove this exact stale lock only after independently
+	// confirming the former owner process has exited (the child has exited).
+	lockPath := journalPath + ".lock"
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("abrupt process exit did not preserve journal lock for review: %v", err)
+	}
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatalf("operator-reviewed stale lock removal: %v", err)
+	}
+
+	journal, err := sandboxjournal.OpenReadOnly(journalPath)
+	if err != nil {
+		t.Fatalf("read-only reopen after operator lock review: %v", err)
+	}
+	defer journal.Close()
+
+	runnerID := strings.Repeat("a", 32)
+	discoverer := &fakeLifecycleDiscoverer{containers: []DiscoveredDockerContainer{{
+		ID: containerID, RunnerInstanceID: runnerID, LifecycleID: lifecycleID, State: "created",
+	}}}
+	results, err := DiscoverPendingDockerLifecycles(context.Background(), journal, discoverer, runnerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 ||
+		results[0].Assessment != "CREATE_INTENT_MATCH — crash-window candidate; operator review required" ||
+		len(results[0].Containers) != 1 || results[0].Containers[0].ID != containerID {
+		t.Fatalf("process-crash recovery finding = %+v", results)
+	}
+	pending, err := journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].LifecycleID != lifecycleID ||
+		pending[0].Created || pending[0].Cleaned || pending[0].ContainerID != "" {
+		t.Fatalf("read-only recovery must preserve intent-only journal: %+v", pending)
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesCorrelatesCreateIntentCrashWindow(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	lifecycleID, err := sandbox.journal.Begin(runnerID, "exec_create_gap")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Model the durable CREATE_INTENT surviving a process crash after Docker
+	// created the container but before the CREATED event reached the journal.
+	// Discovery must correlate exact labels, but it must not repair the journal
+	// or interpret the match as permission to remove the container.
+	containerID := strings.Repeat("d", 64)
+	discoverer := &fakeLifecycleDiscoverer{containers: []DiscoveredDockerContainer{{
+		ID: containerID,
+		RunnerInstanceID: runnerID,
+		LifecycleID: lifecycleID,
+		State: "created",
+	}}}
+
+	results, err := DiscoverPendingDockerLifecycles(
+		context.Background(), sandbox.journal, discoverer, runnerID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 ||
+		results[0].Assessment != "CREATE_INTENT_MATCH — crash-window candidate; operator review required" ||
+		len(results[0].Containers) != 1 ||
+		results[0].Containers[0].ID != containerID {
+		t.Fatalf("create-intent crash-window finding = %+v", results)
+	}
+	pending, err := sandbox.journal.Pending()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Created || pending[0].Cleaned ||
+		pending[0].ContainerID != "" {
+		t.Fatalf("discovery must preserve the original intent-only journal state: %+v", pending)
+	}
+}
+
+func TestDiscoverPendingDockerLifecyclesReturnsNoPartialReportOnLaterDiscoveryFailure(t *testing.T) {
+	sandbox, err := newJournaledTestSandbox(t, &fakeDockerCLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runnerID := strings.Repeat("a", 32)
+	if _, err := sandbox.journal.Begin(runnerID, "exec_first_gap"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sandbox.journal.Begin(runnerID, "exec_second_gap"); err != nil {
+		t.Fatal(err)
+	}
+
+	discoverer := &sequencedLifecycleDiscoverer{
+		err: errors.New("Docker daemon became unavailable"),
+	}
+
+	results, err := DiscoverPendingDockerLifecycles(
+		context.Background(), sandbox.journal, discoverer, runnerID,
+	)
+	if err == nil {
+		t.Fatal("failed inventory unexpectedly returned a clean report")
+	}
+	if results != nil {
+		t.Fatalf("inventory failure returned partial findings: %+v", results)
+	}
+	if discoverer.calls != 1 {
+		t.Fatalf("Docker inventory calls = %d, want exactly one", discoverer.calls)
+	}
+	pending, pendingErr := sandbox.journal.Pending()
+	if pendingErr != nil {
+		t.Fatal(pendingErr)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("failed discovery mutated pending journal records: %+v", pending)
+	}
+}
+
+type sequencedLifecycleDiscoverer struct {
+	err error
+	calls int
+}
+
+func (discoverer *sequencedLifecycleDiscoverer) DiscoverByRunnerLabel(
+	_ context.Context,
+	_ string,
+) ([]DiscoveredDockerContainer, error) {
+	discoverer.calls++
+	return nil, discoverer.err
+}
+
+
+func TestOSCommandDockerCLIDiscoveryTimeoutReapsInventoryProcess(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "docker-stub")
+	pidPath := filepath.Join(directory, "inventory.pid")
+	script := "#!/bin/sh\nprintf '%s' \"$$\" > \"" + pidPath + "\"\nexec sleep 30\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(ctx, strings.Repeat("a", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+		t.Fatalf("timed-out inventory = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
+	}
+	assertRecoveryDockerProcessReaped(t, pidPath)
+}
+
+func TestOSCommandDockerCLIDiscoveryTimeoutReapsInspectProcessWithoutPartialResults(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "docker-stub")
+	pidPath := filepath.Join(directory, "inspect.pid")
+	id := strings.Repeat("a", 64)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"ps\" ]; then printf '%s\\n' \"" + id + "\"; exit 0; fi",
+		"if [ \"$1\" = \"inspect\" ]; then printf '%s' \"$$\" > \"" + pidPath + "\"; exec sleep 30; fi",
+		"exit 98",
+	}, "\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(ctx, strings.Repeat("b", 32))
+	if !errors.Is(err, ErrDockerCommandFailed) || found != nil {
+		t.Fatalf("timed-out inspect = %+v, %v; want nil findings and ErrDockerCommandFailed", found, err)
+	}
+	assertRecoveryDockerProcessReaped(t, pidPath)
+}
+
+func assertRecoveryDockerProcessReaped(t *testing.T, pidPath string) {
+	t.Helper()
+	pidBytes, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatalf("Docker stub did not record its process ID: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	if err != nil || pid <= 0 {
+		t.Fatalf("invalid Docker stub process ID %q: %v", pidBytes, err)
+	}
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("Docker subprocess %d still exists after cancellation (kill probe: %v)", pid, err)
+	}
+}
+
+
+func TestOSCommandDockerCLIDiscoveryTreatsDaemonUnavailableAsErrorNotEmptyInventory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"ps\" ]; then",
+		"  printf '%s\\n' 'Cannot connect to the Docker daemon' >&2",
+		"  exit 1",
+		"fi",
+		"exit 99",
+	}, "\n")
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(
+		context.Background(), strings.Repeat("a", 32),
+	)
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("daemon-unavailable inventory error = %v, want ErrDockerCommandFailed", err)
+	}
+	if found != nil {
+		t.Fatalf("daemon-unavailable inventory returned findings: %+v", found)
+	}
+}
+
+func TestOSCommandDockerCLIDiscoveryAcceptsSuccessfulEmptyInventory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker lifecycle discovery targets Linux hosts")
+	}
+	binary := filepath.Join(t.TempDir(), "docker-stub")
+	script := "#!/bin/sh\n[ \"$1\" = \"ps\" ] || exit 99\nexit 0\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := (OSCommandDockerCLI{Binary: binary}).DiscoverByRunnerLabel(
+		context.Background(), strings.Repeat("a", 32),
+	)
+	if err != nil {
+		t.Fatalf("successful empty inventory returned error: %v", err)
+	}
+	if found == nil || len(found) != 0 {
+		t.Fatalf("successful empty inventory = %#v, want non-nil empty slice", found)
+	}
+}
+
+func TestBoundedCommandBufferDrainsAndFlagsOutputOverflow(t *testing.T) {
+	buffer := &boundedCommandBuffer{limit: 4}
+
+	first := []byte("abc")
+	if n, err := buffer.Write(first); err != nil || n != len(first) {
+		t.Fatalf("first write = (%d, %v), want (%d, nil)", n, err, len(first))
+	}
+	if buffer.exceeded {
+		t.Fatal("buffer marked output exceeded before reaching its limit")
+	}
+
+	second := []byte("def")
+	if n, err := buffer.Write(second); err != nil || n != len(second) {
+		t.Fatalf("overflow write = (%d, %v), want (%d, nil) so the pipe remains drained", n, err, len(second))
+	}
+	if !buffer.exceeded {
+		t.Fatal("buffer did not flag output beyond its configured limit")
+	}
+
+	third := []byte("ghi")
+	if n, err := buffer.Write(third); err != nil || n != len(third) {
+		t.Fatalf("post-overflow write = (%d, %v), want (%d, nil) so the pipe remains drained", n, err, len(third))
+	}
+	if got := string(buffer.buffer.Bytes()); got != "abcd" {
+		t.Fatalf("retained output = %q, want only the bounded prefix %q", got, "abcd")
+	}
+}
