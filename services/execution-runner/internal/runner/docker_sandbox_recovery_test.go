@@ -969,3 +969,31 @@ func TestOSCommandDockerCLIDiscoveryAcceptsSuccessfulEmptyInventory(t *testing.T
 		t.Fatalf("successful empty inventory = %#v, want non-nil empty slice", found)
 	}
 }
+
+func TestBoundedCommandBufferDrainsAndFlagsOutputOverflow(t *testing.T) {
+	buffer := &boundedCommandBuffer{limit: 4}
+
+	first := []byte("abc")
+	if n, err := buffer.Write(first); err != nil || n != len(first) {
+		t.Fatalf("first write = (%d, %v), want (%d, nil)", n, err, len(first))
+	}
+	if buffer.exceeded {
+		t.Fatal("buffer marked output exceeded before reaching its limit")
+	}
+
+	second := []byte("def")
+	if n, err := buffer.Write(second); err != nil || n != len(second) {
+		t.Fatalf("overflow write = (%d, %v), want (%d, nil) so the pipe remains drained", n, err, len(second))
+	}
+	if !buffer.exceeded {
+		t.Fatal("buffer did not flag output beyond its configured limit")
+	}
+
+	third := []byte("ghi")
+	if n, err := buffer.Write(third); err != nil || n != len(third) {
+		t.Fatalf("post-overflow write = (%d, %v), want (%d, nil) so the pipe remains drained", n, err, len(third))
+	}
+	if got := string(buffer.buffer.Bytes()); got != "abcd" {
+		t.Fatalf("retained output = %q, want only the bounded prefix %q", got, "abcd")
+	}
+}
