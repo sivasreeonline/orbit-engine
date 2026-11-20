@@ -182,7 +182,7 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
     provider = manifest_body["providerScope"]
     if provider["name"].lower() not in {"aws", "amazon-web-services"} or provider["service"].lower() != "cloudtrail":
         raise ValueError("manifest provider scope must identify AWS CloudTrail")
-    if report.get("accountId") != provider["account"] or report.get("region") != provider["region"]:
+    if report.get("accountId") != provider['account'] or report.get("region") != provider["region"]:
         raise ValueError("CloudTrail report account/Region differs from signed manifest scope")
     if report.get("verificationStatus") != "CHAIN_AND_REFERENCED_OBJECTS_VERIFIED":
         raise ValueError("CloudTrail report does not record successful chain and referenced-object verification")
@@ -234,7 +234,7 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
         if previous_end is not None and end >= previous_end:
             raise ValueError("CloudTrail digest report is not ordered latest-to-oldest")
         previous_end = end
-        if f"/{provider["account"]}/CloudTrail-Digest/{provider['region']}/" not in f"/{key}":
+        if f"/{provider['account']}/CloudTrail-Digest/{provider['region']}/" not in f"/{key}":
             raise ValueError("CloudTrail digest key is outside the signed account/Region prefix")
 
         public_key = digest.get("publicKey")
@@ -264,7 +264,7 @@ def validate_report(report: dict[str, Any], manifest_body: dict[str, Any]) -> No
                 raise ValueError("CloudTrail log report must pin bucket, key and exact non-null VersionId")
             if log_bucket != bucket:
                 raise ValueError("CloudTrail log bucket differs from digest bucket")
-            if f"/{provider["account"]}/CloudTrail/{provider['region']}/" not in f"/{log_key}":
+            if f"/{provider['account']}/CloudTrail/{provider['region']}/" not in f"/{log_key}":
                 raise ValueError("CloudTrail log key is outside the signed account/Region prefix")
             log_identity = (log_bucket, log_key, log_version)
             if log_identity in seen_logs:
