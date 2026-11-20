@@ -664,7 +664,7 @@ def self_test() -> None:
     # operation from the idempotency index, without issuing another transaction.
     durable_fake = FakeDynamoDBClient()
     adapter = AWSDynamoDBWitnessAdapter(durable_fake, "fence-witness-fixture")
-    from validate_m0_fence_provider_adapter_conformance import ZERO_DIGEST
+    from validate_m0_witness_provider_adapter_conformance import ZERO_DIGEST
     sample = Checkpoint(Scope("domain-x", "witness-x", "authority-x", "host-x"),
                         1, "durable-op", "ISSUED", "a" * 64, ZERO_DIGEST)
     first = adapter.append_if_current(
