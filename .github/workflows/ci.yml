@@ -161,6 +161,9 @@ jobs:
 
       - name: Verify AWS STS caller identity binding (synthetic only)
         run: python ../../scripts/test_m0_fence_aws_sts_caller_identity.py
+
+      - name: Verify dual-principal AWS STS manifest binding (synthetic only)
+        run: python ../../scripts/validate_m0_fence_aws_identity_manifest.py
  
       - name: Verify FENCE-001 AWS read-only qualification preflight
         run: python ../../scripts/inspect_m0_fence_aws_qualification_environment.py --self-test
