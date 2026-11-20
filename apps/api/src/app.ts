@@ -22,6 +22,15 @@ import {
   RunnerAcceptanceUnauthorizedError,
 } from "./db/runner-acceptance-repository";
 import { authenticateRunnerRequest } from "./services/runner-request-authenticator";
+import type { PostgresRunnerArtifactRepository } from "./db/runner-artifact-repository";
+import {
+  RunnerArtifactIntegrityError,
+  RunnerArtifactNotFoundError,
+  RunnerArtifactNotStartedError,
+  RunnerArtifactStaleLeaseError,
+  RunnerArtifactStorageUnavailableError,
+  RunnerArtifactUnauthorizedError,
+} from "./db/runner-artifact-repository";
 import type { PostgresRunnerHeartbeatRepository } from "./db/runner-heartbeat-repository";
 import {
   RunnerHeartbeatConflictError,
@@ -66,6 +75,7 @@ interface ApiDependencies {
   readonly codingEvidenceRepository?: Pick<PostgresCodingEvidenceRepository, "createSession" | "appendBatch">;
   readonly runnerStartRepository?: Pick<PostgresRunnerStartRepository, "start">;
   readonly runnerHeartbeatRepository?: Pick<PostgresRunnerHeartbeatRepository, "renew">;
+  readonly runnerArtifactRepository?: Pick<PostgresRunnerArtifactRepository, "fetch">;
   readonly runtimeVersions?: { readonly java: string; readonly python: string };
   readonly allowedOrigins?: string;
 }
@@ -649,6 +659,120 @@ export function createApiHandler(dependencies: ApiDependencies) {
         console.error("runner_heartbeat_failed", { correlationId: requestId });
         return errorResponse("INTERNAL_ERROR",
           "The runner lease could not be renewed.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
+
+
+    if (request.method === "POST" && path === "/internal/v1/runner/artifact") {
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerArtifactRepository) {
+        return errorResponse(
+          "RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Private runner artifact retrieval is temporarily unavailable.",
+          503,
+          true,
+          requestId,
+          origin,
+          allowedOrigins,
+        );
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner artifact request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let artifactBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 2048);
+        artifactBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner artifact request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner artifact request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      const artifactFields = ["dispatchId", "executionId", "attemptId", "leaseToken"];
+      if (!isRecord(artifactBody) ||
+          Object.keys(artifactBody).length !== artifactFields.length ||
+          Object.keys(artifactBody).some((key) => !artifactFields.includes(key)) ||
+          artifactFields.some((key) => typeof artifactBody[key] !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+              .test(artifactBody[key] as string))) {
+        return errorResponse("INVALID_RUNNER_ARTIFACT_REQUEST",
+          "The runner artifact request contains invalid identifiers or fields.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const artifact = await dependencies.runnerArtifactRepository.fetch({
+          dispatchId: artifactBody.dispatchId as string,
+          executionId: artifactBody.executionId as string,
+          attemptId: artifactBody.attemptId as string,
+          leaseToken: artifactBody.leaseToken as string,
+          runnerId: authenticatedRunner.runnerId,
+          keyId: authenticatedRunner.keyId,
+        });
+        return jsonResponse({ data: artifact }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof RunnerArtifactUnauthorizedError) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner identity is no longer authorized.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerArtifactNotFoundError) {
+          return errorResponse("RUNNER_DISPATCH_NOT_FOUND",
+            "The dispatch does not match this artifact request.", 404, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerArtifactNotStartedError) {
+          return errorResponse("RUNNER_START_REQUIRED",
+            "The dispatch must be durably accepted and started before artifact retrieval.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerArtifactStaleLeaseError) {
+          return errorResponse("RUNNER_LEASE_STALE",
+            "The runner lease has expired or no longer belongs to this runner.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerArtifactStorageUnavailableError) {
+          return errorResponse("RUNNER_ARTIFACT_STORAGE_UNAVAILABLE",
+            "The artifact storage backend is not available to this runner yet.", 503, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerArtifactIntegrityError) {
+          return errorResponse("RUNNER_ARTIFACT_INTEGRITY_FAILED",
+            "The source or test bundle failed integrity validation.", 500, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Private runner artifact retrieval is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_artifact_fetch_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "The runner artifact could not be retrieved.", 500, true,
           requestId, origin, allowedOrigins);
       }
     }
