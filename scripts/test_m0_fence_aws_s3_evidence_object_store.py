@@ -78,7 +78,7 @@ def adapter_factory() -> S3EvidenceObjectStore:
         bucket_name="synthetic-fence-evidence",
         key_prefix="qualification-test",
         writer_identity="synthetic-collector",
-        verifier_identity="synthetic-verifier",
+        verifier_identity="independent-verifier",
     )
 
 
@@ -94,14 +94,14 @@ def run_negative_tests() -> None:
     store = S3EvidenceObjectStore(
         writer, verifier, bucket_name="synthetic-fence-evidence",
         key_prefix="qualification-test", writer_identity="synthetic-collector",
-        verifier_identity="synthetic-verifier",
+        verifier_identity="independent-verifier",
     )
 
     try:
         S3EvidenceObjectStore(
             writer, verifier, bucket_name="synthetic-fence-evidence",
             key_prefix="qualification-test", writer_identity="synthetic-collector",
-            verifier_identity="synthetic-verifier",
+            verifier_identity="independent-verifier",
         )
         # Construction is valid for enabled versioning and Object Lock.
     except Exception as error:
