@@ -580,6 +580,7 @@ def _fixture(root: Path) -> tuple[dict[str, Any], list[dict[str, str]]]:
             "publicKey": {
                 "region": region, "fingerprint": fingerprint,
                 "derSha256": sha(key_der), "derByteCount": len(key_der),
+                "derBase64": base64.b64encode(key_der).decode("ascii"),
                 "validityStartTime": "2026-11-19T00:00:00Z",
                 "validityEndTime": "2026-11-21T00:00:00Z",
             },
