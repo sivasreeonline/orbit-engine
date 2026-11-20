@@ -114,9 +114,8 @@ class S3EvidenceObjectStore:
         if len(idempotency_key.encode("utf-8")) > 512:
             raise ValueError("idempotency_key exceeds 512 UTF-8 bytes")
 
-        logical_hash = _sha256(object_key.encode("utf-8"))
         idempotency_hash = _sha256(idempotency_key.encode("utf-8"))
-        return f"{self._prefix}/{logical_hash}/{idempotency_hash}"
+        return f"{self._prefix}/{idempotency_hash}"
 
     @staticmethod
     def _metadata(
