@@ -15,7 +15,8 @@ import re
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -42,6 +43,10 @@ LIVE_OPT_IN = "I_UNDERSTAND_THIS_WRITES_TO_A_DISPOSABLE_QUALIFICATION_TABLE"
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 ACCOUNT_ID = re.compile(r"^[0-9]{12}$")
+APPROVAL_PROFILE = "sky-high-fence-aws-dynamodb-witness-write-approval-v1"
+APPROVAL_OPERATION = "AWS_DYNAMODB_WITNESS_ADAPTER_CONFORMANCE_WRITES"
+MAX_FUTURE_SKEW = timedelta(minutes=2)
+MAX_APPROVAL_WINDOW = timedelta(hours=8)
 
 
 def _canonical(value: Any) -> str:
@@ -409,6 +414,99 @@ def _create_local_table(client: Any, table_name: str) -> None:
     )
 
 
+def _strict_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise RuntimeError(f"duplicate JSON member in live qualification evidence: {key}")
+        result[key] = value
+    return result
+
+
+def _read_json_object(path_value: str, label: str) -> tuple[dict[str, Any], bytes]:
+    path = Path(path_value)
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError(f"{label} must be an existing regular, non-symlink file")
+    raw = path.read_bytes()
+    try:
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object_pairs)
+    except (UnicodeDecodeError, json.JSONDecodeError, RuntimeError) as exc:
+        raise RuntimeError(f"{label} must contain strict UTF-8 JSON without duplicate members") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError(f"{label} must contain a top-level JSON object")
+    return value, raw
+
+
+def _parse_utc_timestamp(value: Any, label: str) -> datetime:
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeError(f"{label} is required")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise RuntimeError(f"{label} must be an ISO-8601 timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise RuntimeError(f"{label} must be explicitly UTC")
+    return parsed.astimezone(timezone.utc)
+
+
+def _load_run_bound_approval(config: dict[str, str]) -> None:
+    """Bind live-write approval to the exact read-only preflight bytes and scope.
+
+    This local operator approval file is an additional guard, not a signed
+    independent-review attestation or production authorization.
+    """
+    approval, _approval_raw = _read_json_object(config["approvalFile"], "AWS witness approval file")
+    report, report_raw = _read_json_object(config["preflightReport"], "AWS read-only preflight report")
+    now = datetime.now(timezone.utc)
+
+    expected = {
+        "profile": APPROVAL_PROFILE,
+        "approvalId": config["approvalId"],
+        "runId": config["runId"],
+        "accountId": config["accountId"],
+        "region": config["region"],
+        "tableArn": config["tableArn"],
+        "expectedCallerArnPrefix": config["expectedCallerArnPrefix"],
+        "operation": APPROVAL_OPERATION,
+        "preflightReportSha256": hashlib.sha256(report_raw).hexdigest(),
+    }
+    for field, value in expected.items():
+        if approval.get(field) != value:
+            raise RuntimeError(f"AWS witness approval {field} does not match the pinned run scope")
+
+    approved_by = approval.get("approvedBy")
+    if not isinstance(approved_by, str) or not approved_by.strip():
+        raise RuntimeError("AWS witness approval must identify the approving operator")
+
+    issued_at = _parse_utc_timestamp(approval.get("issuedAt"), "approval issuedAt")
+    expires_at = _parse_utc_timestamp(approval.get("expiresAt"), "approval expiresAt")
+    if issued_at > now + MAX_FUTURE_SKEW:
+        raise RuntimeError("AWS witness approval issue time is in the future")
+    if expires_at <= now or issued_at >= expires_at:
+        raise RuntimeError("AWS witness approval is expired or has an empty validity window")
+    if expires_at - issued_at > MAX_APPROVAL_WINDOW:
+        raise RuntimeError("AWS witness approval validity window must not exceed eight hours")
+
+    if report.get("result") != "READY_FOR_READ_ONLY_AWS_ADAPTER_IMPLEMENTATION":
+        raise RuntimeError("read-only AWS preflight report is not ready")
+    if report.get("qualificationRunId") != config["runId"]:
+        raise RuntimeError("read-only preflight qualification run differs from approval")
+    if report.get("accountId") != config["accountId"] or report.get("region") != config["region"]:
+        raise RuntimeError("read-only preflight account/Region differs from approval")
+    if report.get("readOnlyInspection") is not True:
+        raise RuntimeError("AWS preflight report is not marked as read-only inspection")
+    if report.get("resourcePins", {}).get("dynamodbTableArn") != config["tableArn"]:
+        raise RuntimeError("read-only preflight table ARN differs from approval")
+    if any(report.get(field) is not False for field in (
+        "resourceMutationsPerformed",
+        "privilegedMutationAttemptsPerformed",
+        "restoreOperationsPerformed",
+        "productionApproval",
+        "hostAdmissionEnabled",
+    )):
+        raise RuntimeError("read-only preflight report does not preserve its no-mutation/no-admission boundary")
+
+
 def create_adapter() -> DynamoDBWitnessAdapter:
     """Factory consumed by the provider-neutral conformance harness."""
     endpoint = os.getenv("FENCE_AWS_WITNESS_ENDPOINT_URL")
@@ -453,8 +551,8 @@ def create_adapter() -> DynamoDBWitnessAdapter:
     table_name = os.getenv("FENCE_AWS_WITNESS_TABLE_NAME", "")
     qualification_run = os.getenv("FENCE_AWS_WITNESS_QUALIFICATION_RUN_ID", "")
     approval_id = os.getenv("FENCE_AWS_WITNESS_APPROVAL_ID", "")
-    approval_run_id = os.getenv("FENCE_AWS_WITNESS_APPROVAL_RUN_ID", "")
-    approval_expiry = os.getenv("FENCE_AWS_WITNESS_APPROVAL_EXPIRES_AT", "")
+    preflight_report = os.getenv("FENCE_AWS_WITNESS_PREFLIGHT_REPORT", "")
+    approval_file = os.getenv("FENCE_AWS_WITNESS_APPROVAL_FILE", "")
     qualification_environment = os.getenv("FENCE_AWS_WITNESS_ENVIRONMENT", "")
     disposable = os.getenv("FENCE_AWS_WITNESS_DISPOSABLE", "")
     production = os.getenv("FENCE_AWS_WITNESS_PRODUCTION", "")
@@ -470,20 +568,25 @@ def create_adapter() -> DynamoDBWitnessAdapter:
         raise RuntimeError("a pre-provisioned qualification witness table is required")
     if not SAFE_ID.fullmatch(qualification_run) or not SAFE_ID.fullmatch(approval_id):
         raise RuntimeError("a run ID and approval ID are required")
-    if approval_run_id != qualification_run:
-        raise RuntimeError("the qualification approval must be bound to this exact run ID")
+    if not preflight_report or not approval_file:
+        raise RuntimeError("the exact read-only preflight report and run-bound approval file are required")
     if (qualification_environment, disposable, production, admission_enabled) != (
         "QUALIFICATION", "true", "false", "false"
     ):
         raise RuntimeError(
             "live writes require QUALIFICATION, disposable=true, production=false and admissionEnabled=false"
         )
-    try:
-        expiry = datetime.fromisoformat(approval_expiry.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise RuntimeError("approval expiry must be an ISO-8601 timestamp with timezone") from exc
-    if expiry.tzinfo is None or expiry.astimezone(timezone.utc) <= datetime.now(timezone.utc):
-        raise RuntimeError("qualification approval is missing timezone or expired")
+    _load_run_bound_approval({
+        "accountId": expected_account,
+        "region": region,
+        "tableName": table_name,
+        "tableArn": f"arn:aws:dynamodb:{region}:{expected_account}:table/{table_name}",
+        "expectedCallerArnPrefix": expected_arn_prefix,
+        "runId": qualification_run,
+        "approvalId": approval_id,
+        "preflightReport": preflight_report,
+        "approvalFile": approval_file,
+    })
 
     session = boto3.Session(region_name=region)
     sts = session.client("sts")
