@@ -166,6 +166,14 @@ def main() -> None:
     assert report.log_count == 2, "expected two verified CloudTrail log files"
     assert report.digests[0].version_id == "digest-version-002"
     assert report.digests[1].version_id == "digest-version-001"
+    custody = report.to_dict(test_only=True)
+    latest_read = reader.objects[(BUCKET, latest_key)]
+    assert custody["digests"][0]["rawSha256"] == hashlib.sha256(latest_read.body).hexdigest()
+    assert custody["digests"][0]["rawByteCount"] == len(latest_read.body)
+    assert custody["digests"][0]["uncompressedSha256"] == report.digests[0].uncompressed_sha256
+    assert custody["digests"][0]["publicKey"]["derSha256"] == hashlib.sha256(keys.der).hexdigest()
+    assert custody["digests"][0]["logs"][0]["rawByteCount"] > 0
+    assert custody["digests"][0]["logs"][0]["uncompressedByteCount"] > 0
     assert {call[0] for call in keys.calls} == {REGION}, "public keys must be retrieved from the digest Region"
     print("PASS two-link CloudTrail digest signature chain and exact-version evidence readback")
 
