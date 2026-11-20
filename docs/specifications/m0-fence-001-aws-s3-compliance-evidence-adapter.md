@@ -9,18 +9,17 @@
 
 The adapter implements the provider-neutral `EvidenceObjectStore` contract using an existing S3 general-purpose bucket with Versioning and Object Lock already enabled. It never creates or configures a bucket.
 
-Each logical `(object_key, idempotency_key)` pair maps to a deterministic opaque S3 key under:
+Each logical object key maps to one deterministic opaque S3 key under:
 
-`skyhigh-fence-evidence/v1/<first-two-idempotency-hash-bytes>/<SHA-256(idempotency-key)>`
+`skyhigh-fence-evidence/v1/<first-two-logical-key-hash-bytes>/<SHA-256(object_key)>`
 
-The logical object key and idempotency key are not written in plaintext S3 metadata. SHA-256 digests bind the logical key and idempotency key separately. S3 user metadata records the content SHA-256, byte count and authenticated writer identity.
+Every logical version of that object uses the same S3 key and receives a distinct S3 `VersionId`. The idempotency key is recorded as a SHA-256 metadata binding on that immutable version; it is not part of the physical key. The logical object key and idempotency key are never written in plaintext S3 metadata. S3 user metadata records the content SHA-256, byte count, authenticated writer identity, logical-key hash and idempotency-key hash.
 
 The returned `ObjectVersion` contains the physical S3 object key and the exact non-null S3 `VersionId`. Consumers must retain both. The adapter never substitutes a mutable `latest` alias.
 
 ## 2. Conditional immutable writes
 
-Every first write uses one `PutObject` request with:
-- `IfNoneMatch="*"` to prevent replacing a current object at the deterministic key;
+The first version uses one `PutObject` request with `IfNoneMatch="*"`. A later logical version uses `IfMatch=<current ETag>`, creating a new S3 version only if the exact current predecessor is unchanged. Every request also specifies:
 - `ObjectLockMode="COMPLIANCE"`;
 - `ObjectLockRetainUntilDate` set to the requested future UTC deadline;
 - explicit byte length and `ChecksumSHA256`;
@@ -28,7 +27,7 @@ Every first write uses one `PutObject` request with:
 
 A successful response must return a non-empty, non-null `VersionId`. An absent/null version ID is an infrastructure/configuration failure, never accepted as an immutable object.
 
-If S3 returns a conditional-write conflict, the adapter reads the exact current version. If a delete marker hides the current object, it examines the version history for the deterministic key. It returns an existing version only when exactly one version is bound to the same idempotency key, logical key, writer identity, content digest, byte count and sufficient COMPLIANCE retention. Different bytes, a different logical key, changed writer identity, a short retention deadline, multiple matching versions or ambiguous history are rejected. It does not retry by blindly creating another version.
+Before writing, the adapter searches the exact key's version history for the same idempotency-key hash. An exact retry returns the original version only when logical-key hash, writer identity, content digest, byte count and COMPLIANCE retention all match. If no prior version exists, it conditionally creates the first version with `IfNoneMatch`. If a prior version exists with a different idempotency key, it conditionally appends with `IfMatch` against the current ETag. A 409/412 conflict causes a bounded re-read/retry; after the retry limit, the adapter fails closed. If a delete marker hides the current object, exact version history is examined and old matching versions remain addressable by their VersionIds. It never retries with an unconditional PUT.
 
 ## 3. Exact-version verification and deletion probe
 
@@ -38,6 +37,8 @@ If S3 returns a conditional-write conflict, the adapter reads the exact current 
 - `delete_version` addresses the exact version and requests the governance-bypass path as a negative probe. An S3 denial is mapped to `ObjectMutationDenied`; a successful deletion is a hard conformance failure.
 
 The writer and verifier are separate AWS profiles with separately pinned exact role ARNs. The live factory resolves both through STS and rejects identical principals. The verifier client performs exact-version GET/HEAD operations; the writer client performs the put and negative-delete probe.
+
+The verifier requires `s3:ListBucketVersions` for exact idempotency recovery and `s3:GetObjectVersion` for version-specific GET/HEAD. The writer requires `s3:PutObject` with conditional-write support and the permission to attempt the exact-version delete/bypass negative probe. The bucket must be a general-purpose versioned bucket (not a directory bucket or S3 on Outposts). The owner must review the exact IAM statements and bucket policy separately; adapter startup does not establish that a role policy is least-privilege.
 
 A denied delete alone does not prove that COMPLIANCE retention caused the denial rather than an IAM permission denial. The external qualification procedure must ensure the probe principal has the permissions needed to attempt the operation and must preserve provider-native request/audit evidence. Independent privileged-bypass testing remains mandatory.
 
@@ -78,7 +79,7 @@ No credentials, approval files, account IDs or provider output belong in GitHub.
 
 `python scripts/aws_s3_evidence_object_store.py --self-test` runs the nine existing provider-neutral object-store cases against a thread-safe synthetic S3 API double. It covers exact-version byte readback, idempotent retry, content/key binding, later-version immutability, COMPLIANCE metadata, denied exact-version deletion, independent verifier identity, concurrent conditional puts and no fallback to a latest alias. It also tests report-hash approval binding, bucket-scope mismatch, modified preflight report and default live-mode refusal.
 
-The synthetic API double is not an S3 service emulator. These tests do **not** qualify AWS S3, provider-enforced COMPLIANCE retention, IAM separation, retention-bypass resistance, privileged account administrators, bucket policy, replication, restore, audit completeness or durability. Passing CI is not provider qualification.
+The synthetic API double is not an S3 service emulator. The suite exercises first-version If-None-Match and successor If-Match request logic, but it does **not** qualify AWS S3, provider-enforced COMPLIANCE retention, IAM separation, retention-bypass resistance, privileged account administrators, bucket policy, replication, restore, audit completeness or durability. Passing CI is not provider qualification.
 
 ## 6. External qualification still required
 
