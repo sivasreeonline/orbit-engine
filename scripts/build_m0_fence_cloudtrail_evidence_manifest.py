@@ -199,13 +199,20 @@ def build_manifest(
             request_ids=ids if ids is not None else request_ids,
         ))
 
+    object_catalog = {
+        (item["bucket"], item["key"], item["versionId"]): item["artifactId"]
+        for item in provider_exchange.get("s3ObjectReads", [])
+    }
+    public_key_catalog = {
+        item["fingerprint"]: item["artifactId"]
+        for item in provider_exchange.get("regionalPublicKeys", [])
+    }
     for digest in report.get("digests", []):
         bucket, key, version = digest.get("bucket"), digest.get("key"), digest.get("versionId")
         if not all(isinstance(x, str) and x for x in (bucket, key, version)) or version == "null":
             raise ValueError("each digest must carry an exact non-null S3 VersionId")
-        raw_sha = digest.get("rawSha256")
-        artifact_id = next((name for name in index["artifacts"] if name.startswith("cloudtrail-digest-") and name.endswith(".bin") and sha(safe_artifact(root, name)) == raw_sha), None)
-        if artifact_id is None:
+        artifact_id = object_catalog.get((bucket, key, version))
+        if not artifact_id or not artifact_id.startswith("cloudtrail-digest-"):
             raise ValueError(f"raw digest object bytes missing for {bucket}/{key}@{version}")
         add(artifact_id, "CLOUDTRAIL_DIGEST", f"s3://{bucket}/{key}", version, ["CT-001", "CT-002", "CT-004", "CT-006"])
 
@@ -213,20 +220,22 @@ def build_manifest(
             lb, lk, lv = log.get("bucket"), log.get("key"), log.get("versionId")
             if not all(isinstance(x, str) and x for x in (lb, lk, lv)) or lv == "null":
                 raise ValueError("each log must carry an exact non-null S3 VersionId")
-            log_sha = log.get("rawSha256")
-            log_id = next((name for name in index["artifacts"] if name.startswith("cloudtrail-log-") and name.endswith(".bin") and sha(safe_artifact(root, name)) == log_sha), None)
-            if log_id is None:
+            log_id = object_catalog.get((lb, lk, lv))
+            if not log_id or not log_id.startswith("cloudtrail-log-"):
                 raise ValueError(f"raw log object bytes missing for {lb}/{lk}@{lv}")
             add(log_id, "CLOUDTRAIL_LOG", f"s3://{lb}/{lk}", lv, ["CT-003", "CT-004", "CT-006"])
 
         public_key = digest.get("publicKey", {})
-        key_sha = public_key.get("derSha256")
-        key_id = next((name for name in index["artifacts"] if name.startswith("cloudtrail-public-key-") and name.endswith(".der") and sha(safe_artifact(root, name)) == key_sha), None)
-        if key_id is None:
+        key_id = public_key_catalog.get(public_key.get("fingerprint"))
+        if not key_id or not key_id.startswith("cloudtrail-public-key-"):
             raise ValueError(f"regional CloudTrail public key DER bytes missing for {public_key.get('fingerprint')}")
-        key_ref = f"cloudtrail-public-key://{public_key['region']}/{public_key['fingerprint']}"
-        key_version = f"{public_key['validityStartTime']}/{public_key['validityEndTime']}"
-        add(key_id, "CLOUDTRAIL_PUBLIC_KEY", key_ref, key_version, ["CT-001", "CT-006"])
+        add(
+            key_id,
+            "CLOUDTRAIL_PUBLIC_KEY",
+            f"cloudtrail-public-key://{public_key['region']}/{public_key['fingerprint']}",
+            f"{public_key['validityStartTime']}/{public_key['validityEndTime']}",
+            ["CT-001", "CT-006"],
+        )
 
     add(report_id, "CLOUDTRAIL_VERIFICATION_REPORT", "cloudtrail-verification-report://verification-v1", "report-v1", ["CT-006"])
     if not records:
