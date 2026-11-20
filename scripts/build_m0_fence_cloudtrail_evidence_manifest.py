@@ -188,16 +188,27 @@ def build_manifest(
     request_ids.extend(provider_exchange.get("inventoryListObjectVersionsRequestIds", []))
     report_id = "cloudtrail-verification-report.json"
     records: list[dict[str, Any]] = []
+    records_by_id: dict[str, dict[str, Any]] = {}
 
     def add(artifact_id: str, artifact_type: str, object_ref: str, version: str, tests: list[str], ids: list[str] | None = None) -> None:
         data = safe_artifact(root, artifact_id)
-        records.append(artifact_record(
+        record = artifact_record(
             artifact_id=artifact_id, artifact_type=artifact_type, object_ref=object_ref,
             object_version=version, data=data, test_ids=tests, acquired_at=acquired_at,
             collector_identity=collector_identity, collector_key_id=collector_record["keyId"],
             verifier_identity=verifier_identity, verifier_key_id=verifier_record["keyId"],
             request_ids=ids if ids is not None else request_ids,
-        ))
+        )
+        previous = records_by_id.get(artifact_id)
+        if previous is not None:
+            identity_fields = ("artifactType", "objectRef", "objectVersion", "sha256", "byteCount")
+            if any(previous[field] != record[field] for field in identity_fields):
+                raise ValueError(f"one artifact ID is rebound to different evidence: {artifact_id}")
+            previous["testIds"] = sorted(set(previous["testIds"]) | set(record["testIds"]))
+            previous["providerRequestIds"] = sorted(set(previous["providerRequestIds"]) | set(record["providerRequestIds"]))
+            return
+        records_by_id[artifact_id] = record
+        records.append(record)
 
     object_catalog = {
         (item["bucket"], item["key"], item["versionId"]): item["artifactId"]
