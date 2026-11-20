@@ -98,6 +98,8 @@ def reconcile_inventory(
         truncated = page_entry.get("isTruncated")
         if type(truncated) is not bool:
             raise ValueError("inventory page isTruncated must be boolean")
+        if page_doc.get("Name") != bucket or page_doc.get("Prefix") != prefix:
+            raise ValueError(f"inventory page {index} bucket/prefix differs from the signed inventory scope")
         if page_doc.get("KeyMarker") != request_key or page_doc.get("VersionIdMarker") != request_version:
             raise ValueError(f"inventory page {index} request markers differ from the captured response")
         if page_doc.get("IsTruncated") is not truncated:
@@ -248,6 +250,9 @@ def validate_inventory_manifest(
     if index_artifact["objectVersion"] != "inventory-v1":
         raise ValueError("CloudTrail inventory index objectVersion must be inventory-v1")
     inventory = _strict_json(_read_artifact(root, index_artifact["artifactId"]), "CloudTrail digest inventory")
+    expected_index_ref = f"cloudtrail-digest-inventory://{inventory.get('bucket')}/{inventory.get('prefix')}"
+    if index_artifact["objectRef"] != expected_index_ref:
+        raise ValueError("CloudTrail inventory index objectRef differs from its declared bucket/prefix")
     if inventory.get("testOnly") is not body["testOnly"]:
         raise ValueError("inventory testOnly flag differs from signed manifest")
 
@@ -265,6 +270,9 @@ def validate_inventory_manifest(
             raise ValueError("CloudTrail inventory page artifact lacks CT-007")
         if artifact["objectVersion"] != f"page-{index}":
             raise ValueError("CloudTrail inventory page objectVersion does not match its page order")
+        expected_page_ref = f"s3-list-object-versions://{inventory['bucket']}/{inventory['prefix']}?page={index}"
+        if artifact["objectRef"] != expected_page_ref:
+            raise ValueError("CloudTrail inventory page objectRef differs from its bucket/prefix/page order")
         page_documents.append(_strict_json(_read_artifact(root, artifact_id), f"CloudTrail inventory page {index}"))
     if set(page_by_id) != {item["artifactId"] for item in inventory.get("pages", [])}:
         raise ValueError("manifest has unreferenced or duplicate CloudTrail inventory page artifacts")
