@@ -386,7 +386,7 @@ export class PostgresRunnerArtifactRepository {
             "  AND dispatch.lease_token = $5::uuid AND dispatch.lease_expires_at > clock_timestamp()",
             "  AND job.state = 'RUNNING' AND job.lease_owner = $4",
             "  AND job.lease_token = $5::uuid AND job.lease_expires_at > clock_timestamp()",
-          ].join("\\n"),
+          ].join("\n"),
           [input.dispatchId, input.executionId, input.attemptId, input.runnerId, input.leaseToken],
         );
         if (finalLeaseCheck.rows.length !== 1) throw new RunnerArtifactStaleLeaseError();
