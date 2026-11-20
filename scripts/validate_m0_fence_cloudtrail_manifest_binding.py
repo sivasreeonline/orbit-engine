@@ -131,7 +131,7 @@ def _verify_materialized_digest(
         raise ValueError("CloudTrail public-key artifact is not an RSA public key")
     previous_signature = document.get("previousDigestSignature")
     if previous_signature is None:
-        previous_signature = ""
+        previous_signature = "null"
     if not isinstance(previous_signature, str):
         raise ValueError("CloudTrail previousDigestSignature is malformed")
     data_to_sign = (
