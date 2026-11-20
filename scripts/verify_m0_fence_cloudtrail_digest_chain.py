@@ -7,6 +7,7 @@ ListPublicKeys provider. CI exercises only synthetic RSA keys and gzip files.
 """
 from __future__ import annotations
 
+import base64
 import gzip
 import hashlib
 import io
@@ -44,8 +45,10 @@ class VerifiedLog:
     bucket: str
     key: str
     version_id: str
-    sha256: str
-    byte_count: int
+    raw_sha256: str
+    raw_byte_count: int
+    uncompressed_sha256: str
+    uncompressed_byte_count: int
 
 
 @dataclass(frozen=True)
@@ -53,8 +56,18 @@ class VerifiedDigest:
     bucket: str
     key: str
     version_id: str
-    sha256: str
+    raw_sha256: str
+    raw_byte_count: int
+    uncompressed_sha256: str
+    uncompressed_byte_count: int
+    signature_hex: str
+    signature_algorithm: str
     signature_fingerprint: str
+    public_key_der_sha256: str
+    public_key_der_byte_count: int
+    public_key_der_base64: str
+    public_key_validity_start: str
+    public_key_validity_end: str
     digest_start_time: str
     digest_end_time: str
     logs: tuple[VerifiedLog, ...]
@@ -73,6 +86,58 @@ class VerificationReport:
     @property
     def log_count(self) -> int:
         return sum(len(item.logs) for item in self.digests)
+
+    def to_dict(self, *, test_only: bool) -> dict[str, Any]:
+        """Serialize a custody-ready report; callers must explicitly label fixture runs."""
+        if type(test_only) is not bool:
+            raise ValueError("test_only must be an explicit boolean")
+        return {
+            "profile": "sky-high-cloudtrail-digest-verification-v1",
+            "schemaVersion": 1,
+            "testOnly": test_only,
+            "accountId": self.account_id,
+            "region": self.region,
+            "verificationStatus": "CHAIN_AND_REFERENCED_OBJECTS_VERIFIED",
+            "completenessStatus": "NOT_ESTABLISHED_BY_CHAIN_WALK",
+            "digestCount": self.digest_count,
+            "logCount": self.log_count,
+            "digests": [
+                {
+                    "bucket": digest.bucket,
+                    "key": digest.key,
+                    "versionId": digest.version_id,
+                    "rawSha256": digest.raw_sha256,
+                    "rawByteCount": digest.raw_byte_count,
+                    "uncompressedSha256": digest.uncompressed_sha256,
+                    "uncompressedByteCount": digest.uncompressed_byte_count,
+                    "signatureHex": digest.signature_hex,
+                    "signatureAlgorithm": digest.signature_algorithm,
+                    "signatureFingerprint": digest.signature_fingerprint,
+                    "publicKey": {
+                        "region": self.region,
+                        "fingerprint": digest.signature_fingerprint,
+                        "derSha256": digest.public_key_der_sha256,
+                        "derByteCount": digest.public_key_der_byte_count,
+                        "derBase64": digest.public_key_der_base64,
+                        "validityStartTime": digest.public_key_validity_start,
+                        "validityEndTime": digest.public_key_validity_end,
+                    },
+                    "logs": [
+                        {
+                            "bucket": log.bucket,
+                            "key": log.key,
+                            "versionId": log.version_id,
+                            "rawSha256": log.raw_sha256,
+                            "rawByteCount": log.raw_byte_count,
+                            "uncompressedSha256": log.uncompressed_sha256,
+                            "uncompressedByteCount": log.uncompressed_byte_count,
+                        }
+                        for log in digest.logs
+                    ],
+                }
+                for digest in self.digests
+            ],
+        }
 
 
 class EvidenceReader(Protocol):
@@ -163,7 +228,7 @@ def _load_public_key(
     fingerprint: str,
     digest_start: datetime,
     digest_end: datetime,
-) -> rsa.RSAPublicKey:
+) -> tuple[rsa.RSAPublicKey, bytes, datetime, datetime]:
     records = provider.list_public_keys(region, digest_start, digest_end)
     matches = [item for item in records if item.get("Fingerprint") == fingerprint]
     if len(matches) != 1:
@@ -188,7 +253,7 @@ def _load_public_key(
         raise DigestVerificationError("CloudTrail public key is not valid DER") from error
     if not isinstance(public_key, rsa.RSAPublicKey):
         raise DigestVerificationError("CloudTrail digest signing key is not RSA")
-    return public_key
+    return public_key, value, start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
 
 def _verify_digest_signature(
@@ -199,7 +264,7 @@ def _verify_digest_signature(
     signature_hex: str,
     provider: PublicKeyProvider,
     region: str,
-) -> str:
+) -> tuple[str, bytes, datetime, datetime]:
     if document.get("digestSignatureAlgorithm") != "SHA256withRSA":
         raise DigestVerificationError("unsupported CloudTrail digest signature algorithm")
     fingerprint = document.get("digestPublicKeyFingerprint")
@@ -210,8 +275,6 @@ def _verify_digest_signature(
     digest_start = _parse_time(document.get("digestStartTime"), "digestStartTime")
     previous_signature = document.get("previousDigestSignature")
     if previous_signature is None:
-        # Match the AWS CLI's documented-reference implementation: JSON null
-        # is represented as the literal string "null" in the signing payload.
         previous_signature = "null"
     if not isinstance(previous_signature, str):
         raise DigestVerificationError("previousDigestSignature must be hex text or null")
@@ -233,7 +296,9 @@ def _verify_digest_signature(
         f"{digest_hash}\n"
         f"{previous_signature}"
     ).encode("utf-8")
-    public_key = _load_public_key(provider, region, fingerprint, digest_start, digest_end)
+    public_key, public_key_der, key_valid_from, key_valid_to = _load_public_key(
+        provider, region, fingerprint, digest_start, digest_end
+    )
     try:
         public_key.verify(
             bytes.fromhex(signature_hex),
@@ -243,7 +308,7 @@ def _verify_digest_signature(
         )
     except Exception as error:
         raise DigestVerificationError("CloudTrail digest RSA signature verification failed") from error
-    return fingerprint
+    return fingerprint, public_key_der, key_valid_from, key_valid_to
 
 
 def _verify_logs(
@@ -289,7 +354,15 @@ def _verify_logs(
         if actual_hash != expected_hash:
             raise DigestVerificationError("CloudTrail log file SHA-256 does not match its digest entry")
         verified.append(
-            VerifiedLog(bucket, key, read.version_id, actual_hash, len(content))
+            VerifiedLog(
+                bucket=bucket,
+                key=key,
+                version_id=read.version_id,
+                raw_sha256=hashlib.sha256(read.body).hexdigest(),
+                raw_byte_count=len(read.body),
+                uncompressed_sha256=actual_hash,
+                uncompressed_byte_count=len(content),
+            )
         )
     return tuple(verified)
 
@@ -368,7 +441,7 @@ class CloudTrailDigestChainVerifier:
                 signature = read.metadata.get("signature")
             if not isinstance(signature, str) or not signature:
                 raise DigestVerificationError("current digest S3 object metadata has no signature")
-            fingerprint = _verify_digest_signature(
+            fingerprint, public_key_der, key_valid_from, key_valid_to = _verify_digest_signature(
                 document, uncompressed, bucket, key, signature, self._public_keys, self._region
             )
             logs = _verify_logs(document, self._reader, self._account, self._region)
@@ -377,8 +450,18 @@ class CloudTrailDigestChainVerifier:
                     bucket=bucket,
                     key=key,
                     version_id=read.version_id,
-                    sha256=hashlib.sha256(uncompressed).hexdigest(),
+                    raw_sha256=hashlib.sha256(read.body).hexdigest(),
+                    raw_byte_count=len(read.body),
+                    uncompressed_sha256=hashlib.sha256(uncompressed).hexdigest(),
+                    uncompressed_byte_count=len(uncompressed),
+                    signature_hex=signature,
+                    signature_algorithm=document["digestSignatureAlgorithm"],
                     signature_fingerprint=fingerprint,
+                    public_key_der_sha256=hashlib.sha256(public_key_der).hexdigest(),
+                    public_key_der_byte_count=len(public_key_der),
+                    public_key_der_base64=base64.b64encode(public_key_der).decode("ascii"),
+                    public_key_validity_start=key_valid_from.isoformat().replace("+00:00", "Z"),
+                    public_key_validity_end=key_valid_to.isoformat().replace("+00:00", "Z"),
                     digest_start_time=document["digestStartTime"],
                     digest_end_time=document["digestEndTime"],
                     logs=logs,
