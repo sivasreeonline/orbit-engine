@@ -25,13 +25,16 @@ class StsCallerIdentityEvidence:
     session_name: str
     request_id: str
 
-    def to_dict(self, *, test_only: bool) -> dict[str, Any]:
+    def to_dict(self, *, test_only: bool, identity_role: str) -> dict[str, Any]:
         if type(test_only) is not bool:
             raise ValueError("test_only must be an explicit boolean")
+        if identity_role not in {"COLLECTOR", "INDEPENDENT_VERIFIER"}:
+            raise ValueError("identity_role must be COLLECTOR or INDEPENDENT_VERIFIER")
         return {
             "profile": "sky-high-aws-sts-caller-identity-v1",
             "schemaVersion": 1,
             "testOnly": test_only,
+            "identityRole": identity_role,
             "verified": True,
             "expectedAccountId": self.expected_account_id,
             "expectedRoleArn": self.expected_role_arn,
