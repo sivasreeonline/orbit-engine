@@ -25,6 +25,14 @@ var (
 	runnerInstanceIDPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
 )
 
+const (
+	maxDockerRuntimeInfoBytes = 64 * 1024
+	maxDockerImageIDBytes = 128
+	maxDockerCreateOutputBytes = 128
+	maxDockerInspectOutputBytes = 8 * 1024
+	maxDockerCommandStderrBytes = 8 * 1024
+)
+
 const compileSuccessMarker = "__SKYHIGH_COMPILE_OK__\n"
 
 type DockerContainerState struct {
@@ -60,9 +68,11 @@ func (cli OSCommandDockerCLI) Preflight(ctx context.Context, imageRefs []string)
 	if ctx == nil || len(imageRefs) != 2 {
 		return ErrDockerCommandFailed
 	}
-	command := exec.CommandContext(ctx, cli.binary(), "info", "--format", "{{json .Runtimes}}")
-	output, err := command.Output()
-	if err != nil {
+	output, err, stdoutExceeded, stderrExceeded := runDockerCommandBounded(
+		ctx, cli.binary(), []string{"info", "--format", "{{json .Runtimes}}"},
+		maxDockerRuntimeInfoBytes,
+	)
+	if err != nil || stdoutExceeded || stderrExceeded {
 		return ErrDockerCommandFailed
 	}
 	var runtimes map[string]struct {
@@ -85,9 +95,12 @@ func (cli OSCommandDockerCLI) Preflight(ctx context.Context, imageRefs []string)
 			continue
 		}
 		seen[imageRef] = struct{}{}
-		inspect := exec.CommandContext(ctx, cli.binary(), "image", "inspect", "--format", "{{.Id}}", imageRef)
-		imageID, err := inspect.Output()
-		if err != nil || !imageIDPattern.MatchString(strings.TrimSpace(string(imageID))) {
+		imageID, err, stdoutExceeded, stderrExceeded := runDockerCommandBounded(
+			ctx, cli.binary(), []string{"image", "inspect", "--format", "{{.Id}}", imageRef},
+			maxDockerImageIDBytes,
+		)
+		if err != nil || stdoutExceeded || stderrExceeded ||
+			!imageIDPattern.MatchString(strings.TrimSpace(string(imageID))) {
 			return ErrDockerCommandFailed
 		}
 	}
@@ -98,13 +111,14 @@ func (cli OSCommandDockerCLI) Create(ctx context.Context, args []string) (string
 	if ctx == nil {
 		return "", ErrDockerCommandFailed
 	}
-	command := exec.CommandContext(ctx, cli.binary(), append([]string{"create"}, args...)...)
-	output, commandErr := command.Output()
+	output, commandErr, stdoutExceeded, stderrExceeded := runDockerCommandBounded(
+		ctx, cli.binary(), append([]string{"create"}, args...), maxDockerCreateOutputBytes,
+	)
 	id := strings.TrimSpace(string(output))
-	if !containerIDPattern.MatchString(id) {
+	if stdoutExceeded || !containerIDPattern.MatchString(id) {
 		return "", ErrDockerCommandFailed
 	}
-	if commandErr != nil {
+	if commandErr != nil || stderrExceeded {
 		cleanupContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = cli.Remove(cleanupContext, id)
 		cancel()
@@ -142,16 +156,11 @@ func (cli OSCommandDockerCLI) Inspect(ctx context.Context, id string) (DockerCon
 	if ctx == nil || !containerIDPattern.MatchString(id) {
 		return DockerContainerState{}, ErrDockerCommandFailed
 	}
-	command := exec.CommandContext(
-		ctx,
-		cli.binary(),
-		"inspect",
-		"--format",
-		"{{json .State}}",
-		id,
+	output, err, stdoutExceeded, stderrExceeded := runDockerCommandBounded(
+		ctx, cli.binary(), []string{"inspect", "--format", "{{json .State}}", id},
+		maxDockerInspectOutputBytes,
 	)
-	output, err := command.Output()
-	if err != nil {
+	if err != nil || stdoutExceeded || stderrExceeded {
 		return DockerContainerState{}, ErrDockerCommandFailed
 	}
 	var state DockerContainerState
@@ -170,6 +179,50 @@ func (cli OSCommandDockerCLI) Remove(ctx context.Context, id string) error {
 		return ErrDockerCommandFailed
 	}
 	return nil
+}
+
+type boundedCommandBuffer struct {
+	buffer   bytes.Buffer
+	maximum  int
+	exceeded bool
+}
+
+func (capture *boundedCommandBuffer) Write(value []byte) (int, error) {
+	originalLength := len(value)
+	remaining := capture.maximum - capture.buffer.Len()
+	if remaining > 0 {
+		toWrite := value
+		if len(toWrite) > remaining {
+			toWrite = toWrite[:remaining]
+		}
+		_, _ = capture.buffer.Write(toWrite)
+	}
+	if originalLength > remaining {
+		capture.exceeded = true
+	}
+	return originalLength, nil
+}
+
+func (capture *boundedCommandBuffer) Bytes() []byte {
+	return append([]byte(nil), capture.buffer.Bytes()...)
+}
+
+func runDockerCommandBounded(
+	ctx context.Context,
+	binary string,
+	args []string,
+	stdoutLimit int,
+) ([]byte, error, bool, bool) {
+	if ctx == nil || stdoutLimit <= 0 {
+		return nil, ErrDockerCommandFailed, false, false
+	}
+	command := exec.CommandContext(ctx, binary, args...)
+	stdout := &boundedCommandBuffer{maximum: stdoutLimit}
+	stderr := &boundedCommandBuffer{maximum: maxDockerCommandStderrBytes}
+	command.Stdout = stdout
+	command.Stderr = stderr
+	err := command.Run()
+	return stdout.Bytes(), err, stdout.exceeded, stderr.exceeded
 }
 
 type DockerSandbox struct {
