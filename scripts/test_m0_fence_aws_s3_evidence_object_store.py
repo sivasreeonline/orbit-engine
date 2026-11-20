@@ -101,6 +101,7 @@ def run_negative_tests() -> None:
         S3EvidenceObjectStore(
             writer, verifier, bucket_name="synthetic-fence-evidence",
             key_prefix="qualification-test", writer_identity="synthetic-collector",
+            verifier_identity="synthetic-verifier",
         )
         # Construction is valid for enabled versioning and Object Lock.
     except Exception as error:
