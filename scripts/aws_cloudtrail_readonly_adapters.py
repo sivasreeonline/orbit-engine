@@ -241,6 +241,10 @@ class S3ListObjectVersionsInventoryCollector:
             response = self._client.list_object_versions(**request)
             if not isinstance(response, dict):
                 raise ValueError("S3 ListObjectVersions response must be an object")
+            if response.get("Name") != self._bucket or response.get("Prefix") != self._prefix:
+                raise ValueError("S3 ListObjectVersions response bucket/prefix differs from pinned scope")
+            if response.get("KeyMarker", key_marker) != key_marker or response.get("VersionIdMarker", version_marker) != version_marker:
+                raise ValueError("S3 ListObjectVersions response request markers differ from the issued request")
             truncated = response.get("IsTruncated")
             if type(truncated) is not bool:
                 raise ValueError("S3 ListObjectVersions response lacks boolean IsTruncated")
