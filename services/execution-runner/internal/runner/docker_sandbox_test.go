@@ -1228,6 +1228,42 @@ func TestOSCommandDockerCLICreateBoundsStderrAndCleansExactContainer(t *testing.
 }
 
 
+func TestOSCommandDockerCLIRemoveHonorsContextDeadline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker sandbox targets Linux hosts")
+	}
+	dockerPath := filepath.Join(t.TempDir(), "docker-stub")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"if [ \"$1\" = \"rm\" ]; then",
+		"  while :; do :; done",
+		"fi",
+		"exit 91",
+	}, "\n")
+	if err := os.WriteFile(dockerPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	startedAt := time.Now()
+	err := (OSCommandDockerCLI{Binary: dockerPath}).Remove(
+		ctx, strings.Repeat("c", 64),
+	)
+	elapsed := time.Since(startedAt)
+
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("Remove error = %v, want ErrDockerCommandFailed", err)
+	}
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("remove context error = %v, want deadline exceeded", ctx.Err())
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("Remove exceeded bounded cancellation window: %s", elapsed)
+	}
+}
+
+
 func TestDockerSandboxFailedCreateWithUnconfirmedCleanupRemainsDiscoverable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Docker sandbox targets Linux hosts")
