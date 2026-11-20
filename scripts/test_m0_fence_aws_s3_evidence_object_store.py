@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from aws_s3_evidence_object_store import S3EvidenceObjectStore
-from validate_m0_fence_evidence_object_store import run_conformance
+from validate_m0_fence_evidence_object_store import ObjectIdempotencyConflict, run_conformance
 
 
 class FakeS3Error(Exception):
@@ -145,7 +145,22 @@ def run_negative_tests() -> None:
     else:
         raise AssertionError("unconfigured writer identity was accepted")
 
-    print("PASS S3 adapter rejects mutable aliases, same-principal readback, expired retention and writer mismatch")
+    retention = int(datetime.now(timezone.utc).timestamp()) + 3600
+    store.put_immutable(
+        "logical/first", b"same bytes", retention_until=retention,
+        idempotency_key="globally-bound-key", writer_identity="synthetic-collector",
+    )
+    try:
+        store.put_immutable(
+            "logical/second", b"same bytes", retention_until=retention,
+            idempotency_key="globally-bound-key", writer_identity="synthetic-collector",
+        )
+    except ObjectIdempotencyConflict:
+        pass
+    else:
+        raise AssertionError("idempotency key was rebound to a different logical object")
+
+    print("PASS S3 adapter rejects mutable aliases, same-principal readback, expired retention, writer mismatch and key rebinding")
 
 
 def main() -> None:
