@@ -1509,3 +1509,105 @@ func TestDockerSandboxRemovalSuccessWithCleanedAppendFailureRemainsPending(t *te
 		t.Fatalf("read-only recovery must not infer CLEANED from missing inventory: %+v", pending)
 	}
 }
+
+func TestOSCommandDockerCLIPreflightHonorsContextDeadline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker sandbox targets Linux hosts")
+	}
+
+	directory := t.TempDir()
+	logPath := filepath.Join(directory, "docker-preflight.log")
+	dockerPath := filepath.Join(directory, "docker-stub")
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"printf '%s\\n' \"$*\" >> \"$DOCKER_TEST_LOG\"",
+		"if [ \"$1\" = \"info\" ]; then",
+		"  exec sleep 5",
+		"fi",
+		"exit 91",
+	}, "\n")
+	if err := os.WriteFile(dockerPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_TEST_LOG", logPath)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	startedAt := time.Now()
+	err := (OSCommandDockerCLI{Binary: dockerPath}).Preflight(ctx, []string{
+		"registry.example/sky-high/java@sha256:" + strings.Repeat("a", 64),
+		"registry.example/sky-high/python@sha256:" + strings.Repeat("b", 64),
+	})
+	elapsed := time.Since(startedAt)
+
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("cancelled Preflight error = %v, want ErrDockerCommandFailed", err)
+	}
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("preflight context error = %v, want deadline exceeded", ctx.Err())
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("Preflight exceeded bounded cancellation window: %s", elapsed)
+	}
+
+	calls, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if got, want := strings.TrimSpace(string(calls)), "info --format {{json .Runtimes}}"; got != want {
+		t.Fatalf("Docker commands after preflight cancellation = %q, want only %q", got, want)
+	}
+}
+
+func TestOSCommandDockerCLIInspectHonorsContextDeadline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Docker sandbox targets Linux hosts")
+	}
+
+	directory := t.TempDir()
+	logPath := filepath.Join(directory, "docker-inspect.log")
+	dockerPath := filepath.Join(directory, "docker-stub")
+	containerID := strings.Repeat("e", 64)
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"printf '%s\\n' \"$*\" >> \"$DOCKER_TEST_LOG\"",
+		"if [ \"$1\" = \"inspect\" ]; then",
+		"  exec sleep 5",
+		"fi",
+		"exit 91",
+	}, "\n")
+	if err := os.WriteFile(dockerPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_TEST_LOG", logPath)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	startedAt := time.Now()
+	state, err := (OSCommandDockerCLI{Binary: dockerPath}).Inspect(ctx, containerID)
+	elapsed := time.Since(startedAt)
+
+	if !errors.Is(err, ErrDockerCommandFailed) {
+		t.Fatalf("cancelled Inspect error = %v, want ErrDockerCommandFailed", err)
+	}
+	if state != (DockerContainerState{}) {
+		t.Fatalf("cancelled Inspect returned partial container state: %+v", state)
+	}
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("inspect context error = %v, want deadline exceeded", ctx.Err())
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("Inspect exceeded bounded cancellation window: %s", elapsed)
+	}
+
+	calls, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	want := "inspect --format {{json .State}} " + containerID
+	if got := strings.TrimSpace(string(calls)); got != want {
+		t.Fatalf("Docker commands during inspect cancellation = %q, want only %q", got, want)
+	}
+}
