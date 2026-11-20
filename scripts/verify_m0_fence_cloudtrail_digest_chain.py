@@ -85,6 +85,8 @@ class VerificationReport:
 
     def to_dict(self, *, test_only: bool) -> dict[str, Any]:
         """Serialize a custody-ready report; callers must explicitly label fixture runs."""
+        if type(test_only) is not bool:
+            raise ValueError("test_only must be an explicit boolean")
         return {
             "profile": "sky-high-cloudtrail-digest-verification-v1",
             "schemaVersion": 1,
