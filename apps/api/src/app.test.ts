@@ -21,7 +21,7 @@ import type {
   RecordRunnerStartInput,
   RecordedRunnerStart,
 } from "./db/runner-start-repository";
-import { canonicalRunnerRequestMessage } from "./security/runner-request-signature";import { canonicalRunnerRequestMessage } from "./security/runner-request-signature";
+import { canonicalRunnerRequestMessage } from "./security/runner-request-signature";
 import { RUNNER_AUTH_HEADERS } from "./services/runner-request-authenticator";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
 import type { CreateExecutionInput } from "./db/execution-intake-repository";
@@ -103,9 +103,6 @@ interface HarnessOptions {
   };
   runnerStartRepository?: {
     start(input: RecordRunnerStartInput): Promise<RecordedRunnerStart>;
-  };  codingEvidenceRepository?: {
-    createSession(input: CreateCodingEvidenceSessionInput): Promise<CreatedCodingEvidenceSession>;
-    appendBatch(input: AppendCodingEvidenceBatchInput): Promise<AppendedCodingEvidenceBatch>;
   };
 }
 
@@ -146,8 +143,6 @@ function makeHarness(options: HarnessOptions = {}) {
       : {}),
     ...(options.runnerStartRepository
       ? { runnerStartRepository: options.runnerStartRepository }
-      : {}),    ...(options.codingEvidenceRepository
-      ? { codingEvidenceRepository: options.codingEvidenceRepository }
       : {}),
     allowedOrigins: allowedOrigin,
   });
