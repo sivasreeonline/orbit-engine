@@ -39,3 +39,13 @@ CI uses an injected fake STS client. It checks a valid assumed-role identity and
 - non-boolean testOnly report classification.
 
 No AWS account, credentials, network access or provider API calls are used.
+
+## Dual-principal manifest binding
+
+The manifest extension adds `AWS_STS_CALLER_IDENTITY` artifacts and CT-009. The identity-manifest validator requires exactly two separately captured reports:
+- `COLLECTOR`
+- `INDEPENDENT_VERIFIER`
+
+Both reports must match the signed manifest account and test-only classification. Each must include the expected IAM role ARN, actual assumed-role ARN, UserId/session binding and STS RequestId. The validator rejects a shared IAM role, shared caller ARN, shared request ID, malformed identity or tampered report bytes.
+
+This proves distinct role identities were reported and bound into the signed manifest. It does not prove the two STS clients were operated by separate human operators or separate administrative control planes; those governance controls remain external qualification requirements.
