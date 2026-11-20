@@ -55,6 +55,22 @@ describe("EditorEvidenceCollector", () => {
     expect(collector.getRecords()).toHaveLength(0);
   });
 
+  it("labels server-synchronized sessions as authenticated API capture", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-13T05:00:00.000Z"));
+    const observed: CapturedEvidence[] = [];
+    const collector = await EditorEvidenceCollector.start({
+      ...problem,
+      captureMode: "authenticated-api",
+      createId: createIds(),
+      retainRecords: false,
+      onRecord: (record) => observed.push(record),
+    });
+
+    expect(observed[0]?.event.metadata?.captureMode).toBe("authenticated-api");
+    await collector.close();
+  });
+
   it("uses a server-issued session ID and starts at the server-confirmed sequence", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-13T05:00:00.000Z"));
