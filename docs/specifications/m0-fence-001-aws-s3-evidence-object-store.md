@@ -23,14 +23,14 @@ At construction, the writer client must confirm that bucket versioning is `Enabl
 S3 does not provide a multi-object transaction for an evidence object plus a separate idempotency ledger. This implementation avoids that split-write problem by deriving a deterministic physical object key from the SHA-256 of the caller's logical key and idempotency key:
 
 ```text
-<prefix>/<sha256(logical-key)>/<sha256(idempotency-key)>
+<prefix>/<sha256(idempotency-key)>
 ```
 
 The object is created with `IfNoneMatch="*"`, explicit SHA-256 checksum, metadata binding the logical key/content/idempotency key/writer identity, COMPLIANCE Object Lock mode, and the requested retention deadline.
 
 An exact retry addresses the same physical key. If the acknowledgement was lost or the conditional create reports that the key already exists, the adapter performs HEAD and accepts the existing object only when all metadata, byte count, retention mode, retention deadline and non-null VersionId match. A changed payload under the same idempotency key is rejected as an idempotency conflict. Different idempotency keys produce distinct physical keys, so later evidence writes cannot replace the earlier physical object.
 
-The returned `ObjectVersion.object_key` is the physical S3 key, not the original logical key. Evidence manifests must preserve that returned key and the exact S3 `VersionId`; callers must not reconstruct either value.
+The idempotency key is unique within the configured adapter prefix; its deterministic key is independent of the logical key so reuse against a different logical key is detected as a binding conflict. The returned `ObjectVersion.object_key` is the physical S3 key, not the original logical key. Evidence manifests must preserve that returned key and the exact S3 `VersionId`; callers must not reconstruct either value.
 
 ### Read and mutation boundary
 
