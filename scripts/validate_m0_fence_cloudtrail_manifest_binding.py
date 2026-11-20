@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import argparse
 import copy
+import gzip
 import hashlib
+import io
 import json
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import rfc8785
-from cryptography.hazmat.primitives import serialization
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from validate_m0_fence_evidence_manifest import (
     ROOT,
@@ -58,6 +61,85 @@ def safe_version(value: Any) -> bool:
 
 def object_ref(bucket: str, key: str) -> str:
     return f"s3://{bucket}/{key}"
+
+
+def _bounded_uncompress(raw: bytes, *, maximum: int, label: str) -> bytes:
+    if len(raw) > maximum:
+        raise ValueError(f"{label} compressed bytes exceed the configured limit")
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(raw), mode="rb") as stream:
+            content = stream.read(maximum + 1)
+    except (OSError, EOFError) as error:
+        raise ValueError(f"{label} is not a valid gzip stream") from error
+    if len(content) > maximum:
+        raise ValueError(f"{label} decompressed bytes exceed the configured limit")
+    return content
+
+
+def _strict_json(raw: bytes, label: str) -> dict[str, Any]:
+    def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"{label} contains duplicate JSON field: {key}")
+            result[key] = value
+        return result
+
+    value = json.loads(raw.decode("utf-8", errors="strict"), object_pairs_hook=reject_duplicates)
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} root must be a JSON object")
+    return value
+
+
+def _verify_materialized_digest(
+    digest: dict[str, Any], raw_digest: bytes, raw_public_key: bytes,
+    account_id: str, region: str,
+) -> dict[str, Any]:
+    uncompressed = _bounded_uncompress(raw_digest, maximum=16 * 1024 * 1024, label="CloudTrail digest")
+    if sha(uncompressed) != digest["uncompressedSha256"] or len(uncompressed) != digest["uncompressedByteCount"]:
+        raise ValueError("CloudTrail digest uncompressed measurements do not match preserved raw bytes")
+    document = _strict_json(uncompressed, "CloudTrail digest")
+    for field, expected in (
+        ("awsAccountId", account_id),
+        ("digestS3Bucket", digest["bucket"]),
+        ("digestS3Object", digest["key"]),
+        ("digestStartTime", digest["digestStartTime"]),
+        ("digestEndTime", digest["digestEndTime"]),
+        ("digestPublicKeyFingerprint", digest["signatureFingerprint"]),
+        ("digestSignatureAlgorithm", digest["signatureAlgorithm"]),
+    ):
+        if document.get(field) != expected:
+            raise ValueError(f"CloudTrail digest source field {field} differs from the verification report")
+    public_key = serialization.load_der_public_key(raw_public_key)
+    if not isinstance(public_key, rsa.RSAPublicKey):
+        raise ValueError("CloudTrail public-key artifact is not an RSA public key")
+    previous_signature = document.get("previousDigestSignature")
+    if previous_signature is None:
+        previous_signature = ""
+    if not isinstance(previous_signature, str):
+        raise ValueError("CloudTrail previousDigestSignature is malformed")
+    data_to_sign = (
+        f"{document['digestEndTime']}\\n"
+        f"{digest['bucket']}/{digest['key']}\\n"
+        f"{sha(uncompressed)}\\n"
+        f"{previous_signature}"
+    ).encode("utf-8")
+    try:
+        public_key.verify(
+            bytes.fromhex(digest["signatureHex"]),
+            data_to_sign,
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+    except (InvalidSignature, ValueError) as error:
+        raise ValueError("CloudTrail digest signature does not verify against the manifested public key") from error
+    return document
+
+
+def _verify_materialized_log(log: dict[str, Any], raw_log: bytes) -> None:
+    uncompressed = _bounded_uncompress(raw_log, maximum=64 * 1024 * 1024, label="CloudTrail log")
+    if sha(uncompressed) != log["uncompressedSha256"] or len(uncompressed) != log["uncompressedByteCount"]:
+        raise ValueError("CloudTrail log uncompressed measurements do not match preserved raw bytes")
 
 
 def _read_artifact(root: Path, artifact_id: str) -> bytes:
@@ -242,6 +324,62 @@ def validate_cloudtrail_manifest(
         artifact = actual[identity]
         if artifact["byteCount"] != expected_count:
             raise ValueError("CloudTrail manifest artifact byte count differs from verification report")
+
+    for digest in report["digests"]:
+        digest_identity = (
+            "CLOUDTRAIL_DIGEST", object_ref(digest["bucket"], digest["key"]),
+            digest["versionId"], digest["rawSha256"],
+        )
+        key = digest["publicKey"]
+        key_identity = (
+            "CLOUDTRAIL_PUBLIC_KEY",
+            f"cloudtrail-public-key://{key['region']}/{key['fingerprint']}",
+            f"{key['validityStartTime']}/{key['validityEndTime']}",
+            key["derSha256"],
+        )
+        digest_bytes = _read_artifact(root, actual[digest_identity]["artifactId"])
+        key_bytes = _read_artifact(root, actual[key_identity]["artifactId"])
+        document = _verify_materialized_digest(
+            digest, digest_bytes, key_bytes, body["providerScope"]["account"],
+            body["providerScope"]["region"],
+        )
+        for log in digest["logs"]:
+            log_identity = (
+                "CLOUDTRAIL_LOG", object_ref(log["bucket"], log["key"]),
+                log["versionId"], log["rawSha256"],
+            )
+            _verify_materialized_log(log, _read_artifact(root, actual[log_identity]["artifactId"]))
+
+    for index, digest in enumerate(report["digests"]):
+        document = _strict_json(
+            _bounded_uncompress(
+                _read_artifact(root, actual[(
+                    "CLOUDTRAIL_DIGEST", object_ref(digest["bucket"], digest["key"]),
+                    digest["versionId"], digest["rawSha256"],
+                )]["artifactId"]),
+                maximum=16 * 1024 * 1024,
+                label="CloudTrail digest",
+            ),
+            "CloudTrail digest",
+        )
+        previous = document.get("previousDigestS3Object")
+        previous_bucket = document.get("previousDigestS3Bucket")
+        previous_hash = document.get("previousDigestHashValue")
+        previous_signature = document.get("previousDigestSignature")
+        if index + 1 < len(report["digests"]):
+            predecessor = report["digests"][index + 1]
+            if previous_bucket != predecessor["bucket"] or previous != predecessor["key"]:
+                raise ValueError("CloudTrail report order does not match previous digest bucket/key linkage")
+            if previous_hash != predecessor["uncompressedSha256"]:
+                raise ValueError("CloudTrail previousDigestHashValue does not match predecessor evidence")
+            if previous_signature != predecessor["signatureHex"]:
+                raise ValueError("CloudTrail previousDigestSignature does not match predecessor signature evidence")
+        elif any(value is not None for value in (
+            previous_bucket, previous, previous_hash,
+            document.get("previousDigestHashAlgorithm"), previous_signature,
+        )):
+            raise ValueError("CloudTrail report does not terminate at a complete starting digest")
+
     if not REQUIRED_TEST_IDS["CLOUDTRAIL_VERIFICATION_REPORT"].issubset(set(report_artifact["testIds"])):
         raise ValueError("CloudTrail verification report artifact lacks CT-006")
     if report_artifact["objectVersion"] != "report-v1":
