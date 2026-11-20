@@ -30,9 +30,14 @@ class FakeReader:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], ReadObject] = {}
 
-    def add(self, bucket: str, key: str, body: bytes, version_id: str, signature: str | None = None) -> None:
-        metadata = {"signature": signature} if signature is not None else {}
-        self.objects[(bucket, key)] = ReadObject(body, version_id, metadata)
+    def add(
+        self, bucket: str, key: str, body: bytes, version_id: str,
+        signature: str | None = None, metadata: dict[str, str] | None = None,
+    ) -> None:
+        stored_metadata = dict(metadata or {})
+        if signature is not None:
+            stored_metadata["signature"] = signature
+        self.objects[(bucket, key)] = ReadObject(body, version_id, stored_metadata)
 
     def read_object(self, bucket: str, key: str, *, version_id: str | None = None) -> ReadObject:
         item = self.objects.get((bucket, key))
@@ -147,6 +152,54 @@ def build_fixture() -> tuple[FakeReader, FakePublicKeys, Any, str, str]:
     return reader, keys, latest_key, latest_signature, genesis_key
 
 
+def build_backfill_fixture() -> tuple[FakeReader, FakePublicKeys, str, str]:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_der = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.PKCS1,
+    )
+    reader = FakeReader()
+    keys = FakePublicKeys(public_der)
+    log_content = b'{"Records":[{"eventName":"BackfilledEvent","eventSource":"fixture.amazonaws.com"}]}'
+    log_key = f"AWSLogs/{ACCOUNT}/CloudTrail/{REGION}/2026/11/20/backfill-log.json.gz"
+    reader.add(BUCKET, log_key, gzip_bytes(log_content), "backfill-log-version-001")
+    digest_key = (
+        f"AWSLogs/{ACCOUNT}/CloudTrail-Digest/{REGION}/2026/11/20/"
+        f"{ACCOUNT}_CloudTrail-Digest_{REGION}_fixture-trail_{REGION}_"
+        "20261120T020000Z_backfill.json.gz"
+    )
+    generation_time = "2026-11-20T03:00:00Z"
+    document = {
+        "awsAccountId": ACCOUNT,
+        "digestStartTime": "2026-11-20T01:00:00Z",
+        "digestEndTime": "2026-11-20T02:00:00Z",
+        "digestS3Bucket": BUCKET,
+        "digestS3Object": digest_key,
+        "digestPublicKeyFingerprint": FINGERPRINT,
+        "digestSignatureAlgorithm": "SHA256withRSA",
+        "previousDigestS3Bucket": None,
+        "previousDigestS3Object": None,
+        "previousDigestHashValue": None,
+        "previousDigestHashAlgorithm": None,
+        "previousDigestSignature": None,
+        "logFiles": [{
+            "s3Bucket": BUCKET,
+            "s3Object": log_key,
+            "hashValue": hashlib.sha256(log_content).hexdigest(),
+            "hashAlgorithm": "SHA-256",
+        }],
+    }
+    uncompressed = canonical_json(document)
+    signature = sign_digest(private_key, document, BUCKET, digest_key, uncompressed)
+    reader.add(
+        BUCKET, digest_key, gzip_bytes(uncompressed), "backfill-digest-version-001",
+        signature,
+        metadata={"backfill-generation-timestamp": generation_time},
+    )
+    keys.der = public_der
+    return reader, keys, digest_key, generation_time
+
+
 def rejected(action, label: str) -> None:
     try:
         action()
@@ -229,6 +282,50 @@ def main() -> None:
         "null S3 version",
     )
     print("PASS null S3 versions are rejected")
+
+    backfill_reader, backfill_keys, backfill_key, generation_time = build_backfill_fixture()
+    backfill_verifier = CloudTrailDigestChainVerifier(
+        backfill_reader, backfill_keys,
+        expected_account_id=ACCOUNT, expected_region=REGION,
+        expected_digest_bucket=BUCKET,
+    )
+    backfill_report = backfill_verifier.verify_chain(
+        BUCKET, backfill_key, latest_version_id="backfill-digest-version-001",
+        is_backfill=True,
+    )
+    backfill_data = backfill_report.to_dict(test_only=True)
+    assert backfill_data["backfillDigestCount"] == 1
+    assert backfill_data["digests"][0]["chainType"] == "BACKFILL"
+    assert backfill_data["digests"][0]["backfillGenerationTimestamp"] == generation_time
+    start_call = backfill_keys.calls[-1]
+    assert start_call[1].isoformat().startswith("2026-11-20T02:00:00")
+    assert start_call[2].isoformat().startswith("2026-11-20T04:00:00")
+    print("PASS separate backfill chain uses generation-time regional key lookup")
+
+    rejected(
+        lambda: backfill_verifier.verify_chain(
+            BUCKET, backfill_key, latest_version_id="backfill-digest-version-001",
+            is_backfill=False,
+        ),
+        "backfill key in standard chain",
+    )
+    missing_metadata_reader, missing_metadata_keys, missing_metadata_key, _ = build_backfill_fixture()
+    missing_object = missing_metadata_reader.objects[(BUCKET, missing_metadata_key)]
+    missing_metadata_reader.objects[(BUCKET, missing_metadata_key)] = ReadObject(
+        missing_object.body, missing_object.version_id, {"signature": missing_object.metadata["signature"]}
+    )
+    rejected(
+        lambda: CloudTrailDigestChainVerifier(
+            missing_metadata_reader, missing_metadata_keys,
+            expected_account_id=ACCOUNT, expected_region=REGION,
+            expected_digest_bucket=BUCKET,
+        ).verify_chain(
+            BUCKET, missing_metadata_key, latest_version_id="backfill-digest-version-001",
+            is_backfill=True,
+        ),
+        "missing backfill generation timestamp",
+    )
+    print("PASS standard/backfill classification and missing generation metadata are rejected")
 
     print("Synthetic CloudTrail digest verifier tests passed; no AWS account, credentials or provider APIs were used.")
 
