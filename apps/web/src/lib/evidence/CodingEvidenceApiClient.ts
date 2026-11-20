@@ -282,6 +282,10 @@ export class CodingEvidenceSyncQueue {
     return this.pending.length;
   }
 
+  getSessionId(): string {
+    return this.sessionId;
+  }
+
   async flush(signal?: AbortSignal): Promise<AppendEvidenceBatchAcknowledgement[]> {
     if (this.flushPromise) return this.flushPromise;
     this.flushPromise = this.flushPending(signal);
