@@ -656,6 +656,29 @@ def run_fixture_tests() -> int:
         validate_cloudtrail_manifest(envelope, trusted, root, allow_test_only=True)
         cases += 1
 
+        report = _strict_json((root / "report-001").read_bytes(), "fixture report")
+        backfill_report = json.loads(json.dumps(report))
+        backfill_digest = backfill_report["digests"][0]
+        backfill_digest["chainType"] = "BACKFILL"
+        backfill_digest["backfillGenerationTimestamp"] = "2026-11-20T03:00:00Z"
+        backfill_digest["key"] = backfill_digest["key"].replace(
+            "20261120T010000Z.json.gz", "20261120T020000Z_backfill.json.gz"
+        )
+        backfill_digest["digestEndTime"] = "2026-11-20T02:00:00Z"
+        validate_report(backfill_report, envelope["manifestBody"])
+        cases += 1
+
+        invalid_backfill = json.loads(json.dumps(backfill_report))
+        invalid_backfill["digests"][0]["key"] = invalid_backfill["digests"][0]["key"].replace("_backfill.json.gz", ".json.gz")
+        try:
+            validate_report(invalid_backfill, envelope["manifestBody"])
+        except ValueError as error:
+            if "does not use a backfill digest key" not in str(error):
+                raise
+            cases += 1
+        else:
+            raise AssertionError("backfill report with standard digest key was accepted")
+
         for filename, label in (("log-001", "raw log"), ("digest-001", "raw digest"), ("public-key-001", "DER public key")):
             envelope, trusted = _fixture(root)
             (root / filename).write_bytes(b"tampered " + label.encode("ascii"))
