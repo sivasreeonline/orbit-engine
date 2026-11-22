@@ -67,8 +67,11 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
     body: Uint8Array,
   ): Promise<WorkloadAuthenticationResult> {
     const trustedKeys = parseTrustedWorkloadKeys(this.env.WORKLOAD_CALLER_KEYS);
-    if (!trustedKeys || !(body instanceof Uint8Array)) {
+    if (!trustedKeys) {
       return { authenticated: false, reason: "unknown_key" };
+    }
+    if (!(body instanceof Uint8Array)) {
+      return { authenticated: false, reason: "malformed_proof" };
     }
 
     return authenticateWorkloadCall(
