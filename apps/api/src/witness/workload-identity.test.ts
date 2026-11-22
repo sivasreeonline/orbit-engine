@@ -16,6 +16,12 @@ const REQUEST = {
 };
 const NOW = 1_800_000_000;
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
 async function makeFixture() {
   const pair = (await crypto.subtle.generateKey(
     { name: "Ed25519" } as AlgorithmIdentifier,
@@ -33,7 +39,7 @@ async function makeFixture() {
     scope: REQUEST.scope,
     method: REQUEST.method,
     path: REQUEST.path,
-    bodyDigest: [...new Uint8Array(await crypto.subtle.digest("SHA-256", REQUEST.body))]
+    bodyDigest: [...new Uint8Array(await crypto.subtle.digest("SHA-256", toArrayBuffer(REQUEST.body)))]
       .map((byte) => byte.toString(16).padStart(2, "0"))
       .join(""),
     issuedAt: NOW - 1,
@@ -43,7 +49,7 @@ async function makeFixture() {
   const signature = new Uint8Array(await crypto.subtle.sign(
     { name: "Ed25519" } as AlgorithmIdentifier,
     pair.privateKey,
-    workloadSigningBytes(base),
+    toArrayBuffer(workloadSigningBytes(base)),
   ));
   const proof: WorkloadProof = {
     ...base,
