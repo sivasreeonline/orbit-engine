@@ -14,10 +14,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from jsonschema import Draft202012Validator, FormatChecker
+
 from validate_m0_fence_evidence_manifest import load_json, validate_manifest
 from validate_m0_fence_cloudtrail_qualified_manifest import validate_qualified_manifest
 
 PROFILE = "sky-high-fence-trusted-key-store-v1"
+SCHEMA_PATH = Path(__file__).resolve().parents[1] / "docs/schemas/m0-fence-trusted-key-store-v1.schema.json"
 ROLES = {"COLLECTOR", "INDEPENDENT_VERIFIER"}
 STATUSES = {"ACTIVE", "REVOKED"}
 
@@ -40,6 +43,10 @@ def validate_trust_store(
     *,
     verification_time: datetime | None = None,
 ) -> list[dict[str, str]]:
+    schema = load_json(SCHEMA_PATH)
+    errors = list(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(store))
+    if errors:
+        raise ValueError(f"trusted-key store schema failure: {errors[0].message}")
     if store.get("profile") != PROFILE or store.get("schemaVersion") != 1:
         raise ValueError("unsupported FENCE-001 trusted-key store profile/version")
     if store.get("status") != "ACTIVE":
