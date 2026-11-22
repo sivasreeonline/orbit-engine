@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skyhigh.example/schemas/m0-fence-manifest-trust-bundle-v1.schema.json",
+  "title": "FENCE-001 root-signed manifest trust bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "body",
+    "bundleDigest",
+    "rootKeyId",
+    "rootSignature"
+  ],
+  "properties": {
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "schemaVersion",
+        "trustDomainId",
+        "generation",
+        "previousBundleDigest",
+        "createdAt",
+        "keys",
+        "revocations"
+      ],
+      "properties": {
+        "profile": {
+          "const": "sky-high-fence-manifest-trust-bundle-v1"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "trustDomainId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previousBundleDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "keys": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/key"
+          }
+        },
+        "revocations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/revocation"
+          }
+        }
+      }
+    },
+    "bundleDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rootKeyId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rootSignature": {
+      "type": "string",
+      "minLength": 86,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    }
+  },
+  "$defs": {
+    "key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyId",
+        "identity",
+        "role",
+        "publicKeyBase64Url",
+        "notBefore",
+        "notAfter",
+        "approvedBy",
+        "approvalReference"
+      ],
+      "properties": {
+        "keyId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "enum": [
+            "COLLECTOR",
+            "INDEPENDENT_VERIFIER"
+          ]
+        },
+        "publicKeyBase64Url": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "notBefore": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "notAfter": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retiredAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "approvedBy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "approvalReference": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "revocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyId",
+        "revokedAt",
+        "reason"
+      ],
+      "properties": {
+        "keyId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "revokedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
