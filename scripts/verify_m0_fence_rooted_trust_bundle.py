@@ -128,6 +128,8 @@ def verify_trust_bundle(
     keys_by_id: dict[str, dict[str, Any]] = {}
     for item in body["keys"]:
         key_id = item["keyId"]
+        if not item["identity"].strip() or not item["approvedBy"].strip() or not item["approvalReference"].strip():
+            raise ValueError("manifest trust-bundle key identity and approval metadata must be non-empty")
         if key_id in keys_by_id:
             raise ValueError("duplicate manifest trust-bundle key ID")
         public_raw = decode_b64url(item["publicKeyBase64Url"], "manifest signing public key")
