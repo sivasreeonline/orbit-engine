@@ -120,6 +120,20 @@ def main() -> None:
         raise AssertionError("trust-bundle predecessor fork was accepted")
     print("PASS predecessor fork is rejected")
 
+    bad_signature = copy.deepcopy(bundle)
+    bad_signature["rootSignature"] = "A" * 86
+    try:
+        verify_trust_bundle(
+            bad_signature, roots, expected_generation=0, expected_predecessor_digest=ZERO_DIGEST,
+            expected_trust_domain_id="sky-high-cloudtrail-production",
+            manifest=manifest, verification_time=VERIFY_AT,
+        )
+    except ValueError as error:
+        assert "root signature" in str(error)
+    else:
+        raise AssertionError("invalid root signature was accepted")
+    print("PASS invalid root signatures are rejected")
+
     tampered = copy.deepcopy(bundle)
     tampered["body"]["trustDomainId"] = "attacker-domain"
     try:
