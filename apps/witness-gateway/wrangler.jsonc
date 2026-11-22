@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sky-high-witness-gateway",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKLOAD_NONCE_REPLAY",
+        "class_name": "WorkloadNonceReplayDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-workload-nonce-replay",
+      "new_sqlite_classes": ["WorkloadNonceReplayDO"]
+    }
+  ],
+  "observability": { "enabled": true }
+}
