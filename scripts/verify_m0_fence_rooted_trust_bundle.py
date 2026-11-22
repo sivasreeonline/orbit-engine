@@ -204,6 +204,7 @@ def verify_external_package(
     expected_generation: int,
     expected_predecessor_digest: str,
     expected_trust_domain_id: str,
+    allow_test_only: bool = False,
 ) -> dict[str, Any]:
     trusted_keys = verify_trust_bundle(
         trust_bundle, pinned_roots,
@@ -212,7 +213,9 @@ def verify_external_package(
         expected_trust_domain_id=expected_trust_domain_id,
         manifest=manifest,
     )
-    return validate_qualified_manifest(manifest, trusted_keys, artifact_root, allow_test_only=False)
+    return validate_qualified_manifest(
+        manifest, trusted_keys, artifact_root, allow_test_only=allow_test_only
+    )
 
 
 def main() -> None:
