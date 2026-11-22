@@ -27,7 +27,7 @@ function makeHarness(existing?: Map<string, unknown>, initialAlarm: number | nul
     async delete(key: string) {
       return values.delete(key);
     },
-    async list<T>(options = {}) {
+    async list<T>(options: { prefix?: string; limit?: number } = {}) {
       const entries = [...values.entries()]
         .filter(([key]) => !options.prefix || key.startsWith(options.prefix))
         .slice(0, options.limit ?? Number.POSITIVE_INFINITY);
