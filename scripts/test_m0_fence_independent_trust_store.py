@@ -89,6 +89,26 @@ def main() -> None:
         raise AssertionError("trust store without approval reference was accepted")
     print("PASS trust store without accountable approval is rejected")
 
+    disabled = copy.deepcopy(store)
+    disabled["status"] = "DISABLED"
+    try:
+        verify_manifest_with_trust_store(envelope, disabled, verification_time=VERIFY_AT, allow_test_only=True)
+    except ValueError as error:
+        assert "not ACTIVE" in str(error)
+    else:
+        raise AssertionError("disabled trust store was accepted")
+    print("PASS disabled trust stores are rejected")
+
+    malformed = copy.deepcopy(store)
+    malformed["keys"][0]["publicKeyBase64Url"] = "not-a-valid-public-key"
+    try:
+        verify_manifest_with_trust_store(envelope, malformed, verification_time=VERIFY_AT, allow_test_only=True)
+    except ValueError as error:
+        assert "schema failure" in str(error) or "public key" in str(error)
+    else:
+        raise AssertionError("malformed trusted public key was accepted")
+    print("PASS malformed public-key records are rejected")
+
     tampered = copy.deepcopy(envelope)
     tampered["manifestBody"]["manifestId"] = "modified-after-signing"
     try:
