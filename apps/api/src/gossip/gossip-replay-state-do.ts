@@ -101,7 +101,7 @@ function validInteger(value: unknown, minimum = 0): value is number {
   return Number.isSafeInteger(value) && (value as number) >= minimum;
 }
 
-function prune(state: StoredState): void {
+function prune(state: StoredState, trustedNow: number): void {
   const minimumSequence = Math.max(0, state.highestSequence - RETAINED_SEQUENCE_WINDOW);
   for (const key of Object.keys(state.seenBySequence)) {
     if (Number(key) < minimumSequence) {
@@ -111,7 +111,7 @@ function prune(state: StoredState): void {
     }
   }
   for (const [requestId, request] of Object.entries(state.outstandingRequests)) {
-    if (request.expiresAt <= 0) delete state.outstandingRequests[requestId];
+    if (request.expiresAt <= trustedNow) delete state.outstandingRequests[requestId];
   }
 }
 
@@ -134,7 +134,7 @@ export class GossipReplayStateDO {
       const state =
         (await txn.get<StoredState>("replay-state-v1")) ?? emptyState();
 
-      if (!validInteger(trustedNow)) {
+      if (!message || typeof message !== "object") {\n        return reject(state, "QUARANTINE", "message envelope is malformed");\n      }\n      if (!validInteger(trustedNow)) {
         return reject(state, "QUARANTINE", "trusted receiver time is malformed");
       }
       for (const value of [
@@ -187,7 +187,7 @@ export class GossipReplayStateDO {
         return reject(state, "QUARANTINE", "sender reused a sequence for different message content");
       }
 
-      if (message.issuedAt > trustedNow + MAX_CLOCK_SKEW_SECONDS) {
+      if (!validInteger(message.issuedAt) || !validInteger(message.expiresAt)) {\n        return reject(state, "QUARANTINE", "message timestamps are malformed");\n      }\n      if (message.issuedAt > trustedNow + MAX_CLOCK_SKEW_SECONDS) {
         return reject(state, "QUARANTINE", "message issue time exceeds trusted-clock skew");
       }
       if (message.expiresAt <= trustedNow) {
@@ -291,7 +291,7 @@ export class GossipReplayStateDO {
       next.missingSequences = next.missingSequences.filter(
         (missing) => missing !== message.sequence,
       );
-      prune(next);
+      prune(next, trustedNow);
       await txn.put("replay-state-v1", next);
 
       return result(
