@@ -312,7 +312,7 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     });
   }
 
-  async fetch(): Promise<Response> {
+  override async fetch(): Promise<Response> {
     return new Response("Not Found", { status: 404 });
   }
 }
