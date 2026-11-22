@@ -11,7 +11,7 @@ function makeHarness(existing?: Map<string, unknown>) {
     async put<T>(key: string, value: T): Promise<void> {
       values.set(key, structuredClone(value));
     },
-    async transaction<T>(callback: (txn: typeof storage) => Promise<T>): Promise<T> {
+    async transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T> {
       const snapshot = structuredClone([...values.entries()]);
       try {
         return await callback(storage);
