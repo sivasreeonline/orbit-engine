@@ -3,20 +3,34 @@
   "name": "sky-high-coding-judge-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-09",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": true,
   "durable_objects": {
     "bindings": [
       {
         "name": "GOSSIP_REPLAY",
         "class_name": "GossipReplayStateDO"
+      },
+      {
+        "name": "WORKLOAD_NONCE_REPLAY",
+        "class_name": "WorkloadNonceReplayDO"
       }
     ]
   },
   "migrations": [
     {
       "tag": "v1-gossip-replay-state",
-      "new_sqlite_classes": ["GossipReplayStateDO"]
+      "new_sqlite_classes": [
+        "GossipReplayStateDO"
+      ]
+    },
+    {
+      "tag": "v2-workload-nonce-replay",
+      "new_sqlite_classes": [
+        "WorkloadNonceReplayDO"
+      ]
     }
   ],
   "observability": {
