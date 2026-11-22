@@ -35,16 +35,18 @@ def accept_trust_bundle_checkpoint(adapter: Any, envelope: dict[str, Any], pinne
     operation_id = f"fence-trust-bundle-{generation}-{digest[:24]}"
     value = Checkpoint(scope, generation, operation_id, "ACCEPTED", digest, predecessor)
 
-    # Recover a lost acknowledgement only if this exact operation remains current.
+    # Read the protected head first. Even an idempotent replay must re-verify
+    # the presented envelope; a matching digest label is not a signature.
+    latest = adapter.read_latest(scope)
     prior = adapter.read_by_operation(scope, operation_id)
     if prior is not None:
         _assert_record(prior, value)
-        latest = adapter.read_latest(scope)
+        verify_trust_bundle(envelope, pinned_roots, expected_generation=generation - 1,
+            expected_predecessor_digest=predecessor, expected_trust_domain_id=trust_domain_id, manifest=manifest)
         if latest is None or latest.checkpoint != value:
             raise CheckpointAcceptanceError("replayed trust-bundle checkpoint is no longer the current high-water")
         return {"status": "ALREADY_ACCEPTED", "generation": generation, "bundleDigest": digest, "receipt": prior.receipt}
 
-    latest = adapter.read_latest(scope)
     expected_generation = latest.checkpoint.generation if latest else 0
     expected_digest = latest.checkpoint.checkpoint_digest if latest else ZERO_DIGEST
     verify_trust_bundle(envelope, pinned_roots, expected_generation=expected_generation,
