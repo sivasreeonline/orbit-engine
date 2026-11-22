@@ -97,7 +97,7 @@ describe("WorkloadNonceReplayDO", () => {
     const harness = makeHarness();
     expect(await harness.object.consumeNonce(CALLER, NONCE, 10_060, 10_000)).toBe(true);
     expect(await harness.object.consumeNonce(CALLER, NONCE, 10_200, 10_089)).toBe(false);
-    expect(await harness.object.consumeNonce(CALLER, NONCE, 10_200, 10_091)).toBe(true);
+    expect(await harness.object.consumeNonce(CALLER, NONCE, 10_150, 10_091)).toBe(true);
   });
 
   it("rejects malformed identities, nonces and time horizons", async () => {
