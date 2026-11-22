@@ -240,6 +240,18 @@ jobs:
       - name: Verify FENCE-001 witness provider adapter conformance harness
         run: python ../../scripts/validate_m0_witness_provider_adapter_conformance.py
 
+      - name: Verify durable root-trust checkpoint against DynamoDB Local
+        env:
+          PYTHONPATH: ../../scripts
+          AWS_ACCESS_KEY_ID: local
+          AWS_SECRET_ACCESS_KEY: local
+          AWS_DEFAULT_REGION: us-east-1
+          FENCE_AWS_WITNESS_ENDPOINT_URL: http://127.0.0.1:8000
+          FENCE_AWS_WITNESS_REGION: us-east-1
+          FENCE_AWS_WITNESS_LOCAL_TABLE_PREFIX: fence001-trust-checkpoint
+          FENCE_WITNESS_ADAPTER_FACTORY: aws_dynamodb_witness_adapter:create_adapter
+        run: python ../../scripts/test_m0_fence_provider_trust_bundle_checkpoint.py
+
       - name: Configure PostgreSQL client wrappers
         run: |
           set -euo pipefail
