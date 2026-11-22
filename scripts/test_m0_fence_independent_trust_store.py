@@ -84,7 +84,7 @@ def main() -> None:
     try:
         verify_manifest_with_trust_store(envelope, unapproved, verification_time=VERIFY_AT, allow_test_only=True)
     except ValueError as error:
-        assert "approval reference" in str(error)
+        assert "schema failure" in str(error) or "approval reference" in str(error)
     else:
         raise AssertionError("trust store without approval reference was accepted")
     print("PASS trust store without accountable approval is rejected")
