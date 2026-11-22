@@ -12,7 +12,8 @@
     "typecheck": "npm run generate-types && tsc --noEmit",
     "test": "vitest run",
     "build": "npm run typecheck && npm test && wrangler deploy --dry-run",
-    "audit": "npm audit --audit-level=high"
+    "audit": "npm audit --audit-level=high",
+    "test:workers": "vitest run --config vitest.workers.config.ts"
   },
   "dependencies": {
     "pg": "8.23.1"
@@ -22,6 +23,7 @@
     "@types/pg": "8.23.1",
     "typescript": "7.0.2",
     "vitest": "5.1.0",
-    "wrangler": "4.158.0"
+    "wrangler": "4.158.0",
+    "@cloudflare/vitest-plugin": "^1.0.0"
   }
 }
