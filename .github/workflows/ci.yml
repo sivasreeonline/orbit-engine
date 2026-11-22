@@ -106,6 +106,9 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      - name: Durable Object Workers runtime integration tests
+        run: npm run test:workers
+
       - name: Set up Python for FENCE-001 witness profile conformance
         uses: actions/setup-python@v6
         with:
