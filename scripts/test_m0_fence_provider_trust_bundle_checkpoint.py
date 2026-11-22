@@ -11,10 +11,10 @@ from validate_m0_witness_provider_adapter_conformance import AppendConflict, ZER
 
 def sha(raw: bytes) -> str: return hashlib.sha256(raw).hexdigest()
 
-def make_bundle(generation, predecessor, root, keys):
+def make_bundle(generation, predecessor, root, keys, created_at="2026-11-01T00:00:00Z"):
     body={"profile":"sky-high-fence-manifest-trust-bundle-v1","schemaVersion":1,
       "trustDomainId":"checkpoint-test-domain","generation":generation,
-      "previousBundleDigest":predecessor,"createdAt":"2026-11-01T00:00:00Z","keys":keys,"revocations":[]}
+      "previousBundleDigest":predecessor,"createdAt":created_at,"keys":keys,"revocations":[]}
     canonical=rfc8785.dumps(body)
     public=root.public_key().public_bytes(encoding=serialization.Encoding.Raw,format=serialization.PublicFormat.Raw)
     return {"body":body,"bundleDigest":sha(canonical),"rootKeyId":sha(public),
@@ -59,12 +59,12 @@ def main():
     else: raise AssertionError("forked successor was accepted")
     print("PASS forked or gapped successor is rejected")
     a,_=make_bundle(3,second["bundleDigest"],root,keys)
-    b,_=make_bundle(3,second["bundleDigest"],root,keys)
+    b,_=make_bundle(3,second["bundleDigest"],root,keys,created_at="2026-11-02T00:00:00Z")
     outcomes=[]
     for candidate in (a,b):
         try: outcomes.append(accept(candidate)["status"])
         except (AppendConflict, ValueError): outcomes.append("CONFLICT")
-    assert outcomes.count("ACCEPTED")==1 and outcomes.count("CONFLICT")==1
+    assert outcomes.count("ACCEPTED")==1 and outcomes.count("CONFLICT")==1, outcomes
     print("PASS competing successor candidates cannot both advance the durable head")
     print(f"Durable trust-bundle checkpoint integration tests passed using {adapter_kind}; no live provider was called.")
 
