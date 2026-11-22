@@ -91,9 +91,9 @@ def validate_trust_store(
         if not_before >= not_after:
             raise ValueError("trusted-key validity interval must be ordered")
         if status == "REVOKED":
-            raise ValueError(f"manifest references revoked trusted key {key_id}")
-        if not_before > created_at or created_at >= not_after:
-            raise ValueError(f"manifest creation time falls outside trusted-key validity for {key_id}")
+            if not isinstance(record.get("revokedAt"), str) or not record["revokedAt"]:
+                raise ValueError("revoked trusted-key records require revokedAt")
+            parse_time(record["revokedAt"], f"{key_id} revokedAt")
         keys_by_id[key_id] = record
 
     attestations = manifest.get("attestations")
@@ -110,6 +110,12 @@ def validate_trust_store(
         record = keys_by_id.get(key_id)
         if record is None:
             raise ValueError(f"manifest attestation key {key_id} is not present in independent trust store")
+        if record["status"] == "REVOKED":
+            raise ValueError(f"manifest references revoked trusted key {key_id}")
+        not_before = parse_time(record["notBefore"], f"{key_id} notBefore")
+        not_after = parse_time(record["notAfter"], f"{key_id} notAfter")
+        if not_before > created_at or created_at >= not_after:
+            raise ValueError(f"manifest creation time falls outside trusted-key validity for {key_id}")
         if record["role"] != attestation.get("role"):
             raise ValueError("manifest attestation role is not authorized by trusted-key record")
         if record["identity"] != attestation.get("signerIdentity"):
