@@ -1,4 +1,3 @@
-import type { DurableObjectNamespace } from "@cloudflare/workers-types";
 import type { WorkloadNonceStore } from "./workload-identity";
 
 interface WorkloadNonceReplayStub {
