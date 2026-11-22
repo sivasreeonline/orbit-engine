@@ -210,6 +210,9 @@ jobs:
       - name: Verify FENCE-001 monitor gossip replay state machine
         run: python ../../scripts/validate_m0_monitor_gossip_replay_state.py
 
+      - name: Verify FENCE-001 configured monitor roster and anti-omission gate
+        run: python ../../scripts/validate_m0_independent_monitor_gossip_roster.py
+
       - name: Start AWS-published DynamoDB Local (synthetic integration only)
         run: |
           docker run -d --name fence-dynamodb-local -p 8000:8000 amazon/dynamodb-local:3.3.2 -jar DynamoDBLocal.jar -inMemory -sharedDb
