@@ -1,5 +1,3 @@
-import { DurableObject } from "cloudflare:workers";
-
 const MAX_TTL_SECONDS = 300;
 const MAX_CLOCK_SKEW_SECONDS = 30;
 const MAX_SEQUENCE_GAP = 64;
@@ -112,8 +110,6 @@ function prune(state: StoredState): void {
       if (item) delete state.seenByMessageId[item.messageId];
     }
   }
-  const consumed = state.consumedNonces.slice(-RETAINED_SEQUENCE_WINDOW);
-  state.consumedNonces = consumed;
   for (const [requestId, request] of Object.entries(state.outstandingRequests)) {
     if (request.expiresAt <= 0) delete state.outstandingRequests[requestId];
   }
@@ -124,10 +120,11 @@ function prune(state: StoredState): void {
  * relationship. Its transaction is the serialization boundary for replay
  * decisions and durable state advancement.
  */
-export class GossipReplayStateDO extends DurableObject {
-  constructor(ctx: DurableObjectState, env: Record<string, unknown>) {
-    super(ctx, env);
-  }
+export class GossipReplayStateDO {
+  constructor(
+    private readonly ctx: DurableObjectState,
+    _env: import("../env").Env,
+  ) {}
 
   async acceptVerifiedMessage(
     message: VerifiedGossipMessage,
