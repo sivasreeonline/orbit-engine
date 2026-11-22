@@ -176,6 +176,9 @@ jobs:
 
       - name: Verify independent FENCE-001 trusted-key store and revocation policy (synthetic only)
         run: python ../../scripts/test_m0_fence_independent_trust_store.py
+
+      - name: Verify root-signed FENCE-001 manifest trust bundle and anti-rollback policy (synthetic only)
+        run: python ../../scripts/test_m0_fence_rooted_trust_bundle.py
  
       - name: Verify FENCE-001 AWS read-only qualification preflight
         run: python ../../scripts/inspect_m0_fence_aws_qualification_environment.py --self-test
