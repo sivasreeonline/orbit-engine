@@ -14,3 +14,4 @@ export default {
 };
 
 export { GossipReplayStateDO } from "./gossip/gossip-replay-state-do";
+export { WorkloadNonceReplayDO } from "./auth/workload-nonce-replay-do";
