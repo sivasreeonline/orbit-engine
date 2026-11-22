@@ -1,3 +1,6 @@
+import { DurableObject } from "cloudflare:workers";
+import type { Env } from "../env";
+
 const MAX_TTL_SECONDS = 300;
 const MAX_CLOCK_SKEW_SECONDS = 30;
 const MAX_SEQUENCE_GAP = 64;
@@ -120,11 +123,10 @@ function prune(state: StoredState, trustedNow: number): void {
  * relationship. Its transaction is the serialization boundary for replay
  * decisions and durable state advancement.
  */
-export class GossipReplayStateDO {
-  constructor(
-    private readonly ctx: DurableObjectState,
-    _env: import("../env").Env,
-  ) {}
+export class GossipReplayStateDO extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+  }
 
   async acceptVerifiedMessage(
     message: VerifiedGossipMessage,
@@ -310,7 +312,7 @@ export class GossipReplayStateDO {
     });
   }
 
-  async fetch(): Promise<Response> {
+  override async fetch(): Promise<Response> {
     return new Response("Not Found", { status: 404 });
   }
 }

@@ -106,6 +106,11 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      - name: Durable Object Workers runtime integration tests
+        env:
+          CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgresql://postgres:postgres@127.0.0.1:5432/sky_high_test
+        run: npm run test:workers
+
       - name: Set up Python for FENCE-001 witness profile conformance
         uses: actions/setup-python@v6
         with:
