@@ -59,10 +59,20 @@ def main() -> None:
 
     competing = InMemoryWitnessAdapter()
     checkpoint_replay_snapshot(competing, SCOPE, first)
+    stale_head = competing.read_latest(SCOPE)
     candidate_a, candidate_b = sample(2), sample(3)
+
+    class StaleHeadView:
+        def read_latest(self, scope):
+            return stale_head
+        def read_by_operation(self, scope, operation_id):
+            return competing.read_by_operation(scope, operation_id)
+        def append_if_current(self, value, **kwargs):
+            return competing.append_if_current(value, **kwargs)
+
     assert checkpoint_replay_snapshot(competing, SCOPE, candidate_a)["status"] == "CHECKPOINTED"
     try:
-        checkpoint_replay_snapshot(competing, SCOPE, candidate_b)
+        checkpoint_replay_snapshot(StaleHeadView(), SCOPE, candidate_b)
     except (AppendConflict, ReplayCheckpointError):
         pass
     else:
