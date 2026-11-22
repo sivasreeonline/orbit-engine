@@ -8,6 +8,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 import rfc8785
+from jsonschema import Draft202012Validator, FormatChecker
 import validate_m0_fence_witness_profile as receipt_profile
 import validate_m0_fence_witness_merkle_proofs as merkle
 
@@ -26,6 +27,9 @@ def sign_tree_head(body, signer):
     return {"body":body,"signature":b64(signer.sign(PREFIX+rfc8785.dumps(body)))}
 
 def verify_tree_head(envelope, trust_body, trusted_time, expected_scope):
+    schema=json.loads((ROOT/"docs/schemas/m0-fence-witness-v1.schema.json").read_text())
+    errors=list(Draft202012Validator(schema,format_checker=FormatChecker()).iter_errors(envelope))
+    if errors: raise ValueError("tree-head envelope schema invalid: "+errors[0].message)
     body=envelope["body"]
     if body["profile"]!="sky-high-fence-witness-merkle-v1" or body["schemaVersion"]!=1: raise ValueError("tree-head profile/version mismatch")
     if body["treeSize"]<=0: raise ValueError("tree size must be positive")
