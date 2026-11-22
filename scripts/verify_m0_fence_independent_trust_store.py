@@ -7,6 +7,8 @@ being verified. Revoked keys fail closed, including for historical signatures.
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -80,8 +82,17 @@ def validate_trust_store(
             raise ValueError("trusted-key role is not authorized by FENCE-001")
         if status not in STATUSES:
             raise ValueError("trusted-key status must be ACTIVE or REVOKED")
-        if not isinstance(record.get("publicKeyBase64Url"), str):
-            raise ValueError("trusted-key record must contain a public Ed25519 key")
+        encoded_public = record.get("publicKeyBase64Url")
+        if not isinstance(encoded_public, str) or not encoded_public or "=" in encoded_public:
+            raise ValueError("trusted-key record must contain canonical unpadded public Ed25519 key")
+        try:
+            public_bytes = base64.urlsafe_b64decode(encoded_public + "=" * (-len(encoded_public) % 4))
+        except Exception as error:
+            raise ValueError("trusted-key public key is not valid base64url") from error
+        if len(public_bytes) != 32 or base64.urlsafe_b64encode(public_bytes).decode("ascii").rstrip("=") != encoded_public:
+            raise ValueError("trusted-key public key must be canonical 32-byte Ed25519 material")
+        if hashlib.sha256(public_bytes).hexdigest() != key_id:
+            raise ValueError("trusted-key public key fingerprint does not match keyId")
         if not isinstance(record.get("approvedBy"), str) or not record["approvedBy"].strip():
             raise ValueError("each trusted key requires an accountable approver")
         if not isinstance(record.get("approvalReference"), str) or not record["approvalReference"].strip():
