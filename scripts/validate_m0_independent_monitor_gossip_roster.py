@@ -89,9 +89,9 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    a = MonitorIdentity("monitor-a", "operator-a", "account-a", "failure-a")
-    b = MonitorIdentity("monitor-b", "operator-b", "account-b", "failure-b")
-    c = MonitorIdentity("monitor-c", "operator-c", "account-c", "failure-c")
+    a = MonitorIdentity("monitor-a", "operator-monitor-a", "account-monitor-a", "failure-domain-monitor-a")
+    b = MonitorIdentity("monitor-b", "operator-monitor-b", "account-monitor-b", "failure-domain-monitor-b")
+    c = MonitorIdentity("monitor-c", "operator-monitor-c", "account-monitor-c", "failure-domain-monitor-c")
     roster = (a, b, c)
 
     from validate_m0_independent_monitor_gossip import head, monitor
@@ -132,7 +132,7 @@ def main() -> None:
             "duplicate observation must be quarantined")
 
     shared_operator_roster = (
-        a, MonitorIdentity("monitor-b", "operator-a", "account-b", "failure-b"), c
+        a, MonitorIdentity("monitor-b", "operator-monitor-a", "account-monitor-b", "failure-domain-monitor-b"), c
     )
     invalid = compare_configured_roster(
         shared_operator_roster, (honest_a, honest_b, honest_c),
