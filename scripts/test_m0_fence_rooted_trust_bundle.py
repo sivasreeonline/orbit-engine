@@ -12,9 +12,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import rfc8785
 
 from validate_m0_fence_evidence_manifest import load_json, validate_manifest
+from validate_m0_fence_cloudtrail_qualified_manifest import _qualified_fixture
 from verify_m0_fence_rooted_trust_bundle import (
     SIGNATURE_PREFIX,
     verify_trust_bundle,
+    verify_external_package,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -195,6 +197,60 @@ def main() -> None:
     else:
         raise AssertionError("role-substituted signing key was accepted")
     print("PASS role substitution is rejected")
+
+    # Full external-package path: root trust, manifest signatures, CloudTrail
+    # custody, inventory and two-principal STS evidence are validated together.
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="fence-rooted-package-") as temporary:
+        artifact_root = Path(temporary)
+        qualified_manifest, qualified_keys = _qualified_fixture(artifact_root)
+        package_root_key = Ed25519PrivateKey.generate()
+        package_root_public = package_root_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        package_roots = {sha(package_root_public): package_root_public}
+        package_keys = [
+            {
+                **item,
+                "notBefore": "2026-01-01T00:00:00Z",
+                "notAfter": "2027-01-01T00:00:00Z",
+                "approvedBy": "synthetic-independent-approver",
+                "approvalReference": "FIXTURE-PACKAGE-APPROVAL",
+            }
+            for item in qualified_keys
+        ]
+        package_bundle = sign_bundle(build_body(package_keys), package_root_key)
+        package_result = verify_external_package(
+            qualified_manifest,
+            package_bundle,
+            package_roots,
+            artifact_root,
+            expected_generation=0,
+            expected_predecessor_digest=ZERO_DIGEST,
+            expected_trust_domain_id="sky-high-cloudtrail-production",
+            allow_test_only=True,
+        )
+        assert package_result["evidenceGateStatus"] == "CUSTODY_IDENTITY_AND_INVENTORY_RECONCILED"
+        assert package_result["productionQualificationReady"] is False
+        assert package_result["externalQualificationStatus"] == "REQUIRED"
+        print("PASS root trust, dual manifest signatures, CloudTrail custody, inventory and STS evidence validate end-to-end")
+
+        try:
+            verify_external_package(
+                qualified_manifest,
+                package_bundle,
+                package_roots,
+                artifact_root,
+                expected_generation=0,
+                expected_predecessor_digest=ZERO_DIGEST,
+                expected_trust_domain_id="sky-high-cloudtrail-production",
+            )
+        except ValueError as error:
+            assert "test-only manifest" in str(error)
+        else:
+            raise AssertionError("production verifier accepted a synthetic test-only evidence package")
+        print("PASS production verification refuses the same synthetic evidence package")
 
     print("Root-signed manifest trust-bundle tests passed; root and signing keys were synthetic.")
 
