@@ -19,6 +19,7 @@ on:
     paths:
       - "apps/web/**"
       - "apps/api/**"
+      - "apps/witness-gateway/**"
       - "docs/**"
       - "migrations/**"
       - "scripts/**"
