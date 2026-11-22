@@ -7,4 +7,5 @@ export interface Env {
   readonly CORS_ALLOWED_ORIGINS?: string;
   readonly APP_ENV?: string;
   readonly GOSSIP_REPLAY?: DurableObjectNamespace;
+  readonly WORKLOAD_NONCE_REPLAY?: DurableObjectNamespace;
 }
