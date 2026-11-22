@@ -1,152 +1,113 @@
-# FENCE-001 cryptographic witness receipt and transparency proof profile
+# FENCE-001 witness receipt and signed transparency-head integration addendum
 
-**Profile:** `sky-high-fence-witness-receipt-v1`  
-**Status:** Proposed protocol contract; not implemented or provider-qualified.  
-**Scope:** Authenticated checkpoint claims and append-only transparency evidence for monitor replay snapshots and other FENCE-001 witness records.
+**Existing profile:** `sky-high-fence-witness-v1`  
+**Merkle profile:** `sky-high-fence-witness-merkle-v1`  
+**Status:** Integration addendum; not implemented or provider-qualified.
 
-## 1. Security claims and limits
+## 1. Existing repository contracts (authoritative starting point)
 
-This profile separates three claims that must never be conflated:
+This addendum does not define a second receipt or trust-bundle format. The repository already has:
 
-1. **Receipt authenticity:** an authorized witness signing key signed a statement binding one exact checkpoint, scope, operation and predecessor.
-2. **Append-only log consistency:** a signed transparency-log checkpoint and cryptographic inclusion/consistency proofs show that the receipt is included in a particular log history and that the observed history extends a previously pinned tree head.
-3. **Provider durability and independence:** the provider actually retains the record under the claimed failure model and is operationally independent of the authority/monitoring system.
+- `docs/schemas/m0-fence-witness-v1.schema.json`: checkpoint, signed receipt and root-signed witness trust-bundle schemas.
+- `scripts/validate_m0_fence_witness_profile.py`: strict JSON, RFC 8785 canonicalization, SHA-256, Ed25519 receipt signature, root-signed trust-bundle succession, receipt/checkpoint binding, key purpose/scope/lifecycle/revocation checks, and synthetic negative cases.
+- `docs/test-vectors/fence-witness-v1-001.json`, `fence-witness-v1-002-unicode.json`, and `fence-witness-v1-003-trust-bundle.json`: synthetic signed receipt and trust-bundle vectors.
+- `scripts/validate_m0_fence_witness_merkle_proofs.py` and `docs/test-vectors/fence-witness-v1-004-merkle-transparency.json`: RFC 9162 SHA-256 Merkle inclusion/consistency algorithms, published vectors, negative cases and exhaustive model checks.
 
-Ed25519 verification establishes claim 1 only. Merkle inclusion and consistency verification establish claim 2 only, relative to pinned tree heads and the log's cryptographic assumptions. Neither proves claim 3. Provider qualification still requires independently collected operational evidence under WIT-001..WIT-014.
+The existing receipt envelope is exactly `{body, signature}`; `body.keyId` identifies the signer. Its signature domain is `SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\0`. The root-signed trust-bundle envelope is `{body, bundleDigest, rootKeyId, rootSignature}`; its signature domain is `SKYHIGH-FENCE-001-WITNESS-TRUST-BUNDLE-V1\0`. The current witness key purpose is `WITNESS_RECEIPT_SIGNING`, scoped to witness and authority IDs.
 
-A single log signer can still equivocate by showing different valid tree heads to different clients. Clients MUST retain and gossip observed signed tree heads; independent monitors MUST compare them. A detected fork or unproven consistency transition is QUARANTINE/BLOCKED, never success.
+The receipt body includes a provider-defined `consistencyToken`. The existing validator correctly treats it as a non-empty opaque structural field; it is not an inclusion proof, consistency proof, signed tree head, or proof of provider durability.
 
-## 2. Trust authorization
+## 2. Exact gap to close
 
-The existing `sky-high-fence-manifest-trust-bundle-v1` is specifically for COLLECTOR and INDEPENDENT_VERIFIER manifest keys. It does not authorize witness keys and MUST NOT be silently reused as if it did.
+The repository currently verifies receipt signatures and key authorization, and separately verifies RFC 9162 proof mathematics. It does not yet cryptographically bind a signed transparency tree head to an authorized log-signing key and connect that signed head to the receipt inclusion/consistency proof in one verifier path.
 
-Define a separate purpose-bound authorization envelope, `sky-high-fence-witness-keyset-v1`, signed by an out-of-band pinned FENCE-001 governance root using a distinct signature domain:
+The next implementation must compose the existing verified receipt and trust-bundle state with the existing Merkle proof functions. Do not replace these algorithms or introduce a competing receipt envelope, trust bundle, root, signature prefix, or Merkle implementation.
 
-`SKYHIGH-FENCE-001-WITNESS-KEYSET-V1\0`
+## 3. Extend the existing witness key purpose model
 
-The envelope contains exactly `body`, `keysetDigest`, `rootKeyId`, and `rootSignature`. The body is canonicalized with RFC 8785; `keysetDigest` is SHA-256 of JCS(body); `rootKeyId` is SHA-256 of the raw 32-byte pinned Ed25519 governance public key; and `rootSignature` is a 64-byte Ed25519 signature over the domain prefix concatenated with JCS(body). Root signatures use canonical unpadded base64url encoding. The keyset body MUST have a closed schema.
+Extend the existing `witnessSigningKey.purpose` schema from the single constant `WITNESS_RECEIPT_SIGNING` to the closed enum:
+- `WITNESS_RECEIPT_SIGNING`
+- `WITNESS_LOG_SIGNING`
 
-The keyset body MUST include:
-- profile and schema version;
-- trust-domain ID;
-- monotonically increasing generation and exact previous keyset digest;
-- creation time;
-- unique witness signing keys with key ID, witness identity, role, public key, not-before/not-after, optional retirement time, approval identity and approval reference;
-- explicit revocations with key ID, effective time and reason.
+Keep the existing root-signed trust-bundle profile, envelope, canonicalization, signature prefix, root pinning, generation/predecessor chain, key ID calculation, witness ID, authority ID scope, validity, retirement and revocation semantics.
 
-Allowed roles are `WITNESS_RECEIPT_SIGNER` and `WITNESS_LOG_SIGNER`. These roles MUST use distinct keys and identities. A witness key MUST NOT be authorized by a manifest attestation, a receipt itself, a caller request, or an unpinned keyset. The root public key is pinned out of band; the keyset cannot self-authorize its root or freshness.
+Receipt and log signing keys MUST be distinct key IDs and distinct operational identities. A key authorized for `WITNESS_LOG_SIGNING` MUST NOT sign receipts; a receipt key MUST NOT sign tree heads. Existing vectors using `WITNESS_RECEIPT_SIGNING` remain valid and unchanged. Add synthetic trust-bundle vectors containing both purposes and prove wrong-purpose rejection.
 
-The keyset verifier MUST check canonicalization, schema closure, root fingerprint, root signature, trust-domain, generation/predecessor, key fingerprints, duplicate IDs, validity intervals, retirement, revocation and approval metadata. Keyset freshness is determined from the locally pinned last-accepted generation/digest or an independently verified current keyset—not from the receipt being checked.
+Do not broaden the existing manifest trust bundle. The existing FENCE-001 governance-root pinning mechanism and witness trust-bundle envelope remain authoritative; no new root format is introduced.
 
-This is a new purpose-specific key authorization profile under the existing FENCE-001 governance-root pinning process, not a new self-signed root and not an extension that silently broadens the manifest-key roles. Governance must explicitly authorize the root's use for this profile before implementation.
+## 4. Signed transparency tree head envelope
 
-## 3. Canonical receipt statement
-
-The receipt statement is a closed JSON object canonicalized with RFC 8785 (JCS), UTF-8 encoded, then signed with Ed25519. Duplicate JSON members, invalid UTF-8, non-finite numbers, unknown fields, non-canonical base64url, and ambiguous numeric representations MUST be rejected.
-
-Required statement fields:
+Add a closed-schema tree-head envelope with exactly `body` and `signature`. Its body fields are:
 
 | Field | Meaning |
 |---|---|
-| `profile` | Exact value `sky-high-fence-witness-receipt-v1` |
+| `profile` | `sky-high-fence-witness-merkle-v1` |
 | `schemaVersion` | Integer 1 |
-| `trustDomainId` | FENCE-001 trust domain |
-| `witnessId` | Authorized witness identity |
-| `scope` | Exact trust-domain, witness, authority, host, sender and recipient tuple |
-| `operationId` | Deterministic immutable operation ID |
-| `idempotencyKeyDigest` | SHA-256 digest of the idempotency key, not the secret/raw key |
-| `phase` | Checkpoint phase |
-| `generation` | Positive monotonic generation within the exact scope |
-| `checkpointDigest` | SHA-256 of the exact canonical checkpoint bytes |
-| `previousDigest` | Exact predecessor checkpoint digest (zero digest only for approved genesis) |
-| `committedAt` | Witness commit time in timezone-qualified RFC 3339 |
-| `witnessSequence` | Monotonic append sequence in the witness log |
+| `witnessId` | Exact witness ID authorized by the trust bundle |
+| `authorityId` | Exact authority scope authorized for the log key |
+| `hostId` | Exact host scope for this log |
 | `logId` | Stable transparency-log identity |
+| `treeSize` | Non-negative integer |
+| `rootHash` | Lowercase SHA-256 hex digest |
+| `timestamp` | UTC RFC 3339 timestamp |
+| `keyId` | Fingerprint of the authorized `WITNESS_LOG_SIGNING` key |
 
-The signed envelope contains exactly `statement`, `signingKeyId`, and `signature`. The signature input is:
+The Ed25519 signature input is:
 
-`SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\0 || JCS(statement)`
+`SKYHIGH-FENCE-001-WITNESS-TREE-HEAD-V1\0 || JCS(body)`
 
-The signature is a 64-byte Ed25519 signature encoded as canonical unpadded base64url. `signingKeyId` is SHA-256 of the raw 32-byte Ed25519 public key. The verifier resolves it only through the currently accepted witness keyset and requires role `WITNESS_RECEIPT_SIGNER`, exact witness identity, validity at commit time, and no effective revocation.
+The verifier MUST validate the body schema, canonical signature encoding, key fingerprint, witness/authority/host scope, `WITNESS_LOG_SIGNING` purpose, key validity/retirement/revocation at the signed timestamp, and Ed25519 signature. The verifier MUST NOT infer trust from an unsigned tree head or from a key ID supplied outside the root-verified witness trust bundle.
 
-The verifier recomputes the checkpoint digest from the exact checkpoint bytes and computes the Merkle leaf hash as specified below; the derived leaf hash is proof metadata and MUST NOT be included in the signed statement (which would create a self-referential hash). It MUST compare every statement field against the pending intent and the exact witness scope. A receipt that only repeats caller-supplied fields without a valid signature is rejected.
+## 5. Bind the existing signed receipt to RFC 9162 proofs
 
-## 4. Transparency tree and proof envelope
+The transparency log entry is the complete canonical receipt envelope `JCS({body, signature})`, not a self-referential leaf-hash field inside the receipt body. The leaf hash is derived:
 
-Use the RFC 9162 Merkle Tree Hash construction, SHA-256:
-- leaf hash: `SHA256(0x00 || JCS(statement))`;
-- node hash: `SHA256(0x01 || leftHash || rightHash)`;
-- tree size and leaf index are non-negative integers with `leafIndex < treeSize`.
+`SHA256(0x00 || JCS(receiptEnvelope))`
 
-The proof envelope contains:
-- signed tree head: profile, log ID, tree size, root hash, timestamp, signing key ID and Ed25519 signature;
-- derived leaf hash, leaf index and receipt inclusion proof (ordered sibling hashes and directions sufficient to recompute the root for the stated leaf index/tree size);
-- consistency proof from the client's previously pinned tree size/root to the new tree size/root;
-- the prior pinned tree-head identity, or an explicit genesis marker for a first observation.
+Use the existing RFC 9162 tree algorithm:
+- leaf hash prefix `0x00`;
+- node hash `SHA256(0x01 || leftHash || rightHash)`;
+- SHA-256 hashes exactly 32 bytes.
 
-The tree-head signature input is domain-separated:
+The proof response must include:
+- the exact signed receipt envelope;
+- the signed tree-head envelope;
+- receipt leaf index and inclusion path;
+- consistency path from the caller's last pinned tree size/root to the returned tree head;
+- the prior pinned tree-head identity or explicit genesis state.
 
-`SKYHIGH-FENCE-001-WITNESS-TREE-HEAD-V1\0 || JCS(treeHeadStatement)`
+The verifier MUST check that the receipt envelope's witness/authority/host/generation/operation/checkpoint digest/predecessor match the exact pending checkpoint and trust scope. It then computes the leaf hash from the complete canonical receipt envelope, verifies inclusion against the signed tree-head root using the existing `verify_inclusion`, and verifies extension from the locally pinned prior head using the existing `verify_consistency`.
 
-Tree heads MUST be signed by a distinct authorized `WITNESS_LOG_SIGNER` key. A verifier MUST validate the keyset, tree-head signature, inclusion proof, and consistency proof. Tree size MUST NOT regress. Equal tree size with a different root is an immediate fork. A larger tree size without a valid consistency proof from the pinned prior head is BLOCKED/QUARANTINE.
+Tree size MUST NOT regress. Equal tree size with a different root is QUARANTINE. A larger tree size without a valid consistency proof from the pinned prior tree head is BLOCKED/QUARANTINE. Same-size/same-root is acceptable only with an empty consistency proof.
 
-The gateway MUST return a signed latest-head response and the proof material for the exact receipt. A generic opaque `consistency_token` is not accepted as a substitute. The adapter may retain provider-specific opaque tokens for diagnostics, but they have no cryptographic authority in this profile.
+The opaque `consistencyToken` remains available for provider diagnostics and adapter compatibility. It MUST NOT substitute for the signed tree head, inclusion proof, or consistency proof.
 
-## 5. Anti-equivocation and state retention
+## 6. Anti-equivocation and independence limits
 
-A valid signature plus a valid inclusion proof does not alone prove global uniqueness of the log history. Each verifier/monitor MUST durably retain its last accepted tree size/root per log ID and MUST gossip signed tree heads through the independent monitor channel.
+A valid receipt signature proves that an authorized key signed the receipt. A valid signed tree head plus inclusion and consistency proofs proves inclusion in an append-only view relative to a pinned prior head. Neither proves provider durability or independent failure-domain separation.
 
-If two monitors observe different roots for the same log ID and tree size, or cannot establish a valid consistency path, they MUST publish an equivocation alert and quarantine the affected witness scope. A witness MUST NOT be allowed to reset the client's pinned head by presenting a lower tree size, a new log ID, a new key, or a replacement keyset without separately approved recovery.
+A single log signer can still present split views to different clients. Verifiers MUST durably retain accepted tree size/root per `logId` and gossip signed tree heads through the existing independent monitor-gossip channel. Conflicting signed roots at the same log ID/tree size MUST trigger an equivocation alert and quarantine. A single Worker-local cache or Durable Object is not an independent monitor.
 
-Tree-head retention, monitor gossip, independent monitor identities, and external evidence collection are mandatory for anti-equivocation qualification. A single Worker-local cache or Durable Object is not an independent monitor.
+Provider durability, account/operator/control-plane independence, restore behavior and retention remain subject to WIT-001..WIT-014 and independently collected evidence.
 
-## 6. Verification order and fail-closed outcomes
+## 7. Required integration tests
 
-For a checkpoint append or recovery, verification order is:
+Extend the existing validators and test vectors; do not fork their algorithms.
 
-1. Validate exact request/intent scope, operation ID, checkpoint bytes, digest and predecessor.
-2. Load the last accepted witness keyset and pinned log tree head from protected state.
-3. Verify keyset signature, freshness, generation/predecessor, signer role, validity and revocation.
-4. Verify receipt schema, canonical bytes, Ed25519 signature and exact pending-intent binding.
-5. Verify tree-head schema/signature, log identity and monotonic tree size.
-6. Verify receipt inclusion proof and consistency proof from the previously pinned tree head.
-7. Independently read latest witness head and verify it is the same head or a proven valid successor.
-8. Only then allow the Durable Object's local finalize transaction.
+- Existing receipt and trust-bundle vectors remain unchanged and pass.
+- Trust-bundle schema accepts both allowed key purposes and rejects unknown purposes.
+- Receipt verifier rejects a log-purpose key; tree-head verifier rejects a receipt-purpose key.
+- Valid signed tree head verifies against root-authorized log key and exact witness/authority/host scope.
+- Wrong signature prefix, altered body, invalid signature, unknown/revoked/expired/retired key and scope substitution fail.
+- Valid receipt inclusion and consistency proofs verify using the existing RFC 9162 implementation.
+- Receipt envelope mutation, proof-node mutation, invalid leaf index, truncated/overlong path and malformed hash fail.
+- Tree-size regression, equal-size conflicting roots, invalid consistency path and rewritten prefix fail.
+- Lost acknowledgement recovery re-fetches the exact immutable receipt and re-verifies its inclusion proof against the latest signed head.
+- Independent monitor gossip detects two valid but conflicting signed heads for the same log and tree size.
+- Test results distinguish synthetic cryptographic tests, local service-binding simulation, DynamoDB Local and real-provider qualification.
 
-Outcomes:
-- `VERIFIED_CHECKPOINT`: all cryptographic checks pass and local finalize may proceed.
-- `PENDING_PROOF`: receipt or proof material is incomplete; retain intent and block successors.
-- `BLOCKED_TRUST_STATE`: keyset, latest head, or proof service is unavailable/stale/unverifiable.
-- `QUARANTINE`: signature, scope, digest, predecessor, tree root, key status, generation, or history conflicts.
+## 8. Non-goals and qualification boundary
 
-No outcome called ACCEPTED may be returned before local finalize succeeds.
+This addendum does not select AWS or another provider, assert that DynamoDB natively provides the transparency log, deploy a log, create production keys, authorize live writes, or establish independent failure domains.
 
-## 7. Required test vectors
-
-Use synthetic Ed25519 keys only. The verifier test suite MUST cover:
-- valid receipt and valid tree inclusion/consistency proof;
-- altered statement field, checkpoint bytes, digest, scope, predecessor or operation ID;
-- wrong signature domain, invalid signature length, unknown/revoked/not-yet-valid/retired key;
-- unauthorized signer role and key/identity reuse between receipt and log roles;
-- keyset root substitution, stale generation, forked predecessor and rollback;
-- duplicate JSON members, unknown fields, invalid UTF-8, NaN/Infinity and non-canonical base64url;
-- invalid leaf hash, inclusion path, tree size, leaf index and sibling ordering;
-- invalid consistency proof, smaller tree size, equal-size different root and larger tree without proof;
-- two signed conflicting tree heads at the same size;
-- lost acknowledgement followed by exact operation lookup and exact proof re-verification;
-- key rotation and revocation across a pending intent;
-- unavailable proof service and unavailable latest-head read.
-
-Test output MUST distinguish pure synthetic cryptographic tests, local service-binding simulation, DynamoDB Local, and real-provider qualification. Passing synthetic tests does not qualify production durability, independent operation, or anti-equivocation.
-
-## 8. Compatibility with the provider-neutral adapter
-
-The current adapter's `Receipt` shape and non-empty `consistency_token` are structural only. This profile is an authenticated envelope layered above the provider adapter. The gateway must map adapter commit metadata into the signed statement only after it has obtained authoritative commit/readback evidence and proof material from the selected provider/log implementation.
-
-No adapter may fabricate a Merkle proof or claim a log append solely because a metadata token is non-empty. If the selected provider cannot supply the required proof and independent log semantics, it cannot satisfy this profile without an explicitly qualified transparency-log component.
-
-## 9. Non-goals and qualification boundary
-
-This document does not select AWS or another provider, assert that DynamoDB supports this transparency-log profile natively, deploy a log, create production keys, or authorize live writes. It does not establish independent failure domains.
-
-Production rollback protection and witness anti-equivocation remain **NOT QUALIFIED** until the verifier and vectors are implemented, key governance is approved, the log/proof service is implemented and independently monitored, and WIT-001..WIT-014 provider evidence is independently reviewed.
+Production rollback protection and witness anti-equivocation remain **NOT QUALIFIED** until signed tree-head verification is implemented, the existing receipt and Merkle validators are composed, monitor gossip is integrated, and WIT-001..WIT-014 provider evidence is independently reviewed.
