@@ -48,13 +48,13 @@ async function makeFixture() {
   const proof: WorkloadProof = {
     ...base,
     signature: btoa(String.fromCharCode(...signature))
-      .replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_"),
+      .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_"),
   };
   const trustedKey: TrustedWorkloadKey = {
     callerId: base.callerId,
     keyId,
     publicKeyBase64Url: btoa(String.fromCharCode(...publicBytes))
-      .replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_"),
+      .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_"),
     audiences: [REQUEST.audience],
     scopes: [REQUEST.scope],
     notBefore: NOW - 100,
