@@ -12,3 +12,5 @@ export default {
     return handler(request);
   },
 };
+
+export { GossipReplayStateDO } from "./gossip/gossip-replay-state-do";
