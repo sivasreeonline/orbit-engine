@@ -24,6 +24,8 @@ Define a separate purpose-bound authorization envelope, `sky-high-fence-witness-
 
 `SKYHIGH-FENCE-001-WITNESS-KEYSET-V1\0`
 
+The envelope contains exactly `body`, `keysetDigest`, `rootKeyId`, and `rootSignature`. The body is canonicalized with RFC 8785; `keysetDigest` is SHA-256 of JCS(body); `rootKeyId` is SHA-256 of the raw 32-byte pinned Ed25519 governance public key; and `rootSignature` is a 64-byte Ed25519 signature over the domain prefix concatenated with JCS(body). Root signatures use canonical unpadded base64url encoding. The keyset body MUST have a closed schema.
+
 The keyset body MUST include:
 - profile and schema version;
 - trust-domain ID;
@@ -60,7 +62,6 @@ Required statement fields:
 | `committedAt` | Witness commit time in timezone-qualified RFC 3339 |
 | `witnessSequence` | Monotonic append sequence in the witness log |
 | `logId` | Stable transparency-log identity |
-| `leafHash` | RFC 9162 Merkle leaf hash for this receipt statement |
 
 The signed envelope contains exactly `statement`, `signingKeyId`, and `signature`. The signature input is:
 
@@ -68,7 +69,7 @@ The signed envelope contains exactly `statement`, `signingKeyId`, and `signature
 
 The signature is a 64-byte Ed25519 signature encoded as canonical unpadded base64url. `signingKeyId` is SHA-256 of the raw 32-byte Ed25519 public key. The verifier resolves it only through the currently accepted witness keyset and requires role `WITNESS_RECEIPT_SIGNER`, exact witness identity, validity at commit time, and no effective revocation.
 
-The verifier recomputes the checkpoint digest from the exact checkpoint bytes and recomputes the leaf hash. It MUST compare every statement field against the pending intent and the exact witness scope. A receipt that only repeats caller-supplied fields without a valid signature is rejected.
+The verifier recomputes the checkpoint digest from the exact checkpoint bytes and computes the Merkle leaf hash as specified below; the derived leaf hash is proof metadata and MUST NOT be included in the signed statement (which would create a self-referential hash). It MUST compare every statement field against the pending intent and the exact witness scope. A receipt that only repeats caller-supplied fields without a valid signature is rejected.
 
 ## 4. Transparency tree and proof envelope
 
@@ -79,7 +80,7 @@ Use the RFC 9162 Merkle Tree Hash construction, SHA-256:
 
 The proof envelope contains:
 - signed tree head: profile, log ID, tree size, root hash, timestamp, signing key ID and Ed25519 signature;
-- receipt inclusion proof (ordered sibling hashes and directions sufficient to recompute the root for the stated leaf index/tree size);
+- derived leaf hash, leaf index and receipt inclusion proof (ordered sibling hashes and directions sufficient to recompute the root for the stated leaf index/tree size);
 - consistency proof from the client's previously pinned tree size/root to the new tree size/root;
 - the prior pinned tree-head identity, or an explicit genesis marker for a first observation.
 
