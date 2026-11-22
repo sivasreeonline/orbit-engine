@@ -12,7 +12,7 @@ import validate_m0_fence_witness_profile as receipt_profile
 import validate_m0_fence_witness_merkle_proofs as merkle
 
 ROOT=Path(__file__).resolve().parents[1]
-PREFIX=b"SKYHIGH-FENCE-001-WITNESS-TREE-HEAD-V1\\x00"
+PREFIX=b"SKYHIGH-FENCE-001-WITNESS-TREE-HEAD-V1\x00"
 TRUST_VECTOR=ROOT/"docs/test-vectors/fence-witness-v1-003-trust-bundle.json"
 RECEIPT_VECTOR=ROOT/"docs/test-vectors/fence-witness-v1-001.json"
 def b64(data): return base64.urlsafe_b64encode(data).decode().rstrip("=")
@@ -36,7 +36,10 @@ def verify_tree_head(envelope, trust_body, trusted_time, expected_scope):
     key=keys[0]
     if key["purpose"]!="WITNESS_LOG_SIGNING": raise ValueError("tree-head key has wrong purpose")
     if key["witnessId"]!=body["witnessId"] or body["authorityId"] not in key["authorityIds"]: raise ValueError("tree-head key scope mismatch")
-    if not (parse_time(key["notBefore"])<=trusted_time<parse_time(key["notAfter"])): raise ValueError("tree-head key outside validity")
+    head_time=parse_time(body["timestamp"])
+    if not (parse_time(key["notBefore"])<=head_time<parse_time(key["notAfter"])): raise ValueError("tree-head timestamp outside key validity")
+    if head_time>trusted_time: raise ValueError("tree-head timestamp is in the future relative to trusted time")
+    if not (parse_time(key["notBefore"])<=trusted_time<parse_time(key["notAfter"])): raise ValueError("trusted time outside key validity")
     if "retiredAt" in key and trusted_time>=parse_time(key["retiredAt"]): raise ValueError("tree-head key retired")
     if any(r["keyId"]==body["keyId"] for r in trust_body["revocations"]): raise ValueError("tree-head key revoked")
     pub=receipt_profile.decode_canonical_base64url(key["publicKeyBase64Url"])
@@ -48,6 +51,8 @@ def verify_tree_head(envelope, trust_body, trusted_time, expected_scope):
 
 def verify_receipt_inclusion(receipt_envelope, index, tree_head, proof_hex):
     # Leaf is the complete canonical signed receipt envelope, not its body or an opaque token.
+    receipt_body=receipt_envelope["body"]
+    if (receipt_body["witnessId"],receipt_body["authorityId"],receipt_body["hostId"]) != (tree_head["witnessId"],tree_head["authorityId"],tree_head["hostId"]): raise ValueError("receipt/tree-head scope mismatch")
     leaf=merkle.leaf_hash(rfc8785.dumps(receipt_envelope))
     proof=[bytes.fromhex(x) for x in proof_hex]
     root=bytes.fromhex(tree_head["rootHash"])
@@ -57,6 +62,7 @@ def verify_receipt_inclusion(receipt_envelope, index, tree_head, proof_hex):
 
 def verify_head_extension(prior, current, proof_hex):
     old_size, new_size=prior["treeSize"],current["treeSize"]
+    if (prior["witnessId"],prior["authorityId"],prior["hostId"],prior["logId"]) != (current["witnessId"],current["authorityId"],current["hostId"],current["logId"]): raise ValueError("tree-head log/scope substitution")
     if new_size<old_size: raise ValueError("tree-size rollback")
     proof=[bytes.fromhex(x) for x in proof_hex]
     if not merkle.verify_consistency(old_size,new_size,bytes.fromhex(prior["rootHash"]),bytes.fromhex(current["rootHash"]),proof):
