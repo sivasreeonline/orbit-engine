@@ -134,7 +134,10 @@ export class GossipReplayStateDO {
       const state =
         (await txn.get<StoredState>("replay-state-v1")) ?? emptyState();
 
-      if (!message || typeof message !== "object") {\n        return reject(state, "QUARANTINE", "message envelope is malformed");\n      }\n      if (!validInteger(trustedNow)) {
+      if (!message || typeof message !== "object") {
+        return reject(state, "QUARANTINE", "message envelope is malformed");
+      }
+      if (!validInteger(trustedNow)) {
         return reject(state, "QUARANTINE", "trusted receiver time is malformed");
       }
       for (const value of [
@@ -187,7 +190,10 @@ export class GossipReplayStateDO {
         return reject(state, "QUARANTINE", "sender reused a sequence for different message content");
       }
 
-      if (!validInteger(message.issuedAt) || !validInteger(message.expiresAt)) {\n        return reject(state, "QUARANTINE", "message timestamps are malformed");\n      }\n      if (message.issuedAt > trustedNow + MAX_CLOCK_SKEW_SECONDS) {
+      if (!validInteger(message.issuedAt) || !validInteger(message.expiresAt)) {
+        return reject(state, "QUARANTINE", "message timestamps are malformed");
+      }
+      if (message.issuedAt > trustedNow + MAX_CLOCK_SKEW_SECONDS) {
         return reject(state, "QUARANTINE", "message issue time exceeds trusted-clock skew");
       }
       if (message.expiresAt <= trustedNow) {
