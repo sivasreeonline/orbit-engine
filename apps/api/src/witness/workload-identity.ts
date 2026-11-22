@@ -103,8 +103,14 @@ function encodeBase64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", toArrayBuffer(bytes)));
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -241,7 +247,7 @@ export async function authenticateWorkloadCall(
     }
     const publicKey = await crypto.subtle.importKey(
       "raw",
-      publicKeyBytes,
+      toArrayBuffer(publicKeyBytes),
       { name: "Ed25519" } as AlgorithmIdentifier,
       false,
       ["verify"],
@@ -249,8 +255,8 @@ export async function authenticateWorkloadCall(
     const valid = await crypto.subtle.verify(
       { name: "Ed25519" } as AlgorithmIdentifier,
       publicKey,
-      signature,
-      workloadSigningBytes(proof),
+      toArrayBuffer(signature),
+      toArrayBuffer(workloadSigningBytes(proof)),
     );
     if (!valid) return { authenticated: false, reason: "invalid_signature" };
   } catch {
