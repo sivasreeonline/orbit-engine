@@ -50,6 +50,7 @@ def main() -> None:
 
     revoked = copy.deepcopy(store)
     revoked["keys"][0]["status"] = "REVOKED"
+    revoked["keys"][0]["revokedAt"] = "2026-11-21T00:00:00Z"
     try:
         verify_manifest_with_trust_store(envelope, revoked, verification_time=VERIFY_AT, allow_test_only=True)
     except ValueError as error:
