@@ -173,6 +173,9 @@ jobs:
 
       - name: Build and verify dual-signed CloudTrail evidence manifest (synthetic only)
         run: python ../../scripts/test_m0_fence_cloudtrail_evidence_manifest_builder.py
+
+      - name: Verify independent FENCE-001 trusted-key store and revocation policy (synthetic only)
+        run: python ../../scripts/test_m0_fence_independent_trust_store.py
  
       - name: Verify FENCE-001 AWS read-only qualification preflight
         run: python ../../scripts/inspect_m0_fence_aws_qualification_environment.py --self-test
