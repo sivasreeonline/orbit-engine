@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from typing import Any
-from validate_m0_fence_rooted_trust_bundle import load_json, load_pinned_roots, verify_trust_bundle
+from verify_m0_fence_rooted_trust_bundle import load_json, load_pinned_roots, verify_trust_bundle
 from validate_m0_witness_provider_adapter_conformance import (
     AppendConflict, AmbiguousCommit, Checkpoint, Scope, ZERO_DIGEST, load_adapter_factory,
 )
