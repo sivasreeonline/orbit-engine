@@ -6,13 +6,13 @@
  * the caller's workload identity. The caller's private key must remain in its
  * own Worker secret store. The verifier receives only pinned public keys.
  */
-const DOMAIN = "SKYHIGH-FENCE-001-WORKER-WORKLOAD-V1\\n";
+const DOMAIN = "SKYHIGH-FENCE-001-WORKER-WORKLOAD-V1\n";
 const MAX_TTL_SECONDS = 60;
 const CLOCK_SKEW_SECONDS = 30;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SCOPE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
 const METHOD = /^[A-Z]{3,10}$/;
-const PATH = /^\\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,1023}$/;
+const PATH = /^[/][A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,1023}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
 const encoder = new TextEncoder();
@@ -126,7 +126,7 @@ export function workloadSigningBytes(proof: Omit<WorkloadProof, "signature">): U
     String(proof.expiresAt),
     proof.nonce,
   ];
-  return encoder.encode(DOMAIN + fields.join("\\n"));
+  return encoder.encode(DOMAIN + fields.join("\n"));
 }
 
 function isWellFormedProof(proof: WorkloadProof): boolean {
