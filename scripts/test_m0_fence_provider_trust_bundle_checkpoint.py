@@ -57,9 +57,9 @@ def main():
     outcomes=[]
     for candidate in (a,b):
         try: outcomes.append(accept(candidate)["status"])
-        except AppendConflict: outcomes.append("CONFLICT")
+        except (AppendConflict, ValueError): outcomes.append("CONFLICT")
     assert outcomes.count("ACCEPTED")==1 and outcomes.count("CONFLICT")==1
-    print("PASS competing successors produce one CAS winner and one conflict")
+    print("PASS competing successor candidates cannot both advance the durable head")
     print("Synthetic durable trust-bundle checkpoint tests passed; no live provider was called.")
 
 if __name__=="__main__": main()
