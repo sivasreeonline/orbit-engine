@@ -130,22 +130,27 @@ export function workloadSigningBytes(proof: Omit<WorkloadProof, "signature">): U
 }
 
 function isWellFormedProof(proof: WorkloadProof): boolean {
-  return Boolean(
-    proof &&
-      IDENTIFIER.test(proof.callerId) &&
-      DIGEST.test(proof.keyId) &&
-      IDENTIFIER.test(proof.audience) &&
-      SCOPE.test(proof.scope) &&
-      METHOD.test(proof.method) &&
-      PATH.test(proof.path) &&
-      DIGEST.test(proof.bodyDigest) &&
-      isSafeInteger(proof.issuedAt) &&
-      isSafeInteger(proof.expiresAt) &&
-      proof.nonce.length >= 22 &&
-      proof.nonce.length <= 86 &&
-      isCanonicalBase64Url(proof.nonce) &&
-      proof.signature.length === 86 &&
-      isCanonicalBase64Url(proof.signature),
+  if (!proof || typeof proof !== "object") return false;
+  const stringFields = [
+    proof.callerId, proof.keyId, proof.audience, proof.scope, proof.method,
+    proof.path, proof.bodyDigest, proof.nonce, proof.signature,
+  ];
+  if (!stringFields.every((value) => typeof value === "string")) return false;
+  return (
+    IDENTIFIER.test(proof.callerId) &&
+    DIGEST.test(proof.keyId) &&
+    IDENTIFIER.test(proof.audience) &&
+    SCOPE.test(proof.scope) &&
+    METHOD.test(proof.method) &&
+    PATH.test(proof.path) &&
+    DIGEST.test(proof.bodyDigest) &&
+    isSafeInteger(proof.issuedAt) &&
+    isSafeInteger(proof.expiresAt) &&
+    proof.nonce.length >= 22 &&
+    proof.nonce.length <= 86 &&
+    isCanonicalBase64Url(proof.nonce) &&
+    proof.signature.length === 86 &&
+    isCanonicalBase64Url(proof.signature)
   );
 }
 
@@ -156,7 +161,17 @@ export async function authenticateWorkloadCall(
   trustedNow: number,
   nonceStore: WorkloadNonceStore,
 ): Promise<WorkloadAuthenticationResult> {
-  if (!isWellFormedProof(proof) || !isSafeInteger(trustedNow)) {
+  if (
+    !isWellFormedProof(proof) ||
+    !isSafeInteger(trustedNow) ||
+    !request ||
+    typeof request !== "object" ||
+    typeof request.audience !== "string" ||
+    typeof request.scope !== "string" ||
+    typeof request.method !== "string" ||
+    typeof request.path !== "string" ||
+    !(request.body instanceof Uint8Array)
+  ) {
     return { authenticated: false, reason: "malformed_proof" };
   }
 
@@ -180,11 +195,8 @@ export async function authenticateWorkloadCall(
     !isSafeInteger(key.notBefore) ||
     !isSafeInteger(key.notAfter) ||
     key.notBefore >= key.notAfter ||
-    (key.revokedAt !== undefined && isSafeInteger(key.revokedAt))
+    key.revokedAt !== undefined
   ) {
-    if (key.revokedAt !== undefined) {
-      return { authenticated: false, reason: "key_not_valid" };
-    }
     return { authenticated: false, reason: "key_not_valid" };
   }
   if (
