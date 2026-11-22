@@ -89,7 +89,7 @@ def main():
     receipt_envelope={"body":receipt["receiptBody"],"signature":receipt["signatureBase64Url"]}
     # Verify the receipt signature and binding using the pre-existing validator.
     vector_result={"checkpointBody":receipt["checkpointBody"],"checkpointDigest":receipt["checkpointDigest"],"receiptBody":receipt["receiptBody"],"signatureBase64Url":receipt["signatureBase64Url"]}
-    now=datetime(2026,1,2,3,4,6,tzinfo=timezone.utc)
+    now=datetime(2026,1,2,3,5,1,tzinfo=timezone.utc)
     receipt_profile.verify_receipt_against_trusted_bundle(vector_result,body,now)
     leaf_bytes=rfc8785.dumps(receipt_envelope)
     second_leaf=b"synthetic second receipt envelope"
