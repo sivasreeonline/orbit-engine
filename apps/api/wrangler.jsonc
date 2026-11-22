@@ -10,7 +10,8 @@
   "services": [
     {
       "binding": "WITNESS_GATEWAY",
-      "service": "sky-high-witness-gateway"
+      "service": "sky-high-witness-gateway",
+      "entrypoint": "WitnessGateway"
     }
   ],
   "durable_objects": {
