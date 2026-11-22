@@ -6,9 +6,9 @@
 
 This contract is the next layer after the provider-neutral replay snapshot checkpoint in PR #182. It defines the boundary required before `GossipReplayStateDO` can rely on an independent witness.
 
-**Correction to the original contract:** repository inspection established that no cryptographic witness receipt verifier or witness-key authorization profile currently exists. The existing `sky-high-fence-manifest-trust-bundle-v1` authorizes COLLECTOR and INDEPENDENT_VERIFIER manifest keys only; it is not a witness receipt trust profile. The provider adapter's opaque non-empty `consistency_token` is not a cryptographic proof.
+**Repository alignment:** the existing `sky-high-fence-witness-v1` profile, schema, synthetic signed vectors and validator already provide root-signed witness trust bundles, Ed25519 receipt signatures, receipt/checkpoint binding and key lifecycle checks. The existing `sky-high-fence-witness-merkle-v1` model already provides RFC 9162 inclusion and consistency proof algorithms and vectors. The bridge MUST reuse these exact contracts and implementations.
 
-The bridge MUST implement and use the purpose-specific profile in `m0-fence-001-cryptographic-witness-receipt-profile.md`. That profile uses the existing out-of-band FENCE-001 governance-root pinning process with a distinct domain-separated witness-keyset authorization document. It does not silently broaden manifest key roles or introduce a self-authorized trust root. The bridge must not create a second checkpoint format or an alternate receipt verifier.
+The remaining cryptographic integration gap is signed transparency tree-head authentication and composition of the existing receipt verifier with the existing Merkle proof verifier. The provider adapter's `consistencyToken` remains opaque metadata and MUST NOT be treated as a cryptographic proof.
 
 The Cloudflare Worker and witness gateway are separate failure domains. A service binding is transport and routing, not by itself proof of independent administration, durable storage, linearizable reads, or production qualification.
 
@@ -18,7 +18,7 @@ The Cloudflare Worker and witness gateway are separate failure domains. A servic
 2. **Cloudflare API Worker** owns the configured private service binding to the witness gateway. The binding must not be exposed as a public route.
 3. **Witness gateway** authenticates the calling workload, validates request scope and canonical payload, and invokes the provider-neutral witness coordinator.
 4. **Witness adapter** supplies atomic compare-and-append, immutable operation lookup, strongly consistent latest read, and exact idempotency. The adapter's provider-specific claims remain unqualified until WIT-001..WIT-014 evidence is independently reviewed.
-5. **Receipt/proof verifier** implements the exact `sky-high-fence-witness-receipt-v1` profile, including purpose-bound witness key authorization, Ed25519 receipt and tree-head signatures, RFC 9162 inclusion/consistency proofs, key lifecycle/revocation, and retained/gossiped tree-head state. The existing manifest trust-bundle verifier is not a substitute.
+5. **Receipt/proof verifier** reuses `docs/schemas/m0-fence-witness-v1.schema.json`, `scripts/validate_m0_fence_witness_profile.py`, and `scripts/validate_m0_fence_witness_merkle_proofs.py`. It additionally verifies a signed tree-head envelope using a key authorized by the root-signed witness trust bundle.
 
 No component may treat a successful HTTP response, adapter metadata receipt, or non-empty opaque consistency token alone as proof of an independently durable checkpoint.
 
@@ -37,7 +37,7 @@ Every request is versioned and binds:
 
 The gateway independently recomputes the canonical snapshot digest and validates the complete schema before append. It rejects duplicate JSON members, invalid UTF-8, non-finite numbers, unknown fields where the version is closed, oversized payloads, scope substitution, and operation-ID/content mismatch.
 
-Responses contain the exact checkpoint, signed receipt envelope, signed tree head, inclusion and consistency proofs, witness scope, generation, predecessor digest, operation ID, checkpoint digest, signer key IDs and proof material required by the profile. The DO or shared verifier must validate these fields against the last accepted purpose-bound witness keyset and pinned tree head before treating the result as verified.
+Responses contain the exact checkpoint, existing signed receipt envelope, signed tree head, inclusion and consistency proofs, witness scope, generation, predecessor digest, operation ID, checkpoint digest and signer key IDs. The DO or shared verifier must validate these fields against the last accepted root-signed witness trust bundle and pinned tree head before treating the result as verified.
 
 The bridge must not accept a caller-supplied trust root, verification key, witness head, generation, predecessor, or trust-bundle freshness decision.
 
@@ -47,7 +47,7 @@ An external network call must never run inside a Durable Object storage transact
 
 1. In a short storage transaction, validate the incoming message and persist a **pending checkpoint intent** containing the exact next replay snapshot, snapshot digest, deterministic operation ID, base state version, and a state that prevents a competing transition from being reported accepted.
 2. Outside the transaction, call the private gateway with the exact persisted intent. Every retry uses the same operation ID and identical canonical bytes.
-3. On a response, verify the receipt, tree head, inclusion proof, consistency proof and current witness head. A response with a malformed signature, wrong scope, wrong digest, wrong predecessor, stale head, missing proof, unverifiable trust state or unproven tree transition is not success.
+3. On a response, verify the existing receipt signature and key authorization, signed tree head, inclusion proof, consistency proof and current witness head. A response with a malformed signature, wrong scope, wrong digest, wrong predecessor, stale head, missing proof, unverifiable trust state or unproven tree transition is not success.
 4. In a second storage transaction, confirm the pending intent is unchanged and the local base version still matches. Persist the replay snapshot and verified witness receipt/tree-head reference together, then clear the pending intent.
 5. Only after step 4 may the caller receive an outcome that means **witness-checkpointed acceptance**.
 
@@ -84,7 +84,7 @@ On object activation/recovery, admission for the replay relationship remains blo
 - Local snapshot older than or different from the witness head: `QUARANTINE`.
 - Local snapshot ahead of the witness: `QUARANTINE`; never auto-append it merely to make the histories agree.
 - Pending intent: recover the exact operation first; do not process a successor.
-- Witness unavailable, receipt/proof unverifiable, stale keyset, missing proof, tree-head regression, or ambiguous latest read: `BLOCKED`.
+- Witness unavailable, receipt/proof unverifiable, stale trust bundle, missing proof, tree-head regression, or ambiguous latest read: `BLOCKED`.
 - Conflicting signed tree heads for the same log and tree size: `QUARANTINE` and emit an independently monitored equivocation alert.
 
 Recovery must not rewrite either history or silently choose a fork. Any repair requires separately authenticated replay evidence and independent approval.
@@ -101,11 +101,9 @@ A stale competing successor, concurrent duplicate delivery, two different messag
 
 All tests in this slice use synthetic keys, synthetic messages and local test services only.
 
-- Exact request/response schema and strict canonical JSON validation.
-- Caller identity, audience, scope and service-binding route rejection.
-- Tampered receipt, wrong key, revoked key, stale keyset and unknown root rejection.
-- Wrong operation ID, digest, predecessor, generation and witness scope rejection.
-- Invalid Ed25519 signatures and domain-separation substitution.
+- Existing witness-v1 receipt, trust-bundle and Merkle vectors remain unchanged and pass.
+- Signed tree-head schema, signature domain, authorized log-key purpose, validity and revocation checks.
+- Receipt-purpose key cannot sign a tree head; log-purpose key cannot sign a receipt.
 - Invalid Merkle leaf, inclusion proof, consistency proof, tree-size regression and same-size conflicting roots.
 - Timeout before commit and lost acknowledgement after commit.
 - Immutable operation lookup with exact retry and changed-content retry.
@@ -127,4 +125,4 @@ This contract does not:
 - enable host admission, supervisor startup, guest execution or student-code execution;
 - claim that Cloudflare and the witness are independent merely because they are separate services.
 
-Production rollback protection remains **NOT QUALIFIED** until the receipt/proof verifier, authenticated bridge, failure-injection suite, independent monitor gossip, and WIT-001..WIT-014 provider evidence are independently reviewed and approved.
+Production rollback protection remains **NOT QUALIFIED** until signed tree-head verification is integrated with the existing receipt and Merkle validators, the authenticated bridge and failure-injection suite pass, independent monitor gossip is validated, and WIT-001..WIT-014 provider evidence is independently reviewed and approved.
