@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import rfc8785
 from validate_m0_fence_rooted_trust_bundle import SIGNATURE_PREFIX
 from validate_m0_fence_provider_trust_bundle_checkpoint import CheckpointAcceptanceError, accept_trust_bundle_checkpoint
-from validate_m0_witness_provider_adapter_conformance import AppendConflict, InMemoryWitnessAdapter, ZERO_DIGEST
+from validate_m0_witness_provider_adapter_conformance import AppendConflict, ZERO_DIGEST, load_adapter_factory
 
 def sha(raw: bytes) -> str: return hashlib.sha256(raw).hexdigest()
 
@@ -33,7 +33,8 @@ def main():
       {"role":"COLLECTOR","keyId":keys[0]["keyId"],"signerIdentity":keys[0]["identity"]},
       {"role":"INDEPENDENT_VERIFIER","keyId":keys[1]["keyId"],"signerIdentity":keys[1]["identity"]}]}
     first,roots=make_bundle(1,ZERO_DIGEST,root,keys)
-    adapter=InMemoryWitnessAdapter()
+    adapter_factory, adapter_kind=load_adapter_factory()
+    adapter=adapter_factory()
     def accept(bundle):
         return accept_trust_bundle_checkpoint(adapter,bundle,roots,manifest=manifest,
           trust_domain_id="checkpoint-test-domain",witness_id="test-witness",authority_id="test-authority",host_id="test-host")
@@ -65,6 +66,6 @@ def main():
         except (AppendConflict, ValueError): outcomes.append("CONFLICT")
     assert outcomes.count("ACCEPTED")==1 and outcomes.count("CONFLICT")==1
     print("PASS competing successor candidates cannot both advance the durable head")
-    print("Synthetic durable trust-bundle checkpoint tests passed; no live provider was called.")
+    print(f"Durable trust-bundle checkpoint integration tests passed using {adapter_kind}; no live provider was called.")
 
 if __name__=="__main__": main()
