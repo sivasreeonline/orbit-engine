@@ -89,9 +89,13 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
     );
   }
 
-  override async fetch(): Promise<Response> {
-    return new Response("Not Found", { status: 404 });
-  }
 }
 
 export { WorkloadNonceReplayDO } from "../../api/src/auth/workload-nonce-replay-do";
+
+/** Default HTTP surface is deliberately inert; RPC uses the named entrypoint. */
+export default {
+  async fetch(): Promise<Response> {
+    return new Response("Not Found", { status: 404 });
+  },
+};
