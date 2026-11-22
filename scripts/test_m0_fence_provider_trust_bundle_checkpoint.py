@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic durable-checkpoint integration tests for rooted FENCE-001 bundles."""
 from __future__ import annotations
-import base64, hashlib
+import base64, copy, hashlib
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import rfc8785
@@ -39,7 +39,12 @@ def main():
           trust_domain_id="checkpoint-test-domain",witness_id="test-witness",authority_id="test-authority",host_id="test-host")
     assert accept(first)["status"]=="ACCEPTED"
     assert accept(first)["status"]=="ALREADY_ACCEPTED"
-    print("PASS root-verified trust bundle is checkpointed and exact retry is idempotent")
+    tampered=copy.deepcopy(first)
+    tampered["body"]["trustDomainId"]="attacker-domain"
+    try: accept(tampered)
+    except ValueError as error: assert "digest mismatch" in str(error) or "trust-domain substitution" in str(error)
+    else: raise AssertionError("tampered replay bypassed root signature verification")
+    print("PASS root-verified trust bundle is checkpointed, exact retry is idempotent, and tampered replay is rejected")
     second,_=make_bundle(2,first["bundleDigest"],root,keys)
     assert accept(second)["generation"]==2
     print("PASS successor requires exact durable generation and predecessor")
