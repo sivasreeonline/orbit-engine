@@ -2,9 +2,15 @@ import { describe, expect, it } from "vitest";
 import { GossipReplayStateDO, type VerifiedGossipMessage } from "./gossip-replay-state-do";
 import type { Env } from "../env";
 
+interface FakeStorage {
+  get<T>(key: string): Promise<T | undefined>;
+  put<T>(key: string, value: T): Promise<void>;
+  transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T>;
+}
+
 function makeHarness(existing?: Map<string, unknown>) {
   const values = existing ?? new Map<string, unknown>();
-  const storage = {
+  const storage: FakeStorage = {
     async get<T>(key: string): Promise<T | undefined> {
       return values.get(key) as T | undefined;
     },
