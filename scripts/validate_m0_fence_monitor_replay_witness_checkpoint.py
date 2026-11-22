@@ -36,16 +36,19 @@ def checkpoint_replay_snapshot(adapter: Any, scope: Scope, snapshot: dict[str, A
     latest = adapter.read_latest(scope)
     expected_generation = latest.checkpoint.generation if latest else 0
     expected_digest = latest.checkpoint.checkpoint_digest if latest else ZERO_DIGEST
-    generation = expected_generation + 1
-    operation_id = f"fence-monitor-replay-{generation}-{digest[:24]}"
-    value = Checkpoint(scope, generation, operation_id, "MONITOR_GOSSIP_REPLAY_V1", digest, expected_digest)
+    operation_id = f"fence-monitor-replay-{digest}"
     prior = adapter.read_by_operation(scope, operation_id)
     if prior is not None:
+        value = prior.checkpoint
         _assert_record(prior, value)
+        if value.phase != "MONITOR_GOSSIP_REPLAY_V1" or value.checkpoint_digest != digest:
+            raise ReplayCheckpointError("existing operation is not bound to this canonical replay snapshot")
         current = adapter.read_latest(scope)
         if current is None or current.checkpoint != value:
             raise ReplayCheckpointError("snapshot replay is stale; it is no longer the current witness head")
-        return {"status": "ALREADY_CHECKPOINTED", "generation": generation, "digest": digest, "receipt": prior.receipt}
+        return {"status": "ALREADY_CHECKPOINTED", "generation": value.generation, "digest": digest, "receipt": prior.receipt}
+    generation = expected_generation + 1
+    value = Checkpoint(scope, generation, operation_id, "MONITOR_GOSSIP_REPLAY_V1", digest, expected_digest)
     try:
         receipt = adapter.append_if_current(value, expected_generation=expected_generation,
             expected_digest=expected_digest, idempotency_key=operation_id)
