@@ -5,7 +5,7 @@ import base64, copy, hashlib
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import rfc8785
-from validate_m0_fence_rooted_trust_bundle import SIGNATURE_PREFIX
+from verify_m0_fence_rooted_trust_bundle import SIGNATURE_PREFIX
 from validate_m0_fence_provider_trust_bundle_checkpoint import CheckpointAcceptanceError, accept_trust_bundle_checkpoint
 from validate_m0_witness_provider_adapter_conformance import AppendConflict, ZERO_DIGEST, load_adapter_factory
 
