@@ -1,4 +1,4 @@
-import type { WorkloadNonceStore } from "./workload-identity";
+import type { WorkloadNonceStore } from "../witness/workload-identity";
 
 interface WorkloadNonceReplayStub {
   consumeNonce(
