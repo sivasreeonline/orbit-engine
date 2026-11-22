@@ -46,7 +46,7 @@ All string fields are restricted to bounded ASCII grammars that exclude line bre
 
 The verifier requires a `WorkloadNonceStore` and consumes the caller/nonce pair only after all proof, key, signature, time, and request-binding checks pass. The production implementation MUST use an atomic durable insert-if-absent operation, scoped by caller ID, and retain the nonce until at least its proof expiry plus the configured clock-skew allowance. If the replay store is unavailable, authentication fails closed.
 
-The in-memory unit-test store is not a production implementation. The next integration slice must provide durable replay state, service-binding wiring, secret/key provisioning, rotation, and negative Workers-runtime tests.
+The repository now includes a caller-scoped Durable Object nonce store with transactional insert-if-absent semantics, a bounded active-entry limit, alarm-based expiry cleanup, and local workerd concurrency/restart tests. The in-memory store remains only a verifier unit-test double. Service-binding wiring, secret/key provisioning, rotation, and end-to-end private gateway tests remain the next integration slice.
 
 ## Time and scope
 
