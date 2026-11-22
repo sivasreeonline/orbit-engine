@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import rfc8785
 from verify_m0_fence_rooted_trust_bundle import SIGNATURE_PREFIX
 from validate_m0_fence_provider_trust_bundle_checkpoint import CheckpointAcceptanceError, accept_trust_bundle_checkpoint
-from validate_m0_witness_provider_adapter_conformance import AppendConflict, ZERO_DIGEST, load_adapter_factory
+from validate_m0_witness_provider_adapter_conformance import AppendConflict, ZERO_DIGEST, LoseAcknowledgementOnce, load_adapter_factory
 
 def sha(raw: bytes) -> str: return hashlib.sha256(raw).hexdigest()
 
@@ -40,6 +40,21 @@ def main():
           trust_domain_id="checkpoint-test-domain",witness_id="test-witness",authority_id="test-authority",host_id="test-host")
     assert accept(first)["status"]=="ACCEPTED"
     assert accept(first)["status"]=="ALREADY_ACCEPTED"
+    # Reconstruct an adapter over the same durable table to model process restart.
+    if hasattr(adapter, "_client") and hasattr(adapter, "_table_name"):
+        restarted=type(adapter)(adapter._client, adapter._table_name)
+        restarted_result=accept_trust_bundle_checkpoint(restarted,first,roots,manifest=manifest,
+          trust_domain_id="checkpoint-test-domain",witness_id="test-witness",authority_id="test-authority",host_id="test-host")
+        assert restarted_result["status"]=="ALREADY_ACCEPTED"
+        print("PASS checkpoint and receipt survive adapter reconstruction")
+    # Inject response loss after provider commit; exact operation lookup must recover it.
+    recovery_adapter=LoseAcknowledgementOnce(adapter_factory())
+    recovered=accept_trust_bundle_checkpoint(recovery_adapter,first,roots,manifest=manifest,
+      trust_domain_id="checkpoint-test-domain",witness_id="recovery-witness",authority_id="test-authority",host_id="test-host")
+    assert recovered["status"]=="ACCEPTED"
+    assert accept_trust_bundle_checkpoint(recovery_adapter,first,roots,manifest=manifest,
+      trust_domain_id="checkpoint-test-domain",witness_id="recovery-witness",authority_id="test-authority",host_id="test-host")["status"]=="ALREADY_ACCEPTED"
+    print("PASS lost acknowledgement recovers exact committed receipt without duplicate append")
     tampered=copy.deepcopy(first)
     tampered["body"]["trustDomainId"]="attacker-domain"
     try: accept(tampered)
