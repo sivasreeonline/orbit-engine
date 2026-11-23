@@ -6,15 +6,9 @@ import {
 
 const DIGEST = /^[0-9a-f]{64}$/;
 
-export interface ReplayTransitionMessage {
-  readonly messageId: string;
-  readonly senderId: string;
-  readonly recipientId: string;
-  readonly scope: string;
-  readonly sequence: number;
-  readonly canonicalDigest: string;
-  readonly messageType: string;
-}
+import type { VerifiedGossipMessage } from "./gossip-replay-state-do";
+
+export type ReplayTransitionMessage = VerifiedGossipMessage;
 
 export interface PendingReplayIntent {
   readonly version: 1;
@@ -71,7 +65,9 @@ export async function createPendingReplayIntent(
     typeof message.scope !== "string" || message.scope.length === 0 ||
     !Number.isSafeInteger(message.sequence) || message.sequence < 1 ||
     !DIGEST.test(message.canonicalDigest) ||
-    typeof message.messageType !== "string" || message.messageType.length === 0
+    typeof message.messageType !== "string" || message.messageType.length === 0 ||
+    !Number.isSafeInteger(message.issuedAt) || message.issuedAt < 0 ||
+    !Number.isSafeInteger(message.expiresAt) || message.expiresAt < 0
   ) throw new TypeError("transition message identity is malformed");
 
   const transition = {
