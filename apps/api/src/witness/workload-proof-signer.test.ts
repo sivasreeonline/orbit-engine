@@ -99,4 +99,21 @@ describe("API workload proof signer", () => {
       reason: "caller_proof_signing_failed",
     });
   });
+  it("uses the dedicated evidence-verification audience scope and RPC path", async () => {
+    const keys = await fixture();
+    const result = await createApiWorkloadProof(
+      keys.config,
+      new TextEncoder().encode('{"evidence":"test"}'),
+      "verify_evidence",
+    );
+    expect(result.created).toBe(true);
+    if (!result.created) return;
+    expect(result.proof).toMatchObject({
+      audience: "sky-high-witness-gateway",
+      scope: "witness:verify-evidence",
+      method: "POST",
+      path: "/rpc/verify-evidence",
+    });
+  });
+
 });
