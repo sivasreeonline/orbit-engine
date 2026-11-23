@@ -10,9 +10,13 @@ export interface WitnessCheckpoint {
   readonly generation: number;
   readonly operationId: string;
   readonly phase: "MONITOR_GOSSIP_REPLAY_V1";
+  /** SHA-256 of the exact canonical replay snapshot bytes. */
+  readonly snapshotDigest: string;
+  /** SHA-256 of the exact canonical monitor-replay checkpoint-body bytes. */
   readonly checkpointDigest: string;
   readonly previousDigest: string;
   readonly canonicalSnapshotBytes: Uint8Array;
+  readonly canonicalCheckpointBodyBytes: Uint8Array;
 }
 
 export interface WitnessCheckpointReceipt {
