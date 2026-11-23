@@ -163,9 +163,9 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     // Recovery runs inside the Durable Object. If its gateway capability or
     // provider path is unavailable, it must preserve the exact pending intent.
     const recovery = await stub.recoverPendingCheckpointIntent();
-    expect(recovery).toMatchObject({
+    expect(recovery).toEqual({
       recovered: false,
-      reason: expect.stringMatching(/^(gateway_unavailable|checkpoint_not_committed)$/),
+      reason: "checkpoint_not_committed",
     });
 
     // Finalization atomically deletes the pending record. Its continued
