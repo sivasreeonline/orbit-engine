@@ -11,7 +11,7 @@ from validate_m0_fence_monitor_replay_witness_checkpoint import (
 )
 from validate_m0_witness_provider_adapter_conformance import AppendConflict, InMemoryWitnessAdapter, LoseAcknowledgementOnce, Scope
 
-SCOPE = Scope("monitor-test-domain", "monitor-test-witness", "monitor-a", "monitor-b")
+SCOPE = Scope("monitor-test-domain", "monitor-test-witness", "monitor-a", "monitor-b", "monitor-a", "monitor-b", "domain|witness|authority|host")
 
 def sample(sequence: int = 1) -> dict:
     return {"version": 1, "senderId": "monitor-a", "recipientId": "monitor-b",
