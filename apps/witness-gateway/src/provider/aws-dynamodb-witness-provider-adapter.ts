@@ -563,3 +563,41 @@ export function createLocalDynamoDBWitnessProviderAdapter(
   });
   return new AwsDynamoDBWitnessProviderAdapter(client, config.tableName);
 }
+
+
+export interface AwsDynamoDBWitnessProviderProductionConfig {
+  readonly region: string;
+  readonly tableName: string;
+  readonly accessKeyId: string;
+  readonly secretAccessKey: string;
+  readonly sessionToken?: string;
+}
+
+/**
+ * AWS-only factory for the isolated provider Worker.
+ *
+ * Unlike the local factory above, this never accepts an endpoint override:
+ * the SDK resolves the regional AWS DynamoDB endpoint. Callers must make the
+ * explicit write-enable decision before invoking this factory. Credentials
+ * are expected to come from Worker secrets, never checked-in vars.
+ */
+export function createAwsDynamoDBWitnessProviderAdapter(
+  config: AwsDynamoDBWitnessProviderProductionConfig,
+): AwsDynamoDBWitnessProviderAdapter {
+  if (
+    !config.region ||
+    !config.tableName ||
+    !config.accessKeyId ||
+    !config.secretAccessKey
+  ) throw new TypeError("AWS DynamoDB provider requires region, table and explicit credentials");
+  const client = new DynamoDBClient({
+    region: config.region,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey,
+      ...(config.sessionToken ? { sessionToken: config.sessionToken } : {}),
+    },
+    requestHandler: createFetchDynamoDBRequestHandler(),
+  });
+  return new AwsDynamoDBWitnessProviderAdapter(client, config.tableName);
+}
