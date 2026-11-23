@@ -38,7 +38,7 @@ function hex(bytes: Uint8Array): string {
 function base64url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 async function fingerprint(bytes: Uint8Array): Promise<string> {
@@ -112,7 +112,7 @@ function hex(bytes: Uint8Array): string {
 function base64url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 async function fingerprint(bytes: Uint8Array): Promise<string> {
@@ -187,7 +187,7 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
       this.receiptKeyPromise,
       this.logKeyPromise,
     ]);
-    const now = new Date().toISOString().replace(/\\.\\d{3}Z$/, "Z");
+    const now = new Date().toISOString();
     const notBefore = "2026-01-01T00:00:00Z";
     const notAfter = "2036-01-01T00:00:00Z";
     const signingKeys: WitnessSigningKey[] = [
