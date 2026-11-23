@@ -5,8 +5,10 @@ import type { WitnessGatewayRpc } from "../src/witness/witness-gateway-contract"
 import { createApiWorkloadProof } from "../src/witness/workload-proof-signer";
 import {
   authenticateApiWorkerWithWitnessGateway,
+  checkpointReplayViaWitnessGateway,
   verifyEvidenceViaWitnessGateway,
 } from "../src/witness/witness-gateway-client";
+import { deriveReplayCheckpointOperationId } from "../src/gossip/gossip-replay-checkpoint-intent";
 import {
   consistencyProof,
   inclusionProof,
@@ -340,6 +342,66 @@ describe("API-to-private-witness-gateway RPC integration", () => {
     expect(await gateway.verifyEvidence(created.proof, tamperedBody)).toEqual({
       verified: false,
       reason: "workload_authentication_failed",
+    });
+  });
+
+
+  it("authenticates and validates a replay checkpoint over real Worker RPC, then fails closed without providers", async () => {
+    const scope = {
+      trustDomainId: "test-trust-domain-vector-01",
+      witnessId: "witness-vector-01",
+      authorityId: "authority-vector-01",
+      hostId: "host-vector-01",
+    };
+    const messageDigest = "a".repeat(64);
+    const snapshot = {
+      version: 1,
+      senderId: "monitor-rpc-a",
+      recipientId: "monitor-rpc-b",
+      highestSequence: 1,
+      seenByMessageId: {
+        "rpc-message-1": { sequence: 1, digest: messageDigest },
+      },
+    };
+    const snapshotCanonical = canonicalize(snapshot);
+    if (typeof snapshotCanonical !== "string") throw new Error("snapshot is not canonical");
+    const snapshotBytes = new TextEncoder().encode(snapshotCanonical);
+    const snapshotDigest = hex(new Uint8Array(await crypto.subtle.digest(
+      "SHA-256",
+      toArrayBuffer(snapshotBytes),
+    )));
+    const expectedPredecessor = { generation: 0, digest: "0".repeat(64) };
+    const operationId = await deriveReplayCheckpointOperationId({
+      scope,
+      expectedPredecessor,
+      snapshotDigest,
+    });
+    const request = {
+      version: 1,
+      scope,
+      senderId: snapshot.senderId,
+      recipientId: snapshot.recipientId,
+      messageDigest,
+      baseStateVersion: 0,
+      operationId,
+      phase: "MONITOR_GOSSIP_REPLAY_V1",
+      expectedPredecessor,
+      snapshotDigest,
+      snapshotByteLength: snapshotBytes.length,
+      canonicalSnapshotBase64Url: base64Url(snapshotBytes),
+    };
+    const serialized = canonicalize(request);
+    if (typeof serialized !== "string") throw new Error("checkpoint request is not canonical");
+    const result = await checkpointReplayViaWitnessGateway(
+      apiCallerEnv(),
+      new TextEncoder().encode(serialized),
+    );
+
+    // The authenticated gateway accepts the request shape and exact scope, but
+    // production remains inert until both independent private services exist.
+    expect(result).toEqual({
+      checkpointed: false,
+      reason: "provider_unavailable",
     });
   });
 
