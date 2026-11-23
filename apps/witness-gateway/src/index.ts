@@ -27,6 +27,7 @@ import {
 import type {
   WitnessEvidenceVerificationResult,
   WitnessGatewayRpc,
+  WitnessReplayCheckpointResult,
 } from "../../api/src/witness/witness-gateway-contract";
 
 const AUDIENCE = "sky-high-witness-gateway";
@@ -36,6 +37,10 @@ const AUTH_PATH = "/rpc/authenticate";
 const VERIFY_SCOPE = "witness:verify-evidence";
 const VERIFY_METHOD = "POST";
 const VERIFY_PATH = "/rpc/verify-evidence";
+const CHECKPOINT_SCOPE = "witness:checkpoint-replay";
+const CHECKPOINT_METHOD = "POST";
+const CHECKPOINT_PATH = "/rpc/checkpoint-replay";
+const MAX_CHECKPOINT_BYTES = 640 * 1024;
 const ZERO_DIGEST = "0".repeat(64);
 const MAX_EVIDENCE_BYTES = 256 * 1024;
 
@@ -475,6 +480,103 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
       treeSize: currentHead.body.treeSize,
       receiptLeafHash,
     };
+  }
+
+  /**
+   * Authenticated replay-checkpoint RPC. This deployment intentionally has no
+   * configured append provider yet: after validating caller and canonical
+   * request bindings it fails closed rather than fabricating a checkpoint.
+   */
+  async checkpointReplay(
+    proof: WorkloadProof,
+    canonicalCheckpointBody: Uint8Array,
+  ): Promise<WitnessReplayCheckpointResult> {
+    const trustedKeys = parseTrustedWorkloadKeys(this.env.WORKLOAD_CALLER_KEYS);
+    if (!trustedKeys || !(canonicalCheckpointBody instanceof Uint8Array) ||
+        canonicalCheckpointBody.length === 0 ||
+        canonicalCheckpointBody.length > MAX_CHECKPOINT_BYTES) {
+      return { checkpointed: false, reason: "malformed_request" };
+    }
+
+    const auth = await authenticateWorkloadCall(
+      proof,
+      {
+        audience: AUDIENCE,
+        scope: CHECKPOINT_SCOPE,
+        method: CHECKPOINT_METHOD,
+        path: CHECKPOINT_PATH,
+        body: canonicalCheckpointBody,
+      },
+      trustedKeys,
+      Math.floor(Date.now() / 1_000),
+      new DurableWorkloadNonceStore(this.env.WORKLOAD_NONCE_REPLAY),
+    );
+    if (!auth.authenticated) {
+      return { checkpointed: false, reason: "workload_authentication_failed" };
+    }
+
+    try {
+      const serialized = new TextDecoder("utf-8", { fatal: true }).decode(canonicalCheckpointBody);
+      const parsed: unknown = JSON.parse(serialized);
+      if (
+        !isRecord(parsed) ||
+        !exactKeys(parsed, [
+          "version",
+          "scope",
+          "operationId",
+          "phase",
+          "expectedPredecessor",
+          "snapshotDigest",
+          "canonicalSnapshotBase64Url",
+        ]) ||
+        canonicalize(parsed) !== serialized ||
+        parsed.version !== 1 ||
+        parsed.phase !== "MONITOR_GOSSIP_REPLAY_V1" ||
+        typeof parsed.operationId !== "string" ||
+        !/^fence-monitor-replay-[0-9a-f]{64}$/.test(parsed.operationId) ||
+        typeof parsed.snapshotDigest !== "string" ||
+        !/^[0-9a-f]{64}$/.test(parsed.snapshotDigest) ||
+        parsed.operationId !== `fence-monitor-replay-${parsed.snapshotDigest}` ||
+        !isRecord(parsed.scope) ||
+        !exactKeys(parsed.scope, ["trustDomainId", "witnessId", "authorityId", "hostId"]) ||
+        !Object.values(parsed.scope).every((value) => typeof value === "string" && value.length > 0) ||
+        !isRecord(parsed.expectedPredecessor) ||
+        !exactKeys(parsed.expectedPredecessor, ["generation", "digest"]) ||
+        !Number.isSafeInteger(parsed.expectedPredecessor.generation) ||
+        (parsed.expectedPredecessor.generation as number) < 0 ||
+        typeof parsed.expectedPredecessor.digest !== "string" ||
+        !/^[0-9a-f]{64}$/.test(parsed.expectedPredecessor.digest) ||
+        typeof parsed.canonicalSnapshotBase64Url !== "string" ||
+        !/^[A-Za-z0-9_-]+$/.test(parsed.canonicalSnapshotBase64Url)
+      ) return { checkpointed: false, reason: "malformed_request" };
+
+      const allowedScopes = parseAllowedWitnessScopes(this.env.WITNESS_TRUST_SCOPES);
+      if (!allowedScopes || !allowedScopes.some((scope) =>
+        scope.trustDomainId === parsed.scope!.trustDomainId &&
+        scope.witnessId === parsed.scope!.witnessId &&
+        scope.authorityId === parsed.scope!.authorityId &&
+        scope.hostId === parsed.scope!.hostId
+      )) return { checkpointed: false, reason: "trust_scope_denied" };
+
+      const encoded = parsed.canonicalSnapshotBase64Url;
+      const padded = encoded.replace(/-/g, "+").replace(/_/g, "/") +
+        "=".repeat((4 - (encoded.length % 4)) % 4);
+      const binary = atob(padded);
+      const snapshotBytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      const canonicalEncoding = btoa(String.fromCharCode(...snapshotBytes))
+        .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+      if (canonicalEncoding !== encoded) return { checkpointed: false, reason: "malformed_request" };
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", snapshotBytes));
+      const digestHex = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      if (digestHex !== parsed.snapshotDigest) return { checkpointed: false, reason: "malformed_request" };
+    } catch {
+      return { checkpointed: false, reason: "malformed_request" };
+    }
+
+    // No concrete provider adapter is configured in this release. Keep the
+    // caller's durable intent pending until a provider is independently
+    // integrated and its append/readback receipt can be verified.
+    return { checkpointed: false, reason: "provider_unavailable" };
   }
 }
 
