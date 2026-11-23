@@ -24,11 +24,21 @@ function signerConfig(callerId = testEnv().FENCE_TEST_CALLER_ID) {
   };
 }
 
+function apiCallerEnv() {
+  const current = testEnv();
+  return {
+    WITNESS_GATEWAY: current.WITNESS_GATEWAY,
+    WORKLOAD_CALLER_ID: current.FENCE_TEST_CALLER_ID,
+    WORKLOAD_CALLER_KEY_ID: current.FENCE_TEST_CALLER_KEY_ID,
+    WORKLOAD_CALLER_PRIVATE_KEY_PKCS8: current.FENCE_TEST_CALLER_PRIVATE_KEY_PKCS8,
+  };
+}
+
 describe("API-to-private-witness-gateway RPC integration", () => {
   it("authenticates a real API-signed proof through the named WorkerEntrypoint binding", async () => {
     const body = new TextEncoder().encode('{"operationId":"rpc-integration-001","digest":"abc123"}');
     const result = await authenticateApiWorkerWithWitnessGateway(
-      testEnv(),
+      apiCallerEnv(),
       body,
     );
     expect(result).toMatchObject({
