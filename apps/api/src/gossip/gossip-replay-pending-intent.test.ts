@@ -89,10 +89,10 @@ describe("durable pending replay intent", () => {
   it("binds the base version and deterministic operation to the transition digest", async () => {
     const state = { version: 1, highestSequence: 1 };
     const firstIntent = await createReplayCheckpointIntent({
-      baseStateVersion: 1, scope, expectedPredecessor: predecessor, nextState: state,
+      baseStateVersion: 1, senderId: message.senderId, recipientId: message.recipientId, messageDigest: message.canonicalDigest, scope, expectedPredecessor: predecessor, nextState: state,
     });
     const secondIntent = await createReplayCheckpointIntent({
-      baseStateVersion: 2, scope, expectedPredecessor: predecessor, nextState: state,
+      baseStateVersion: 2, senderId: message.senderId, recipientId: message.recipientId, messageDigest: message.canonicalDigest, scope, expectedPredecessor: predecessor, nextState: state,
     });
     const first = await createPendingReplayIntent(firstIntent, message, state);
     const second = await createPendingReplayIntent(secondIntent, message, state);
