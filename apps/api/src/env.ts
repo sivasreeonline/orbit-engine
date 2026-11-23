@@ -1,4 +1,4 @@
-import type { WitnessGatewayRpc } from "../../witness-gateway/src/index";
+import type { WitnessGatewayRpc } from "./witness/witness-gateway-contract";
 
 export interface HyperdriveBinding {
   readonly connectionString: string;

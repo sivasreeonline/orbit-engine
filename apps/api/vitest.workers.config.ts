@@ -53,6 +53,7 @@ export default defineConfig({
               },
               durableObjects: {
                 WORKLOAD_NONCE_REPLAY: "WorkloadNonceReplayDO",
+                WITNESS_TRUST_STATE: "WitnessTrustStateDO",
               },
             },
           ],

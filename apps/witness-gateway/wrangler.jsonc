@@ -10,6 +10,10 @@
       {
         "name": "WORKLOAD_NONCE_REPLAY",
         "class_name": "WorkloadNonceReplayDO"
+      },
+      {
+        "name": "WITNESS_TRUST_STATE",
+        "class_name": "WitnessTrustStateDO"
       }
     ]
   },
@@ -17,6 +21,10 @@
     {
       "tag": "v1-workload-nonce-replay",
       "new_sqlite_classes": ["WorkloadNonceReplayDO"]
+    },
+    {
+      "tag": "v2-witness-trust-state",
+      "new_sqlite_classes": ["WitnessTrustStateDO"]
     }
   ],
   "observability": { "enabled": true }
