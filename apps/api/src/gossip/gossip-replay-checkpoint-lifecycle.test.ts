@@ -127,6 +127,12 @@ describe("transactional replay checkpoint lifecycle", () => {
       verified: true,
       operationId: "wrong-operation",
       snapshotDigest: pending.intent.snapshotDigest,
+      checkpointDigest: "d".repeat(64),
+      authorityStateDigest: pending.intent.snapshotDigest,
+      trustDomainId: "domain-a",
+      witnessId: "witness-a",
+      authorityId: "authority-a",
+      hostId: "host-a",
       predecessorGeneration: 0,
       predecessorDigest: "0".repeat(64),
       generation: 1,
@@ -141,6 +147,12 @@ describe("transactional replay checkpoint lifecycle", () => {
       verified: true,
       operationId: pending.intent.operationId,
       snapshotDigest: pending.intent.snapshotDigest,
+      checkpointDigest: "d".repeat(64),
+      authorityStateDigest: pending.intent.snapshotDigest,
+      trustDomainId: "domain-a",
+      witnessId: "witness-a",
+      authorityId: "authority-a",
+      hostId: "host-a",
       predecessorGeneration: 0,
       predecessorDigest: "0".repeat(64),
       generation: 1,
@@ -150,6 +162,10 @@ describe("transactional replay checkpoint lifecycle", () => {
     });
     expect(good).toEqual({ finalized: true, stateVersion: 1 });
     expect((values.get(REPLAY_STATE_ENVELOPE_KEY) as VersionedReplayState).snapshot).toEqual(snapshot);
+    expect((values.get(REPLAY_STATE_ENVELOPE_KEY) as VersionedReplayState).witnessHead.digest)
+      .toBe("d".repeat(64));
+    expect((values.get(REPLAY_STATE_ENVELOPE_KEY) as VersionedReplayState).witnessHead.treeHeadDigest)
+      .toBe("b".repeat(64));
     expect(values.has(REPLAY_PENDING_INTENT_KEY)).toBe(false);
   });
 
