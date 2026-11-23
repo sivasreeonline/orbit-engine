@@ -28,7 +28,7 @@ export default defineConfig({
         keyId,
         publicKeyBase64Url: base64Url(publicKey),
         audiences: ["sky-high-witness-gateway"],
-        scopes: ["witness:authorize"],
+        scopes: ["witness:authorize", "witness:verify-evidence"],
         notBefore: 1_700_000_000,
         notAfter: 2_000_000_000,
       }]);
@@ -50,6 +50,16 @@ export default defineConfig({
               compatibilityFlags: ["nodejs_compat", "rpc"],
               bindings: {
                 WORKLOAD_CALLER_KEYS: trustedKeys,
+                WITNESS_ROOT_KEYS: JSON.stringify([{
+                  keyId: "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+                  publicKeyBase64Url: "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+                }]),
+                WITNESS_TRUST_SCOPES: JSON.stringify([{
+                  trustDomainId: "test-trust-domain-vector-01",
+                  witnessId: "witness-vector-01",
+                  authorityId: "authority-vector-01",
+                  hostId: "host-vector-01",
+                }]),
               },
               durableObjects: {
                 WORKLOAD_NONCE_REPLAY: "WorkloadNonceReplayDO",
