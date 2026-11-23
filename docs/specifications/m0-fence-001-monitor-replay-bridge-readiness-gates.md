@@ -115,3 +115,17 @@ This audit does not add a gateway, service binding, provider adapter, signed tre
 - Extended the receipt verifier to verify the JCS digest of the replay checkpoint body while retaining the existing receipt envelope profile, key purpose and Ed25519 signing domain. Receipt operation/generation/predecessor/authority/host bindings and trust-domain identity are checked.
 - Added synthetic tests for valid replay body structure, forbidden authority-schema aliases, malformed fields and a signed receipt whose checkpoint digest is computed from the new replay body.
 - This does not yet change provider adapter persistence, coordinator digest semantics or gateway RPC. No provider append is enabled.
+
+
+## 10. Dual-digest implementation update — 2026-11-23
+
+The dedicated replay checkpoint profile now has:
+- closed JSON Schema and strict TypeScript validation;
+- signed receipt verification over the exact canonical replay checkpoint-body digest;
+- separate snapshot/checkpoint digests and exact canonical byte persistence in the provider-neutral adapter contract;
+- coordinator enforcement of exact scope/predecessor/snapshot/checkpoint binding and dual-byte readback;
+- API finalization using explicit `snapshotDigest`.
+
+Exact-head CI run #2677 passed on `244de56ecc0188412c1d7f2b3b3ee56dff50e4f7`.
+
+**Remaining gates:** gateway checkpoint construction must create the dedicated profile from the persisted replay intent; the storage provider must be concretely implemented and qualified; an independently administered evidence authority must issue/recover signed receipt + signed tree head + inclusion/consistency proofs; gateway verification and API finalization must be exercised end-to-end with those exact artifacts. No production provider writes or student execution are enabled.
