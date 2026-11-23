@@ -136,10 +136,16 @@ describe("monitor replay checkpoint artifact mapping", () => {
       senderId: "attacker",
     })).toThrow("relationship binding");
 
-    const inconsistent = snapshot();
-    inconsistent.seenByMessageId["message-4"] = {
-      sequence: 3,
-      digest: "4".repeat(64),
+    const original = snapshot();
+    const inconsistent: GossipReplaySnapshot = {
+      ...original,
+      seenByMessageId: {
+        ...original.seenByMessageId,
+        "message-4": {
+          sequence: 3,
+          digest: "4".repeat(64),
+        },
+      },
     };
     await expect(buildMonitorReplayCheckpointArtifact(
       inconsistent,
