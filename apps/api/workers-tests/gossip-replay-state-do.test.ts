@@ -103,23 +103,28 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
 
   it("serializes concurrent conflicting sequence claims without accepting both", async () => {
     const stub = replayObject("concurrent-equivocation");
+    const original = message(1);
+    const conflicting = message(1, {
+      messageId: "workers-runtime-conflicting-message",
+      canonicalDigest: "f".repeat(64),
+    });
     const [left, right] = await Promise.all([
-      acceptAndFinalize(stub, message(1), 10_000),
-      acceptAndFinalize(stub, 
-        message(1, {
-          messageId: "workers-runtime-conflicting-message",
-          canonicalDigest: "f".repeat(64),
-        }),
-        10_000,
-      ),
+      stub.prepareCheckpointIntent(original, 10_000),
+      stub.prepareCheckpointIntent(conflicting, 10_000),
     ]);
-
     expect([left.outcome, right.outcome].sort()).toEqual([
-      "ACCEPTED",
-      "QUARANTINE",
+      "BLOCKED",
+      "CHECKPOINT_PENDING",
     ]);
-    expect(left.highestSequence).toBe(1);
-    expect(right.highestSequence).toBe(1);
+    const pending = left.pendingIntent ? left : right;
+    const blocked = left.pendingIntent ? right : left;
+    expect(blocked.outcome).toBe("BLOCKED");
+    await finalizePending(stub, pending.pendingIntent!);
+
+    const otherMessage = left.pendingIntent ? conflicting : original;
+    const conflict = await stub.prepareCheckpointIntent(otherMessage, 10_000);
+    expect(conflict.outcome).toBe("QUARANTINE");
+    expect(conflict.highestSequence).toBe(1);
   });
 
   it("persists request correlation and nonce consumption across RPC calls", async () => {
@@ -195,6 +200,56 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
       consumedNonces: [],
       missingSequences: [1],
     });
+  });
+
+  it("keeps replay state pending until verified finalization and supports idempotent recovery", async () => {
+    const stub = replayObject("pending-intent-finalize");
+    const prepared = await stub.prepareCheckpointIntent(message(1), 10_000);
+    expect(prepared.outcome).toBe("CHECKPOINT_PENDING");
+    expect(prepared.pendingIntent?.operationId).toMatch(/^fence-monitor-replay-[0-9a-f]{64}$/);
+    expect((await stub.readSnapshot()).highestSequence).toBe(0);
+    expect((await stub.readPendingCheckpointIntent())?.snapshot.highestSequence).toBe(1);
+
+    const blocked = await stub.prepareCheckpointIntent(message(2), 10_000);
+    expect(blocked.outcome).toBe("BLOCKED");
+
+    const pending = prepared.pendingIntent!;
+    const scope = {
+      trustDomainId: "runtime-test-trust-domain",
+      witnessId: "runtime-test-witness",
+      authorityId: "runtime-test-authority",
+      hostId: "runtime-test-host",
+      senderId: pending.snapshot.senderId,
+      recipientId: pending.snapshot.recipientId,
+      replayScope: pending.snapshot.scope,
+    };
+    const artifact = await buildMonitorReplayCheckpointArtifact(
+      pending.snapshot,
+      scope,
+      pending.expectedGeneration + 1,
+      pending.expectedPreviousDigest,
+    );
+    const input = {
+      operationId: pending.operationId,
+      snapshotDigest: pending.snapshotDigest,
+      generation: pending.expectedGeneration + 1,
+      checkpointDigest: artifact.checkpointDigest,
+      receiptDigest: "b".repeat(64),
+      verification: {
+        verified: true as const,
+        trustBundleDigest: "c".repeat(64),
+        treeHeadDigest: "d".repeat(64),
+        treeSize: 1,
+        receiptLeafHash: "e".repeat(64),
+      },
+    };
+    const finalized = await stub.finalizeCheckpointIntent(input);
+    const recovered = await stub.finalizeCheckpointIntent(input);
+    expect(finalized.status).toBe("FINALIZED");
+    expect(recovered.status).toBe("ALREADY_FINALIZED");
+    expect((await stub.readSnapshot()).highestSequence).toBe(1);
+    expect((await stub.readPendingCheckpointIntent())).toBeNull();
+    expect((await stub.readCheckpointState())?.checkpointDigest).toBe(artifact.checkpointDigest);
   });
 
 });
