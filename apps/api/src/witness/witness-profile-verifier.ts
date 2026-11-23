@@ -7,7 +7,6 @@ const PROFILE = "sky-high-fence-witness-v1";
 const MERKLE_PROFILE = "sky-high-fence-witness-merkle-v1";
 const ZERO_DIGEST = "0".repeat(64);
 const DIGEST = /^[0-9a-f]{64}$/;
-const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
 const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 const encoder = new TextEncoder();
@@ -150,7 +149,9 @@ function isSafeInteger(value: unknown, minimum = 0): value is number {
 }
 
 function isIdentifier(value: unknown): value is string {
-  return typeof value === "string" && IDENTIFIER.test(value);
+  // Match the published schema: identifiers are non-empty Unicode strings,
+  // not the narrower ASCII grammar used by workload-proof framing.
+  return typeof value === "string" && value.length >= 1 && value.length <= 256;
 }
 
 function isDigest(value: unknown): value is string {
@@ -287,7 +288,7 @@ function validateTrustBundleShape(envelope: unknown): asserts envelope is Witnes
     if (!isRecord(value) || !exactKeys(value, ["keyId", "revokedAt", "reason"])) {
       throw new TypeError("trust-bundle revocation shape is invalid");
     }
-    if (!isDigest(value.keyId) || typeof value.reason !== "string" || value.reason.length === 0) {
+    if (!isDigest(value.keyId) || typeof value.reason !== "string" || value.reason.length === 0 || value.reason.length > 2048) {
       throw new TypeError("trust-bundle revocation fields are invalid");
     }
     parseUtc(value.revokedAt);
