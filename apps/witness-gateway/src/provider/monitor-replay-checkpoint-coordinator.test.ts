@@ -141,6 +141,36 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
     expect(adapter.records).toHaveLength(1);
   });
 
+  it("uses the persisted predecessor for stable operation identity and retry", async () => {
+    const adapter = new InMemoryAdapter();
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, predecessor);
+    const retry = await checkpointMonitorReplaySnapshot(adapter, scope, sample, predecessor);
+    expect(retry).toMatchObject({
+      status: "ALREADY_CHECKPOINTED",
+      operationId: first.operationId,
+      generation: first.generation,
+      digest: first.digest,
+    });
+    expect(first.operationId).not.toBe(`fence-monitor-replay-${first.digest}`);
+    expect(adapter.records).toHaveLength(1);
+  });
+
+  it("does not rebase a persisted predecessor after the witness head advances", async () => {
+    const adapter = new InMemoryAdapter();
+    await checkpointMonitorReplaySnapshot(adapter, scope, sample);
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter,
+      scope,
+      { ...sample, highestSequence: 2 },
+      { generation: 0, digest: ZERO_DIGEST },
+    )).rejects.toMatchObject({
+      name: "MonitorReplayCheckpointError",
+      reason: "stale_operation",
+    });
+    expect(adapter.records).toHaveLength(1);
+  });
+
   it("recovers a lost acknowledgement by immutable operation lookup", async () => {
     const adapter = new InMemoryAdapter();
     adapter.loseNextAck = true;
