@@ -294,10 +294,8 @@ function validateTrustBundleSemantics(body: WitnessTrustBundleBody): void {
   if (new Set(keyIds).size !== keyIds.length) throw new TypeError("duplicate trust-bundle key ID");
   for (const key of body.keys) {
     const publicKey = decodeBase64Url(key.publicKeyBase64Url);
-    if (publicKey.length !== 32 || hex(new Uint8Array(publicKey)) !== key.keyId && hex(new Uint8Array([])) === "") {
-      // Fingerprint is checked asynchronously by verifyTrustBundleEnvelope.
-      if (publicKey.length !== 32) throw new TypeError("Ed25519 public key must be 32 bytes");
-    }
+    // Fingerprint is checked asynchronously by verifyTrustBundleEnvelope.
+    if (publicKey.length !== 32) throw new TypeError("Ed25519 public key must be 32 bytes");
     if (key.witnessId !== body.witnessId) throw new TypeError("trust-bundle key witness scope mismatch");
     const notBefore = parseUtc(key.notBefore);
     const notAfter = parseUtc(key.notAfter);
@@ -423,6 +421,9 @@ export async function verifyReceiptAgainstTrustedBundle(
   const actualCheckpointDigest = hex(await sha256(canonicalBytes(checkpointBody)));
   if (actualCheckpointDigest !== checkpointDigest) throw new TypeError("checkpoint digest mismatch");
   const receipt = receiptEnvelope.body;
+  if (parseUtc(receipt.committedAt) > trustedNow) {
+    throw new TypeError("receipt committedAt is in the future relative to trusted time");
+  }
   const checkpoint = checkpointBody;
   if (
     receipt.profile !== checkpoint.profile ||
@@ -559,7 +560,9 @@ async function leafHash(data: Uint8Array): Promise<Uint8Array> {
 
 function largestPowerOfTwoLessThan(value: number): number {
   if (!Number.isSafeInteger(value) || value <= 1) throw new TypeError("tree size must exceed one");
-  return 2 ** (Math.floor(Math.log2(value - 1)));
+  let power = 1;
+  while (power * 2 < value) power *= 2;
+  return power;
 }
 
 export async function merkleTreeHash(entries: readonly Uint8Array[]): Promise<Uint8Array> {
