@@ -1,7 +1,6 @@
 import {
   DynamoDBClient,
   GetItemCommand,
-  PutRequest,
   TransactWriteItemsCommand,
   type AttributeValue,
   type TransactWriteItem,
