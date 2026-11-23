@@ -77,6 +77,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function encodeBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+}
+
 function exactKeys(value: Record<string, unknown>, required: readonly string[]): boolean {
   const keys = Object.keys(value);
   return keys.length === required.length && required.every((key) => Object.hasOwn(value, key));
