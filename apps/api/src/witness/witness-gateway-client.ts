@@ -1,4 +1,5 @@
 import type { Env } from "../env";
+import type { WitnessEvidenceVerificationResult } from "./witness-gateway-contract";
 import type {
   WorkloadAuthenticationResult,
   WorkloadProof,
@@ -66,4 +67,53 @@ export async function authenticateApiWorkerWithWitnessGateway(
     return { authenticated: false, reason: created.reason };
   }
   return authenticateViaWitnessGateway(env, created.proof, body);
+}
+
+export type WitnessEvidenceGatewayCallResult =
+  | WitnessEvidenceVerificationResult
+  | {
+      readonly verified: false;
+      readonly reason:
+        | "gateway_unavailable"
+        | "caller_identity_unconfigured"
+        | "caller_proof_signing_failed";
+    };
+
+/** Verify a canonical evidence envelope through the private gateway RPC. */
+export async function verifyEvidenceViaWitnessGateway(
+  env: Pick<
+    Env,
+    | "WITNESS_GATEWAY"
+    | "WORKLOAD_CALLER_ID"
+    | "WORKLOAD_CALLER_KEY_ID"
+    | "WORKLOAD_CALLER_PRIVATE_KEY_PKCS8"
+  >,
+  canonicalEvidenceBody: Uint8Array,
+): Promise<WitnessEvidenceGatewayCallResult> {
+  if (!env.WITNESS_GATEWAY) {
+    return { verified: false, reason: "gateway_unavailable" };
+  }
+  const created = await createApiWorkloadProof(
+    {
+      ...(env.WORKLOAD_CALLER_ID !== undefined
+        ? { callerId: env.WORKLOAD_CALLER_ID }
+        : {}),
+      ...(env.WORKLOAD_CALLER_KEY_ID !== undefined
+        ? { keyId: env.WORKLOAD_CALLER_KEY_ID }
+        : {}),
+      ...(env.WORKLOAD_CALLER_PRIVATE_KEY_PKCS8 !== undefined
+        ? { privateKeyPkcs8: env.WORKLOAD_CALLER_PRIVATE_KEY_PKCS8 }
+        : {}),
+    },
+    canonicalEvidenceBody,
+    "verify_evidence",
+  );
+  if (!created.created) {
+    return { verified: false, reason: created.reason };
+  }
+  try {
+    return await env.WITNESS_GATEWAY.verifyEvidence(created.proof, canonicalEvidenceBody);
+  } catch {
+    return { verified: false, reason: "gateway_unavailable" };
+  }
 }
