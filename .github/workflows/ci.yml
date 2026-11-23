@@ -287,6 +287,15 @@ jobs:
           FENCE_WITNESS_ADAPTER_FACTORY: aws_dynamodb_witness_adapter:create_adapter
         run: python ../../scripts/validate_m0_witness_provider_adapter_conformance.py
 
+      - name: Verify TypeScript dual-digest DynamoDB adapter (synthetic local service only)
+        working-directory: apps/witness-gateway
+        env:
+          AWS_ACCESS_KEY_ID: local
+          AWS_SECRET_ACCESS_KEY: local
+          AWS_REGION: us-east-1
+          FENCE_DDB_LOCAL_ENDPOINT: http://127.0.0.1:8000
+        run: npx vitest run src/provider/aws-dynamodb-witness-provider-adapter.test.ts
+
       - name: Verify DynamoDB durable idempotency and independent-client concurrency
         env:
           PYTHONPATH: ../../scripts
