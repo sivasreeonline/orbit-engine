@@ -114,3 +114,18 @@ PR #201 now adds:
 Synthetic tests cover strict body shape, rejection of authority-profile field aliases, invalid sender/recipient identity, oversized snapshots, invalid phase, and a real Ed25519 receipt signature over the new checkpoint digest.
 
 **Not yet implemented:** provider adapter dual-byte persistence/readback, coordinator digest separation, independent evidence authority issuance/recovery, signed proof response composition for the replay profile, and API finalization changes. The initial slice does not enable provider writes.
+
+
+## Dual-digest coordinator and local-finalization progress — 2026-11-23
+
+The initial profile slice has now been extended:
+
+- `WitnessCheckpoint` stores `snapshotDigest` and `checkpointDigest` separately, plus exact canonical snapshot bytes and exact canonical checkpoint-body bytes.
+- The provider-neutral coordinator requires a validated replay checkpoint body and persisted predecessor. It verifies scope, generation, predecessor, operation ID, snapshot digest, snapshot byte length, sender/recipient relationship and both exact byte sequences.
+- Immutable operation recovery and latest-head readback compare both digests and both byte sequences. Ambiguous-ack recovery retains the same operation identity.
+- Coordinator results expose explicit `snapshotDigest` and `checkpointDigest`; the ambiguous generic `digest` result field is removed.
+- API evidence contract and replay finalization now bind `snapshotDigest` explicitly, while the signed receipt checkpoint digest remains the witness-head identity.
+
+Exact-head CI run #2677 passed on `244de56ecc0188412c1d7f2b3b3ee56dff50e4f7` (API, private gateway and web jobs).
+
+This remains provider-neutral logic and in-memory test evidence. It does not constitute a configured durable provider, an independent evidence authority, or production qualification.
