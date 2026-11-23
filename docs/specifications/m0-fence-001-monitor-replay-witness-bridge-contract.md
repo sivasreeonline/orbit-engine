@@ -179,3 +179,12 @@ ADR-021's initial schema and TypeScript receipt-verification slice is now implem
 4. `treeHeadDigest`: canonical identity of the signed tree-head envelope.
 
 The current coordinator's `checkpointDigest = snapshotDigest` assumption must not be carried into the monitor-replay receipt bridge. No live provider append should be enabled before the separate profile, types, verifier, vectors and lifecycle binding exist.
+
+
+## 12. Dual-digest coordinator and local finalization progress
+
+PR #201 now stores exact canonical replay snapshot bytes and exact canonical monitor-replay checkpoint-body bytes as separate immutable values. The coordinator derives the deterministic operation ID from scope, persisted predecessor and snapshot digest; computes the checkpoint digest from the checkpoint-body JCS bytes; and requires both digests and both byte sequences to match on operation lookup, ambiguous-ack recovery and latest-head readback.
+
+The API finalization evidence field is now `snapshotDigest`, not the authority-specific `authorityStateDigest`. The signed receipt's `checkpointDigest` remains independently bound to the canonical checkpoint body and is persisted as the witness-head digest.
+
+This is provider-neutral orchestration plus synthetic/in-memory tests. A concrete provider adapter and independent evidence authority are still absent. No live append is enabled.
