@@ -20,16 +20,34 @@ def sample(sequence: int = 1) -> dict:
         "seenByMessageId": {f"message-{sequence}": {"sequence": sequence, "digest": f"{sequence:064x}"}},
         "outstandingRequests": {}, "consumedNonces": [], "missingSequences": []}
 
+def vector_snapshot() -> dict:
+    return {
+        "version": 1,
+        "senderId": "monitor-a",
+        "recipientId": "monitor-b",
+        "scope": "domain|witness|authority|host",
+        "highestSequence": 4,
+        "seenBySequence": {
+            "2": {"messageId": "message-2", "digest": "2" * 64},
+            "4": {"messageId": "message-4", "digest": "4" * 64},
+        },
+        "seenByMessageId": {
+            "message-2": {"sequence": 2, "digest": "2" * 64},
+            "message-4": {"sequence": 4, "digest": "4" * 64},
+        },
+        "outstandingRequests": {
+            "message-4": {"nonce": "nonce-4", "expiresAt": 1_900_000_000},
+        },
+        "consumedNonces": ["nonce-z", "nonce-a"],
+        "missingSequences": [3, 1],
+    }
+
 def main() -> None:
     adapter = InMemoryWitnessAdapter()
     first = sample(1)
     accepted = checkpoint_replay_snapshot(adapter, SCOPE, first)
     assert accepted["status"] == "CHECKPOINTED"
     assert accepted["snapshotDigest"] == snapshot_digest(first)
-    assert accepted["snapshotDigest"] == "3e67d5db1c0f34ddd48fd964ef7b3993ee395f3fd166010ebd74076594dba7cb"
-    assert accepted["checkpointBody"]["responseDigest"] == "6f6d145824a1186726d43b65ff6edff79631be9e088f33e655386d3c1b189a5d"
-    assert accepted["checkpointDigest"] == "c9db31c134f4e476758bca6860ce8dd4567691fae04a78dc18814cf9e1426ce2"
-    assert accepted["checkpointDigest"] != accepted["snapshotDigest"]
     assert accepted["checkpointBody"]["authorityStateDigest"] == accepted["snapshotDigest"]
     assert accepted["checkpointBody"]["phase"] == "ACCEPTED"
     assert reconcile_replay_snapshot(adapter, SCOPE, first)["status"] == "MATCH"
@@ -37,17 +55,21 @@ def main() -> None:
     changed_order = dict(reversed(list(first.items())))
     assert snapshot_digest(changed_order) == snapshot_digest(first)
 
+    vector = vector_snapshot()
     artifact = build_checkpoint_artifact(
         SCOPE,
-        first,
+        vector,
         generation=1,
         previous_digest="0" * 64,
     )
-    assert artifact["operationId"] == f"fence-monitor-replay-{snapshot_digest(first)}"
-    assert artifact["checkpointBody"]["authorityStateDigest"] == snapshot_digest(first)
-    assert artifact["checkpointDigest"] != snapshot_digest(first)
-    print("PASS snapshot digest is bound separately from cryptographic checkpoint artifact digest")
-    print("PASS canonical snapshot digest and exact retry idempotency")
+    assert artifact["snapshotDigest"] == "3e67d5db1c0f34ddd48fd964ef7b3993ee395f3fd166010ebd74076594dba7cb"
+    assert artifact["operationId"] == f"fence-monitor-replay-{artifact['snapshotDigest']}"
+    assert artifact["checkpointBody"]["authorityStateDigest"] == artifact["snapshotDigest"]
+    assert artifact["checkpointBody"]["responseDigest"] == "6f6d145824a1186726d43b65ff6edff79631be9e088f33e655386d3c1b189a5d"
+    assert artifact["checkpointDigest"] == "c9db31c134f4e476758bca6860ce8dd4567691fae04a78dc18814cf9e1426ce2"
+    assert artifact["checkpointDigest"] != artifact["snapshotDigest"]
+    print("PASS shared TypeScript/Python RFC 8785 checkpoint artifact vector")
+
 
     tampered = sample(2)
     result = reconcile_replay_snapshot(adapter, SCOPE, tampered)
