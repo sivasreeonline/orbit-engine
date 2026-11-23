@@ -67,9 +67,12 @@ export async function createApiWorkloadProof(
   const keyId = config?.keyId;
   const privateKeyPkcs8 = config?.privateKeyPkcs8;
   if (
-    !IDENTIFIER.test(callerId ?? "") ||
-    !KEY_ID.test(keyId ?? "") ||
-    !privateKeyPkcs8 ||
+    typeof callerId !== "string" ||
+    !IDENTIFIER.test(callerId) ||
+    typeof keyId !== "string" ||
+    !KEY_ID.test(keyId) ||
+    typeof privateKeyPkcs8 !== "string" ||
+    privateKeyPkcs8.length === 0 ||
     !(body instanceof Uint8Array)
   ) {
     return { created: false, reason: "caller_identity_unconfigured" };
