@@ -3,8 +3,9 @@
 ## Status
 
 Adds a gateway-owned Cloudflare Durable Object and typed adapter for storing
-verified trust-bundle and signed tree-head state. This is storage infrastructure
-only; the gateway verifier does not yet read/write this store in its request path.
+verified trust-bundle and signed tree-head state. PR #197 wires this store into
+the private `verifyEvidence` RPC path so verification uses persisted trust and
+prior-head state.
 
 ## State model
 
