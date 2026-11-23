@@ -85,6 +85,20 @@ function canonicalJson(value: unknown): string {
   return serialized;
 }
 
+/** Scope and predecessor are part of idempotency identity, not just snapshot bytes. */
+export async function deriveReplayCheckpointOperationId(input: {
+  readonly scope: ReplayCheckpointScope;
+  readonly expectedPredecessor: ReplayCheckpointPredecessor;
+  readonly snapshotDigest: string;
+}): Promise<string> {
+  const identityDigest = await sha256Hex(new TextEncoder().encode(canonicalJson({
+    scope: input.scope,
+    expectedPredecessor: input.expectedPredecessor,
+    snapshotDigest: input.snapshotDigest,
+  })));
+  return `fence-monitor-replay-${identityDigest}`;
+}
+
 /** Build one deterministic checkpoint intent without performing I/O. */
 export async function createReplayCheckpointIntent(
   input: CreateReplayCheckpointIntentInput,
@@ -111,7 +125,7 @@ export async function createReplayCheckpointIntent(
   }
 
   const snapshotDigest = await sha256Hex(snapshotBytes);
-  const operationId = `fence-monitor-replay-${snapshotDigest}`;
+  const operationId = await deriveReplayCheckpointOperationId({ scope, expectedPredecessor: input.expectedPredecessor, snapshotDigest });
   const canonicalSnapshotBase64Url = encodeBase64Url(snapshotBytes);
   const body = {
     version: 1,
@@ -159,7 +173,6 @@ export async function validateReplayCheckpointIntent(
     !isPlainRecord(intent.expectedPredecessor) ||
     !hasExactKeys(intent.expectedPredecessor, ["generation", "digest"]) ||
     !DIGEST.test(intent.snapshotDigest) ||
-    intent.operationId !== `fence-monitor-replay-${intent.snapshotDigest}` ||
     typeof intent.canonicalSnapshotBase64Url !== "string" ||
     !/^[A-Za-z0-9_-]+$/.test(intent.canonicalSnapshotBase64Url) ||
     typeof intent.canonicalCheckpointBody !== "string"
@@ -189,6 +202,12 @@ export async function validateReplayCheckpointIntent(
     const snapshot = JSON.parse(snapshotText) as unknown;
     if (!isPlainRecord(snapshot) || canonicalJson(snapshot) !== snapshotText) return false;
     if (await sha256Hex(bytes) !== intent.snapshotDigest) return false;
+
+    if (intent.operationId !== await deriveReplayCheckpointOperationId({
+      scope: expectedScope,
+      expectedPredecessor,
+      snapshotDigest: intent.snapshotDigest,
+    })) return false;
 
     const expectedBody = canonicalJson({
       version: 1,
