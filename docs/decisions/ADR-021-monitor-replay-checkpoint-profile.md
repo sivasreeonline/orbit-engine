@@ -147,3 +147,16 @@ Added `apps/witness-gateway/src/evidence/witness-evidence-authority.ts`, deliber
 The contract requires idempotent `issueOrRecoverEvidence` and immutable `readEvidenceByOperation`. Its byte/identity guard checks canonical checkpoint bytes and digest, trust scope, receipt generation/operation/checkpoint/predecessor bindings, signed-head scope and proof metadata. It does **not** verify cryptographic signatures or proofs; the gateway's existing `verifyEvidence` path remains mandatory. Ambiguous issuance acknowledgements recover only by the same immutable operation ID and exact bytes.
 
 Synthetic tests cover exact-byte mismatch, wrong operation identity and lost-ack recovery. The contract is not yet configured as a service binding or integrated into `checkpointReplay`; no provider writes are enabled.
+
+
+## Gateway composition progress — 2026-11-23
+
+The private gateway now has an explicit composition path behind two optional RPC bindings:
+- `WITNESS_PROVIDER` implements the provider-neutral atomic append, immutable operation lookup, strong latest read and exact dual-byte readback contract.
+- `WITNESS_EVIDENCE_AUTHORITY` implements independent signed receipt/transparency issuance and immutable evidence lookup.
+
+After authenticated request validation, the gateway reconstructs the monitor replay checkpoint body, invokes the provider-neutral coordinator, compares the coordinator's checkpoint digest with the canonical builder's digest, requests evidence from the independent authority, verifies the authority response's structural identity and exact bytes, and returns the canonical evidence-verification request to the API Worker. The API still performs the cryptographic receipt/trust-bundle/tree-head/Merkle verification RPC before local finalization.
+
+The new `buildMonitorReplayCheckpoint` helper has tests for valid canonical construction, absent triggering-message digest, sender/recipient mismatch and snapshot-digest mismatch. The gateway orchestration is wired to optional env interfaces, but neither binding is configured in `wrangler.jsonc` or deployed. Therefore the current deployed/test environment continues to return `provider_unavailable` before any append. No live writes are enabled.
+
+Exact-head CI run #2728 passed on `af367fad6b6319287f18321946252143824106d6`, including all API, gateway and web jobs.
