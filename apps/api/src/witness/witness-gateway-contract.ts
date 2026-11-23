@@ -14,7 +14,8 @@ export type WitnessEvidenceVerificationResult =
       readonly hostId: string;
       readonly operationId: string;
       readonly checkpointDigest: string;
-      readonly previousCheckpointDigest: string;
+      readonly predecessorGeneration: number;
+      readonly predecessorDigest: string;
       readonly generation: number;
       readonly authorityStateDigest: string;
       readonly treeHeadDigest: string;
