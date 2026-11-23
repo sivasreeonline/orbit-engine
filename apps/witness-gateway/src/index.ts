@@ -14,6 +14,7 @@ import {
   verifyReceiptInclusion,
   verifySignedTreeHead,
   verifyTreeHeadExtension,
+  type MonitorReplayCheckpointBody,
   verifyTrustBundleEnvelope,
   type ExpectedTrustBundleState,
   type ExpectedWitnessScope,
@@ -51,7 +52,7 @@ interface AllowedWitnessScope extends ExpectedWitnessScope {
 
 interface EvidenceRequest {
   readonly trustBundle: WitnessTrustBundleEnvelope;
-  readonly checkpointBody: WitnessCheckpointBody;
+  readonly checkpointBody: WitnessCheckpointBody | MonitorReplayCheckpointBody;
   readonly checkpointDigest: string;
   readonly receiptEnvelope: WitnessReceiptEnvelope;
   readonly treeHeadEnvelope: WitnessTreeHeadEnvelope;
@@ -486,7 +487,9 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
       predecessorGeneration: receipt.body.generation - 1,
       predecessorDigest: receipt.body.previousCheckpointDigest,
       generation: receipt.body.generation,
-      authorityStateDigest: request.checkpointBody.authorityStateDigest,
+      snapshotDigest: request.checkpointBody.profile === "sky-high-fence-monitor-replay-v1"
+        ? request.checkpointBody.snapshotDigest
+        : request.checkpointBody.authorityStateDigest,
       treeHeadDigest: headWrite.digest,
       treeSize: currentHead.body.treeSize,
       receiptLeafHash,
