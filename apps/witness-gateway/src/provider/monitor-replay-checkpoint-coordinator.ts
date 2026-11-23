@@ -150,6 +150,18 @@ function assertRecord(
   }
 }
 
+function exactReceipt(
+  a: WitnessCheckpointReceipt,
+  b: WitnessCheckpointReceipt,
+): boolean {
+  return sameScope(a.scope, b.scope) &&
+    a.generation === b.generation &&
+    a.operationId === b.operationId &&
+    a.checkpointDigest === b.checkpointDigest &&
+    a.previousDigest === b.previousDigest &&
+    a.consistencyToken === b.consistencyToken;
+}
+
 function result(
   status: "CHECKPOINTED" | "ALREADY_CHECKPOINTED",
   record: StoredWitnessCheckpoint,
@@ -199,7 +211,7 @@ export async function checkpointMonitorReplaySnapshot(
     assertRecord(existing, expected);
     const latest = await adapter.readLatest(scope);
     if (!latest || !exactCheckpoint(latest.checkpoint, expected) ||
-        latest.receipt.operationId !== existing.receipt.operationId) {
+        !exactReceipt(latest.receipt, existing.receipt)) {
       throw new MonitorReplayCheckpointError(
         "stale_operation",
         "exact replay operation exists but is no longer the current witness head",
@@ -258,8 +270,7 @@ export async function checkpointMonitorReplaySnapshot(
   const committed = await adapter.readByOperation(scope, operationId);
   assertRecord(committed, checkpoint);
   if (!appendReceipt ||
-      committed.receipt.operationId !== appendReceipt.operationId ||
-      committed.receipt.checkpointDigest !== appendReceipt.checkpointDigest) {
+      !exactReceipt(committed.receipt, appendReceipt)) {
     throw new MonitorReplayCheckpointError(
       "receipt_mismatch",
       "operation readback differs from append acknowledgement",
@@ -270,8 +281,7 @@ export async function checkpointMonitorReplaySnapshot(
   if (
     !current ||
     !exactCheckpoint(current.checkpoint, checkpoint) ||
-    current.receipt.operationId !== committed.receipt.operationId ||
-    current.receipt.checkpointDigest !== committed.receipt.checkpointDigest
+    !exactReceipt(current.receipt, committed.receipt)
   ) {
     throw new MonitorReplayCheckpointError(
       "latest_readback_mismatch",
