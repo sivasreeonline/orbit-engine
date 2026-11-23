@@ -8,6 +8,15 @@ export type WitnessEvidenceVerificationResult =
       readonly verified: true;
       readonly trustBundleGeneration: number;
       readonly trustBundleDigest: string;
+      readonly trustDomainId: string;
+      readonly witnessId: string;
+      readonly authorityId: string;
+      readonly hostId: string;
+      readonly operationId: string;
+      readonly checkpointDigest: string;
+      readonly previousCheckpointDigest: string;
+      readonly generation: number;
+      readonly authorityStateDigest: string;
       readonly treeHeadDigest: string;
       readonly treeSize: number;
       readonly receiptLeafHash: string;
