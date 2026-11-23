@@ -1,6 +1,11 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import type { VerifiedGossipMessage } from "../src/gossip/gossip-replay-state-do";
+import type {
+  GossipReplayPendingIntent,
+  GossipReplayResult,
+  VerifiedGossipMessage,
+} from "../src/gossip/gossip-replay-state-do";
+import { buildMonitorReplayCheckpointArtifact } from "../src/witness/monitor-replay-checkpoint";
 
 function message(
   sequence: number,
@@ -27,16 +32,69 @@ function replayObject(testName: string) {
   return env.GOSSIP_REPLAY.get(id);
 }
 
+type ReplayStub = ReturnType<typeof env.GOSSIP_REPLAY.get>;
+
+async function finalizePending(
+  stub: ReplayStub,
+  pending: GossipReplayPendingIntent,
+): Promise<GossipReplayResult> {
+  const scope = {
+    trustDomainId: "runtime-test-trust-domain",
+    witnessId: "runtime-test-witness",
+    authorityId: "runtime-test-authority",
+    hostId: "runtime-test-host",
+    senderId: pending.snapshot.senderId,
+    recipientId: pending.snapshot.recipientId,
+    replayScope: pending.snapshot.scope,
+  };
+  const artifact = await buildMonitorReplayCheckpointArtifact(
+    pending.snapshot,
+    scope,
+    pending.expectedGeneration + 1,
+    pending.expectedPreviousDigest,
+  );
+  const finalized = await stub.finalizeCheckpointIntent({
+    operationId: pending.operationId,
+    snapshotDigest: pending.snapshotDigest,
+    generation: pending.expectedGeneration + 1,
+    checkpointDigest: artifact.checkpointDigest,
+    receiptDigest: "b".repeat(64),
+    verification: {
+      verified: true,
+      trustBundleDigest: "c".repeat(64),
+      treeHeadDigest: "d".repeat(64),
+      treeSize: pending.expectedGeneration + 1,
+      receiptLeafHash: "e".repeat(64),
+    },
+  });
+  if (!finalized.replay) {
+    throw new Error(`synthetic witness finalization failed: ${finalized.status}: ${finalized.reason}`);
+  }
+  return finalized.replay;
+}
+
+async function acceptAndFinalize(
+  stub: ReplayStub,
+  value: VerifiedGossipMessage,
+  trustedNow: number,
+): Promise<GossipReplayResult> {
+  const prepared = await stub.prepareCheckpointIntent(value, trustedNow);
+  if (prepared.outcome !== "CHECKPOINT_PENDING" || !prepared.pendingIntent) {
+    return prepared;
+  }
+  return finalizePending(stub, prepared.pendingIntent);
+}
+
 describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
   it("persists accepted replay state across separate RPC stub acquisitions", async () => {
     const id = env.GOSSIP_REPLAY.idFromName(
       `workers-runtime:persistence:${crypto.randomUUID()}`,
     );
     const firstStub = env.GOSSIP_REPLAY.get(id);
-    const accepted = await firstStub.acceptVerifiedMessage(message(1), 10_000);
+    const accepted = await acceptAndFinalize(firstStub, message(1), 10_000);
 
     const secondStub = env.GOSSIP_REPLAY.get(id);
-    const duplicate = await secondStub.acceptVerifiedMessage(message(1), 10_000);
+    const duplicate = await acceptAndFinalize(secondStub, message(1), 10_000);
 
     expect(accepted.outcome).toBe("ACCEPTED");
     expect(duplicate.outcome).toBe("DUPLICATE");
@@ -46,8 +104,8 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
   it("serializes concurrent conflicting sequence claims without accepting both", async () => {
     const stub = replayObject("concurrent-equivocation");
     const [left, right] = await Promise.all([
-      stub.acceptVerifiedMessage(message(1), 10_000),
-      stub.acceptVerifiedMessage(
+      acceptAndFinalize(stub, message(1), 10_000),
+      acceptAndFinalize(stub, 
         message(1, {
           messageId: "workers-runtime-conflicting-message",
           canonicalDigest: "f".repeat(64),
@@ -70,14 +128,14 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
       messageType: "CONSISTENCY_PROOF_REQUEST",
       requestNonce: "workers-runtime-nonce",
     });
-    const acceptedRequest = await stub.acceptVerifiedMessage(request, 10_000);
+    const acceptedRequest = await acceptAndFinalize(stub, request, 10_000);
     const response = message(2, {
       messageType: "CONSISTENCY_PROOF_RESPONSE",
       responseRequestId: request.messageId,
       responseNonce: "workers-runtime-nonce",
     });
-    const acceptedResponse = await stub.acceptVerifiedMessage(response, 10_000);
-    const reusedNonce = await stub.acceptVerifiedMessage(
+    const acceptedResponse = await acceptAndFinalize(stub, response, 10_000);
+    const reusedNonce = await acceptAndFinalize(stub, 
       message(3, {
         messageType: "CONSISTENCY_PROOF_REQUEST",
         requestNonce: "workers-runtime-nonce",
@@ -115,7 +173,7 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
       messageType: "CONSISTENCY_PROOF_REQUEST",
       requestNonce: "snapshot-export-nonce",
     });
-    await stub.acceptVerifiedMessage(request, 10_000);
+    await acceptAndFinalize(stub, request, 10_000);
     const snapshot = await stub.readSnapshot();
     expect(snapshot).toMatchObject({
       senderId: "runtime-monitor-a",
