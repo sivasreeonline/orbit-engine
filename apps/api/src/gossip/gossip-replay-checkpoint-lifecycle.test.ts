@@ -44,6 +44,9 @@ async function fixture(baseStateVersion = 0) {
   const snapshot = { highestSequence: 1, seen: { "message-1": "a".repeat(64) } };
   const intent = await createReplayCheckpointIntent({
     baseStateVersion,
+    senderId: "monitor-a",
+    recipientId: "monitor-b",
+    messageDigest: "a".repeat(64),
     scope: "domain-a|witness-a|authority-a|host-a",
     expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
     nextState: snapshot,
