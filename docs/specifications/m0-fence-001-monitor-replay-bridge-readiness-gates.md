@@ -1,8 +1,8 @@
 # FENCE-001 monitor replay bridge readiness gates
 
-**Decision:** Do not implement or expose the Cloudflare-to-witness bridge yet. The repository already contains cryptographic witness receipt verification and RFC 9162 Merkle proof mathematics. The remaining blockers are (A) authenticated signed-tree-head verification and composition of those existing validators, and (B) authenticated Worker workload identity and scope authorization.
+**Decision (updated 2026-11-23):** The local cryptographic verifier and authenticated Worker-to-Worker RPC gates now have implementation slices and exact-head CI evidence (PRs #188–#194, with the TypeScript runtime verifier in this branch). The remaining implementation blockers are the provider-neutral gateway append adapter, durable trust/head pinning, and the monitor replay Durable Object pending-intent/finalize/recovery lifecycle.
 
-This is a readiness audit, not a claim that monitor replay rollback protection is implemented. PR #185 remains the governing bridge protocol contract. Production rollback protection remains **NOT QUALIFIED**.
+This remains a readiness audit, not a claim that monitor replay rollback protection is implemented. PR #185 remains the governing bridge protocol contract. Production rollback protection remains **NOT QUALIFIED**.
 
 ## 1. Evidence inspected
 
@@ -87,3 +87,11 @@ The pending intent must block conflicting successors. An ambiguous acknowledgeme
 This audit does not add a gateway, service binding, provider adapter, signed tree-head verifier, credentials, signing keys, production writes, host execution, or student-code execution. DynamoDB Local and in-memory fixtures remain test environments only.
 
 **Current status:** Bridge implementation is blocked on gates A and B. This is an intentional security stop, not a claim of completed integration.
+
+
+## 7. Implementation progress — 2026-11-23
+
+- **Gate A — cryptographic profile:** PR #188 defines the signed tree-head profile; PR #189 adds the Python conformance composition; this branch adds a Cloudflare Worker-compatible TypeScript verifier that reuses the existing RFC 8785, receipt, trust-bundle, Ed25519 and RFC 9162 formats. Persistent trust-bundle and prior-head state are still required before production use.
+- **Gate B — workload identity:** PRs #190–#191 implement signed workload identity and durable nonce replay. PR #192 adds the private gateway Worker; PR #193 adds the API caller proof signer; PR #194 verifies the real API-to-gateway named RPC boundary in local workerd. PR #194 exact-head CI run #2384 passed.
+- **Next:** implement the provider-neutral append/readback adapter with strict canonical checkpoint validation and exact idempotency, then the durable pending-intent state machine in `GossipReplayStateDO` as specified by PR #185.
+- **Still prohibited:** no live provider writes, production keys, public gateway ingress, or host/student-code execution. No rollback protection or independent provider durability claim is authorized by these local tests.
