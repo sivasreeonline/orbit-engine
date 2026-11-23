@@ -466,7 +466,7 @@ export class GossipReplayStateDO extends DurableObject<Env> {
         verified: true,
         operationId: verification.operationId,
         checkpointDigest: verification.checkpointDigest,
-        authorityStateDigest: verification.authorityStateDigest,
+        snapshotDigest: verification.snapshotDigest,
         trustDomainId: verification.trustDomainId,
         witnessId: verification.witnessId,
         authorityId: verification.authorityId,
