@@ -149,6 +149,12 @@ export class AwsDynamoDBWitnessProviderAdapter implements WitnessProviderAdapter
     idempotencyKey: string,
   ): Promise<WitnessCheckpointReceipt> {
     this.validateAppend(checkpoint, expectedPredecessor, idempotencyKey);
+    if (await this.sha256Hex(checkpoint.canonicalSnapshotBytes) !== checkpoint.snapshotDigest) {
+      throw new TypeError("canonical snapshot bytes do not match snapshotDigest");
+    }
+    if (await this.sha256Hex(checkpoint.canonicalCheckpointBodyBytes) !== checkpoint.checkpointDigest) {
+      throw new TypeError("canonical checkpoint-body bytes do not match checkpointDigest");
+    }
     const partitionKey = await this.partitionKey(checkpoint.scope);
     const idempotencyKeySha256 = await this.sha256Hex(new TextEncoder().encode(idempotencyKey));
     const checkpointJson = canonicalize({
@@ -537,8 +543,13 @@ export function createLocalDynamoDBWitnessProviderAdapter(
   const parsed = new URL(config.endpointUrl);
   if (
     parsed.protocol !== "http:" ||
-    !["127.0.0.1", "localhost", "::1"].includes(parsed.hostname)
-  ) throw new Error("DynamoDB adapter factory permits only loopback HTTP endpoints");
+    !["127.0.0.1", "localhost", "::1"].includes(parsed.hostname) ||
+    parsed.username.length > 0 ||
+    parsed.password.length > 0 ||
+    (parsed.pathname !== "" && parsed.pathname !== "/") ||
+    parsed.search.length > 0 ||
+    parsed.hash.length > 0
+  ) throw new Error("DynamoDB adapter factory permits only a plain loopback HTTP endpoint");
   if (!config.region || !config.tableName) throw new TypeError("DynamoDB region and table are required");
   const client = new DynamoDBClient({
     region: config.region,
