@@ -57,8 +57,11 @@ def canonical_snapshot_bytes(snapshot: dict[str, Any]) -> bytes:
     if (
         snapshot.get("version") != 1
         or not isinstance(snapshot.get("senderId"), str)
+        or len(snapshot.get("senderId", "")) > 256
         or not isinstance(snapshot.get("recipientId"), str)
+        or len(snapshot.get("recipientId", "")) > 256
         or not isinstance(snapshot.get("scope"), str)
+        or len(snapshot.get("scope", "")) > 256
         or type(snapshot.get("highestSequence")) is not int
         or snapshot["highestSequence"] < 0
         or snapshot["highestSequence"] > 9_007_199_254_740_991
@@ -69,7 +72,7 @@ def canonical_snapshot_bytes(snapshot: dict[str, Any]) -> bytes:
         or not all(isinstance(value, str) and 0 < len(value) <= 256 for value in snapshot["consumedNonces"])
         or len(set(snapshot["consumedNonces"])) != len(snapshot["consumedNonces"])
         or not isinstance(snapshot.get("missingSequences"), list)
-        or not all(type(value) is int and value >= 1 for value in snapshot["missingSequences"])
+        or not all(type(value) is int and 1 <= value <= 9_007_199_254_740_991 for value in snapshot["missingSequences"])
         or len(set(snapshot["missingSequences"])) != len(snapshot["missingSequences"])
     ):
         raise ReplayCheckpointError("replay snapshot fields are malformed")
