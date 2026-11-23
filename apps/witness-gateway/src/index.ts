@@ -642,6 +642,8 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
       readonly scope: WitnessCheckpointScope;
       readonly snapshot: Record<string, unknown>;
       readonly checkpointBody: MonitorReplayCheckpointBody;
+      readonly checkpointDigest: string;
+      readonly canonicalCheckpointBodyBytes: Uint8Array;
       readonly expectedPredecessor: { readonly generation: number; readonly digest: string };
     } | undefined;
 
@@ -735,61 +737,23 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
         encodeBase64Url(snapshotBytes) !== encoded ||
         snapshotBytes.length !== parsed.snapshotByteLength
       ) return { checkpointed: false, reason: "malformed_request" };
-      const snapshotText = new TextDecoder("utf-8", { fatal: true }).decode(snapshotBytes);
-      const snapshot: unknown = JSON.parse(snapshotText);
-      if (
-        !isRecord(snapshot) ||
-        canonicalize(snapshot) !== snapshotText ||
-        snapshot.senderId !== parsed.senderId ||
-        snapshot.recipientId !== parsed.recipientId ||
-        !isRecord(snapshot.seenByMessageId) ||
-        !Object.values(snapshot.seenByMessageId).some((entry) =>
-          isRecord(entry) && entry.digest === parsed.messageDigest
-        )
-      ) return { checkpointed: false, reason: "malformed_request" };
-
-      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", snapshotBytes));
-      const digestHex = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-      if (digestHex !== parsed.snapshotDigest) return { checkpointed: false, reason: "malformed_request" };
-
-      const checkpointBody: MonitorReplayCheckpointBody = {
-        profile: "sky-high-fence-monitor-replay-v1",
-        schemaVersion: 1,
-        trustDomainId: requestedScope.trustDomainId,
-        witnessId: requestedScope.witnessId,
-        authorityId: requestedScope.authorityId,
-        hostId: requestedScope.hostId,
+      const built = await buildMonitorReplayCheckpoint({
+        scope: requestedScope,
         senderId: parsed.senderId as string,
         recipientId: parsed.recipientId as string,
-        generation: expectedPredecessor.generation + 1,
-        operationId: parsed.operationId as string,
-        phase: "MONITOR_GOSSIP_REPLAY_V1",
-        previousCheckpointDigest: expectedPredecessor.digest,
-        snapshotDigest: parsed.snapshotDigest as string,
-        snapshotByteLength: snapshotBytes.length,
-        baseStateVersion: parsed.baseStateVersion as number,
         messageDigest: parsed.messageDigest as string,
-      };
-      validateMonitorReplayCheckpointBody(checkpointBody);
-      const checkpointBodyCanonical = canonicalize(checkpointBody);
-      if (typeof checkpointBodyCanonical !== "string") {
-        return { checkpointed: false, reason: "malformed_request" };
-      }
-      const checkpointBodyBytes = new TextEncoder().encode(checkpointBodyCanonical);
-      const checkpointBodyDigest = new Uint8Array(await crypto.subtle.digest(
-        "SHA-256",
-        checkpointBodyBytes,
-      ));
-      const checkpointDigest = [...checkpointBodyDigest]
-        .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-      if (!/^[0-9a-f]{64}$/.test(checkpointDigest)) {
-        return { checkpointed: false, reason: "malformed_request" };
-      }
-
+        baseStateVersion: parsed.baseStateVersion as number,
+        operationId: parsed.operationId as string,
+        expectedPredecessor,
+        snapshotDigest: parsed.snapshotDigest as string,
+        snapshotBytes,
+      });
       validatedRequest = {
         scope: requestedScope,
-        snapshot,
-        checkpointBody,
+        snapshot: built.snapshot,
+        checkpointBody: built.checkpointBody,
+        checkpointDigest: built.checkpointDigest,
+        canonicalCheckpointBodyBytes: built.canonicalCheckpointBodyBytes,
         expectedPredecessor,
       };
     } catch {
@@ -811,15 +775,13 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
         validatedRequest.checkpointBody,
         validatedRequest.expectedPredecessor,
       );
-      const checkpointBodyCanonical = canonicalize(validatedRequest.checkpointBody);
-      if (typeof checkpointBodyCanonical !== "string") {
-        return { checkpointed: false, reason: "malformed_request" };
+      if (committed.checkpointDigest !== validatedRequest.checkpointDigest) {
+        return { checkpointed: false, reason: "readback_mismatch" };
       }
-      const checkpointBodyBytes = new TextEncoder().encode(checkpointBodyCanonical);
       const evidence = await issueOrRecoverWitnessEvidence(evidenceAuthority, {
         scope: validatedRequest.scope,
         checkpointBody: validatedRequest.checkpointBody,
-        canonicalCheckpointBodyBytes: checkpointBodyBytes,
+        canonicalCheckpointBodyBytes: validatedRequest.canonicalCheckpointBodyBytes,
         checkpointDigest: committed.checkpointDigest,
       });
       const canonicalEvidence = canonicalize({
