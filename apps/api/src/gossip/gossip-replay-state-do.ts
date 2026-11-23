@@ -477,7 +477,17 @@ export class GossipReplayStateDO extends DurableObject<Env> {
   /** Durable retry trigger. Failed recovery keeps the relationship blocked. */
   override async alarm(): Promise<void> {
     const result = await this.recoverPendingCheckpointIntent();
-    if (!result.recovered && result.reason !== "no_pending_intent") {
+    if (
+      !result.recovered &&
+      (
+        result.reason === "gateway_unavailable" ||
+        result.reason === "checkpoint_not_committed" ||
+        result.reason === "evidence_not_verified" ||
+        result.reason === "recovery_error"
+      )
+    ) {
+      // Retry transient infrastructure/evidence-availability failures only.
+      // Integrity failures stay durably blocked for explicit operator review.
       await this.ctx.storage.setAlarm(Date.now() + 30_000);
     }
   }
