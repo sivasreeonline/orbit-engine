@@ -1,6 +1,10 @@
 import canonicalize from "canonicalize";
 import { deriveReplayCheckpointOperationId } from "../../../api/src/gossip/gossip-replay-checkpoint-intent";
 import {
+  validateMonitorReplayCheckpointBody,
+  type MonitorReplayCheckpointBody,
+} from "../../../api/src/witness/witness-profile-verifier";
+import {
   WitnessAmbiguousCommit,
   WitnessAppendConflict,
   WitnessIdempotencyConflict,
@@ -14,12 +18,14 @@ import {
 const ZERO_DIGEST = "0".repeat(64);
 const DIGEST = /^[0-9a-f]{64}$/;
 const MAX_SNAPSHOT_BYTES = 512 * 1024;
+const encoder = new TextEncoder();
 
 export type MonitorReplayCheckpointResult =
   | {
       readonly status: "CHECKPOINTED" | "ALREADY_CHECKPOINTED";
       readonly generation: number;
-      readonly digest: string;
+      readonly snapshotDigest: string;
+      readonly checkpointDigest: string;
       readonly operationId: string;
       readonly receipt: WitnessCheckpointReceipt;
     };
@@ -30,6 +36,7 @@ export class MonitorReplayCheckpointError extends Error {
       | "invalid_scope"
       | "invalid_predecessor"
       | "invalid_snapshot"
+      | "invalid_checkpoint_body"
       | "operation_conflict"
       | "receipt_mismatch"
       | "operation_not_recoverable"
@@ -45,13 +52,17 @@ export class MonitorReplayCheckpointError extends Error {
 function validScope(scope: WitnessCheckpointScope): boolean {
   return Boolean(
     scope &&
-    typeof scope.trustDomainId === "string" && scope.trustDomainId.length > 0 &&
+    typeof scope.trustDomainId === "string" &&
+    scope.trustDomainId.length > 0 &&
     scope.trustDomainId.length <= 256 &&
-    typeof scope.witnessId === "string" && scope.witnessId.length > 0 &&
+    typeof scope.witnessId === "string" &&
+    scope.witnessId.length > 0 &&
     scope.witnessId.length <= 256 &&
-    typeof scope.authorityId === "string" && scope.authorityId.length > 0 &&
+    typeof scope.authorityId === "string" &&
+    scope.authorityId.length > 0 &&
     scope.authorityId.length <= 256 &&
-    typeof scope.hostId === "string" && scope.hostId.length > 0 &&
+    typeof scope.hostId === "string" &&
+    scope.hostId.length > 0 &&
     scope.hostId.length <= 256
   );
 }
@@ -61,6 +72,19 @@ function sameScope(a: WitnessCheckpointScope, b: WitnessCheckpointScope): boolea
     a.witnessId === b.witnessId &&
     a.authorityId === b.authorityId &&
     a.hostId === b.hostId;
+}
+
+function canonicalBytes(value: unknown, label: string): Uint8Array {
+  let serialized: string | undefined;
+  try {
+    serialized = canonicalize(value);
+  } catch {
+    serialized = undefined;
+  }
+  if (typeof serialized !== "string") {
+    throw new MonitorReplayCheckpointError("invalid_checkpoint_body", `${label} is not canonicalizable JSON`);
+  }
+  return encoder.encode(serialized);
 }
 
 function canonicalSnapshotBytes(snapshot: unknown): Uint8Array {
@@ -87,7 +111,7 @@ function canonicalSnapshotBytes(snapshot: unknown): Uint8Array {
       "replay snapshot is not canonicalizable JSON",
     );
   }
-  const bytes = new TextEncoder().encode(serialized);
+  const bytes = encoder.encode(serialized);
   if (bytes.length === 0 || bytes.length > MAX_SNAPSHOT_BYTES) {
     throw new MonitorReplayCheckpointError(
       "invalid_snapshot",
@@ -104,16 +128,6 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function exactCheckpoint(a: WitnessCheckpoint, b: WitnessCheckpoint): boolean {
-  return sameScope(a.scope, b.scope) &&
-    a.generation === b.generation &&
-    a.operationId === b.operationId &&
-    a.phase === b.phase &&
-    a.checkpointDigest === b.checkpointDigest &&
-    a.previousDigest === b.previousDigest &&
-    bytesEqual(a.canonicalSnapshotBytes, b.canonicalSnapshotBytes);
-}
-
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (!(a instanceof Uint8Array) || !(b instanceof Uint8Array) || a.length !== b.length) {
     return false;
@@ -125,6 +139,18 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return difference === 0;
 }
 
+function exactCheckpoint(a: WitnessCheckpoint, b: WitnessCheckpoint): boolean {
+  return sameScope(a.scope, b.scope) &&
+    a.generation === b.generation &&
+    a.operationId === b.operationId &&
+    a.phase === b.phase &&
+    a.snapshotDigest === b.snapshotDigest &&
+    a.checkpointDigest === b.checkpointDigest &&
+    a.previousDigest === b.previousDigest &&
+    bytesEqual(a.canonicalSnapshotBytes, b.canonicalSnapshotBytes) &&
+    bytesEqual(a.canonicalCheckpointBodyBytes, b.canonicalCheckpointBodyBytes);
+}
+
 function assertRecord(
   record: StoredWitnessCheckpoint | null,
   expected: WitnessCheckpoint,
@@ -132,7 +158,7 @@ function assertRecord(
   if (!record || !exactCheckpoint(record.checkpoint, expected)) {
     throw new MonitorReplayCheckpointError(
       "operation_conflict",
-      "witness operation is missing or bound to different canonical replay snapshot bytes",
+      "witness operation is missing or bound to different canonical snapshot/checkpoint bytes",
     );
   }
   const receipt = record.receipt;
@@ -147,7 +173,7 @@ function assertRecord(
   ) {
     throw new MonitorReplayCheckpointError(
       "receipt_mismatch",
-      "witness receipt does not bind the exact replay checkpoint",
+      "witness receipt does not bind the exact replay checkpoint digest",
     );
   }
 }
@@ -171,62 +197,102 @@ function result(
   return {
     status,
     generation: record.checkpoint.generation,
-    digest: record.checkpoint.checkpointDigest,
+    snapshotDigest: record.checkpoint.snapshotDigest,
+    checkpointDigest: record.checkpoint.checkpointDigest,
     operationId: record.checkpoint.operationId,
     receipt: record.receipt,
   };
 }
 
 /**
- * Provider-neutral orchestration for exact immutable replay-snapshot commits.
- * It does not authenticate receipt signatures or prove provider durability:
- * the returned receipt must still pass the FENCE signed-evidence verifier.
+ * Provider-neutral orchestration for an immutable monitor-replay checkpoint.
+ * Snapshot bytes and signed checkpoint-body bytes are independently hashed,
+ * stored, compared on idempotent recovery, and read back. This coordinator
+ * does not verify a witness signature or qualify provider durability.
  */
 export async function checkpointMonitorReplaySnapshot(
   adapter: WitnessProviderAdapter,
   scope: WitnessCheckpointScope,
   snapshot: unknown,
-  expectedPredecessor?: { readonly generation: number; readonly digest: string },
+  checkpointBody: MonitorReplayCheckpointBody,
+  expectedPredecessor: { readonly generation: number; readonly digest: string },
 ): Promise<MonitorReplayCheckpointResult> {
   if (!validScope(scope)) {
     throw new MonitorReplayCheckpointError("invalid_scope", "witness checkpoint scope is malformed");
   }
-
-  const bytes = canonicalSnapshotBytes(snapshot);
-  const digest = await sha256Hex(bytes);
-  if (!DIGEST.test(digest)) throw new Error("SHA-256 returned an invalid digest");
-  if (expectedPredecessor && (
+  if (
+    !expectedPredecessor ||
     !Number.isSafeInteger(expectedPredecessor.generation) ||
     expectedPredecessor.generation < 0 ||
     !DIGEST.test(expectedPredecessor.digest)
-  )) {
+  ) {
     throw new MonitorReplayCheckpointError("invalid_predecessor", "expected witness predecessor is malformed");
   }
 
-  const operationId = expectedPredecessor
-    ? await deriveReplayCheckpointOperationId({ scope, expectedPredecessor, snapshotDigest: digest })
-    : `fence-monitor-replay-${digest}`;
+  const snapshotBytes = canonicalSnapshotBytes(snapshot);
+  const snapshotDigest = await sha256Hex(snapshotBytes);
+  if (!DIGEST.test(snapshotDigest)) throw new Error("SHA-256 returned an invalid snapshot digest");
+
+  try {
+    validateMonitorReplayCheckpointBody(checkpointBody);
+  } catch (error) {
+    throw new MonitorReplayCheckpointError(
+      "invalid_checkpoint_body",
+      error instanceof Error ? error.message : "monitor replay checkpoint body is malformed",
+    );
+  }
+  const checkpointBytes = canonicalBytes(checkpointBody, "monitor replay checkpoint body");
+  const checkpointDigest = await sha256Hex(checkpointBytes);
+  if (!DIGEST.test(checkpointDigest)) throw new Error("SHA-256 returned an invalid checkpoint digest");
+
+  if (
+    checkpointBody.trustDomainId !== scope.trustDomainId ||
+    checkpointBody.witnessId !== scope.witnessId ||
+    checkpointBody.authorityId !== scope.authorityId ||
+    checkpointBody.hostId !== scope.hostId ||
+    checkpointBody.generation !== expectedPredecessor.generation + 1 ||
+    checkpointBody.previousCheckpointDigest !== expectedPredecessor.digest ||
+    checkpointBody.snapshotDigest !== snapshotDigest ||
+    checkpointBody.snapshotByteLength !== snapshotBytes.length ||
+    (isRecord(snapshot) &&
+      (snapshot.senderId !== checkpointBody.senderId ||
+       snapshot.recipientId !== checkpointBody.recipientId))
+  ) {
+    throw new MonitorReplayCheckpointError(
+      "invalid_checkpoint_body",
+      "monitor replay checkpoint body does not bind the exact scope, predecessor and canonical snapshot",
+    );
+  }
+
+  const operationId = await deriveReplayCheckpointOperationId({
+    scope,
+    expectedPredecessor,
+    snapshotDigest,
+  });
+  if (checkpointBody.operationId !== operationId) {
+    throw new MonitorReplayCheckpointError(
+      "invalid_checkpoint_body",
+      "monitor replay checkpoint operation ID does not match the persisted scope/predecessor/snapshot identity",
+    );
+  }
+
+  const expectedCheckpoint: WitnessCheckpoint = {
+    scope,
+    generation: checkpointBody.generation,
+    operationId,
+    phase: "MONITOR_GOSSIP_REPLAY_V1",
+    snapshotDigest,
+    checkpointDigest,
+    previousDigest: expectedPredecessor.digest,
+    canonicalSnapshotBytes: snapshotBytes,
+    canonicalCheckpointBodyBytes: checkpointBytes,
+  };
 
   const existing = await adapter.readByOperation(scope, operationId);
   if (existing) {
-    const expected = existing.checkpoint;
-    if (
-      !sameScope(expected.scope, scope) ||
-      expected.phase !== "MONITOR_GOSSIP_REPLAY_V1" ||
-      expected.checkpointDigest !== digest ||
-      (expectedPredecessor !== undefined &&
-        (expected.generation !== expectedPredecessor.generation + 1 ||
-         expected.previousDigest !== expectedPredecessor.digest)) ||
-      !bytesEqual(expected.canonicalSnapshotBytes, bytes)
-    ) {
-      throw new MonitorReplayCheckpointError(
-        "operation_conflict",
-        "deterministic operation ID is already bound to different replay content",
-      );
-    }
-    assertRecord(existing, expected);
+    assertRecord(existing, expectedCheckpoint);
     const latest = await adapter.readLatest(scope);
-    if (!latest || !exactCheckpoint(latest.checkpoint, expected) ||
+    if (!latest || !exactCheckpoint(latest.checkpoint, expectedCheckpoint) ||
         !exactReceipt(latest.receipt, existing.receipt)) {
       throw new MonitorReplayCheckpointError(
         "stale_operation",
@@ -240,19 +306,9 @@ export async function checkpointMonitorReplaySnapshot(
   if (latest && !sameScope(latest.checkpoint.scope, scope)) {
     throw new MonitorReplayCheckpointError("invalid_scope", "latest witness record has another scope");
   }
-  const expectedGeneration = expectedPredecessor?.generation ?? (latest?.checkpoint.generation ?? 0);
-  const expectedDigest = expectedPredecessor?.digest ?? (latest?.checkpoint.checkpointDigest ?? ZERO_DIGEST);
   if (
-    !Number.isSafeInteger(expectedGeneration) ||
-    expectedGeneration < 0 ||
-    !DIGEST.test(expectedDigest)
-  ) {
-    throw new MonitorReplayCheckpointError("latest_readback_mismatch", "latest witness predecessor is malformed");
-  }
-
-  if (
-    (latest?.checkpoint.generation ?? 0) !== expectedGeneration ||
-    (latest?.checkpoint.checkpointDigest ?? ZERO_DIGEST) !== expectedDigest
+    (latest?.checkpoint.generation ?? 0) !== expectedPredecessor.generation ||
+    (latest?.checkpoint.checkpointDigest ?? ZERO_DIGEST) !== expectedPredecessor.digest
   ) {
     throw new MonitorReplayCheckpointError(
       "stale_operation",
@@ -260,21 +316,11 @@ export async function checkpointMonitorReplaySnapshot(
     );
   }
 
-  const checkpoint: WitnessCheckpoint = {
-    scope,
-    generation: expectedGeneration + 1,
-    operationId,
-    phase: "MONITOR_GOSSIP_REPLAY_V1",
-    checkpointDigest: digest,
-    previousDigest: expectedDigest,
-    canonicalSnapshotBytes: bytes,
-  };
-
   let appendReceipt: WitnessCheckpointReceipt | undefined;
   try {
     appendReceipt = await adapter.appendIfCurrent(
-      checkpoint,
-      { generation: expectedGeneration, digest: expectedDigest },
+      expectedCheckpoint,
+      expectedPredecessor,
       operationId,
     );
   } catch (error) {
@@ -289,14 +335,13 @@ export async function checkpointMonitorReplaySnapshot(
         "ambiguous append acknowledgement has no immutable operation record",
       );
     }
-    assertRecord(recovered, checkpoint);
+    assertRecord(recovered, expectedCheckpoint);
     appendReceipt = recovered.receipt;
   }
 
   const committed = await adapter.readByOperation(scope, operationId);
-  assertRecord(committed, checkpoint);
-  if (!appendReceipt ||
-      !exactReceipt(committed.receipt, appendReceipt)) {
+  assertRecord(committed, expectedCheckpoint);
+  if (!appendReceipt || !exactReceipt(committed.receipt, appendReceipt)) {
     throw new MonitorReplayCheckpointError(
       "receipt_mismatch",
       "operation readback differs from append acknowledgement",
@@ -306,7 +351,7 @@ export async function checkpointMonitorReplaySnapshot(
   const current = await adapter.readLatest(scope);
   if (
     !current ||
-    !exactCheckpoint(current.checkpoint, checkpoint) ||
+    !exactCheckpoint(current.checkpoint, expectedCheckpoint) ||
     !exactReceipt(current.receipt, committed.receipt)
   ) {
     throw new MonitorReplayCheckpointError(
@@ -316,4 +361,8 @@ export async function checkpointMonitorReplaySnapshot(
   }
 
   return result("CHECKPOINTED", committed);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
