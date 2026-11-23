@@ -59,9 +59,14 @@ def _scope_document(scope: Any) -> dict[str, str]:
         "witness_id": scope.witness_id,
         "authority_id": scope.authority_id,
         "host_id": scope.host_id,
+        "sender_id": getattr(scope, "sender_id", ""),
+        "recipient_id": getattr(scope, "recipient_id", ""),
+        "replay_scope": getattr(scope, "replay_scope", ""),
     }
     for field, value in values.items():
-        if not isinstance(value, str) or not value.strip():
+        if not isinstance(value, str):
+            raise ValueError(f"scope {field} must be a string")
+        if field in {"trust_domain_id", "witness_id", "authority_id", "host_id"} and not value.strip():
             raise ValueError(f"scope {field} must be a non-empty string")
     return values
 
