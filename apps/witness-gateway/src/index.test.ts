@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import canonicalize from "canonicalize";
 import {
+  buildMonitorReplayCheckpoint,
   parseAllowedWitnessScopes,
   parsePinnedWitnessRoots,
   parseTrustedWorkloadKeys,
 } from "./index";
+import { deriveReplayCheckpointOperationId } from "../../api/src/gossip/gossip-replay-checkpoint-intent";
+import type { WitnessCheckpointScope } from "./provider/witness-provider-adapter";
 
 describe("parseTrustedWorkloadKeys", () => {
   it("fails closed when the allowlist is missing or empty", () => {
@@ -72,5 +76,88 @@ describe("parseAllowedWitnessScopes", () => {
       hostId: "host",
     };
     expect(parseAllowedWitnessScopes(JSON.stringify([scope, scope]))).toBeNull();
+  });
+});
+
+describe("buildMonitorReplayCheckpoint", () => {
+  const scope: WitnessCheckpointScope = {
+    trustDomainId: "trust-domain",
+    witnessId: "witness",
+    authorityId: "authority",
+    hostId: "host",
+  };
+  const predecessor = { generation: 0, digest: "0".repeat(64) };
+
+  async function requestFixture() {
+    const snapshot = {
+      version: 1,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      highestSequence: 1,
+      seenByMessageId: {
+        "message-1": { sequence: 1, digest: "a".repeat(64) },
+      },
+    };
+    const snapshotCanonical = canonicalize(snapshot);
+    if (typeof snapshotCanonical !== "string") throw new Error("snapshot not canonical");
+    const snapshotBytes = new TextEncoder().encode(snapshotCanonical);
+    const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", snapshotBytes));
+    const snapshotDigest = [...hash].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const operationId = await deriveReplayCheckpointOperationId({
+      scope,
+      expectedPredecessor: predecessor,
+      snapshotDigest,
+    });
+    return {
+      snapshot,
+      input: {
+        scope,
+        senderId: "monitor-a",
+        recipientId: "monitor-b",
+        messageDigest: "a".repeat(64),
+        baseStateVersion: 0,
+        operationId,
+        expectedPredecessor: predecessor,
+        snapshotDigest,
+        snapshotBytes,
+      },
+    };
+  }
+
+  it("constructs a canonical replay checkpoint with a distinct checkpoint digest", async () => {
+    const { input } = await requestFixture();
+    const built = await buildMonitorReplayCheckpoint(input);
+    expect(built.checkpointBody.profile).toBe("sky-high-fence-monitor-replay-v1");
+    expect(built.checkpointBody.snapshotDigest).toBe(input.snapshotDigest);
+    expect(built.checkpointBody.snapshotByteLength).toBe(input.snapshotBytes.length);
+    expect(built.checkpointBody.operationId).toBe(input.operationId);
+    expect(built.checkpointDigest).not.toBe(input.snapshotDigest);
+    expect(new TextDecoder().decode(built.canonicalCheckpointBodyBytes))
+      .toBe(canonicalize(built.checkpointBody));
+  });
+
+  it("rejects a triggering message digest absent from the exact snapshot", async () => {
+    const { input } = await requestFixture();
+    await expect(buildMonitorReplayCheckpoint({
+      ...input,
+      messageDigest: "b".repeat(64),
+    })).rejects.toThrow("triggering message identity");
+  });
+
+  it("rejects a sender/recipient relationship that differs from the snapshot", async () => {
+    const { input } = await requestFixture();
+    await expect(buildMonitorReplayCheckpoint({
+      ...input,
+      senderId: "another-monitor",
+    })).rejects.toThrow("triggering message identity");
+  });
+
+  it("rejects a snapshot whose bytes do not match the persisted digest", async () => {
+    const { input } = await requestFixture();
+    const changedBytes = new TextEncoder().encode("{}");
+    await expect(buildMonitorReplayCheckpoint({
+      ...input,
+      snapshotBytes: changedBytes,
+    })).rejects.toThrow("snapshot digest mismatch");
   });
 });
