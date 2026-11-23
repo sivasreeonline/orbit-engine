@@ -142,6 +142,27 @@ describe("transactional replay checkpoint lifecycle", () => {
     expect(bad).toEqual({ finalized: false, reason: "evidence_binding_mismatch" });
     expect(values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(initialState);
 
+    const wrongSnapshotBinding = await finalizePendingReplayIntent(storage, pending, {
+      verified: true,
+      operationId: pending.intent.operationId,
+      checkpointDigest: "d".repeat(64),
+      authorityStateDigest: "e".repeat(64),
+      trustDomainId: "domain-a",
+      witnessId: "witness-a",
+      authorityId: "authority-a",
+      hostId: "host-a",
+      predecessorGeneration: 0,
+      predecessorDigest: "0".repeat(64),
+      generation: 1,
+      treeSize: 1,
+      treeHeadDigest: "b".repeat(64),
+      receiptLeafHash: "c".repeat(64),
+    });
+    expect(wrongSnapshotBinding).toEqual({
+      finalized: false,
+      reason: "evidence_binding_mismatch",
+    });
+
     const good = await finalizePendingReplayIntent(storage, pending, {
       verified: true,
       operationId: pending.intent.operationId,
