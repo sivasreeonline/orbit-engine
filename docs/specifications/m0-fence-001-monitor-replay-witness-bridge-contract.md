@@ -126,3 +126,38 @@ This contract does not:
 - claim that Cloudflare and the witness are independent merely because they are separate services.
 
 Production rollback protection remains **NOT QUALIFIED** until signed tree-head verification is integrated with the existing receipt and Merkle validators, the authenticated bridge and failure-injection suite pass, independent monitor gossip is validated, and WIT-001..WIT-014 provider evidence is independently reviewed and approved.
+
+
+## 10. Provider adapter output gap and integration boundary
+
+The current TypeScript `WitnessProviderAdapter` contract returns a storage receipt containing scope, generation, operation ID, checkpoint digest, predecessor digest and an opaque `consistencyToken`. That is sufficient for provider-neutral compare-and-append orchestration, but it is **not** the evidence response required by this bridge. The token is explicitly non-cryptographic and must never be promoted into a signed receipt, tree-head digest, inclusion proof or consistency proof.
+
+The current gateway checkpoint RPC therefore remains fail-closed with `provider_unavailable` after authenticating and validating the exact request. This is intentional until the following two responsibilities are connected without collapsing their trust boundaries:
+
+1. **Storage adapter:** atomic compare-and-append, immutable generation and operation lookup, durable idempotency, strongly consistent latest read, and exact canonical checkpoint-byte readback.
+2. **Independent witness evidence authority:** an independently administered signing/logging service that returns the signed receipt envelope, signed tree-head envelope, leaf index, inclusion proof and consistency proof for the exact committed checkpoint. Its receipt and log-signing keys must be authorized by the pinned root-signed trust bundle and must not be silently generated or held by the API Worker.
+
+A future gateway adapter composition may expose a result shaped conceptually as:
+
+- exact stored checkpoint bytes and scope;
+- signed receipt envelope whose body binds scope, generation, operation ID, checkpoint digest and predecessor digest;
+- signed tree-head envelope with witness, authority, host, log ID, tree size, root hash, timestamp and authorized log key ID;
+- leaf index and RFC 9162 inclusion proof for the checkpoint leaf;
+- consistency proof from the previously pinned tree size/root to the returned tree head;
+- provider request/transaction identifiers and readback provenance as audit metadata, never as cryptographic substitutes.
+
+The gateway must then verify the complete evidence bundle against the currently pinned trust bundle and tree head before constructing the canonical evidence-verification request for the API caller. The API must independently invoke the existing private `verifyEvidence` RPC and bind the verified operation, checkpoint digest, authority-state digest, predecessor, generation and tree-head data to its persisted pending intent before finalization.
+
+### Required integration tests
+
+- Exact provider readback bytes equal the pending canonical snapshot bytes and digest.
+- Receipt signature and receipt-purpose key authorization are valid; wrong-purpose, revoked, expired and unknown keys fail closed.
+- Tree-head signature and log-purpose key authorization are valid; receipt-purpose keys cannot sign tree heads.
+- Inclusion proof binds the exact canonical receipt leaf at the returned leaf index.
+- Consistency proof extends the previously pinned tree head; same-size conflicting roots, regression and invalid extensions quarantine or block.
+- Provider commit followed by lost acknowledgement recovers the same immutable operation and exact evidence bundle without creating another generation.
+- Operation record exists but latest head is incompatible: no automatic rebase or local finalization.
+- Evidence authority unavailable after storage commit: pending intent remains and exact operation/evidence recovery is retried.
+- The storage adapter's opaque consistency token is never consumed by cryptographic verification code.
+
+No production adapter or evidence authority is selected by this specification. A DynamoDB Local run validates only local SDK/conditional-write wiring; the existing Python AWS adapter is a qualification harness implementation, not a Cloudflare Worker RPC binding or independent evidence authority. Real-provider and independent-key qualification remain separate gates.
