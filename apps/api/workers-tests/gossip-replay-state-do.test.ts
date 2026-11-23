@@ -95,4 +95,48 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     const response = await stub.fetch("https://gossip-replay.invalid/");
     expect(response.status).toBe(404);
   });
+  it("returns the complete normalized replay snapshot for independent checkpointing", async () => {
+    const stub = replayObject("snapshot-export");
+    const empty = await stub.readSnapshot();
+    expect(empty).toMatchObject({
+      version: 1,
+      senderId: "",
+      recipientId: "",
+      scope: "",
+      highestSequence: 0,
+      seenBySequence: {},
+      seenByMessageId: {},
+      outstandingRequests: {},
+      consumedNonces: [],
+      missingSequences: [],
+    });
+
+    const request = message(2, {
+      messageType: "CONSISTENCY_PROOF_REQUEST",
+      requestNonce: "snapshot-export-nonce",
+    });
+    await stub.acceptVerifiedMessage(request, 10_000);
+    const snapshot = await stub.readSnapshot();
+    expect(snapshot).toMatchObject({
+      senderId: "runtime-monitor-a",
+      recipientId: "runtime-monitor-b",
+      scope: request.scope,
+      highestSequence: 2,
+      seenBySequence: {
+        "2": {
+          messageId: request.messageId,
+          digest: request.canonicalDigest,
+        },
+      },
+      outstandingRequests: {
+        [request.messageId]: {
+          nonce: "snapshot-export-nonce",
+          expiresAt: request.expiresAt,
+        },
+      },
+      consumedNonces: [],
+      missingSequences: [1],
+    });
+  });
+
 });
