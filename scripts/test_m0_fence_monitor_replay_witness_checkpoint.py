@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Synthetic monitor replay snapshot witness-checkpoint tests."""
 from __future__ import annotations
-import copy
 from validate_m0_fence_monitor_replay_witness_checkpoint import (
     ReplayCheckpointError,
     build_checkpoint_artifact,
