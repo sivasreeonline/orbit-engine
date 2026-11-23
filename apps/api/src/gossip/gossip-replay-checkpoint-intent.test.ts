@@ -23,6 +23,28 @@ describe("durable replay checkpoint intent", () => {
     expect(await validateReplayCheckpointIntent(first)).toBe(true);
   });
 
+  it("separates idempotency keys across scope and predecessor while preserving retries", async () => {
+    const base = {
+      baseStateVersion: 4,
+      scope,
+      expectedPredecessor: predecessor,
+      nextState: { version: 1, highestSequence: 7 },
+    };
+    const sameSnapshotDifferentScope = await createReplayCheckpointIntent({
+      ...base,
+      scope: "domain-b|witness-a|authority-a|host-a",
+    });
+    const sameSnapshotDifferentPredecessor = await createReplayCheckpointIntent({
+      ...base,
+      expectedPredecessor: { generation: 1, digest: "b".repeat(64) },
+    });
+    const original = await createReplayCheckpointIntent(base);
+    expect(sameSnapshotDifferentScope.snapshotDigest).toBe(original.snapshotDigest);
+    expect(sameSnapshotDifferentPredecessor.snapshotDigest).toBe(original.snapshotDigest);
+    expect(sameSnapshotDifferentScope.operationId).not.toBe(original.operationId);
+    expect(sameSnapshotDifferentPredecessor.operationId).not.toBe(original.operationId);
+  });
+
   it("binds the request to its base state version and exact witness predecessor", async () => {
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 8,
