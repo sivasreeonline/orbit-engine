@@ -244,7 +244,7 @@ export class WitnessTrustStateDO extends DurableObject<unknown> {
       !validDigest(input.envelope.body.rootHash) ||
       !validDigest(input.envelope.body.keyId) ||
       typeof input.envelope.body.timestamp !== "string" ||
-      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$/.test(input.envelope.body.timestamp) ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(input.envelope.body.timestamp) ||
       typeof input.envelope.signature !== "string" ||
       !/^[A-Za-z0-9_-]{86}$/.test(input.envelope.signature) ||
       input.envelope.signature.length !== 86
