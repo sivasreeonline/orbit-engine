@@ -26,6 +26,9 @@ def main() -> None:
     accepted = checkpoint_replay_snapshot(adapter, SCOPE, first)
     assert accepted["status"] == "CHECKPOINTED"
     assert accepted["snapshotDigest"] == snapshot_digest(first)
+    assert accepted["snapshotDigest"] == "3e67d5db1c0f34ddd48fd964ef7b3993ee395f3fd166010ebd74076594dba7cb"
+    assert accepted["checkpointBody"]["responseDigest"] == "6f6d145824a1186726d43b65ff6edff79631be9e088f33e655386d3c1b189a5d"
+    assert accepted["checkpointDigest"] == "c9db31c134f4e476758bca6860ce8dd4567691fae04a78dc18814cf9e1426ce2"
     assert accepted["checkpointDigest"] != accepted["snapshotDigest"]
     assert accepted["checkpointBody"]["authorityStateDigest"] == accepted["snapshotDigest"]
     assert accepted["checkpointBody"]["phase"] == "ACCEPTED"
