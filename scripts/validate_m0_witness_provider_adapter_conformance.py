@@ -34,6 +34,10 @@ class Scope:
     witness_id: str
     authority_id: str
     host_id: str
+    # Optional replay relationship binding; generic witness adapter cases omit it.
+    sender_id: str = ""
+    recipient_id: str = ""
+    replay_scope: str = ""
 
 
 @dataclass(frozen=True)
