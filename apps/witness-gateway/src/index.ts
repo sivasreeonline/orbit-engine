@@ -10,6 +10,21 @@ import {
 import { DurableWorkloadNonceStore } from "../../api/src/auth/durable-workload-nonce-store";
 import { DurableWitnessTrustStateStore } from "./durable-witness-trust-state-store";
 import {
+  checkpointMonitorReplaySnapshot,
+  MonitorReplayCheckpointError,
+} from "./provider/monitor-replay-checkpoint-coordinator";
+import {
+  WitnessAppendConflict,
+  WitnessIdempotencyConflict,
+  type WitnessCheckpointScope,
+  type WitnessProviderAdapter,
+} from "./provider/witness-provider-adapter";
+import {
+  issueOrRecoverWitnessEvidence,
+  WitnessEvidenceAuthorityOperationConflictError,
+  type WitnessEvidenceAuthority,
+} from "./evidence/witness-evidence-authority";
+import {
   verifyReceiptAgainstTrustedBundle,
   verifyReceiptInclusion,
   verifySignedTreeHead,
@@ -65,6 +80,10 @@ interface EvidenceRequest {
 export interface GatewayEnv {
   readonly WORKLOAD_NONCE_REPLAY: DurableObjectNamespace;
   readonly WITNESS_TRUST_STATE: DurableObjectNamespace;
+  /** Private RPC to an independently administered atomic checkpoint provider. */
+  readonly WITNESS_PROVIDER?: WitnessProviderAdapter;
+  /** Private RPC to the independently administered receipt/transparency authority. */
+  readonly WITNESS_EVIDENCE_AUTHORITY?: WitnessEvidenceAuthority;
   /** JSON array of pinned API Worker public-key records; never private keys. */
   readonly WORKLOAD_CALLER_KEYS?: string;
   /** JSON array of pinned root public keys. */
@@ -536,6 +555,13 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
       return { checkpointed: false, reason: "workload_authentication_failed" };
     }
 
+    let validatedRequest: {
+      readonly scope: WitnessCheckpointScope;
+      readonly snapshot: Record<string, unknown>;
+      readonly checkpointBody: MonitorReplayCheckpointBody;
+      readonly expectedPredecessor: { readonly generation: number; readonly digest: string };
+    } | undefined;
+
     try {
       const serialized = new TextDecoder("utf-8", { fatal: true }).decode(canonicalCheckpointBody);
       const parsed: unknown = JSON.parse(serialized);
@@ -591,19 +617,19 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
         !/^[A-Za-z0-9_-]+$/.test(parsed.canonicalSnapshotBase64Url)
       ) return { checkpointed: false, reason: "malformed_request" };
 
-      const requestedScope = {
+      const requestedScope: WitnessCheckpointScope = {
         trustDomainId: parsed.scope.trustDomainId as string,
         witnessId: parsed.scope.witnessId as string,
         authorityId: parsed.scope.authorityId as string,
         hostId: parsed.scope.hostId as string,
       };
+      const expectedPredecessor = parsed.expectedPredecessor as {
+        generation: number;
+        digest: string;
+      };
       const expectedOperationId = await deriveReplayCheckpointOperationId({
-        scope: requestedScope as {
-          trustDomainId: string; witnessId: string; authorityId: string; hostId: string;
-        },
-        expectedPredecessor: parsed.expectedPredecessor as {
-          generation: number; digest: string;
-        },
+        scope: requestedScope,
+        expectedPredecessor,
         snapshotDigest: parsed.snapshotDigest as string,
       });
       if (parsed.operationId !== expectedOperationId) {
@@ -622,10 +648,8 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
         "=".repeat((4 - (encoded.length % 4)) % 4);
       const binary = atob(padded);
       const snapshotBytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-      const canonicalEncoding = btoa(String.fromCharCode(...snapshotBytes))
-        .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
       if (
-        canonicalEncoding !== encoded ||
+        encodeBase64Url(snapshotBytes) !== encoded ||
         snapshotBytes.length !== parsed.snapshotByteLength
       ) return { checkpointed: false, reason: "malformed_request" };
       const snapshotText = new TextDecoder("utf-8", { fatal: true }).decode(snapshotBytes);
@@ -654,10 +678,10 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
         hostId: requestedScope.hostId,
         senderId: parsed.senderId as string,
         recipientId: parsed.recipientId as string,
-        generation: (parsed.expectedPredecessor.generation as number) + 1,
+        generation: expectedPredecessor.generation + 1,
         operationId: parsed.operationId as string,
         phase: "MONITOR_GOSSIP_REPLAY_V1",
-        previousCheckpointDigest: parsed.expectedPredecessor.digest as string,
+        previousCheckpointDigest: expectedPredecessor.digest,
         snapshotDigest: parsed.snapshotDigest as string,
         snapshotByteLength: snapshotBytes.length,
         baseStateVersion: parsed.baseStateVersion as number,
@@ -668,23 +692,94 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
       if (typeof checkpointBodyCanonical !== "string") {
         return { checkpointed: false, reason: "malformed_request" };
       }
+      const checkpointBodyBytes = new TextEncoder().encode(checkpointBodyCanonical);
       const checkpointBodyDigest = new Uint8Array(await crypto.subtle.digest(
         "SHA-256",
-        new TextEncoder().encode(checkpointBodyCanonical),
+        checkpointBodyBytes,
       ));
       const checkpointDigest = [...checkpointBodyDigest]
         .map((byte) => byte.toString(16).padStart(2, "0")).join("");
       if (!/^[0-9a-f]{64}$/.test(checkpointDigest)) {
         return { checkpointed: false, reason: "malformed_request" };
       }
+
+      validatedRequest = {
+        scope: requestedScope,
+        snapshot,
+        checkpointBody,
+        expectedPredecessor,
+      };
     } catch {
       return { checkpointed: false, reason: "malformed_request" };
     }
 
-    // No concrete provider adapter is configured in this release. Keep the
-    // caller's durable intent pending until a provider is independently
-    // integrated and its append/readback receipt can be verified.
-    return { checkpointed: false, reason: "provider_unavailable" };
+    if (!validatedRequest) return { checkpointed: false, reason: "malformed_request" };
+    const provider = this.env.WITNESS_PROVIDER;
+    const evidenceAuthority = this.env.WITNESS_EVIDENCE_AUTHORITY;
+    if (!provider || !evidenceAuthority) {
+      return { checkpointed: false, reason: "provider_unavailable" };
+    }
+
+    try {
+      const committed = await checkpointMonitorReplaySnapshot(
+        provider,
+        validatedRequest.scope,
+        validatedRequest.snapshot,
+        validatedRequest.checkpointBody,
+        validatedRequest.expectedPredecessor,
+      );
+      const checkpointBodyCanonical = canonicalize(validatedRequest.checkpointBody);
+      if (typeof checkpointBodyCanonical !== "string") {
+        return { checkpointed: false, reason: "malformed_request" };
+      }
+      const checkpointBodyBytes = new TextEncoder().encode(checkpointBodyCanonical);
+      const evidence = await issueOrRecoverWitnessEvidence(evidenceAuthority, {
+        scope: validatedRequest.scope,
+        checkpointBody: validatedRequest.checkpointBody,
+        canonicalCheckpointBodyBytes: checkpointBodyBytes,
+        checkpointDigest: committed.checkpointDigest,
+      });
+      const canonicalEvidence = canonicalize({
+        trustBundle: evidence.trustBundleEnvelope,
+        checkpointBody: validatedRequest.checkpointBody,
+        checkpointDigest: committed.checkpointDigest,
+        receiptEnvelope: evidence.receiptEnvelope,
+        treeHeadEnvelope: evidence.treeHeadEnvelope,
+        leafIndex: evidence.leafIndex,
+        inclusionProofHex: evidence.inclusionProofHex,
+        consistencyProofHex: evidence.consistencyProofHex,
+      });
+      if (typeof canonicalEvidence !== "string") {
+        return { checkpointed: false, reason: "readback_mismatch" };
+      }
+      const canonicalEvidenceBody = new TextEncoder().encode(canonicalEvidence);
+      if (canonicalEvidenceBody.length > MAX_EVIDENCE_BYTES) {
+        return { checkpointed: false, reason: "readback_mismatch" };
+      }
+      return { checkpointed: true, canonicalEvidenceBody };
+    } catch (error) {
+      if (error instanceof WitnessAppendConflict || error instanceof WitnessIdempotencyConflict) {
+        return { checkpointed: false, reason: "append_conflict" };
+      }
+      if (error instanceof WitnessEvidenceAuthorityOperationConflictError) {
+        return { checkpointed: false, reason: "readback_mismatch" };
+      }
+      if (error instanceof MonitorReplayCheckpointError) {
+        if (error.reason === "operation_not_recoverable") {
+          return { checkpointed: false, reason: "ambiguous_commit" };
+        }
+        if (error.reason === "stale_operation") {
+          return { checkpointed: false, reason: "append_conflict" };
+        }
+        if (
+          error.reason === "operation_conflict" ||
+          error.reason === "receipt_mismatch" ||
+          error.reason === "latest_readback_mismatch"
+        ) return { checkpointed: false, reason: "readback_mismatch" };
+        return { checkpointed: false, reason: "malformed_request" };
+      }
+      return { checkpointed: false, reason: "provider_unavailable" };
+    }
   }
 }
 
