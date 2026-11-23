@@ -2,14 +2,25 @@ import type { WorkloadProof } from "./workload-identity";
 import { workloadSigningBytes } from "./workload-identity";
 
 const AUDIENCE = "sky-high-witness-gateway";
-const SCOPE = "witness:authorize";
-const METHOD = "POST";
-const PATH = "/rpc/authenticate";
 const PROOF_TTL_SECONDS = 45;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const KEY_ID = /^[0-9a-f]{64}$/;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
 
+export type WorkloadProofOperation = "authorize" | "verify_evidence";
+
+const OPERATION_CONTEXT: Record<WorkloadProofOperation, { scope: string; method: string; path: string }> = {
+  authorize: {
+    scope: "witness:authorize",
+    method: "POST",
+    path: "/rpc/authenticate",
+  },
+  verify_evidence: {
+    scope: "witness:verify-evidence",
+    method: "POST",
+    path: "/rpc/verify-evidence",
+  },
+};
 export interface WorkloadSignerConfig {
   readonly callerId?: string;
   readonly keyId?: string;
@@ -62,6 +73,7 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
 export async function createApiWorkloadProof(
   config: WorkloadSignerConfig,
   body: Uint8Array,
+  operation: WorkloadProofOperation = "authorize",
 ): Promise<WorkloadProofCreationResult> {
   const callerId = config?.callerId;
   const keyId = config?.keyId;
@@ -91,6 +103,7 @@ export async function createApiWorkloadProof(
       ["sign"],
     );
 
+    const context = OPERATION_CONTEXT[operation];
     const issuedAt = Math.floor(Date.now() / 1_000);
     const nonceBytes = new Uint8Array(24);
     crypto.getRandomValues(nonceBytes);
@@ -98,9 +111,9 @@ export async function createApiWorkloadProof(
       callerId,
       keyId,
       audience: AUDIENCE,
-      scope: SCOPE,
-      method: METHOD,
-      path: PATH,
+      scope: context.scope,
+      method: context.method,
+      path: context.path,
       bodyDigest: await sha256Hex(body),
       issuedAt,
       expiresAt: issuedAt + PROOF_TTL_SECONDS,

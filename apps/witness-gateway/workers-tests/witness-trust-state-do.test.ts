@@ -201,6 +201,7 @@ describe("WitnessTrustStateDO", () => {
     expect(snapshot.treeHead).toMatchObject({
       digest: nextDigest,
       trustBundleDigest: bundle.bundleDigest,
+      trustBundleEnvelope: bundle,
       envelope: next,
     });
   });

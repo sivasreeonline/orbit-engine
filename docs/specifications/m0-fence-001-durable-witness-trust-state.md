@@ -3,8 +3,9 @@
 ## Status
 
 Adds a gateway-owned Cloudflare Durable Object and typed adapter for storing
-verified trust-bundle and signed tree-head state. This is storage infrastructure
-only; the gateway verifier does not yet read/write this store in its request path.
+verified trust-bundle and signed tree-head state. PR #197 wires this store into
+the private `verifyEvidence` RPC path so verification uses persisted trust and
+prior-head state.
 
 ## State model
 
@@ -17,7 +18,8 @@ The stored snapshot contains:
 - trust-bundle generation and canonical body digest;
 - the accepted root-signed trust-bundle envelope;
 - the last accepted signed tree-head envelope and its canonical envelope digest;
-- the trust-bundle digest under which that tree head was verified.
+- the trust-bundle digest and exact root-signed trust-bundle envelope under which
+  that tree head was verified.
 
 The empty state is generation zero with the all-zero predecessor digest and no
 accepted tree head.

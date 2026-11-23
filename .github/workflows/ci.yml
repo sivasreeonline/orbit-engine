@@ -55,6 +55,10 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Install API dependencies for shared verifier imports
+        working-directory: apps/api
+        run: npm install --no-audit --no-fund
+
       - name: Typecheck
         run: npm run typecheck
 
