@@ -110,9 +110,18 @@ describe("monitor replay checkpoint artifact mapping", () => {
 
   it("changes both snapshot and artifact digests when replay evidence changes", async () => {
     const first = await buildMonitorReplayCheckpointArtifact(snapshot(), scope, 1, MONITOR_REPLAY_ZERO_DIGEST);
-    const changed = snapshot();
-    changed.seenBySequence["4"] = { messageId: "message-4", digest: "f".repeat(64) };
-    changed.seenByMessageId["message-4"] = { sequence: 4, digest: "f".repeat(64) };
+    const original = snapshot();
+    const changed: GossipReplaySnapshot = {
+      ...original,
+      seenBySequence: {
+        ...original.seenBySequence,
+        "4": { messageId: "message-4", digest: "f".repeat(64) },
+      },
+      seenByMessageId: {
+        ...original.seenByMessageId,
+        "message-4": { sequence: 4, digest: "f".repeat(64) },
+      },
+    };
     const second = await buildMonitorReplayCheckpointArtifact(changed, scope, 1, MONITOR_REPLAY_ZERO_DIGEST);
     expect(second.snapshotDigest).not.toBe(first.snapshotDigest);
     expect(second.checkpointDigest).not.toBe(first.checkpointDigest);
