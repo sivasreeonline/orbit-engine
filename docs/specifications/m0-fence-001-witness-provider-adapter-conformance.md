@@ -102,3 +102,12 @@ The first concrete provider adapter is `scripts/aws_dynamodb_witness_adapter.py`
 Authoritative reads use strongly consistent base-table `GetItem` calls. The adapter intentionally avoids GSI/stream reads for the witness high-water. It checks the durable idempotency item before a retry and deliberately omits the optional 10-minute native transaction-token cache. Long-lived retry safety comes from the idempotency record, operation record and conditional high-water update committed atomically.
 
 The local test path uses AWS-published DynamoDB Local. It can validate SDK wiring and the contract against the local API implementation. It is not evidence that the managed AWS service, IAM policies, failure domains, durability or production controls are qualified. Only the separately approved live account run and independently verified evidence can satisfy external FENCE-001 qualification.
+
+
+## TypeScript dual-digest implementation status — 2026-11-23
+
+The gateway repository now includes `AwsDynamoDBWitnessProviderAdapter` for the monitor-replay dual-digest contract. It uses DynamoDB transactional compare-and-append and durable idempotency records, stores canonical snapshot/checkpoint-body bytes in immutable 32 KiB chunks, and uses strongly consistent operation/head/chunk readback with digest verification.
+
+The local-only factory accepts only HTTP loopback endpoints; live AWS writes remain disabled. The TypeScript adapter integration test runs against the AWS-published DynamoDB Local container in CI and covers exact dual-byte readback, idempotent retry, content rebinding rejection, stale predecessor rejection and independent-client concurrency.
+
+DynamoDB Local validates the adapter's transaction and storage logic only. It does not qualify real AWS account isolation, IAM policy, restore durability, retention, operational independence, or Cloudflare workerd transport behavior.
