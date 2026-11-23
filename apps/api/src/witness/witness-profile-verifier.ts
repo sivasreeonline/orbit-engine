@@ -410,7 +410,7 @@ export async function verifyReceiptAgainstTrustedBundle(
   checkpointBody: unknown,
   checkpointDigest: unknown,
   receiptEnvelope: unknown,
-  trustBundle: WitnessTrustBundleBody,
+  verifiedTrustBundle: VerifiedTrustBundle,
   trustedNow: number,
 ): Promise<WitnessReceiptEnvelope> {
   validateCheckpointBody(checkpointBody);
@@ -420,6 +420,7 @@ export async function verifyReceiptAgainstTrustedBundle(
 
   const actualCheckpointDigest = hex(await sha256(canonicalBytes(checkpointBody)));
   if (actualCheckpointDigest !== checkpointDigest) throw new TypeError("checkpoint digest mismatch");
+  const trustBundle = verifiedTrustBundle.body;
   const receipt = receiptEnvelope.body;
   if (parseUtc(receipt.committedAt) > trustedNow) {
     throw new TypeError("receipt committedAt is in the future relative to trusted time");
@@ -500,12 +501,13 @@ function validateTreeHeadEnvelope(value: unknown): asserts value is WitnessTreeH
 
 export async function verifySignedTreeHead(
   envelope: unknown,
-  trustBundle: WitnessTrustBundleBody,
+  verifiedTrustBundle: VerifiedTrustBundle,
   trustedNow: number,
   expectedScope: ExpectedWitnessScope,
 ): Promise<WitnessTreeHeadBody> {
   validateTreeHeadEnvelope(envelope);
   if (!isSafeInteger(trustedNow)) throw new TypeError("trusted time is malformed");
+  const trustBundle = verifiedTrustBundle.body;
   const body = envelope.body;
   if (
     body.witnessId !== expectedScope.witnessId ||
@@ -796,12 +798,12 @@ export async function verifyWitnessEvidence(input: {
     input.checkpointBody,
     input.checkpointDigest,
     input.receiptEnvelope,
-    trust.body,
+    trust,
     input.trustedNow,
   );
   const treeHead = await verifySignedTreeHead(
     input.treeHeadEnvelope,
-    trust.body,
+    trust,
     input.trustedNow,
     input.expectedScope,
   );
