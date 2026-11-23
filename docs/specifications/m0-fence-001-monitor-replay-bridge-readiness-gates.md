@@ -143,3 +143,10 @@ Exact-head CI run #2701 passed on `144131dbc691e0670b02b64da585ee9fe2984d91`. Pr
 A dedicated `WitnessEvidenceAuthority` contract now separates receipt/transparency evidence issuance from the provider's atomic checkpoint storage. It includes exact checkpoint-byte readback, signed receipt, signed tree head, proofs, idempotent issue/recover and immutable operation lookup. Structural identity checks and ambiguous-ack recovery have synthetic tests.
 
 The contract is not connected to a remote service or configured binding. The gateway continues to return `provider_unavailable`; no live append or evidence issuance is possible yet. The next implementation slice is to wire provider append/readback and authority issuance behind their separate interfaces, then run full gateway verification over the returned bundle.
+
+
+## 13. Gateway composition progress
+
+The private gateway's checkpoint RPC now composes the provider-neutral coordinator with the independent evidence-authority interface. It builds the dedicated replay checkpoint body from the persisted message-bound intent, verifies exact dual-digest identity through provider readback, requests signed evidence, checks exact checkpoint bytes and structural receipt/tree-head/proof metadata, then returns canonical evidence bytes for the API Worker's cryptographic verification RPC.
+
+The two environment bindings are optional and intentionally absent from Wrangler/deployment configuration. Without both, the gateway returns `provider_unavailable`; pending intents remain blocked and retryable. No provider or evidence-authority writes are enabled in the current environment.
