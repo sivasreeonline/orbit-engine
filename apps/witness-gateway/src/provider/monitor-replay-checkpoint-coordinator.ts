@@ -186,6 +186,7 @@ export async function checkpointMonitorReplaySnapshot(
   if (existing) {
     const expected = existing.checkpoint;
     if (
+      !sameScope(expected.scope, scope) ||
       expected.phase !== "MONITOR_GOSSIP_REPLAY_V1" ||
       expected.checkpointDigest !== digest ||
       !bytesEqual(expected.canonicalSnapshotBytes, bytes)
