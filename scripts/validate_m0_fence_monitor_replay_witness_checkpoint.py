@@ -65,15 +65,92 @@ def canonical_snapshot_bytes(snapshot: dict[str, Any]) -> bytes:
         or not isinstance(snapshot.get("seenByMessageId"), dict)
         or not isinstance(snapshot.get("outstandingRequests"), dict)
         or not isinstance(snapshot.get("consumedNonces"), list)
+        or not all(isinstance(value, str) and 0 < len(value) <= 256 for value in snapshot["consumedNonces"])
+        or len(set(snapshot["consumedNonces"])) != len(snapshot["consumedNonces"])
         or not isinstance(snapshot.get("missingSequences"), list)
+        or not all(type(value) is int and value >= 1 for value in snapshot["missingSequences"])
+        or len(set(snapshot["missingSequences"])) != len(snapshot["missingSequences"])
     ):
         raise ReplayCheckpointError("replay snapshot fields are malformed")
+
+    is_empty = (
+        snapshot["highestSequence"] == 0
+        and snapshot["senderId"] == ""
+        and snapshot["recipientId"] == ""
+        and snapshot["scope"] == ""
+        and not snapshot["seenBySequence"]
+        and not snapshot["seenByMessageId"]
+        and not snapshot["outstandingRequests"]
+        and not snapshot["consumedNonces"]
+        and not snapshot["missingSequences"]
+    )
+    if not is_empty and any(
+        not value for value in (snapshot["senderId"], snapshot["recipientId"], snapshot["scope"])
+    ):
+        raise ReplayCheckpointError("non-empty replay state requires sender, recipient and scope")
+
+    for sequence, entry in snapshot["seenBySequence"].items():
+        if (
+            not isinstance(sequence, str)
+            or not sequence.isdigit()
+            or sequence.startswith("0")
+            or not isinstance(entry, dict)
+            or set(entry) != {"messageId", "digest"}
+            or not isinstance(entry["messageId"], str)
+            or not entry["messageId"]
+            or not isinstance(entry["digest"], str)
+            or len(entry["digest"]) != 64
+            or any(character not in "0123456789abcdef" for character in entry["digest"])
+            or int(sequence) > snapshot["highestSequence"]
+        ):
+            raise ReplayCheckpointError("seenBySequence entry is malformed")
+        reverse = snapshot["seenByMessageId"].get(entry["messageId"])
+        if not isinstance(reverse, dict) or reverse != {
+            "sequence": int(sequence),
+            "digest": entry["digest"],
+        }:
+            raise ReplayCheckpointError("replay sequence and message indexes disagree")
+
+    for message_id, entry in snapshot["seenByMessageId"].items():
+        if (
+            not isinstance(message_id, str)
+            or not message_id
+            or not isinstance(entry, dict)
+            or set(entry) != {"sequence", "digest"}
+            or type(entry["sequence"]) is not int
+            or entry["sequence"] < 1
+            or not isinstance(entry["digest"], str)
+            or len(entry["digest"]) != 64
+            or any(character not in "0123456789abcdef" for character in entry["digest"])
+            or snapshot["seenBySequence"].get(str(entry["sequence"])) != {
+                "messageId": message_id,
+                "digest": entry["digest"],
+            }
+        ):
+            raise ReplayCheckpointError("replay message and sequence indexes disagree")
+
+    for request_id, request in snapshot["outstandingRequests"].items():
+        if (
+            not isinstance(request_id, str)
+            or request_id not in snapshot["seenByMessageId"]
+            or not isinstance(request, dict)
+            or set(request) != {"nonce", "expiresAt"}
+            or not isinstance(request["nonce"], str)
+            or not request["nonce"]
+            or type(request["expiresAt"]) is not int
+            or request["expiresAt"] < 0
+            or request["nonce"] in snapshot["consumedNonces"]
+        ):
+            raise ReplayCheckpointError("outstanding request entry is malformed")
+
+    for missing in snapshot["missingSequences"]:
+        if missing > snapshot["highestSequence"] or str(missing) in snapshot["seenBySequence"]:
+            raise ReplayCheckpointError("missing sequence conflicts with replay high-water or seen messages")
 
     normalized = dict(snapshot)
     normalized["consumedNonces"] = sorted(snapshot["consumedNonces"])
     normalized["missingSequences"] = sorted(snapshot["missingSequences"])
     return _canonical_json_bytes(normalized)
-
 
 def snapshot_digest(snapshot: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_snapshot_bytes(snapshot)).hexdigest()
