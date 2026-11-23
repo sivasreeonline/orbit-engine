@@ -10,6 +10,7 @@ import {
   verifyTrustBundleEnvelope,
   verifyTreeHeadExtension,
   verifyWitnessEvidence,
+  type VerifiedTrustBundle,
   type WitnessTrustBundleBody,
   type WitnessTreeHeadBody,
 } from "./witness-profile-verifier";
@@ -193,19 +194,19 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
       f.checkpointBody,
       f.checkpointDigest,
       f.receiptEnvelope,
-      trust.body,
+      trust,
       trustedNow,
     );
     expect(receipt.body.checkpointDigest).toBe(f.checkpointDigest);
 
     const current = await verifySignedTreeHead(
       f.currentHead,
-      trust.body,
+      trust,
       trustedNow,
       f.scope,
     );
     expect(current.treeSize).toBe(2);
-    await expect(verifySignedTreeHead(f.priorHead, trust.body, trustedNow, f.scope))
+    await expect(verifySignedTreeHead(f.priorHead, trust, trustedNow, f.scope))
       .resolves.toMatchObject({ treeSize: 1 });
   });
 
@@ -223,9 +224,9 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
 
     const trust = await verifyTrustBundleEnvelope(f.trustEnvelope, f.pinnedRoots, f.expectedTrustState);
     const receipt = await verifyReceiptAgainstTrustedBundle(
-      f.checkpointBody, f.checkpointDigest, f.receiptEnvelope, trust.body, trustedNow,
+      f.checkpointBody, f.checkpointDigest, f.receiptEnvelope, trust, trustedNow,
     );
-    const verifiedHead = await verifySignedTreeHead(f.currentHead, trust.body, trustedNow, f.scope);
+    const verifiedHead = await verifySignedTreeHead(f.currentHead, trust, trustedNow, f.scope);
     const proofHex = inclusion.map(hex);
     const verified = await verifyWitnessEvidence({
       checkpointBody: f.checkpointBody,
@@ -265,7 +266,7 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
       f.checkpointBody,
       f.checkpointDigest,
       { ...f.receiptEnvelope, signature: "A".repeat(86) },
-      trust.body,
+      trust,
       trustedNow,
     )).rejects.toThrow();
   });
@@ -278,13 +279,17 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
     logKey.purpose = "WITNESS_RECEIPT_SIGNING";
     await expect(verifySignedTreeHead(
       f.currentHead,
-      wrongPurpose as WitnessTrustBundleBody,
+      {
+        body: wrongPurpose as WitnessTrustBundleBody,
+        digest: ZERO_DIGEST,
+        rootKeyId: trustVector.testRootKey.keyId,
+      } as VerifiedTrustBundle,
       trustedNow,
       f.scope,
     )).rejects.toThrow("purpose");
 
     const trust = await verifyTrustBundleEnvelope(f.trustEnvelope, f.pinnedRoots, f.expectedTrustState);
-    const head = await verifySignedTreeHead(f.currentHead, trust.body, trustedNow, f.scope);
+    const head = await verifySignedTreeHead(f.currentHead, trust, trustedNow, f.scope);
     await expect(import("./witness-profile-verifier").then(({ verifyReceiptInclusion }) =>
       verifyReceiptInclusion(f.receiptEnvelope, 0, head, ["f".repeat(64)]),
     )).rejects.toThrow("inclusion");
