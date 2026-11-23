@@ -220,6 +220,20 @@ function validDigest(value: unknown): value is string {
   return typeof value === "string" && DIGEST.test(value);
 }
 
+function isEmptyState(state: StoredState): boolean {
+  return (
+    state.senderId === "" &&
+    state.recipientId === "" &&
+    state.scope === "" &&
+    state.highestSequence === 0 &&
+    Object.keys(state.seenBySequence).length === 0 &&
+    Object.keys(state.seenByMessageId).length === 0 &&
+    Object.keys(state.outstandingRequests).length === 0 &&
+    state.consumedNonces.length === 0 &&
+    state.missingSequences.length === 0
+  );
+}
+
 function validAttestation(value: unknown): value is WitnessVerificationAttestation {
   if (!value || typeof value !== "object") return false;
   const attestation = value as Partial<WitnessVerificationAttestation>;
@@ -304,6 +318,20 @@ export class GossipReplayStateDO extends DurableObject<Env> {
       const pendingPrior = await txn.get<StoredPendingIntent>(PENDING_INTENT_KEY);
       if (pendingPrior) {
         return reject(state, "BLOCKED", "a witness checkpoint intent is pending; recover or finalize it before accepting another message");
+      }
+      const storedCheckpoint =
+        await txn.get<GossipReplayCheckpointState>(CHECKPOINT_STATE_KEY);
+      if (!storedCheckpoint && !isEmptyState(state)) {
+        return reject(state, "QUARANTINE", "non-empty legacy replay state has no independent witness checkpoint; automatic anchoring is forbidden");
+      }
+      if (storedCheckpoint) {
+        if (
+          !validDigest(storedCheckpoint.snapshotDigest) ||
+          !validDigest(storedCheckpoint.checkpointDigest) ||
+          await digestSnapshot(toSnapshot(state)) !== storedCheckpoint.snapshotDigest
+        ) {
+          return reject(state, "QUARANTINE", "committed replay state differs from its locally recorded witness checkpoint digest");
+        }
       }
 
       if (!message || typeof message !== "object") {
