@@ -124,6 +124,11 @@ export interface VerifiedTrustBundle {
   readonly rootKeyId: string;
 }
 
+export interface VerifiedTreeHead {
+  readonly body: WitnessTreeHeadBody;
+  readonly signature: string;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -507,7 +512,7 @@ export async function verifySignedTreeHead(
   verifiedTrustBundle: VerifiedTrustBundle,
   trustedNow: number,
   expectedScope: ExpectedWitnessScope,
-): Promise<WitnessTreeHeadBody> {
+): Promise<VerifiedTreeHead> {
   validateTreeHeadEnvelope(envelope);
   if (!isSafeInteger(trustedNow)) throw new TypeError("trusted time is malformed");
   const trustBundle = verifiedTrustBundle.body;
@@ -553,7 +558,7 @@ export async function verifySignedTreeHead(
   if (!(await verifyEd25519(publicKey, signature, signedBytes))) {
     throw new TypeError("tree-head signature is invalid");
   }
-  return body;
+  return { body, signature: envelope.signature };
 }
 
 function nodeHash(left: Uint8Array, right: Uint8Array): Promise<Uint8Array> {
@@ -739,9 +744,10 @@ export async function verifyConsistencyProof(
 export async function verifyReceiptInclusion(
   receiptEnvelope: WitnessReceiptEnvelope,
   leafIndex: number,
-  treeHead: WitnessTreeHeadBody,
+  verifiedTreeHead: VerifiedTreeHead,
   proofHex: readonly string[],
 ): Promise<string> {
+  const treeHead = verifiedTreeHead.body;
   if (
     receiptEnvelope.body.witnessId !== treeHead.witnessId ||
     receiptEnvelope.body.authorityId !== treeHead.authorityId ||
@@ -757,10 +763,12 @@ export async function verifyReceiptInclusion(
 }
 
 export async function verifyTreeHeadExtension(
-  prior: WitnessTreeHeadBody,
-  current: WitnessTreeHeadBody,
+  verifiedPrior: VerifiedTreeHead,
+  verifiedCurrent: VerifiedTreeHead,
   proofHex: readonly string[],
 ): Promise<void> {
+  const prior = verifiedPrior.body;
+  const current = verifiedCurrent.body;
   if (
     prior.witnessId !== current.witnessId ||
     prior.authorityId !== current.authorityId ||
@@ -790,12 +798,12 @@ export async function verifyWitnessEvidence(input: {
   readonly expectedScope: ExpectedWitnessScope;
   readonly leafIndex: number;
   readonly inclusionProofHex: readonly string[];
-  readonly priorTreeHead: WitnessTreeHeadBody;
+  readonly priorTreeHeadEnvelope: WitnessTreeHeadEnvelope;
   readonly consistencyProofHex: readonly string[];
 }): Promise<{
   readonly trustBundle: VerifiedTrustBundle;
   readonly receipt: WitnessReceiptEnvelope;
-  readonly treeHead: WitnessTreeHeadBody;
+  readonly treeHead: VerifiedTreeHead;
   readonly receiptLeafHash: string;
 }> {
   const trust = await verifyTrustBundleEnvelope(
@@ -810,6 +818,12 @@ export async function verifyWitnessEvidence(input: {
     trust,
     input.trustedNow,
   );
+  const priorTreeHead = await verifySignedTreeHead(
+    input.priorTreeHeadEnvelope,
+    trust,
+    input.trustedNow,
+    input.expectedScope,
+  );
   const treeHead = await verifySignedTreeHead(
     input.treeHeadEnvelope,
     trust,
@@ -823,7 +837,7 @@ export async function verifyWitnessEvidence(input: {
     input.inclusionProofHex,
   );
   await verifyTreeHeadExtension(
-    input.priorTreeHead,
+    priorTreeHead,
     treeHead,
     input.consistencyProofHex,
   );
