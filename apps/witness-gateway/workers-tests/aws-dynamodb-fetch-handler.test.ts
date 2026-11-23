@@ -44,7 +44,13 @@ describe("DynamoDB AWS SDK Fetch transport in workerd", () => {
       expect(String(requestUrl)).toBe("https://dynamodb.test/");
       expect(requestInit?.method).toBe("POST");
       expect(new Headers(requestInit?.headers).get("x-amz-target")).toBe("DynamoDB_20120810.GetItem");
-      expect(String(requestInit?.body)).toContain("synthetic-witness-table");
+      const requestBody = requestInit?.body;
+      const requestBodyText = typeof requestBody === "string"
+        ? requestBody
+        : requestBody instanceof Uint8Array
+          ? new TextDecoder().decode(requestBody)
+          : String(requestBody);
+      expect(requestBodyText).toContain("synthetic-witness-table");
       expect(new Headers(requestInit?.headers).get("authorization")).toContain("AWS4-HMAC-SHA256");
     } finally {
       client.destroy();
