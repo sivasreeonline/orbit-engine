@@ -163,6 +163,9 @@ async function assertLatestRecord(
   assertScopeMatches(record.checkpoint.scope, scope);
   if (
     record.checkpoint.phase !== REPLAY_PHASE ||
+    !Number.isSafeInteger(record.checkpoint.generation) ||
+    record.checkpoint.generation < 1 ||
+    record.checkpoint.operationId !== `fence-monitor-replay-${record.checkpoint.snapshotDigest}` ||
     !/^[0-9a-f]{64}$/.test(record.checkpoint.checkpointDigest) ||
     !/^[0-9a-f]{64}$/.test(record.checkpoint.snapshotDigest) ||
     !/^[0-9a-f]{64}$/.test(record.checkpoint.previousDigest) ||
@@ -170,6 +173,8 @@ async function assertLatestRecord(
     record.checkpoint.checkpointBody.phase !== "ACCEPTED" ||
     record.checkpoint.checkpointBody.generation !== record.checkpoint.generation ||
     record.checkpoint.checkpointBody.operationId !== record.checkpoint.operationId ||
+    record.checkpoint.checkpointBody.authorityId !== scope.authorityId ||
+    record.checkpoint.checkpointBody.hostId !== scope.hostId ||
     record.checkpoint.checkpointBody.previousCheckpointDigest !== record.checkpoint.previousDigest ||
     record.checkpoint.checkpointBody.authorityStateDigest !== record.checkpoint.snapshotDigest
   ) throw new WitnessProviderIntegrityError("latest provider checkpoint metadata is malformed");
