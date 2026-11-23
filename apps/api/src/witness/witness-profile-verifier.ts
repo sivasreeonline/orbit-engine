@@ -471,21 +471,27 @@ export async function verifyReceiptAgainstTrustedBundle(
   verifiedTrustBundle: VerifiedTrustBundle,
   trustedNow: number,
 ): Promise<WitnessReceiptEnvelope> {
-  validateCheckpointBody(checkpointBody);
+  let checkpoint: WitnessCheckpointBody | MonitorReplayCheckpointBody;
+  if (isRecord(checkpointBody) && checkpointBody.profile === "sky-high-fence-monitor-replay-v1") {
+    validateMonitorReplayCheckpointBody(checkpointBody);
+    checkpoint = checkpointBody;
+  } else {
+    validateCheckpointBody(checkpointBody);
+    checkpoint = checkpointBody;
+  }
   validateReceiptEnvelope(receiptEnvelope);
   if (!isDigest(checkpointDigest)) throw new TypeError("checkpoint digest is malformed");
   if (!isSafeInteger(trustedNow)) throw new TypeError("trusted time is malformed");
 
-  const actualCheckpointDigest = hex(await sha256(canonicalBytes(checkpointBody)));
+  const actualCheckpointDigest = hex(await sha256(canonicalBytes(checkpoint)));
   if (actualCheckpointDigest !== checkpointDigest) throw new TypeError("checkpoint digest mismatch");
   const trustBundle = verifiedTrustBundle.body;
   const receipt = receiptEnvelope.body;
   if (parseUtc(receipt.committedAt) > trustedNow) {
     throw new TypeError("receipt committedAt is in the future relative to trusted time");
   }
-  const checkpoint = checkpointBody;
   if (
-    receipt.profile !== checkpoint.profile ||
+    receipt.profile !== PROFILE ||
     receipt.schemaVersion !== checkpoint.schemaVersion ||
     receipt.authorityId !== checkpoint.authorityId ||
     receipt.hostId !== checkpoint.hostId ||
@@ -494,7 +500,9 @@ export async function verifyReceiptAgainstTrustedBundle(
     receipt.previousCheckpointDigest !== checkpoint.previousCheckpointDigest ||
     receipt.checkpointDigest !== checkpointDigest ||
     trustBundle.profile !== receipt.profile ||
-    trustBundle.witnessId !== receipt.witnessId
+    trustBundle.witnessId !== receipt.witnessId ||
+    (checkpoint.profile === "sky-high-fence-monitor-replay-v1" &&
+      trustBundle.trustDomainId !== checkpoint.trustDomainId)
   ) throw new TypeError("receipt/checkpoint/trust scope binding mismatch");
 
   const matches = trustBundle.keys.filter((key) => key.keyId === receipt.keyId);
