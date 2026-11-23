@@ -141,6 +141,14 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      - name: Install gateway dependencies for multi-Worker RPC tests
+        working-directory: apps/witness-gateway
+        run: npm install --no-audit --no-fund
+
+      - name: Bundle private gateway for workerd RPC integration tests
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --outdir ../api/.test-dist/witness-gateway
+
       - name: Durable Object Workers runtime integration tests
         env:
           CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgresql://postgres:postgres@127.0.0.1:5432/sky_high_test
