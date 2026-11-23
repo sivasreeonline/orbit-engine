@@ -68,6 +68,9 @@ jobs:
       - name: Workers runtime integration tests
         run: npm run test:workers
 
+      - name: Private provider Worker deployment dry run
+        run: npx wrangler deploy --dry-run --config provider.wrangler.jsonc
+
       - name: Worker deployment dry run
         run: npx wrangler deploy --dry-run
 
