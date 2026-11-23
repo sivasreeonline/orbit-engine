@@ -80,8 +80,11 @@ describe("monitor replay checkpoint artifact mapping", () => {
       recordVersion: 1,
     });
     expect(artifact.checkpointBody.responseDigest).toBe("6f6d145824a1186726d43b65ff6edff79631be9e088f33e655386d3c1b189a5d");
-    expect(artifact.checkpointDigest).toBe(await digest(
+    expect(artifact.canonicalCheckpointBodyBytes).toEqual(
       new TextEncoder().encode(canonicalize(artifact.checkpointBody)!),
+    );
+    expect(artifact.checkpointDigest).toBe(await digest(
+      artifact.canonicalCheckpointBodyBytes,
     ));
     expect(artifact.checkpointDigest).toBe("c9db31c134f4e476758bca6860ce8dd4567691fae04a78dc18814cf9e1426ce2");
     expect(artifact.checkpointDigest).not.toBe(artifact.snapshotDigest);
