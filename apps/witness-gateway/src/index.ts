@@ -14,6 +14,7 @@ import {
   verifyReceiptInclusion,
   verifySignedTreeHead,
   verifyTreeHeadExtension,
+  validateMonitorReplayCheckpointBody,
   type MonitorReplayCheckpointBody,
   verifyTrustBundleEnvelope,
   type ExpectedTrustBundleState,
@@ -537,22 +538,43 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
         !exactKeys(parsed, [
           "version",
           "scope",
+          "senderId",
+          "recipientId",
+          "messageDigest",
+          "baseStateVersion",
           "operationId",
           "phase",
           "expectedPredecessor",
           "snapshotDigest",
+          "snapshotByteLength",
           "canonicalSnapshotBase64Url",
         ]) ||
         canonicalize(parsed) !== serialized ||
         parsed.version !== 1 ||
         parsed.phase !== "MONITOR_GOSSIP_REPLAY_V1" ||
+        typeof parsed.senderId !== "string" ||
+        parsed.senderId.length === 0 ||
+        parsed.senderId.length > 256 ||
+        typeof parsed.recipientId !== "string" ||
+        parsed.recipientId.length === 0 ||
+        parsed.recipientId.length > 256 ||
+        parsed.senderId === parsed.recipientId ||
+        typeof parsed.messageDigest !== "string" ||
+        !/^[0-9a-f]{64}$/.test(parsed.messageDigest) ||
+        !Number.isSafeInteger(parsed.baseStateVersion) ||
+        (parsed.baseStateVersion as number) < 0 ||
         typeof parsed.operationId !== "string" ||
         !/^fence-monitor-replay-[0-9a-f]{64}$/.test(parsed.operationId) ||
         typeof parsed.snapshotDigest !== "string" ||
         !/^[0-9a-f]{64}$/.test(parsed.snapshotDigest) ||
+        !Number.isSafeInteger(parsed.snapshotByteLength) ||
+        (parsed.snapshotByteLength as number) < 1 ||
+        (parsed.snapshotByteLength as number) > 512 * 1024 ||
         !isRecord(parsed.scope) ||
         !exactKeys(parsed.scope, ["trustDomainId", "witnessId", "authorityId", "hostId"]) ||
-        !Object.values(parsed.scope).every((value) => typeof value === "string" && value.length > 0) ||
+        !Object.values(parsed.scope).every((value) =>
+          typeof value === "string" && value.length > 0 && value.length <= 256 && value.trim() === value
+        ) ||
         !isRecord(parsed.expectedPredecessor) ||
         !exactKeys(parsed.expectedPredecessor, ["generation", "digest"]) ||
         !Number.isSafeInteger(parsed.expectedPredecessor.generation) ||
@@ -563,9 +585,9 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
         !/^[A-Za-z0-9_-]+$/.test(parsed.canonicalSnapshotBase64Url)
       ) return { checkpointed: false, reason: "malformed_request" };
 
-      const requestedScope = parsed.scope as Record<string, unknown>;
+      const requestedScope = parsed.scope as Record<string, string>;
       const expectedOperationId = await deriveReplayCheckpointOperationId({
-        scope: requestedScope as unknown as {
+        scope: requestedScope as {
           trustDomainId: string; witnessId: string; authorityId: string; hostId: string;
         },
         expectedPredecessor: parsed.expectedPredecessor as {
@@ -591,10 +613,59 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
       const snapshotBytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
       const canonicalEncoding = btoa(String.fromCharCode(...snapshotBytes))
         .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-      if (canonicalEncoding !== encoded) return { checkpointed: false, reason: "malformed_request" };
+      if (
+        canonicalEncoding !== encoded ||
+        snapshotBytes.length !== parsed.snapshotByteLength
+      ) return { checkpointed: false, reason: "malformed_request" };
+      const snapshotText = new TextDecoder("utf-8", { fatal: true }).decode(snapshotBytes);
+      const snapshot: unknown = JSON.parse(snapshotText);
+      if (
+        !isRecord(snapshot) ||
+        canonicalize(snapshot) !== snapshotText ||
+        snapshot.senderId !== parsed.senderId ||
+        snapshot.recipientId !== parsed.recipientId ||
+        !isRecord(snapshot.seenByMessageId) ||
+        !Object.values(snapshot.seenByMessageId).some((entry) =>
+          isRecord(entry) && entry.digest === parsed.messageDigest
+        )
+      ) return { checkpointed: false, reason: "malformed_request" };
+
       const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", snapshotBytes));
       const digestHex = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
       if (digestHex !== parsed.snapshotDigest) return { checkpointed: false, reason: "malformed_request" };
+
+      const checkpointBody: MonitorReplayCheckpointBody = {
+        profile: "sky-high-fence-monitor-replay-v1",
+        schemaVersion: 1,
+        trustDomainId: requestedScope.trustDomainId,
+        witnessId: requestedScope.witnessId,
+        authorityId: requestedScope.authorityId,
+        hostId: requestedScope.hostId,
+        senderId: parsed.senderId as string,
+        recipientId: parsed.recipientId as string,
+        generation: (parsed.expectedPredecessor.generation as number) + 1,
+        operationId: parsed.operationId as string,
+        phase: "MONITOR_GOSSIP_REPLAY_V1",
+        previousCheckpointDigest: parsed.expectedPredecessor.digest as string,
+        snapshotDigest: parsed.snapshotDigest as string,
+        snapshotByteLength: snapshotBytes.length,
+        baseStateVersion: parsed.baseStateVersion as number,
+        messageDigest: parsed.messageDigest as string,
+      };
+      validateMonitorReplayCheckpointBody(checkpointBody);
+      const checkpointBodyCanonical = canonicalize(checkpointBody);
+      if (typeof checkpointBodyCanonical !== "string") {
+        return { checkpointed: false, reason: "malformed_request" };
+      }
+      const checkpointBodyDigest = new Uint8Array(await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(checkpointBodyCanonical),
+      ));
+      const checkpointDigest = [...checkpointBodyDigest]
+        .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+      if (!/^[0-9a-f]{64}$/.test(checkpointDigest)) {
+        return { checkpointed: false, reason: "malformed_request" };
+      }
     } catch {
       return { checkpointed: false, reason: "malformed_request" };
     }
