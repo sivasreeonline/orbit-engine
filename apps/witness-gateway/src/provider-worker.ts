@@ -78,7 +78,10 @@ export class WitnessProvider extends WorkerEntrypoint<Env> implements WitnessPro
     return this.getAdapter().readByOperation(scope, operationId);
   }
 
+}
+
+export default {
   async fetch(): Promise<Response> {
     return new Response("Not Found", { status: 404 });
-  }
-}
+  },
+};
