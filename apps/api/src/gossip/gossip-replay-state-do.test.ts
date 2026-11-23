@@ -65,6 +65,7 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
   return {
     object: new GossipReplayStateDO(state, env as Env),
     values,
+    getAlarm: () => alarmTime,
   };
 }
 
@@ -247,8 +248,7 @@ describe("GossipReplayStateDO", () => {
     const pending = await createPendingReplayIntent(intent, message(1), proposedState);
 
     expect((await harness.object.stageCheckpointIntent(pending)).staged).toBe(true);
-    expect(await (harness.object as unknown as { ctx: { storage: FakeStorage } }).ctx.storage.getAlarm())
-      .toEqual(expect.any(Number));
+    expect(harness.getAlarm()).toEqual(expect.any(Number));
   });
 
   it("preserves pending intent when the provider is unavailable during recovery", async () => {
