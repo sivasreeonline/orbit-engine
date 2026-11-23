@@ -143,6 +143,14 @@ function prune(state: StoredState, trustedNow: number): void {
 export class GossipReplayStateDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    // Re-arm recovery if the object was reconstructed after the intent commit
+    // but before the staging caller could schedule its first alarm.
+    this.ctx.blockConcurrencyWhile(async () => {
+      const pending = await this.ctx.storage.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
+      if (pending !== undefined && await this.ctx.storage.getAlarm() === null) {
+        await this.ctx.storage.setAlarm(Date.now() + 1_000);
+      }
+    });
   }
 
   async acceptVerifiedMessage(
@@ -353,10 +361,16 @@ export class GossipReplayStateDO extends DurableObject<Env> {
   async stageCheckpointIntent(
     pending: PendingReplayIntent,
   ): Promise<Awaited<ReturnType<typeof stagePendingReplayIntent>>> {
-    return stagePendingReplayIntent(
+    const staged = await stagePendingReplayIntent(
       this.ctx.storage as unknown as ReplayCheckpointStorage,
       pending,
     );
+    if (staged.staged) {
+      // Alarm scheduling is deliberately outside the state transaction; the
+      // constructor repairs the narrow crash window between commit and alarm.
+      await this.ctx.storage.setAlarm(Date.now() + 1_000);
+    }
+    return staged;
   }
 
   /** Finalize only independently verified evidence bound to the pending operation. */
@@ -457,6 +471,14 @@ export class GossipReplayStateDO extends DurableObject<Env> {
       return { recovered: true, stateVersion: finalized.stateVersion };
     } catch {
       return { recovered: false, reason: "recovery_error" };
+    }
+  }
+
+  /** Durable retry trigger. Failed recovery keeps the relationship blocked. */
+  override async alarm(): Promise<void> {
+    const result = await this.recoverPendingCheckpointIntent();
+    if (!result.recovered && result.reason !== "no_pending_intent") {
+      await this.ctx.storage.setAlarm(Date.now() + 30_000);
     }
   }
 
