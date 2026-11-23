@@ -435,14 +435,16 @@ export class GossipReplayStateDO extends DurableObject<Env> {
         new TextEncoder().encode(pending.intent.canonicalCheckpointBody),
       );
       if (!checkpoint.checkpointed) {
-        return {
-          recovered: false,
-          reason: checkpoint.reason === "gateway_unavailable" ||
-              checkpoint.reason === "caller_identity_unconfigured" ||
-              checkpoint.reason === "caller_proof_signing_failed"
-            ? "gateway_unavailable"
-            : "checkpoint_not_committed",
-        };
+        if (
+          checkpoint.reason === "gateway_unavailable" ||
+          checkpoint.reason === "caller_identity_unconfigured" ||
+          checkpoint.reason === "caller_proof_signing_failed"
+        ) return { recovered: false, reason: "gateway_unavailable" };
+        if (
+          checkpoint.reason === "provider_unavailable" ||
+          checkpoint.reason === "ambiguous_commit"
+        ) return { recovered: false, reason: "checkpoint_not_committed" };
+        return { recovered: false, reason: "finalization_rejected" };
       }
 
       const verification = await verifyEvidenceViaWitnessGateway(
@@ -450,14 +452,14 @@ export class GossipReplayStateDO extends DurableObject<Env> {
         checkpoint.canonicalEvidenceBody,
       );
       if (!verification.verified) {
-        return {
-          recovered: false,
-          reason: verification.reason === "gateway_unavailable" ||
-              verification.reason === "caller_identity_unconfigured" ||
-              verification.reason === "caller_proof_signing_failed"
-            ? "gateway_unavailable"
-            : "evidence_not_verified",
-        };
+        if (
+          verification.reason === "gateway_unavailable" ||
+          verification.reason === "caller_identity_unconfigured" ||
+          verification.reason === "caller_proof_signing_failed" ||
+          verification.reason === "trust_configuration_unavailable" ||
+          verification.reason === "trust_state_unavailable"
+        ) return { recovered: false, reason: "gateway_unavailable" };
+        return { recovered: false, reason: "evidence_not_verified" };
       }
 
       const finalized = await this.finalizeCheckpointIntent(pending, {
@@ -493,7 +495,6 @@ export class GossipReplayStateDO extends DurableObject<Env> {
       (
         result.reason === "gateway_unavailable" ||
         result.reason === "checkpoint_not_committed" ||
-        result.reason === "evidence_not_verified" ||
         result.reason === "recovery_error"
       )
     ) {
