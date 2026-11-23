@@ -86,3 +86,19 @@ No production adapter may be enabled until exact checkpoint/snapshot byte readba
 - The existing authority checkpoint profile remains backward compatible.
 - Existing provider-neutral coordinator tests must be revised to assert distinct snapshot and checkpoint digests.
 - No current code may claim that a replay snapshot digest is itself the signed checkpoint-body digest.
+
+
+## Implementation impact inventory and sequence
+
+The following existing modules are expected to change when this proposal is approved:
+
+1. `docs/schemas/m0-fence-witness-v1.schema.json` — add the dedicated checkpoint-body schema without changing the authority checkpoint schema or existing receipt/trust-bundle vectors.
+2. `apps/api/src/witness/witness-profile-verifier.ts` — add the strict monitor-replay body type/validator and an explicit receipt-verification path for it. Preserve the authority-body verifier as-is.
+3. `apps/witness-gateway/src/provider/witness-provider-adapter.ts` — store exact `canonicalSnapshotBytes` and exact `canonicalCheckpointBodyBytes` separately, with distinct `snapshotDigest` and `checkpointDigest`.
+4. `apps/witness-gateway/src/provider/monitor-replay-checkpoint-coordinator.ts` — derive operation identity from the persisted scope/predecessor/snapshot digest, but append and read back the checkpoint-body digest and both exact byte sequences. Ensure ambiguous-ack recovery compares both byte sequences.
+5. `apps/witness-gateway/src/index.ts` — construct the monitor replay body from the validated persisted intent, request signed evidence for that exact body, and compose receipt, signed tree-head, inclusion and consistency verification.
+6. `apps/api/src/witness/witness-gateway-contract.ts` — return explicit `snapshotDigest` and `checkpointDigest` fields; never return a generic digest alias.
+7. `apps/api/src/gossip/gossip-replay-checkpoint-lifecycle.ts` — bind verified snapshot digest to the pending intent and checkpoint digest to the receipt/checkpoint record as separate comparisons.
+8. API, gateway, provider-adapter and Workers integration tests — cover wrong snapshot digest, wrong checkpoint-body bytes, receipt signing the snapshot digest instead of checkpoint digest, changed sender/recipient/message digest, lost acknowledgement and stale predecessor.
+
+Suggested implementation order is 1–2 (profile and verifier) → 3–4 (provider-neutral data contract) → 5–6 (gateway/evidence response) → 7–8 (local finalization and integration qualification). Do not introduce a concrete cloud provider in the same change set as the profile migration; keep provider qualification independently reviewable.
