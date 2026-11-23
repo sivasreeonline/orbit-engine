@@ -50,9 +50,15 @@ export async function authenticateApiWorkerWithWitnessGateway(
   }
   const created = await createApiWorkloadProof(
     {
-      callerId: env.WORKLOAD_CALLER_ID,
-      keyId: env.WORKLOAD_CALLER_KEY_ID,
-      privateKeyPkcs8: env.WORKLOAD_CALLER_PRIVATE_KEY_PKCS8,
+      ...(env.WORKLOAD_CALLER_ID !== undefined
+        ? { callerId: env.WORKLOAD_CALLER_ID }
+        : {}),
+      ...(env.WORKLOAD_CALLER_KEY_ID !== undefined
+        ? { keyId: env.WORKLOAD_CALLER_KEY_ID }
+        : {}),
+      ...(env.WORKLOAD_CALLER_PRIVATE_KEY_PKCS8 !== undefined
+        ? { privateKeyPkcs8: env.WORKLOAD_CALLER_PRIVATE_KEY_PKCS8 }
+        : {}),
     },
     body,
   );
