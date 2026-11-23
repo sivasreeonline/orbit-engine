@@ -57,10 +57,12 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
       }
     },
   };
+  let initialization: Promise<unknown> = Promise.resolve();
   const state = {
     storage,
     blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T> {
-      return callback();
+      initialization = callback();
+      return initialization as Promise<T>;
     },
   } as unknown as DurableObjectState;
   return {
@@ -71,6 +73,7 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
       alarmTime = null;
       values.delete("__durable_alarm__");
     },
+    ready: () => initialization,
   };
 }
 
@@ -283,6 +286,7 @@ describe("GossipReplayStateDO", () => {
 
     first.clearAlarm();
     const restarted = makeHarness(first.values);
+    await restarted.ready();
 
     expect(restarted.getAlarm()).toEqual(expect.any(Number));
   });
