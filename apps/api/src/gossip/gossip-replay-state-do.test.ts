@@ -204,4 +204,40 @@ describe("GossipReplayStateDO", () => {
     const response = await harness.object.fetch();
     expect(response.status).toBe(404);
   });
+  it("quarantines legacy non-empty replay state without a witness checkpoint", async () => {
+    const harness = makeHarness();
+    harness.values.set("replay-state-v1", {
+      version: 1,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      scope: "domain-a|witness-a|authority-a|host-a",
+      highestSequence: 1,
+      seenBySequence: {
+        "1": { messageId: "message-1", digest: "1".padStart(64, "0") },
+      },
+      seenByMessageId: {
+        "message-1": { sequence: 1, digest: "1".padStart(64, "0") },
+      },
+      outstandingRequests: {},
+      consumedNonces: [],
+      missingSequences: [],
+    });
+    const result = await harness.object.prepareCheckpointIntent(message(2), 10_000);
+    expect(result.outcome).toBe("QUARANTINE");
+    expect(result.reason).toContain("no independent witness checkpoint");
+  });
+
+  it("quarantines committed replay state that drifts from its finalized snapshot digest", async () => {
+    const harness = makeHarness();
+    await acceptAndFinalize(harness.object, message(1), 10_000);
+    const stored = structuredClone(harness.values.get("replay-state-v1")) as {
+      highestSequence: number;
+    };
+    stored.highestSequence = 2;
+    harness.values.set("replay-state-v1", stored);
+    const result = await harness.object.prepareCheckpointIntent(message(2), 10_000);
+    expect(result.outcome).toBe("QUARANTINE");
+    expect(result.reason).toContain("differs from its locally recorded witness checkpoint");
+  });
+
 });
