@@ -9,7 +9,14 @@ import {
   type VersionedReplayState,
   type VerifiedReplayCheckpointEvidence,
 } from "./gossip-replay-checkpoint-lifecycle";
-import type { PendingReplayIntent } from "./gossip-replay-pending-intent";
+import {
+  validatePendingReplayIntent,
+  type PendingReplayIntent,
+} from "./gossip-replay-pending-intent";
+import {
+  checkpointReplayViaWitnessGateway,
+  verifyEvidenceViaWitnessGateway,
+} from "../witness/witness-gateway-client";
 
 const MAX_TTL_SECONDS = 300;
 const MAX_CLOCK_SKEW_SECONDS = 30;
@@ -373,6 +380,84 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     return hasPendingReplayIntent(
       this.ctx.storage as unknown as ReplayCheckpointStorage,
     );
+  }
+
+  /**
+   * Resume the exact persisted checkpoint after object reconstruction.
+   * Every RPC is outside a storage transaction. Any unavailable, ambiguous,
+   * or unverifiable result leaves the pending intent and accepted state intact.
+   */
+  async recoverPendingCheckpointIntent(): Promise<
+    | { readonly recovered: false; readonly reason:
+        | "no_pending_intent"
+        | "invalid_pending_intent"
+        | "gateway_unavailable"
+        | "checkpoint_not_committed"
+        | "evidence_not_verified"
+        | "finalization_rejected"
+        | "recovery_error" }
+    | { readonly recovered: true; readonly stateVersion: number }
+  > {
+    try {
+      const pending = await this.getPendingCheckpointIntent();
+      if (!pending) return { recovered: false, reason: "no_pending_intent" };
+      if (!(await validatePendingReplayIntent(pending))) {
+        return { recovered: false, reason: "invalid_pending_intent" };
+      }
+
+      const checkpoint = await checkpointReplayViaWitnessGateway(
+        this.env,
+        new TextEncoder().encode(pending.intent.canonicalCheckpointBody),
+      );
+      if (!checkpoint.checkpointed) {
+        return {
+          recovered: false,
+          reason: checkpoint.reason === "gateway_unavailable" ||
+              checkpoint.reason === "caller_identity_unconfigured" ||
+              checkpoint.reason === "caller_proof_signing_failed"
+            ? "gateway_unavailable"
+            : "checkpoint_not_committed",
+        };
+      }
+
+      const verification = await verifyEvidenceViaWitnessGateway(
+        this.env,
+        checkpoint.canonicalEvidenceBody,
+      );
+      if (!verification.verified) {
+        return {
+          recovered: false,
+          reason: verification.reason === "gateway_unavailable" ||
+              verification.reason === "caller_identity_unconfigured" ||
+              verification.reason === "caller_proof_signing_failed"
+            ? "gateway_unavailable"
+            : "evidence_not_verified",
+        };
+      }
+
+      const finalized = await this.finalizeCheckpointIntent(pending, {
+        verified: true,
+        operationId: verification.operationId,
+        checkpointDigest: verification.checkpointDigest,
+        authorityStateDigest: verification.authorityStateDigest,
+        trustDomainId: verification.trustDomainId,
+        witnessId: verification.witnessId,
+        authorityId: verification.authorityId,
+        hostId: verification.hostId,
+        predecessorGeneration: verification.predecessorGeneration,
+        predecessorDigest: verification.predecessorDigest,
+        generation: verification.generation,
+        treeSize: verification.treeSize,
+        treeHeadDigest: verification.treeHeadDigest,
+        receiptLeafHash: verification.receiptLeafHash,
+      });
+      if (!finalized.finalized) {
+        return { recovered: false, reason: "finalization_rejected" };
+      }
+      return { recovered: true, stateVersion: finalized.stateVersion };
+    } catch {
+      return { recovered: false, reason: "recovery_error" };
+    }
   }
 
   override async fetch(): Promise<Response> {
