@@ -6,9 +6,7 @@ import {
   checkpointMonitorReplaySnapshot,
   MonitorReplayCheckpointError,
 } from "./monitor-replay-checkpoint-coordinator";
-import {
-    type WitnessCheckpointScope,
-} from "./witness-provider-adapter";
+import type { WitnessCheckpointScope } from "./witness-provider-adapter";
 import type { MonitorReplayCheckpointBody } from "../../../api/src/witness/witness-profile-verifier";
 
 const scope: WitnessCheckpointScope = {
@@ -102,7 +100,7 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
   });
 
   it("uses persisted predecessor identity for stable operation ID and retry", async () => {
-    const adapter = new InMemoryAdapter();
+    const adapter = new SyntheticWitnessProviderAdapter();
     const predecessor = { generation: 0, digest: ZERO_DIGEST };
     const body = await checkpointBodyFor(sample, predecessor);
     const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
@@ -114,7 +112,7 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
   });
 
   it("does not rebase a persisted predecessor after the witness head advances", async () => {
-    const adapter = new InMemoryAdapter();
+    const adapter = new SyntheticWitnessProviderAdapter();
     const genesis = { generation: 0, digest: ZERO_DIGEST };
     const firstBody = await checkpointBodyFor(sample, genesis);
     const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis);
@@ -127,7 +125,7 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
   });
 
   it("recovers a lost acknowledgement by immutable operation lookup", async () => {
-    const adapter = new InMemoryAdapter();
+    const adapter = new SyntheticWitnessProviderAdapter();
     adapter.loseNextAck = true;
     const predecessor = { generation: 0, digest: ZERO_DIGEST };
     const body = await checkpointBodyFor(sample, predecessor);
@@ -137,7 +135,7 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
   });
 
   it("rejects a previously committed operation after a successor becomes current", async () => {
-    const adapter = new InMemoryAdapter();
+    const adapter = new SyntheticWitnessProviderAdapter();
     const genesis = { generation: 0, digest: ZERO_DIGEST };
     const firstBody = await checkpointBodyFor(sample, genesis);
     const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis);
@@ -152,7 +150,7 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
   });
 
   it("rejects a stale competing predecessor instead of rebasing", async () => {
-    const adapter = new InMemoryAdapter();
+    const adapter = new SyntheticWitnessProviderAdapter();
     const genesis = { generation: 0, digest: ZERO_DIGEST };
     const firstBody = await checkpointBodyFor(sample, genesis);
     const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis);
@@ -193,7 +191,7 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
   });
 
   it("rejects altered checkpoint-body readback even when the snapshot bytes are unchanged", async () => {
-    const adapter = new InMemoryAdapter();
+    const adapter = new SyntheticWitnessProviderAdapter();
     const predecessor = { generation: 0, digest: ZERO_DIGEST };
     const body = await checkpointBodyFor(sample, predecessor);
     await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
@@ -203,7 +201,7 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
   });
 
   it("rejects checkpoint bodies bound to another snapshot, scope, or sender relationship", async () => {
-    const adapter = new InMemoryAdapter();
+    const adapter = new SyntheticWitnessProviderAdapter();
     const predecessor = { generation: 0, digest: ZERO_DIGEST };
     const body = await checkpointBodyFor(sample, predecessor);
     await expect(checkpointMonitorReplaySnapshot(
@@ -218,7 +216,7 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
   });
 
   it("rejects invalid scopes, malformed predecessors, and non-JSON snapshots", async () => {
-    const adapter = new InMemoryAdapter();
+    const adapter = new SyntheticWitnessProviderAdapter();
     const predecessor = { generation: 0, digest: ZERO_DIGEST };
     const body = await checkpointBodyFor(sample, predecessor);
     await expect(checkpointMonitorReplaySnapshot(
