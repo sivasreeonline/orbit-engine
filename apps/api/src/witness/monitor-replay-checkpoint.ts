@@ -24,6 +24,9 @@ export interface MonitorReplayProviderCheckpoint {
     readonly witnessId: string;
     readonly authorityId: string;
     readonly hostId: string;
+    readonly senderId: string;
+    readonly recipientId: string;
+    readonly replayScope: string;
   };
   readonly generation: number;
   readonly operationId: string;
@@ -260,6 +263,9 @@ export async function buildMonitorReplayCheckpointArtifact(
       witnessId: scope.witnessId,
       authorityId: scope.authorityId,
       hostId: scope.hostId,
+      senderId: scope.senderId,
+      recipientId: scope.recipientId,
+      replayScope: scope.replayScope,
     },
     generation,
     operationId,
