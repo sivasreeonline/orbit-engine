@@ -161,3 +161,21 @@ The gateway must then verify the complete evidence bundle against the currently 
 - The storage adapter's opaque consistency token is never consumed by cryptographic verification code.
 
 No production adapter or evidence authority is selected by this specification. A DynamoDB Local run validates only local SDK/conditional-write wiring; the existing Python AWS adapter is a qualification harness implementation, not a Cloudflare Worker RPC binding or independent evidence authority. Real-provider and independent-key qualification remain separate gates.
+
+
+## 11. Checkpoint profile mapping — blocking architecture decision
+
+The replay snapshot digest and the signed witness checkpoint-body digest are separate values. The current provider-neutral coordinator treats them as the same value, while the existing `sky-high-fence-witness-v1` checkpoint body is an authority lifecycle record with fields (`responseDigest`, `epoch`, `recordVersion`, and lifecycle `phase`) that have no approved monitor-replay mapping.
+
+Do not map sender sequence to authority epoch, local Durable Object state version to authority record version, or gossip message digest to authority response digest without a separately approved semantic contract. The API's current `authorityStateDigest === pending.snapshotDigest` check is specific to the existing authority-state profile and is not a generic replay checkpoint mapping.
+
+[ADR-021](../decisions/ADR-021-monitor-replay-checkpoint-profile.md) proposes a dedicated `sky-high-fence-monitor-replay-v1` checkpoint-body profile while reusing the existing witness receipt envelope, trust-bundle key lifecycle, signed tree-head format and RFC 9162 proof algorithms.
+
+Until ADR-021 is reviewed and implemented, provider integration is blocked. The future adapter/coordinator must persist and read back both exact canonical byte sequences and keep these digests distinct:
+
+1. `snapshotDigest`: SHA-256 of exact canonical replay snapshot bytes; used in deterministic operation identity.
+2. `checkpointDigest`: SHA-256 of exact canonical monitor-replay checkpoint-body JCS bytes; signed by the witness receipt.
+3. `receiptLeafHash`: RFC 9162 leaf hash of the complete canonical signed receipt envelope.
+4. `treeHeadDigest`: canonical identity of the signed tree-head envelope.
+
+The current coordinator's `checkpointDigest = snapshotDigest` assumption must not be carried into the monitor-replay receipt bridge. No live provider append should be enabled before the separate profile, types, verifier, vectors and lifecycle binding exist.
