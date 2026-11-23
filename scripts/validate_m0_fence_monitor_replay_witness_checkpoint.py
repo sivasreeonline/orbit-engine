@@ -179,10 +179,12 @@ def build_checkpoint_artifact(
         raise ReplayCheckpointError("previous checkpoint digest is malformed")
     if any(character not in "0123456789abcdef" for character in previous_digest):
         raise ReplayCheckpointError("previous checkpoint digest must be lowercase SHA-256 hex")
-    for field in ("trust_domain_id", "witness_id", "authority_id", "host_id"):
+    for field in ("trust_domain_id", "witness_id", "authority_id", "host_id", "sender_id", "recipient_id", "replay_scope"):
         value = getattr(scope, field, None)
         if not isinstance(value, str) or not value.strip():
             raise ReplayCheckpointError(f"checkpoint scope {field} is malformed")
+    if is_empty_replay_snapshot(snapshot):
+        raise ReplayCheckpointError("an empty replay state cannot be checkpointed")
 
     for scope_field, snapshot_field in (
         ("sender_id", "senderId"),
