@@ -114,3 +114,6 @@ DynamoDB Local validates the adapter's transaction and storage logic only. It do
 
 
 The local-only factory uses a Fetch-based AWS SDK request handler rather than a Node socket handler. DynamoDB Local CI exercises this transport. The factory also has negative tests rejecting non-loopback AWS endpoints and HTTPS loopback endpoints. This does not yet constitute Cloudflare workerd runtime qualification; no live AWS write path is enabled.
+
+
+Before any transaction, the TypeScript adapter recomputes the snapshot and checkpoint-body SHA-256 values from the supplied exact bytes and rejects a mismatch without writing. Its local factory also rejects non-loopback endpoints and loopback URLs containing credentials, paths, query strings or fragments. These negative cases are part of the DynamoDB Local CI integration suite.
