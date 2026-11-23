@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import type { WitnessGatewayRpc } from "../../witness-gateway/src/index";
+import type { WitnessGatewayRpc } from "../src/witness/witness-gateway-contract";
 import { createApiWorkloadProof } from "../src/witness/workload-proof-signer";
 import { authenticateApiWorkerWithWitnessGateway } from "../src/witness/witness-gateway-client";
 
