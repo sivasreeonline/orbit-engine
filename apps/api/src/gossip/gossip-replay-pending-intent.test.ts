@@ -15,6 +15,8 @@ const message = {
   sequence: 1,
   canonicalDigest: "a".repeat(64),
   messageType: "HEAD_ADVERTISEMENT",
+  issuedAt: 9_990,
+  expiresAt: 10_100,
 };
 
 describe("durable pending replay intent", () => {
