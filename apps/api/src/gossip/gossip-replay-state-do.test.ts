@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { GossipReplayStateDO, type VerifiedGossipMessage } from "./gossip-replay-state-do";
 import type { Env } from "../env";
+import { createReplayCheckpointIntent } from "./gossip-replay-checkpoint-intent";
+import { createPendingReplayIntent } from "./gossip-replay-pending-intent";
+import { REPLAY_STATE_ENVELOPE_KEY, type VersionedReplayState } from "./gossip-replay-checkpoint-lifecycle";
 
 interface FakeStorage {
   get<T>(key: string): Promise<T | undefined>;
@@ -135,6 +138,59 @@ describe("GossipReplayStateDO", () => {
     )).outcome).toBe("BLOCKED");
     expect((await harness.object.acceptVerifiedMessage(message(65), 10_000)).outcome)
       .toBe("BLOCKED");
+  });
+
+
+  it("blocks competing messages while a durable checkpoint intent is pending", async () => {
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    expect(await harness.object.initializeCheckpointedState(initial))
+      .toEqual({ initialized: true });
+
+    const proposedState = { highestSequence: 1, messageId: "message-1" };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    const pending = await createPendingReplayIntent(intent, message(1), proposedState);
+    expect((await harness.object.stageCheckpointIntent(pending)).staged).toBe(true);
+    expect(await harness.object.hasPendingCheckpointIntent()).toBe(true);
+
+    const before = structuredClone(harness.values.get(REPLAY_STATE_ENVELOPE_KEY));
+    const competing = await harness.object.acceptVerifiedMessage(message(2), 10_000);
+    expect(competing.outcome).toBe("BLOCKED");
+    expect(harness.values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(before);
+  });
+
+  it("does not let the legacy acceptance method bypass versioned checkpoint state", async () => {
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    const result = await harness.object.acceptVerifiedMessage(message(1), 10_000);
+    expect(result.outcome).toBe("BLOCKED");
+    expect(harness.values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(initial);
   });
 
   it("keeps the HTTP surface closed", async () => {
