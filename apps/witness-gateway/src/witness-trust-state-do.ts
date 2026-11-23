@@ -19,6 +19,8 @@ export interface StoredWitnessTrustBundle {
 
 export interface StoredWitnessTreeHead {
   readonly digest: string;
+  /** Trust-bundle generation under which this head was verified and accepted. */
+  readonly trustBundleDigest: string;
   readonly envelope: unknown;
 }
 
@@ -161,7 +163,7 @@ export class WitnessTrustStateDO extends DurableObject<unknown> {
       !validDigest(input.envelope.bundleDigest) ||
       !validDigest(input.envelope.rootKeyId) ||
       typeof input.envelope.rootSignature !== "string" ||
-      input.envelope.rootSignature.length !== 86
+      !/^[A-Za-z0-9_-]{86}$/.test(input.envelope.rootSignature)
     ) return { stored: false, reason: "invalid_input" };
 
     let calculatedDigest: string;
@@ -229,14 +231,22 @@ export class WitnessTrustStateDO extends DurableObject<unknown> {
       input.envelope.body.witnessId !== input.scope.witnessId ||
       !isRecord(input.envelope.body) ||
       typeof input.envelope.body.authorityId !== "string" ||
+      input.envelope.body.authorityId.length === 0 ||
+      input.envelope.body.authorityId.length > MAX_IDENTIFIER_LENGTH ||
       typeof input.envelope.body.hostId !== "string" ||
+      input.envelope.body.hostId.length === 0 ||
+      input.envelope.body.hostId.length > MAX_IDENTIFIER_LENGTH ||
       typeof input.envelope.body.logId !== "string" ||
+      input.envelope.body.logId.length === 0 ||
+      input.envelope.body.logId.length > MAX_IDENTIFIER_LENGTH ||
       !Number.isSafeInteger(input.envelope.body.treeSize) ||
       input.envelope.body.treeSize < 1 ||
       !validDigest(input.envelope.body.rootHash) ||
       !validDigest(input.envelope.body.keyId) ||
       typeof input.envelope.body.timestamp !== "string" ||
+      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$/.test(input.envelope.body.timestamp) ||
       typeof input.envelope.signature !== "string" ||
+      !/^[A-Za-z0-9_-]{86}$/.test(input.envelope.signature) ||
       input.envelope.signature.length !== 86
     ) return { stored: false, reason: "invalid_input" };
 
@@ -283,6 +293,7 @@ export class WitnessTrustStateDO extends DurableObject<unknown> {
         ...stored,
         treeHead: {
           digest: nextDigest,
+          trustBundleDigest: stored.trustBundle.digest,
           envelope: input.envelope,
         },
       };
