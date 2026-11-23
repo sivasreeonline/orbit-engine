@@ -13,7 +13,10 @@ const scope = {
   hostId: "synthetic-host",
 };
 
-async function requestFixture(): Promise<WitnessEvidenceAuthorityRequest> {
+async function requestFixture(
+  generation = 1,
+  previousCheckpointDigest = "0".repeat(64),
+): Promise<WitnessEvidenceAuthorityRequest> {
   const checkpointBody = {
     profile: "sky-high-fence-monitor-replay-v1" as const,
     schemaVersion: 1 as const,
@@ -23,10 +26,10 @@ async function requestFixture(): Promise<WitnessEvidenceAuthorityRequest> {
     hostId: scope.hostId,
     senderId: "monitor-sender",
     recipientId: "monitor-recipient",
-    generation: 1,
-    operationId: "synthetic-evidence-operation-001",
+    generation,
+    operationId: `synthetic-evidence-operation-00${generation}`,
     phase: "MONITOR_GOSSIP_REPLAY_V1" as const,
-    previousCheckpointDigest: "0".repeat(64),
+    previousCheckpointDigest,
     snapshotDigest: "1".repeat(64),
     snapshotByteLength: 64,
     baseStateVersion: 0,
@@ -92,4 +95,19 @@ describe("synthetic independent evidence authority", () => {
     const recovered = await issueOrRecoverWitnessEvidence(flaky, request);
     await expect(authority.verifyIssuedBundle(request, recovered)).resolves.toBeUndefined();
   });
+  it("publishes multi-leaf inclusion and consistency proofs across checkpoint generations", async () => {
+    const authority = new SyntheticWitnessEvidenceAuthority();
+    const firstRequest = await requestFixture();
+    const firstBundle = await authority.issueOrRecoverEvidence(firstRequest);
+    const secondRequest = await requestFixture(2, firstRequest.checkpointDigest);
+    const secondBundle = await authority.issueOrRecoverEvidence(secondRequest);
+
+    expect(secondBundle.treeHeadEnvelope.body.treeSize).toBe(2);
+    expect(secondBundle.leafIndex).toBe(1);
+    expect(secondBundle.inclusionProofHex).toHaveLength(1);
+    expect(secondBundle.consistencyProofHex.length).toBeGreaterThan(0);
+    await expect(authority.verifyIssuedBundle(secondRequest, secondBundle)).resolves.toBeUndefined();
+    await expect(authority.verifyIssuedBundleExtension(firstBundle, secondBundle)).resolves.toBeUndefined();
+  });
+
 });
