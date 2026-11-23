@@ -25,7 +25,7 @@ export interface VerifiedReplayCheckpointEvidence {
   readonly verified: true;
   readonly operationId: string;
   readonly checkpointDigest: string;
-  readonly authorityStateDigest: string;
+  readonly snapshotDigest: string;
   readonly trustDomainId: string;
   readonly witnessId: string;
   readonly authorityId: string;
@@ -152,7 +152,7 @@ export async function finalizePendingReplayIntent(
     if (
       evidence.verified !== true ||
       evidence.operationId !== stored.intent.operationId ||
-      evidence.authorityStateDigest !== stored.intent.snapshotDigest ||
+      evidence.snapshotDigest !== stored.intent.snapshotDigest ||
       evidence.trustDomainId !== stored.intent.scope.trustDomainId ||
       evidence.witnessId !== stored.intent.scope.witnessId ||
       evidence.authorityId !== stored.intent.scope.authorityId ||
