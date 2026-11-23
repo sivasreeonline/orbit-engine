@@ -116,6 +116,10 @@ export class AwsDynamoDBWitnessProviderAdapter implements WitnessProviderAdapter
     if (!tableName || tableName.length > 255) throw new TypeError("DynamoDB table name is invalid");
   }
 
+  destroy(): void {
+    this.client.destroy();
+  }
+
   async readLatest(scope: WitnessCheckpointScope): Promise<StoredWitnessCheckpoint | null> {
     const head = await this.get(scope, "HEAD");
     if (!head) return null;
