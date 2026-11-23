@@ -6,6 +6,7 @@ import {
   inclusionProof,
   merkleTreeHash,
   verifyReceiptAgainstTrustedBundle,
+  validateMonitorReplayCheckpointBody,
   verifySignedTreeHead,
   verifyTrustBundleEnvelope,
   verifyTreeHeadExtension,
@@ -330,4 +331,49 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
     await expect(verifyTreeHeadExtension(prior, current, ["f".repeat(64)]))
       .rejects.toThrow("consistency");
   });
+  it("validates the dedicated monitor replay checkpoint profile without authority-field aliases", () => {
+    const body = {
+      profile: "sky-high-fence-monitor-replay-v1",
+      schemaVersion: 1,
+      trustDomainId: "monitor-domain",
+      witnessId: "monitor-witness",
+      authorityId: "monitor-authority",
+      hostId: "monitor-host",
+      senderId: "monitor-sender",
+      recipientId: "monitor-recipient",
+      generation: 1,
+      operationId: "fence-monitor-replay-test-operation",
+      phase: "MONITOR_GOSSIP_REPLAY_V1",
+      previousCheckpointDigest: ZERO_DIGEST,
+      snapshotDigest: "1".repeat(64),
+      snapshotByteLength: 128,
+      baseStateVersion: 0,
+      messageDigest: "2".repeat(64),
+    };
+    expect(() => validateMonitorReplayCheckpointBody(body)).not.toThrow();
+
+    expect(() => validateMonitorReplayCheckpointBody({
+      ...body,
+      authorityStateDigest: body.snapshotDigest,
+      responseDigest: body.messageDigest,
+      epoch: 1,
+      recordVersion: 1,
+    })).toThrow("shape");
+
+    expect(() => validateMonitorReplayCheckpointBody({
+      ...body,
+      senderId: body.recipientId,
+    })).toThrow("fields");
+
+    expect(() => validateMonitorReplayCheckpointBody({
+      ...body,
+      snapshotByteLength: 512 * 1024 + 1,
+    })).toThrow("fields");
+
+    expect(() => validateMonitorReplayCheckpointBody({
+      ...body,
+      phase: "ACCEPTED",
+    })).toThrow("fields");
+  });
+
 });
