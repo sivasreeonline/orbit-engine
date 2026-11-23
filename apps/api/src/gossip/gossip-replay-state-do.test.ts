@@ -21,11 +21,14 @@ interface FakeStorage {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
   delete(key: string): Promise<boolean>;
+  getAlarm(): Promise<number | null>;
+  setAlarm(scheduledTime: number | Date): Promise<void>;
   transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T>;
 }
 
 function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
   const values = existing ?? new Map<string, unknown>();
+  let alarmTime: number | null = null;
   const storage: FakeStorage = {
     async get<T>(key: string): Promise<T | undefined> {
       return values.get(key) as T | undefined;
@@ -35,6 +38,12 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
     },
     async delete(key: string): Promise<boolean> {
       return values.delete(key);
+    },
+    async getAlarm(): Promise<number | null> {
+      return alarmTime;
+    },
+    async setAlarm(scheduledTime: number | Date): Promise<void> {
+      alarmTime = scheduledTime instanceof Date ? scheduledTime.getTime() : scheduledTime;
     },
     async transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T> {
       const snapshot = structuredClone([...values.entries()]);
@@ -47,7 +56,12 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
       }
     },
   };
-  const state = { storage } as unknown as DurableObjectState;
+  const state = {
+    storage,
+    blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T> {
+      return callback();
+    },
+  } as unknown as DurableObjectState;
   return {
     object: new GossipReplayStateDO(state, env as Env),
     values,
@@ -207,6 +221,34 @@ describe("GossipReplayStateDO", () => {
     const result = await harness.object.acceptVerifiedMessage(message(1), 10_000);
     expect(result.outcome).toBe("BLOCKED");
     expect(harness.values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(initial);
+  });
+
+  it("arms a durable alarm when a pending checkpoint intent is staged", async () => {
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    const proposedState = { highestSequence: 1 };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    const pending = await createPendingReplayIntent(intent, message(1), proposedState);
+
+    expect((await harness.object.stageCheckpointIntent(pending)).staged).toBe(true);
+    expect(await (harness.object as unknown as { ctx: { storage: FakeStorage } }).ctx.storage.getAlarm())
+      .toEqual(expect.any(Number));
   });
 
   it("preserves pending intent when the provider is unavailable during recovery", async () => {
