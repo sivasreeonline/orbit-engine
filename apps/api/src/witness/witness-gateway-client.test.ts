@@ -146,7 +146,7 @@ describe("private witness gateway client", () => {
             predecessorGeneration: 0,
             predecessorDigest: "5".repeat(64),
             generation: 1,
-            authorityStateDigest: "6".repeat(64),
+            snapshotDigest: "6".repeat(64),
             treeHeadDigest: "2".repeat(64),
             treeSize: 2,
             receiptLeafHash: "3".repeat(64),
