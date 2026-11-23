@@ -591,7 +591,12 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
         !/^[A-Za-z0-9_-]+$/.test(parsed.canonicalSnapshotBase64Url)
       ) return { checkpointed: false, reason: "malformed_request" };
 
-      const requestedScope = parsed.scope as Record<string, string>;
+      const requestedScope = {
+        trustDomainId: parsed.scope.trustDomainId as string,
+        witnessId: parsed.scope.witnessId as string,
+        authorityId: parsed.scope.authorityId as string,
+        hostId: parsed.scope.hostId as string,
+      };
       const expectedOperationId = await deriveReplayCheckpointOperationId({
         scope: requestedScope as {
           trustDomainId: string; witnessId: string; authorityId: string; hostId: string;
