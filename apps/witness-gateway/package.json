@@ -21,6 +21,7 @@
     "wrangler": "4.158.0"
   },
   "dependencies": {
-    "canonicalize": "5.1.0"
+    "canonicalize": "5.1.0",
+    "@aws-sdk/client-dynamodb": "^3.800.0"
   }
 }
