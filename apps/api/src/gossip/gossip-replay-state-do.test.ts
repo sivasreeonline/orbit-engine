@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GossipReplayStateDO, type VerifiedGossipMessage } from "./gossip-replay-state-do";
 import type { Env } from "../env";
 vi.mock("../witness/witness-gateway-client", () => ({
@@ -12,6 +12,10 @@ import {
 import { createReplayCheckpointIntent } from "./gossip-replay-checkpoint-intent";
 import { createPendingReplayIntent } from "./gossip-replay-pending-intent";
 import { REPLAY_STATE_ENVELOPE_KEY, type VersionedReplayState } from "./gossip-replay-checkpoint-lifecycle";
+
+beforeEach(() => {
+  vi.resetAllMocks();
+});
 
 interface FakeStorage {
   get<T>(key: string): Promise<T | undefined>;
