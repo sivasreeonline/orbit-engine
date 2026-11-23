@@ -232,3 +232,21 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
     }
   });
 });
+
+describe("DynamoDB adapter local-only factory", () => {
+  it("rejects non-loopback AWS endpoints so live writes cannot be enabled by this factory", () => {
+    expect(() => createLocalDynamoDBWitnessProviderAdapter({
+      endpointUrl: "https://dynamodb.us-east-1.amazonaws.com",
+      region: "us-east-1",
+      tableName: "production-witness-table",
+    })).toThrow("loopback");
+  });
+
+  it("rejects non-HTTP loopback endpoints", () => {
+    expect(() => createLocalDynamoDBWitnessProviderAdapter({
+      endpointUrl: "https://127.0.0.1:8000",
+      region: "us-east-1",
+      tableName: "local-witness-table",
+    })).toThrow("loopback");
+  });
+});
