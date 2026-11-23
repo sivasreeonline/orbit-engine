@@ -193,3 +193,14 @@ The DynamoDB adapter now recomputes both SHA-256 values before opening a transac
 The local factory additionally rejects endpoint URLs containing credentials, paths, query strings or fragments, as well as all non-loopback and non-HTTP endpoints. The only accepted form is a plain HTTP loopback endpoint.
 
 Exact-head CI run #2767 passed on `1a953d88ccff6a188bee8a5743ede37508431995`, including the new negative preflight tests and DynamoDB Local integration.
+
+
+## Workerd Fetch transport smoke test — 2026-11-23
+
+Added `apps/witness-gateway/workers-tests/aws-dynamodb-fetch-handler.test.ts`. It runs under the Cloudflare workerd Vitest runtime, creates a real AWS SDK v3 `DynamoDBClient` configured with the custom Fetch request handler, sends a signed `GetItem` request through Worker `fetch`, and parses a synthetic DynamoDB JSON response. The test verifies the AWS SigV4 authorization header, DynamoDB target header and request body.
+
+This is a workerd transport smoke test with a mocked HTTP response; it does not connect to AWS or DynamoDB Local. Separately, the Node integration suite exercises the same Fetch handler against DynamoDB Local for actual transaction/readback behavior.
+
+Exact-head CI run #2773 passed on `79149fe4ef44d3373edaa08941b3da012ffa3b9c`, including the workerd transport test, gateway runtime tests, DynamoDB Local integration, API tests and web build.
+
+The remaining gap is a single end-to-end workerd test that uses the gateway's optional provider binding against a real local DynamoDB service, plus a concrete separately administered evidence-authority service. No production provider or authority is configured.
