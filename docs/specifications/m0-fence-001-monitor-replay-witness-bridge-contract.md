@@ -171,7 +171,7 @@ Do not map sender sequence to authority epoch, local Durable Object state versio
 
 [ADR-021](../decisions/ADR-021-monitor-replay-checkpoint-profile.md) proposes a dedicated `sky-high-fence-monitor-replay-v1` checkpoint-body profile while reusing the existing witness receipt envelope, trust-bundle key lifecycle, signed tree-head format and RFC 9162 proof algorithms.
 
-Until ADR-021 is reviewed and implemented, provider integration is blocked. The future adapter/coordinator must persist and read back both exact canonical byte sequences and keep these digests distinct:
+ADR-021's initial schema and TypeScript receipt-verification slice is now implemented in PR #201. Provider integration remains blocked until architecture/security review is complete and the remaining dual-digest adapter/coordinator, evidence-authority and API-finalization changes are implemented. The future adapter/coordinator must persist and read back both exact canonical byte sequences and keep these digests distinct:
 
 1. `snapshotDigest`: SHA-256 of exact canonical replay snapshot bytes; used in deterministic operation identity.
 2. `checkpointDigest`: SHA-256 of exact canonical monitor-replay checkpoint-body JCS bytes; signed by the witness receipt.
