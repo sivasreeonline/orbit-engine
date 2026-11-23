@@ -136,3 +136,10 @@ Exact-head CI run #2677 passed on `244de56ecc0188412c1d7f2b3b3ee56dff50e4f7`.
 The durable intent and gateway request now bind sender ID, recipient ID, canonical message digest, base state version, exact snapshot byte length, and scope/predecessor/operation identity. Gateway validation re-hashes the exact snapshot, confirms sender/recipient match the decoded snapshot, and requires the triggering message digest to be represented in retained message history before constructing the dedicated signed checkpoint body.
 
 Exact-head CI run #2701 passed on `144131dbc691e0670b02b64da585ee9fe2984d91`. Provider writes remain disabled; the next missing layer is a separate evidence-authority contract and a concrete storage provider.
+
+
+## 12. Independent evidence-authority boundary
+
+A dedicated `WitnessEvidenceAuthority` contract now separates receipt/transparency evidence issuance from the provider's atomic checkpoint storage. It includes exact checkpoint-byte readback, signed receipt, signed tree head, proofs, idempotent issue/recover and immutable operation lookup. Structural identity checks and ambiguous-ack recovery have synthetic tests.
+
+The contract is not connected to a remote service or configured binding. The gateway continues to return `provider_unavailable`; no live append or evidence issuance is possible yet. The next implementation slice is to wire provider append/readback and authority issuance behind their separate interfaces, then run full gateway verification over the returned bundle.
