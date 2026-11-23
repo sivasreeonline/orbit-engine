@@ -95,7 +95,7 @@ def main() -> None:
         raise AssertionError("inconsistent replay indexes were accepted")
     print("PASS replay snapshot cross-index consistency is enforced")
 
-    print("PASS non-canonical JSON values are rejected")
+    print("PASS malformed replay snapshots are rejected before canonicalization")
 
     competing = InMemoryWitnessAdapter()
     checkpoint_replay_snapshot(competing, SCOPE, first)
