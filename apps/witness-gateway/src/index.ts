@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import canonicalize from "canonicalize";
+import { deriveReplayCheckpointOperationId } from "../../api/src/gossip/gossip-replay-checkpoint-intent";
 import {
   authenticateWorkloadCall,
   type TrustedWorkloadKey,
@@ -536,7 +537,6 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
         !/^fence-monitor-replay-[0-9a-f]{64}$/.test(parsed.operationId) ||
         typeof parsed.snapshotDigest !== "string" ||
         !/^[0-9a-f]{64}$/.test(parsed.snapshotDigest) ||
-        parsed.operationId !== `fence-monitor-replay-${parsed.snapshotDigest}` ||
         !isRecord(parsed.scope) ||
         !exactKeys(parsed.scope, ["trustDomainId", "witnessId", "authorityId", "hostId"]) ||
         !Object.values(parsed.scope).every((value) => typeof value === "string" && value.length > 0) ||
@@ -551,6 +551,18 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
       ) return { checkpointed: false, reason: "malformed_request" };
 
       const requestedScope = parsed.scope as Record<string, unknown>;
+      const expectedOperationId = await deriveReplayCheckpointOperationId({
+        scope: requestedScope as unknown as {
+          trustDomainId: string; witnessId: string; authorityId: string; hostId: string;
+        },
+        expectedPredecessor: parsed.expectedPredecessor as {
+          generation: number; digest: string;
+        },
+        snapshotDigest: parsed.snapshotDigest as string,
+      });
+      if (parsed.operationId !== expectedOperationId) {
+        return { checkpointed: false, reason: "malformed_request" };
+      }
       const allowedScopes = parseAllowedWitnessScopes(this.env.WITNESS_TRUST_SCOPES);
       if (!allowedScopes || !allowedScopes.some((scope) =>
         scope.trustDomainId === requestedScope.trustDomainId &&
