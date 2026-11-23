@@ -255,9 +255,11 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
       f.pinnedRoots,
       { ...f.expectedTrustState, generation: 1 },
     )).rejects.toThrow("generation");
+    const rootPin = f.pinnedRoots[0];
+    if (!rootPin) throw new Error("root pin fixture missing");
     await expect(verifyTrustBundleEnvelope(
       f.trustEnvelope,
-      [{ ...f.pinnedRoots[0], keyId: "f".repeat(64) }],
+      [{ ...rootPin, keyId: "f".repeat(64) }],
       f.expectedTrustState,
     )).rejects.toThrow("root key");
 
@@ -273,7 +275,12 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
 
   it("rejects receipt-purpose keys for tree heads and invalid inclusion paths", async () => {
     const f = await fixtures();
-    const wrongPurpose = structuredClone(f.trustBody);
+    const wrongPurpose = structuredClone(f.trustBody) as unknown as {
+      profile: "sky-high-fence-witness-v1";
+      witnessId: string;
+      keys: Array<{ keyId: string; purpose: string; witnessId: string; authorityIds: string[]; publicKeyBase64Url: string; notBefore: string; notAfter: string }>;
+      revocations: Array<{ keyId: string; revokedAt: string; reason: string }>;
+    };
     const logKey = wrongPurpose.keys.find((key) => key.keyId === f.logKeyId);
     if (!logKey) throw new Error("log key fixture missing");
     logKey.purpose = "WITNESS_RECEIPT_SIGNING";
