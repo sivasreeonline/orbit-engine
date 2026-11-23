@@ -1,6 +1,6 @@
 # ADR-021: Dedicated checkpoint profile for monitor replay evidence
 
-**Status:** Proposed; required before provider/evidence-authority integration  
+**Status:** Proposed; initial schema and TypeScript validation slice implemented in PR #201; architecture/security approval and end-to-end integration remain open  
 **Date:** 2026-11-23  
 **Scope:** FENCE-001 monitor replay checkpoint bridge  
 **Decision owners:** Sky High architecture and security review
@@ -102,3 +102,15 @@ The following existing modules are expected to change when this proposal is appr
 8. API, gateway, provider-adapter and Workers integration tests — cover wrong snapshot digest, wrong checkpoint-body bytes, receipt signing the snapshot digest instead of checkpoint digest, changed sender/recipient/message digest, lost acknowledgement and stale predecessor.
 
 Suggested implementation order is 1–2 (profile and verifier) → 3–4 (provider-neutral data contract) → 5–6 (gateway/evidence response) → 7–8 (local finalization and integration qualification). Do not introduce a concrete cloud provider in the same change set as the profile migration; keep provider qualification independently reviewable.
+
+
+## Initial implementation slice — 2026-11-23
+
+PR #201 now adds:
+- A closed JSON Schema definition for `monitorReplayCheckpointBody` and its `monitorReplayCheckpointArtifact`, while retaining the existing authority checkpoint schema unchanged.
+- TypeScript `MonitorReplayCheckpointBody` and strict exact-key/field validation, including distinct trust scope, sender/recipient, snapshot digest, snapshot byte length, base state version, message digest and replay phase.
+- Receipt verification support for the dedicated replay body: the receipt continues to use the existing `sky-high-fence-witness-v1` receipt envelope/profile and signing domain, while the checkpoint body is independently identified as `sky-high-fence-monitor-replay-v1`. The verifier checks the exact JCS checkpoint digest and binds receipt generation, operation, predecessor, authority/host scope and trust-domain identity.
+
+Synthetic tests cover strict body shape, rejection of authority-profile field aliases, invalid sender/recipient identity, oversized snapshots, invalid phase, and a real Ed25519 receipt signature over the new checkpoint digest.
+
+**Not yet implemented:** provider adapter dual-byte persistence/readback, coordinator digest separation, independent evidence authority issuance/recovery, signed proof response composition for the replay profile, and API finalization changes. The initial slice does not enable provider writes.
