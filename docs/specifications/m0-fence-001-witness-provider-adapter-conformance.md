@@ -111,3 +111,6 @@ The gateway repository now includes `AwsDynamoDBWitnessProviderAdapter` for the 
 The local-only factory accepts only HTTP loopback endpoints; live AWS writes remain disabled. The TypeScript adapter integration test runs against the AWS-published DynamoDB Local container in CI and covers exact dual-byte readback, idempotent retry, content rebinding rejection, stale predecessor rejection and independent-client concurrency.
 
 DynamoDB Local validates the adapter's transaction and storage logic only. It does not qualify real AWS account isolation, IAM policy, restore durability, retention, operational independence, or Cloudflare workerd transport behavior.
+
+
+The local-only factory uses a Fetch-based AWS SDK request handler rather than a Node socket handler. DynamoDB Local CI exercises this transport. The factory also has negative tests rejecting non-loopback AWS endpoints and HTTPS loopback endpoints. This does not yet constitute Cloudflare workerd runtime qualification; no live AWS write path is enabled.
