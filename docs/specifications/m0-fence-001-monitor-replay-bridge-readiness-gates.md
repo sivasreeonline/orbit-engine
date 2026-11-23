@@ -1,6 +1,6 @@
 # FENCE-001 monitor replay bridge readiness gates
 
-**Decision (updated 2026-11-23):** The local cryptographic verifier and authenticated Worker-to-Worker RPC gates now have implementation slices and exact-head CI evidence (PRs #188–#194, with the TypeScript runtime verifier in this branch). The remaining implementation blockers are the provider-neutral gateway append adapter, durable trust/head pinning, and the monitor replay Durable Object pending-intent/finalize/recovery lifecycle.
+**Decision (updated 2026-11-23):** The local cryptographic verifier, authenticated Worker-to-Worker RPC, durable trust/head pinning, provider-neutral append coordinator, and monitor replay Durable Object pending-intent/finalize/recovery lifecycle now have implementation slices and exact-head CI evidence (PRs #188–#201). The remaining blockers are the dedicated monitor-replay checkpoint-body profile, concrete provider service adapter, independent evidence-authority integration, and production qualification.
 
 This remains a readiness audit, not a claim that monitor replay rollback protection is implemented. PR #185 remains the governing bridge protocol contract. Production rollback protection remains **NOT QUALIFIED**.
 
@@ -95,5 +95,14 @@ This audit does not add a gateway, service binding, provider adapter, signed tre
 - **Gate B — workload identity:** PRs #190–#191 implement signed workload identity and durable nonce replay. PR #192 adds the private gateway Worker; PR #193 adds the API caller proof signer; PR #194 verifies the real API-to-gateway named RPC boundary in local workerd. PR #194 exact-head CI run #2384 passed.
 - **Gate C — local evidence verification:** PR #197 adds the private `verifyEvidence` RPC, pinned root/scope configuration, durable trust-bundle generation state, historical trust context for accepted tree heads, receipt verification, inclusion proof and prior-head consistency verification. Local workerd integration tests cover the full API-to-gateway path.
 - **Gate D — provider-neutral append/readback coordinator:** this branch adds a TypeScript adapter contract and coordinator for RFC 8785 snapshot bytes, deterministic operation IDs, exact idempotency, ambiguous-ack recovery, immutable operation lookup and latest-head readback. Its in-memory unit tests are logic evidence only; no external provider is wired or qualified.
-- **Next:** implement the durable pending-intent/finalize/recovery lifecycle around `GossipReplayStateDO`, keeping provider calls outside storage transactions and reconciling restore state against the verified witness head. Only then wire a concrete provider adapter behind the contract.
+- **Next:** review and implement ADR-021's dedicated `sky-high-fence-monitor-replay-v1` checkpoint-body profile. The existing authority-state profile fields do not have approved replay semantics, and the current coordinator's `checkpointDigest = snapshotDigest` assumption must be removed before any provider append is enabled.
 - **Still prohibited:** no live provider writes, production keys, public gateway ingress, or host/student-code execution. No rollback protection or independent provider durability claim is authorized by these local tests.
+
+
+## 8. Updated implementation status — PR #201
+
+- **Pending intent / local recovery lifecycle:** implemented in PR #201. Exact canonical request bytes and predecessor identity are persisted before gateway calls; recovery retries outside transactions; Durable Object alarms re-arm after reconstruction and retry transient failures only. Exact-head CI passed on commit `34219425326200c8c7384b57693e149db8e23ac1`.
+- **Provider-neutral coordinator:** implemented and exercised with in-memory tests and DynamoDB Local qualification harnesses. These do not qualify production provider durability or an independent witness.
+- **Important profile mismatch discovered:** the coordinator currently treats the replay snapshot digest as the checkpoint digest, while the existing witness checkpoint-body profile is an authority lifecycle schema. ADR-021 proposes a separate monitor-replay checkpoint-body profile and explicit separation of snapshot digest, checkpoint digest, receipt leaf hash and tree-head digest. This is now the immediate blocking gate.
+- **Concrete provider and independent evidence authority:** not wired. No live append is authorized. A provider append acknowledgement or opaque consistency token cannot satisfy the evidence-authority gate.
+- **Production qualification:** NOT QUALIFIED. No student-code execution or host admission authorization follows from these local implementation tests.
