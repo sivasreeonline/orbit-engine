@@ -34,3 +34,31 @@ A mismatch is never repaired by trusting the local Durable Object state or autom
 This PR establishes the provider-neutral state-checkpoint operation and restore decision. It does **not** yet wire a Cloudflare Worker service binding to a separately deployed witness gateway. That bridge must preserve authenticated service identity, verify witness receipts and consistency evidence, and keep the witness failure domain independent from the Cloudflare Durable Object restore domain. Until that bridge and its failure-injection tests exist, the Durable Object must not claim rollback protection.
 
 The snapshot contains monitor replay metadata only. It contains no student source code or execution output. No live AWS calls, credentials, production roots, host execution or student-code execution are used.
+
+
+## Digest binding clarification — 2026-11-23
+
+The monitor replay checkpoint uses two intentionally distinct digests:
+
+1. **`snapshotDigest`** is SHA-256 over the complete RFC 8785 canonical replay
+   snapshot bytes. It is the deterministic operation-ID input and is copied to
+   the checkpoint body's `authorityStateDigest`.
+2. **`checkpointDigest`** is SHA-256 over the RFC 8785 canonical existing
+   FENCE-001 checkpoint-body artifact. It is the digest carried by the signed
+   witness receipt and used as the predecessor digest for the next provider
+   generation.
+
+The checkpoint body also binds a deterministic `responseDigest` over the
+monitor replay operation descriptor. Its `phase` is `ACCEPTED`, while the
+provider adapter's operation phase remains `MONITOR_GOSSIP_REPLAY_V1`.
+
+The operation ID remains `fence-monitor-replay-${snapshotDigest}`. The
+provider's immutable operation record stores both digests. Restore reconciliation
+compares the local snapshot digest with the stored `snapshotDigest`; receipt
+verification compares the signed receipt's `checkpointDigest` with the
+cryptographic checkpoint artifact digest. These values must not be conflated.
+
+The Cloudflare replay Durable Object now exposes a read-only `readSnapshot()`
+RPC returning the complete replay metadata snapshot with set-like arrays
+normalized. The TypeScript and Python reference mappers use RFC 8785 so their
+snapshot and artifact digests are byte-compatible.
