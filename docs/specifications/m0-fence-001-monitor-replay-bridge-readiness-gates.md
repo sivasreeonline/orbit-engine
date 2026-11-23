@@ -150,3 +150,10 @@ The contract is not connected to a remote service or configured binding. The gat
 The private gateway's checkpoint RPC now composes the provider-neutral coordinator with the independent evidence-authority interface. It builds the dedicated replay checkpoint body from the persisted message-bound intent, verifies exact dual-digest identity through provider readback, requests signed evidence, checks exact checkpoint bytes and structural receipt/tree-head/proof metadata, then returns canonical evidence bytes for the API Worker's cryptographic verification RPC.
 
 The two environment bindings are optional and intentionally absent from Wrangler/deployment configuration. Without both, the gateway returns `provider_unavailable`; pending intents remain blocked and retryable. No provider or evidence-authority writes are enabled in the current environment.
+
+
+## 14. DynamoDB adapter implementation update
+
+A TypeScript DynamoDB provider adapter now implements the dual-digest provider contract using conditional transactional writes, immutable operation/idempotency records, chunked exact-byte storage and strongly consistent readback. CI's DynamoDB Local step successfully exercised exact bytes/digests, retries, conflicts, stale predecessor and independent-client concurrency.
+
+The factory is loopback-only. No live AWS credentials, table, provider service binding or deployment are configured. The adapter has not yet passed Cloudflare workerd transport qualification or real AWS provider qualification. It must not be described as production-qualified.
