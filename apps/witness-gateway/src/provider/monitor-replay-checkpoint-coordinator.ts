@@ -28,6 +28,7 @@ export class MonitorReplayCheckpointError extends Error {
   constructor(
     readonly reason:
       | "invalid_scope"
+      | "invalid_predecessor"
       | "invalid_snapshot"
       | "operation_conflict"
       | "receipt_mismatch"
@@ -199,7 +200,7 @@ export async function checkpointMonitorReplaySnapshot(
     expectedPredecessor.generation < 0 ||
     !DIGEST.test(expectedPredecessor.digest)
   )) {
-    throw new MonitorReplayCheckpointError("invalid_scope", "expected witness predecessor is malformed");
+    throw new MonitorReplayCheckpointError("invalid_predecessor", "expected witness predecessor is malformed");
   }
 
   const operationId = expectedPredecessor
@@ -213,6 +214,9 @@ export async function checkpointMonitorReplaySnapshot(
       !sameScope(expected.scope, scope) ||
       expected.phase !== "MONITOR_GOSSIP_REPLAY_V1" ||
       expected.checkpointDigest !== digest ||
+      (expectedPredecessor !== undefined &&
+        (expected.generation !== expectedPredecessor.generation + 1 ||
+         expected.previousDigest !== expectedPredecessor.digest)) ||
       !bytesEqual(expected.canonicalSnapshotBytes, bytes)
     ) {
       throw new MonitorReplayCheckpointError(
