@@ -183,9 +183,12 @@ function parseCanonicalEvidenceBody(bytes: Uint8Array): EvidenceRequest | null {
     if (typeof canonical !== "string" || canonical !== serialized) return null;
     if (
       !isRecord(parsed.trustBundle) ||
+      !isRecord(parsed.trustBundle.body) ||
       !isRecord(parsed.checkpointBody) ||
       !isRecord(parsed.receiptEnvelope) ||
+      !isRecord(parsed.receiptEnvelope.body) ||
       !isRecord(parsed.treeHeadEnvelope) ||
+      !isRecord(parsed.treeHeadEnvelope.body) ||
       typeof parsed.checkpointDigest !== "string" ||
       !Number.isSafeInteger(parsed.leafIndex) ||
       (parsed.leafIndex as number) < 0 ||
