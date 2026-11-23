@@ -36,11 +36,16 @@
   "observability": {
     "enabled": true
   },
-  "services": [
-    {
-      "binding": "WITNESS_PROVIDER",
-      "service": "sky-high-witness-provider",
-      "entrypoint": "WitnessProvider"
+  "env": {
+    "production": {
+      "name": "sky-high-witness-gateway",
+      "services": [
+        {
+          "binding": "WITNESS_PROVIDER",
+          "service": "sky-high-witness-provider",
+          "entrypoint": "WitnessProvider"
+        }
+      ]
     }
-  ]
+  }
 }
