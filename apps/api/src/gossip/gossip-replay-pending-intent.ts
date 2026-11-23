@@ -65,6 +65,9 @@ export async function createPendingReplayIntent(
     typeof message.scope !== "string" || message.scope.length === 0 ||
     !Number.isSafeInteger(message.sequence) || message.sequence < 1 ||
     !DIGEST.test(message.canonicalDigest) ||
+    message.senderId !== intent.senderId ||
+    message.recipientId !== intent.recipientId ||
+    message.canonicalDigest !== intent.messageDigest ||
     typeof message.messageType !== "string" || message.messageType.length === 0 ||
     !Number.isSafeInteger(message.issuedAt) || message.issuedAt < 0 ||
     !Number.isSafeInteger(message.expiresAt) || message.expiresAt < 0
