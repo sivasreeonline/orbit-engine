@@ -175,3 +175,12 @@ Added `AwsDynamoDBWitnessProviderAdapter` implementing the provider-neutral cont
 The local-only factory rejects non-loopback endpoints and does not enable live AWS writes. A DynamoDB Local integration test covers dual-byte persistence/readback, idempotent retry, changed-content idempotency conflict, stale predecessor rejection and independent-client concurrency. The API CI job starts the published DynamoDB Local container and runs this TypeScript integration test. The step passed in exact-head CI run #2747 on `1a0d7bd9d8a828705c24fb18b2a30003348673d6`.
 
 **Qualification boundary:** this is synthetic DynamoDB Local evidence only. The adapter is not deployed or bound to the gateway, no live AWS account/table/credentials are configured, and no production durability or independent failure-domain claim is made. Cloudflare workerd transport compatibility and real AWS qualification remain separate gates.
+
+
+## Fetch transport and live-write guard update — 2026-11-23
+
+The local DynamoDB adapter factory now supplies an AWS SDK v3 request handler backed by the Web Fetch API rather than Node socket handlers. This removes an avoidable Node transport dependency from the intended Workers deployment path. The DynamoDB Local integration test now exercises this Fetch-based transport, including multi-client concurrent transactions; exact-head CI run #2758 passed on `cc30e9ad109fce91adf270f50251001389fec837`.
+
+Additional tests prove that the local factory rejects both a real AWS DynamoDB endpoint and HTTPS loopback endpoints. The factory accepts only HTTP loopback endpoints. This is a hard local-test guard, not a live AWS configuration path.
+
+Cloudflare workerd runtime compatibility remains unqualified until a dedicated workerd-to-DynamoDB-Local integration test is added. The adapter is not deployed, and no live AWS writes are possible through the local-only factory.
