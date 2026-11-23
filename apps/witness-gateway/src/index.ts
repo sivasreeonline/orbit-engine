@@ -96,6 +96,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function ownedArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
 function encodeBase64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -324,7 +330,7 @@ export async function buildMonitorReplayCheckpoint(input: {
     )
   ) throw new TypeError("canonical replay snapshot does not bind the triggering message identity");
 
-  const snapshotHash = new Uint8Array(await crypto.subtle.digest("SHA-256", input.snapshotBytes));
+  const snapshotHash = new Uint8Array(await crypto.subtle.digest("SHA-256", ownedArrayBuffer(input.snapshotBytes)));
   const actualSnapshotDigest = [...snapshotHash]
     .map((byte) => byte.toString(16).padStart(2, "0")).join("");
   if (actualSnapshotDigest !== input.snapshotDigest) {
