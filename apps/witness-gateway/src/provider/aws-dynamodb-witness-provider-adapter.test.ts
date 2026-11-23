@@ -8,7 +8,7 @@ import canonicalize from "canonicalize";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { deriveReplayCheckpointOperationId } from "../../../api/src/gossip/gossip-replay-checkpoint-intent";
-import { AwsDynamoDBWitnessProviderAdapter } from "./aws-dynamodb-witness-provider-adapter";
+import { AwsDynamoDBWitnessProviderAdapter, createLocalDynamoDBWitnessProviderAdapter } from "./aws-dynamodb-witness-provider-adapter";
 import {
   WitnessAppendConflict,
   WitnessIdempotencyConflict,
@@ -108,13 +108,18 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
       if (result.Table?.TableStatus === "ACTIVE") break;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    adapter = new AwsDynamoDBWitnessProviderAdapter(client, tableName);
+    adapter = createLocalDynamoDBWitnessProviderAdapter({
+      endpointUrl: endpoint!,
+      region,
+      tableName,
+    });
   });
 
   afterAll(async () => {
     try {
       await client.send(new DeleteTableCommand({ TableName: tableName }));
     } finally {
+      adapter?.destroy();
       client.destroy();
     }
   });
@@ -210,14 +215,11 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
         },
       }, predecessor),
     ));
-    const clients = candidates.map(() => new DynamoDBClient({
-      endpoint: endpoint!,
+    const adapters = candidates.map(() => createLocalDynamoDBWitnessProviderAdapter({
+      endpointUrl: endpoint!,
       region,
-      credentials: { accessKeyId: "local", secretAccessKey: "local" },
+      tableName,
     }));
-    const adapters = clients.map((independentClient) =>
-      new AwsDynamoDBWitnessProviderAdapter(independentClient, tableName)
-    );
     try {
       const outcomes = await Promise.allSettled(candidates.map((candidate, index) =>
         adapters[index]!.appendIfCurrent(candidate, predecessor, candidate.operationId),
@@ -226,7 +228,7 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
       expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(3);
       expect((await adapter.readLatest(testScope))?.checkpoint.generation).toBe(2);
     } finally {
-      clients.forEach((independentClient) => independentClient.destroy());
+      adapters.forEach((independentAdapter) => independentAdapter.destroy());
     }
   });
 });
