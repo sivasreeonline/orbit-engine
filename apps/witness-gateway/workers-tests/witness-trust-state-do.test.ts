@@ -221,4 +221,45 @@ describe("WitnessTrustStateDO", () => {
     expect((await first.readSnapshot(firstScope)).trustBundle?.generation).toBe(1);
     expect((await second.readSnapshot(secondScope)).trustBundle?.generation).toBe(0);
   });
+  it("uses collision-safe composite names for trust-domain and witness scopes", async () => {
+    const firstScope = { trustDomainId: "domain:segment", witnessId: "witness" };
+    const secondScope = { trustDomainId: "domain", witnessId: "segment:witness" };
+    const first = stubFor(firstScope);
+    const second = stubFor(secondScope);
+    expect((await first.readSnapshot(firstScope)).scope).toEqual(firstScope);
+    expect((await second.readSnapshot(secondScope)).scope).toEqual(secondScope);
+  });
+
+  it("retains the trust generation associated with each accepted tree head", async () => {
+    const scope = { trustDomainId: "trust-domain-rotation", witnessId: "witness-rotation" };
+    const stub = stubFor(scope);
+    const firstBundle = await trustBundle(scope, 1, ZERO_DIGEST, "rotation-one");
+    await stub.advanceTrustBundle({
+      scope, expectedGeneration: 0, expectedDigest: ZERO_DIGEST, envelope: firstBundle,
+    });
+    const firstHead = treeHead(scope, 1);
+    const firstHeadDigest = await digest(firstHead);
+    await stub.advanceTreeHead({
+      scope, expectedPriorHeadDigest: null, envelope: firstHead,
+    });
+
+    const secondBundle = await trustBundle(scope, 2, firstBundle.bundleDigest, "rotation-two");
+    await stub.advanceTrustBundle({
+      scope,
+      expectedGeneration: 1,
+      expectedDigest: firstBundle.bundleDigest,
+      envelope: secondBundle,
+    });
+    const secondHead = treeHead(scope, 2);
+    await stub.advanceTreeHead({
+      scope,
+      expectedPriorHeadDigest: firstHeadDigest,
+      envelope: secondHead,
+    });
+
+    const snapshot = await stub.readSnapshot(scope);
+    expect(snapshot.trustBundle?.digest).toBe(secondBundle.bundleDigest);
+    expect(snapshot.treeHead?.trustBundleDigest).toBe(secondBundle.bundleDigest);
+  });
+
 });
