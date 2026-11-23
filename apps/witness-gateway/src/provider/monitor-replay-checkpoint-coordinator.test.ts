@@ -9,6 +9,8 @@ import {
 import type { WitnessCheckpointScope } from "./witness-provider-adapter";
 import type { MonitorReplayCheckpointBody } from "../../../api/src/witness/witness-profile-verifier";
 
+const ZERO_DIGEST = "0".repeat(64);
+
 const scope: WitnessCheckpointScope = {
   trustDomainId: "monitor-trust-domain",
   witnessId: "monitor-witness",
