@@ -42,7 +42,9 @@ function base64url(bytes: Uint8Array): string {
 }
 
 async function fingerprint(bytes: Uint8Array): Promise<string> {
-  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
+  const owned = new Uint8Array(bytes.byteLength);
+  owned.set(bytes);
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", owned.buffer)));
 }
 
 async function sign(
