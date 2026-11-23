@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GossipReplayStateDO, type VerifiedGossipMessage } from "./gossip-replay-state-do";
 import type { Env } from "../env";
+vi.mock("../witness/witness-gateway-client", () => ({
+  checkpointReplayViaWitnessGateway: vi.fn(),
+  verifyEvidenceViaWitnessGateway: vi.fn(),
+}));
+import {
+  checkpointReplayViaWitnessGateway,
+  verifyEvidenceViaWitnessGateway,
+} from "../witness/witness-gateway-client";
 import { createReplayCheckpointIntent } from "./gossip-replay-checkpoint-intent";
 import { createPendingReplayIntent } from "./gossip-replay-pending-intent";
 import { REPLAY_STATE_ENVELOPE_KEY, type VersionedReplayState } from "./gossip-replay-checkpoint-lifecycle";
@@ -11,7 +19,7 @@ interface FakeStorage {
   transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T>;
 }
 
-function makeHarness(existing?: Map<string, unknown>) {
+function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
   const values = existing ?? new Map<string, unknown>();
   const storage: FakeStorage = {
     async get<T>(key: string): Promise<T | undefined> {
@@ -33,7 +41,7 @@ function makeHarness(existing?: Map<string, unknown>) {
   };
   const state = { storage } as unknown as DurableObjectState;
   return {
-    object: new GossipReplayStateDO(state, {} as Env),
+    object: new GossipReplayStateDO(state, env as Env),
     values,
   };
 }
@@ -191,6 +199,166 @@ describe("GossipReplayStateDO", () => {
     const result = await harness.object.acceptVerifiedMessage(message(1), 10_000);
     expect(result.outcome).toBe("BLOCKED");
     expect(harness.values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(initial);
+  });
+
+  it("preserves pending intent when the provider is unavailable during recovery", async () => {
+    vi.mocked(checkpointReplayViaWitnessGateway).mockResolvedValue({
+      checkpointed: false,
+      reason: "provider_unavailable",
+    });
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    const proposedState = { highestSequence: 1, messageId: "message-1" };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    const pending = await createPendingReplayIntent(intent, message(1), proposedState);
+    await harness.object.stageCheckpointIntent(pending);
+    const before = structuredClone(harness.values.get(REPLAY_STATE_ENVELOPE_KEY));
+
+    const result = await harness.object.recoverPendingCheckpointIntent();
+
+    expect(result).toEqual({ recovered: false, reason: "checkpoint_not_committed" });
+    expect(harness.values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(before);
+    expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(true);
+    expect(verifyEvidenceViaWitnessGateway).not.toHaveBeenCalled();
+    vi.mocked(checkpointReplayViaWitnessGateway).mockReset();
+  });
+
+  it("retries exact persisted bytes and finalizes only verified evidence", async () => {
+    const evidenceBytes = new TextEncoder().encode("{\"fixture\":\"signed-evidence\"}");
+    vi.mocked(checkpointReplayViaWitnessGateway).mockResolvedValue({
+      checkpointed: true,
+      canonicalEvidenceBody: evidenceBytes,
+    });
+    vi.mocked(verifyEvidenceViaWitnessGateway).mockResolvedValue({
+      verified: true,
+      trustBundleGeneration: 1,
+      trustBundleDigest: "1".repeat(64),
+      trustDomainId: "domain-a",
+      witnessId: "witness-a",
+      authorityId: "authority-a",
+      hostId: "host-a",
+      operationId: "fence-monitor-replay-test",
+      checkpointDigest: "d".repeat(64),
+      predecessorGeneration: 0,
+      predecessorDigest: "0".repeat(64),
+      generation: 1,
+      authorityStateDigest: "",
+      treeHeadDigest: "b".repeat(64),
+      treeSize: 1,
+      receiptLeafHash: "c".repeat(64),
+    });
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    const proposedState = { highestSequence: 1, messageId: "message-1" };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    const pending = await createPendingReplayIntent(intent, message(1), proposedState);
+    await harness.object.stageCheckpointIntent(pending);
+    vi.mocked(verifyEvidenceViaWitnessGateway).mockResolvedValue({
+      verified: true,
+      trustBundleGeneration: 1,
+      trustBundleDigest: "1".repeat(64),
+      trustDomainId: "domain-a",
+      witnessId: "witness-a",
+      authorityId: "authority-a",
+      hostId: "host-a",
+      operationId: intent.operationId,
+      checkpointDigest: "d".repeat(64),
+      predecessorGeneration: 0,
+      predecessorDigest: "0".repeat(64),
+      generation: 1,
+      authorityStateDigest: intent.snapshotDigest,
+      treeHeadDigest: "b".repeat(64),
+      treeSize: 1,
+      receiptLeafHash: "c".repeat(64),
+    });
+
+    const result = await harness.object.recoverPendingCheckpointIntent();
+
+    expect(result).toEqual({ recovered: true, stateVersion: 1 });
+    expect(checkpointReplayViaWitnessGateway).toHaveBeenCalledWith(
+      expect.anything(),
+      new TextEncoder().encode(intent.canonicalCheckpointBody),
+    );
+    expect(verifyEvidenceViaWitnessGateway).toHaveBeenCalledWith(expect.anything(), evidenceBytes);
+    expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(false);
+    expect((harness.values.get(REPLAY_STATE_ENVELOPE_KEY) as VersionedReplayState).snapshot)
+      .toEqual(proposedState);
+    vi.mocked(checkpointReplayViaWitnessGateway).mockReset();
+    vi.mocked(verifyEvidenceViaWitnessGateway).mockReset();
+  });
+
+  it("keeps pending intent when returned evidence fails independent verification", async () => {
+    vi.mocked(checkpointReplayViaWitnessGateway).mockResolvedValue({
+      checkpointed: true,
+      canonicalEvidenceBody: new TextEncoder().encode("{}"),
+    });
+    vi.mocked(verifyEvidenceViaWitnessGateway).mockResolvedValue({
+      verified: false,
+      reason: "receipt_invalid",
+    });
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    const proposedState = { highestSequence: 1 };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    const pending = await createPendingReplayIntent(intent, message(1), proposedState);
+    await harness.object.stageCheckpointIntent(pending);
+
+    const result = await harness.object.recoverPendingCheckpointIntent();
+
+    expect(result).toEqual({ recovered: false, reason: "evidence_not_verified" });
+    expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(true);
+    expect((harness.values.get(REPLAY_STATE_ENVELOPE_KEY) as VersionedReplayState).stateVersion)
+      .toBe(0);
+    vi.mocked(checkpointReplayViaWitnessGateway).mockReset();
+    vi.mocked(verifyEvidenceViaWitnessGateway).mockReset();
   });
 
   it("keeps the HTTP surface closed", async () => {
