@@ -43,6 +43,28 @@ Object key insertion order does not affect the snapshot digest. In the durable-i
 path, the operation ID is stable across retries of the same scope, predecessor
 and snapshot, and differs when any of those bindings differ.
 
+## Verified checkpoint identity versus transparency tree head
+
+The API finalization record keeps two distinct digests:
+
+- `checkpointDigest` is the digest signed into the witness receipt for the
+  checkpoint body. The receipt also binds operation ID, generation and
+  previous checkpoint digest.
+- `treeHeadDigest` is the root hash of the signed transparency tree head that
+  contains the receipt leaf. It is not the checkpoint digest and must never be
+  copied into the checkpoint predecessor field.
+
+The private gateway returns these values only after verifying the trust bundle,
+receipt signature and checkpoint binding, signed tree head, receipt inclusion,
+and tree-head consistency. It also returns the verified scope, operation ID,
+generation and predecessor. The API finalizer compares those values with the
+persisted intent and requires the checkpoint body's `authorityStateDigest`
+to equal the exact pending snapshot digest.
+
+On finalization, `ReplayWitnessHead.digest` stores the checkpoint digest;
+`ReplayWitnessHead.treeHeadDigest` stores the transparency root. A receipt for
+another scope, operation, predecessor, generation or snapshot is rejected.
+
 ## Ambiguous acknowledgement and readback
 
 If append reports an ambiguous acknowledgement, the coordinator queries the
