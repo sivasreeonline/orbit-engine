@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { authenticateApiWorkerWithWitnessGateway } from "./witness-gateway-client";
+import {
+  authenticateApiWorkerWithWitnessGateway,
+  verifyEvidenceViaWitnessGateway,
+} from "./witness-gateway-client";
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const buffer = new ArrayBuffer(bytes.byteLength);
@@ -52,6 +55,12 @@ describe("private witness gateway client", () => {
             keyId: config.keyId,
           };
         },
+        async verifyEvidence() {
+          return {
+            verified: false as const,
+            reason: "malformed_request" as const,
+          };
+        },
       },
     };
 
@@ -80,6 +89,10 @@ describe("private witness gateway client", () => {
           called = true;
           return { authenticated: false as const, reason: "unknown_key" as const };
         },
+        async verifyEvidence() {
+          called = true;
+          return { verified: false as const, reason: "malformed_request" as const };
+        },
       },
     }, new Uint8Array());
 
@@ -97,4 +110,43 @@ describe("private witness gateway client", () => {
       reason: "gateway_unavailable",
     });
   });
+  it("signs the evidence-verification operation with its dedicated scope and path", async () => {
+    const config = await signerConfig();
+    const body = new TextEncoder().encode('{"checkpointDigest":"test"}');
+    let receivedProof: unknown;
+    let receivedBody: Uint8Array | undefined;
+    const env = {
+      WORKLOAD_CALLER_ID: config.callerId,
+      WORKLOAD_CALLER_KEY_ID: config.keyId,
+      WORKLOAD_CALLER_PRIVATE_KEY_PKCS8: config.privateKeyPkcs8,
+      WITNESS_GATEWAY: {
+        async authenticate() {
+          return { authenticated: false as const, reason: "unknown_key" as const };
+        },
+        async verifyEvidence(proof: unknown, requestBody: Uint8Array) {
+          receivedProof = proof;
+          receivedBody = requestBody;
+          return {
+            verified: true as const,
+            trustBundleGeneration: 1,
+            trustBundleDigest: "1".repeat(64),
+            treeHeadDigest: "2".repeat(64),
+            treeSize: 2,
+            receiptLeafHash: "3".repeat(64),
+          };
+        },
+      },
+    };
+
+    const result = await verifyEvidenceViaWitnessGateway(env, body);
+    expect(result).toMatchObject({ verified: true, treeSize: 2 });
+    expect(receivedProof).toMatchObject({
+      audience: "sky-high-witness-gateway",
+      scope: "witness:verify-evidence",
+      method: "POST",
+      path: "/rpc/verify-evidence",
+    });
+    expect(receivedBody).toBe(body);
+  });
+
 });
