@@ -197,3 +197,14 @@ The durable API request now persists the triggering sender ID, recipient ID, can
 The final signed checkpoint body therefore binds both the resulting replay snapshot and the exact triggering message identity. This closes the gap where a snapshot could be paired with an unrelated triggering message.
 
 The gateway still fails closed with `provider_unavailable` after validation. No concrete storage provider or evidence authority is configured.
+
+
+## 14. Independent evidence-authority contract
+
+Added a separate TypeScript contract at `apps/witness-gateway/src/evidence/witness-evidence-authority.ts`. It is not an extension of `WitnessProviderAdapter` and does not share storage-provider responsibilities.
+
+The authority accepts the exact canonical monitor-replay checkpoint body and digest, and returns exact body-byte readback, trust bundle, signed receipt, signed tree head, leaf index, inclusion proof and consistency proof. It supports idempotent issuance/recovery and immutable operation lookup. A lost acknowledgement is recovered only through the same operation ID; changed bytes, scope, receipt identity or proof metadata are rejected.
+
+The contract's structural checks do not replace cryptographic verification. The gateway must still call the existing receipt/trust-bundle/tree-head/Merkle verifier path before evidence is accepted by the API Worker.
+
+**Not yet wired:** no concrete authority implementation, service binding, signing keys, or provider integration is configured. The gateway checkpoint RPC remains fail-closed with `provider_unavailable`.
