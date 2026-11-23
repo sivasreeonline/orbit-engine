@@ -166,11 +166,12 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
     const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample);
     const candidate = { ...sample, highestSequence: 2 };
     const other = { ...sample, highestSequence: 3 };
-    const [left, right] = await Promise.all([
+    const outcomes = await Promise.allSettled([
       checkpointMonitorReplaySnapshot(adapter, scope, candidate),
       checkpointMonitorReplaySnapshot(adapter, scope, other),
     ]);
-    expect([left.status, right.status].filter((s) => s === "CHECKPOINTED")).toHaveLength(1);
+    expect(outcomes.filter((item) => item.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter((item) => item.status === "rejected")).toHaveLength(1);
     expect(adapter.records).toHaveLength(2);
     expect(adapter.records[1]?.checkpoint.previousDigest).toBe(first.digest);
   });
