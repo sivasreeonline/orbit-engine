@@ -160,3 +160,18 @@ After authenticated request validation, the gateway reconstructs the monitor rep
 The new `buildMonitorReplayCheckpoint` helper has tests for valid canonical construction, absent triggering-message digest, sender/recipient mismatch and snapshot-digest mismatch. The gateway orchestration is wired to optional env interfaces, but neither binding is configured in `wrangler.jsonc` or deployed. Therefore the current deployed/test environment continues to return `provider_unavailable` before any append. No live writes are enabled.
 
 Exact-head CI run #2728 passed on `af367fad6b6319287f18321946252143824106d6`, including all API, gateway and web jobs.
+
+
+## AWS DynamoDB dual-digest adapter progress — 2026-11-23
+
+Added `AwsDynamoDBWitnessProviderAdapter` implementing the provider-neutral contract against DynamoDB:
+- partitioned by canonical witness scope hash;
+- atomically writes immutable generation, operation and idempotency records plus the high-water head in one `TransactWriteItems`;
+- stores exact canonical snapshot and checkpoint-body bytes in 32 KiB immutable binary chunks, avoiding DynamoDB's 400 KiB per-item ceiling while remaining under the transaction size/item-count limits;
+- performs strongly consistent `GetItem` readback for latest head, immutable operation and every byte chunk;
+- verifies both reconstructed byte digests before returning a stored record;
+- recovers durable idempotency records after ambiguous transaction acknowledgement and rejects stale predecessor races or idempotency rebinding.
+
+The local-only factory rejects non-loopback endpoints and does not enable live AWS writes. A DynamoDB Local integration test covers dual-byte persistence/readback, idempotent retry, changed-content idempotency conflict, stale predecessor rejection and independent-client concurrency. The API CI job starts the published DynamoDB Local container and runs this TypeScript integration test. The step passed in exact-head CI run #2747 on `1a0d7bd9d8a828705c24fb18b2a30003348673d6`.
+
+**Qualification boundary:** this is synthetic DynamoDB Local evidence only. The adapter is not deployed or bound to the gateway, no live AWS account/table/credentials are configured, and no production durability or independent failure-domain claim is made. Cloudflare workerd transport compatibility and real AWS qualification remain separate gates.
