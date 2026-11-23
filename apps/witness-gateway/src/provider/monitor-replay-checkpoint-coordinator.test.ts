@@ -166,6 +166,23 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
     const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample);
     const candidate = { ...sample, highestSequence: 2 };
     const other = { ...sample, highestSequence: 3 };
+    // Force both coordinator calls to observe the same predecessor. Without
+    // this barrier the second call may legitimately start after the first has
+    // committed and append a sequential successor, which is not a CAS race.
+    const readLatest = adapter.readLatest.bind(adapter);
+    let initialReads = 0;
+    let releaseInitialReads!: () => void;
+    const initialReadsReady = new Promise<void>((resolve) => {
+      releaseInitialReads = resolve;
+    });
+    adapter.readLatest = async (requestedScope) => {
+      if (initialReads < 2) {
+        initialReads += 1;
+        if (initialReads === 2) releaseInitialReads();
+        await initialReadsReady;
+      }
+      return readLatest(requestedScope);
+    };
     const outcomes = await Promise.allSettled([
       checkpointMonitorReplaySnapshot(adapter, scope, candidate),
       checkpointMonitorReplaySnapshot(adapter, scope, other),
