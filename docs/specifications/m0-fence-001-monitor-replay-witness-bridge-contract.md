@@ -208,3 +208,10 @@ The authority accepts the exact canonical monitor-replay checkpoint body and dig
 The contract's structural checks do not replace cryptographic verification. The gateway must still call the existing receipt/trust-bundle/tree-head/Merkle verifier path before evidence is accepted by the API Worker.
 
 **Not yet wired:** no concrete authority implementation, service binding, signing keys, or provider integration is configured. The gateway checkpoint RPC remains fail-closed with `provider_unavailable`.
+
+
+## 15. Gateway composition and fail-closed deployment state
+
+The private gateway now composes the two independent interfaces when both optional bindings are present: the provider-neutral checkpoint coordinator performs append/idempotent recovery/exact readback; the separate evidence authority issues or recovers the signed receipt and transparency proof bundle. The gateway checks that the coordinator's checkpoint digest equals the canonical replay checkpoint-body digest, structurally checks the authority bundle, and returns a canonical evidence-verification request. The API Worker must still run its private cryptographic verification RPC and locally finalize the pending intent.
+
+The gateway environment type exposes optional `WITNESS_PROVIDER` and `WITNESS_EVIDENCE_AUTHORITY` RPC bindings, but neither is configured in Wrangler or deployed. Missing bindings return `provider_unavailable` and leave the pending intent intact. This is composition readiness only, not a live provider or independent witness deployment.
