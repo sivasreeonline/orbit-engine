@@ -135,6 +135,22 @@ function prune(state: StoredState, trustedNow: number): void {
   }
 }
 
+interface PendingCheckpointAlarmStorage {
+  get<T>(key: string): Promise<T | undefined>;
+  getAlarm(): Promise<number | null>;
+  setAlarm(scheduledTime: number | Date): Promise<void>;
+}
+
+/** Re-arm the durable retry trigger after reconstruction when a pending intent exists. */
+export async function rearmPendingCheckpointAlarm(
+  storage: PendingCheckpointAlarmStorage,
+): Promise<void> {
+  const pending = await storage.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
+  if (pending !== undefined && await storage.getAlarm() === null) {
+    await storage.setAlarm(Date.now() + 1_000);
+  }
+}
+
 /**
  * One Durable Object instance must be addressed per sender/recipient/scope
  * relationship. Its transaction is the serialization boundary for replay
@@ -145,12 +161,7 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     super(ctx, env);
     // Re-arm recovery if the object was reconstructed after the intent commit
     // but before the staging caller could schedule its first alarm.
-    this.ctx.blockConcurrencyWhile(async () => {
-      const pending = await this.ctx.storage.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
-      if (pending !== undefined && await this.ctx.storage.getAlarm() === null) {
-        await this.ctx.storage.setAlarm(Date.now() + 1_000);
-      }
-    });
+    this.ctx.blockConcurrencyWhile(() => rearmPendingCheckpointAlarm(this.ctx.storage));
   }
 
   async acceptVerifiedMessage(
