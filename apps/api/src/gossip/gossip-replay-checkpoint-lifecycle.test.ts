@@ -166,7 +166,6 @@ describe("transactional replay checkpoint lifecycle", () => {
     const good = await finalizePendingReplayIntent(storage, pending, {
       verified: true,
       operationId: pending.intent.operationId,
-      snapshotDigest: pending.intent.snapshotDigest,
       checkpointDigest: "d".repeat(64),
       authorityStateDigest: pending.intent.snapshotDigest,
       trustDomainId: "domain-a",
