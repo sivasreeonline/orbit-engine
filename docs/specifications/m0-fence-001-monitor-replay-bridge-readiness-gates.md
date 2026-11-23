@@ -95,7 +95,7 @@ This audit does not add a gateway, service binding, provider adapter, signed tre
 - **Gate B — workload identity:** PRs #190–#191 implement signed workload identity and durable nonce replay. PR #192 adds the private gateway Worker; PR #193 adds the API caller proof signer; PR #194 verifies the real API-to-gateway named RPC boundary in local workerd. PR #194 exact-head CI run #2384 passed.
 - **Gate C — local evidence verification:** PR #197 adds the private `verifyEvidence` RPC, pinned root/scope configuration, durable trust-bundle generation state, historical trust context for accepted tree heads, receipt verification, inclusion proof and prior-head consistency verification. Local workerd integration tests cover the full API-to-gateway path.
 - **Gate D — provider-neutral append/readback coordinator:** this branch adds a TypeScript adapter contract and coordinator for RFC 8785 snapshot bytes, deterministic operation IDs, exact idempotency, ambiguous-ack recovery, immutable operation lookup and latest-head readback. Its in-memory unit tests are logic evidence only; no external provider is wired or qualified.
-- **Next:** review and implement ADR-021's dedicated `sky-high-fence-monitor-replay-v1` checkpoint-body profile. The existing authority-state profile fields do not have approved replay semantics, and the current coordinator's `checkpointDigest = snapshotDigest` assumption must be removed before any provider append is enabled.
+- **Next:** complete ADR-021's dedicated `sky-high-fence-monitor-replay-v1` profile integration. Its closed JSON Schema, strict TypeScript body validator and signed receipt/checkpoint-digest verification path are now implemented in PR #201. Remaining work: persist/read back snapshot and checkpoint bytes/digests separately in the provider-neutral adapter/coordinator, integrate independent evidence-authority issuance/recovery, and bind verified replay evidence into API finalization. The current coordinator's `checkpointDigest = snapshotDigest` assumption must be removed before any provider append is enabled.
 - **Still prohibited:** no live provider writes, production keys, public gateway ingress, or host/student-code execution. No rollback protection or independent provider durability claim is authorized by these local tests.
 
 
@@ -106,3 +106,12 @@ This audit does not add a gateway, service binding, provider adapter, signed tre
 - **Important profile mismatch discovered:** the coordinator currently treats the replay snapshot digest as the checkpoint digest, while the existing witness checkpoint-body profile is an authority lifecycle schema. ADR-021 proposes a separate monitor-replay checkpoint-body profile and explicit separation of snapshot digest, checkpoint digest, receipt leaf hash and tree-head digest. This is now the immediate blocking gate.
 - **Concrete provider and independent evidence authority:** not wired. No live append is authorized. A provider append acknowledgement or opaque consistency token cannot satisfy the evidence-authority gate.
 - **Production qualification:** NOT QUALIFIED. No student-code execution or host admission authorization follows from these local implementation tests.
+
+
+## 9. Replay checkpoint profile implementation progress — 2026-11-23
+
+- Added `monitorReplayCheckpointBody` and `monitorReplayCheckpointArtifact` to the existing FENCE witness JSON Schema; the authority checkpoint definition and existing vectors are unchanged.
+- Added strict TypeScript validation for the replay body, including exact keys, sender/recipient distinction, bounded snapshot byte length and distinct snapshot/message digests.
+- Extended the receipt verifier to verify the JCS digest of the replay checkpoint body while retaining the existing receipt envelope profile, key purpose and Ed25519 signing domain. Receipt operation/generation/predecessor/authority/host bindings and trust-domain identity are checked.
+- Added synthetic tests for valid replay body structure, forbidden authority-schema aliases, malformed fields and a signed receipt whose checkpoint digest is computed from the new replay body.
+- This does not yet change provider adapter persistence, coordinator digest semantics or gateway RPC. No provider append is enabled.
