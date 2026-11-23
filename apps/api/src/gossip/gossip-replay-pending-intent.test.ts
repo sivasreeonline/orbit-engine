@@ -14,7 +14,7 @@ const message = {
   scope,
   sequence: 1,
   canonicalDigest: "a".repeat(64),
-  messageType: "HEAD_ADVERTISEMENT",
+  messageType: "HEAD_ADVERTISEMENT" as const,
   issuedAt: 9_990,
   expiresAt: 10_100,
 };
