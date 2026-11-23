@@ -43,6 +43,7 @@ export interface MonitorReplayCheckpointArtifact {
   readonly snapshotDigest: string;
   readonly operationId: string;
   readonly checkpointBody: WitnessCheckpointBody;
+  readonly canonicalCheckpointBodyBytes: Uint8Array;
   readonly checkpointDigest: string;
   readonly providerCheckpoint: MonitorReplayProviderCheckpoint;
 }
@@ -257,7 +258,8 @@ export async function buildMonitorReplayCheckpointArtifact(
     epoch: snapshot.highestSequence,
     recordVersion: snapshot.version,
   };
-  const checkpointDigest = await digestHex(canonicalBytes(checkpointBody));
+  const canonicalCheckpointBodyBytes = canonicalBytes(checkpointBody);
+  const checkpointDigest = await digestHex(canonicalCheckpointBodyBytes);
   const providerCheckpoint: MonitorReplayProviderCheckpoint = {
     scope: {
       trustDomainId: scope.trustDomainId,
@@ -280,6 +282,7 @@ export async function buildMonitorReplayCheckpointArtifact(
     snapshotDigest,
     operationId,
     checkpointBody,
+    canonicalCheckpointBodyBytes,
     checkpointDigest,
     providerCheckpoint,
   };
