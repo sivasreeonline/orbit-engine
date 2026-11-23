@@ -7,7 +7,7 @@ const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const KEY_ID = /^[0-9a-f]{64}$/;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
 
-export type WorkloadProofOperation = "authorize" | "verify_evidence";
+export type WorkloadProofOperation = "authorize" | "verify_evidence" | "checkpoint_replay";
 
 const OPERATION_CONTEXT: Record<WorkloadProofOperation, { scope: string; method: string; path: string }> = {
   authorize: {
@@ -19,6 +19,11 @@ const OPERATION_CONTEXT: Record<WorkloadProofOperation, { scope: string; method:
     scope: "witness:verify-evidence",
     method: "POST",
     path: "/rpc/verify-evidence",
+  },
+  checkpoint_replay: {
+    scope: "witness:checkpoint-replay",
+    method: "POST",
+    path: "/rpc/checkpoint-replay",
   },
 };
 export interface WorkloadSignerConfig {
