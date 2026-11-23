@@ -28,7 +28,7 @@ interface FakeStorage {
 
 function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
   const values = existing ?? new Map<string, unknown>();
-  let alarmTime: number | null = null;
+  let alarmTime: number | null = (values.get("__durable_alarm__") as number | undefined) ?? null;
   const storage: FakeStorage = {
     async get<T>(key: string): Promise<T | undefined> {
       return values.get(key) as T | undefined;
@@ -44,6 +44,7 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
     },
     async setAlarm(scheduledTime: number | Date): Promise<void> {
       alarmTime = scheduledTime instanceof Date ? scheduledTime.getTime() : scheduledTime;
+      values.set("__durable_alarm__", alarmTime);
     },
     async transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T> {
       const snapshot = structuredClone([...values.entries()]);
@@ -66,6 +67,10 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
     object: new GossipReplayStateDO(state, env as Env),
     values,
     getAlarm: () => alarmTime,
+    clearAlarm: () => {
+      alarmTime = null;
+      values.delete("__durable_alarm__");
+    },
   };
 }
 
@@ -249,6 +254,75 @@ describe("GossipReplayStateDO", () => {
 
     expect((await harness.object.stageCheckpointIntent(pending)).staged).toBe(true);
     expect(harness.getAlarm()).toEqual(expect.any(Number));
+  });
+
+  it("re-arms a missing alarm after reconstructing an object with a pending intent", async () => {
+    const first = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await first.object.initializeCheckpointedState(initial);
+    const proposedState = { highestSequence: 1 };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    await first.object.stageCheckpointIntent(
+      await createPendingReplayIntent(intent, message(1), proposedState),
+    );
+
+    first.clearAlarm();
+    const restarted = makeHarness(first.values);
+
+    expect(restarted.getAlarm()).toEqual(expect.any(Number));
+  });
+
+  it("retries pending recovery from the Durable Object alarm and backs off on failure", async () => {
+    vi.mocked(checkpointReplayViaWitnessGateway).mockResolvedValue({
+      checkpointed: false,
+      reason: "provider_unavailable",
+    });
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    const proposedState = { highestSequence: 1 };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    await harness.object.stageCheckpointIntent(
+      await createPendingReplayIntent(intent, message(1), proposedState),
+    );
+
+    harness.clearAlarm();
+    await harness.object.alarm();
+
+    expect(checkpointReplayViaWitnessGateway).toHaveBeenCalledTimes(1);
+    expect(harness.getAlarm()).toEqual(expect.any(Number));
+    expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(true);
+    vi.mocked(checkpointReplayViaWitnessGateway).mockReset();
   });
 
   it("preserves pending intent when the provider is unavailable during recovery", async () => {
