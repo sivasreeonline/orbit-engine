@@ -20,6 +20,7 @@ beforeEach(() => {
 interface FakeStorage {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
+  delete(key: string): Promise<boolean>;
   transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T>;
 }
 
@@ -31,6 +32,9 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
     },
     async put<T>(key: string, value: T): Promise<void> {
       values.set(key, structuredClone(value));
+    },
+    async delete(key: string): Promise<boolean> {
+      return values.delete(key);
     },
     async transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T> {
       const snapshot = structuredClone([...values.entries()]);
