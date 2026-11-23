@@ -1,6 +1,8 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import type { VerifiedGossipMessage } from "../src/gossip/gossip-replay-state-do";
+import { createReplayCheckpointIntent } from "../src/gossip/gossip-replay-checkpoint-intent";
+import { createPendingReplayIntent } from "../src/gossip/gossip-replay-pending-intent";
 
 function message(
   sequence: number,
@@ -95,4 +97,87 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     const response = await stub.fetch("https://gossip-replay.invalid/");
     expect(response.status).toBe(404);
   });
+
+  it("keeps a staged replay transition blocked when the real gateway RPC reports provider unavailable", async () => {
+    const scope = "test-trust-domain-vector-01|witness-vector-01|authority-vector-01|host-vector-01";
+    const predecessor = { generation: 0, digest: "0".repeat(64) };
+    const initialSnapshot = {
+      version: 1,
+      senderId: "monitor-rpc-a",
+      recipientId: "monitor-rpc-b",
+      highestSequence: 0,
+      seenByMessageId: {},
+    };
+    const nextState = {
+      ...initialSnapshot,
+      highestSequence: 1,
+      seenByMessageId: {
+        "runtime-checkpoint-message": {
+          sequence: 1,
+          digest: "a".repeat(64),
+        },
+      },
+    };
+    const id = env.GOSSIP_REPLAY.idFromName(
+      `workers-runtime:gateway-fail-closed:${crypto.randomUUID()}`,
+    );
+    const stub = env.GOSSIP_REPLAY.get(id);
+    expect(await stub.initializeCheckpointedState({
+      version: 2,
+      stateVersion: 0,
+      snapshot: initialSnapshot,
+      witnessHead: {
+        generation: 0,
+        digest: predecessor.digest,
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    })).toEqual({ initialized: true });
+
+    const message = {
+      messageId: "runtime-checkpoint-message",
+      senderId: "monitor-rpc-a",
+      recipientId: "monitor-rpc-b",
+      scope,
+      sequence: 1,
+      canonicalDigest: "a".repeat(64),
+      messageType: "HEAD_ADVERTISEMENT" as const,
+      issuedAt: 9_990,
+      expiresAt: 10_100,
+    };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      senderId: message.senderId,
+      recipientId: message.recipientId,
+      messageDigest: message.canonicalDigest,
+      scope,
+      expectedPredecessor: predecessor,
+      nextState,
+    });
+    const pending = await createPendingReplayIntent(intent, message, nextState);
+    expect(await stub.stageCheckpointIntent(pending)).toEqual({
+      staged: true,
+      stateVersion: 0,
+    });
+
+    // The API calls the real private gateway Worker. The gateway validates
+    // the signed checkpoint request but has no provider/authority bindings.
+    const recovery = await stub.recoverPendingCheckpointIntent();
+    expect(recovery).toEqual({
+      recovered: false,
+      reason: "checkpoint_not_committed",
+    });
+
+    // Finalization atomically deletes the pending record. Its continued
+    // presence proves the proposed snapshot was not promoted to accepted state.
+    expect(await stub.hasPendingCheckpointIntent()).toBe(true);
+    expect(await stub.getPendingCheckpointIntent()).toMatchObject({
+      transitionDigest: pending.transitionDigest,
+      intent: {
+        operationId: pending.intent.operationId,
+        canonicalCheckpointBody: pending.intent.canonicalCheckpointBody,
+      },
+    });
+  });
+
 });
