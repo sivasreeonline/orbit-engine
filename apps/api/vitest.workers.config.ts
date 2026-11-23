@@ -28,7 +28,7 @@ export default defineConfig({
         keyId,
         publicKeyBase64Url: base64Url(publicKey),
         audiences: ["sky-high-witness-gateway"],
-        scopes: ["witness:authorize", "witness:verify-evidence"],
+        scopes: ["witness:authorize", "witness:verify-evidence", "witness:checkpoint-replay"],
         notBefore: 1_700_000_000,
         notAfter: 2_000_000_000,
       }]);
