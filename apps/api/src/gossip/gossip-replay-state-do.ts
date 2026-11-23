@@ -1,5 +1,15 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env";
+import {
+  finalizePendingReplayIntent,
+  hasPendingReplayIntent,
+  initializeVersionedReplayState,
+  stagePendingReplayIntent,
+  type ReplayCheckpointStorage,
+  type VersionedReplayState,
+  type VerifiedReplayCheckpointEvidence,
+} from "./gossip-replay-checkpoint-lifecycle";
+import type { PendingReplayIntent } from "./gossip-replay-pending-intent";
 
 const MAX_TTL_SECONDS = 300;
 const MAX_CLOCK_SKEW_SECONDS = 30;
@@ -135,6 +145,13 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     return this.ctx.storage.transaction(async (txn) => {
       const state =
         (await txn.get<StoredState>("replay-state-v1")) ?? emptyState();
+
+      if (await txn.get("replay-checkpoint-pending-v1") !== undefined) {
+        return reject(state, "BLOCKED", "a durable witness checkpoint intent is pending recovery");
+      }
+      if (await txn.get("replay-state-envelope-v2") !== undefined) {
+        return reject(state, "BLOCKED", "versioned checkpoint state must advance through the witness finalization path");
+      }
 
       if (!message || typeof message !== "object") {
         return reject(state, "QUARANTINE", "message envelope is malformed");
@@ -310,6 +327,47 @@ export class GossipReplayStateDO extends DurableObject<Env> {
           : "message and replay state committed atomically",
       );
     });
+  }
+
+  /** Initialize a new versioned relationship only when no legacy local-only state exists. */
+  async initializeCheckpointedState(
+    initial: VersionedReplayState,
+  ): Promise<
+    | { readonly initialized: true }
+    | { readonly initialized: false; readonly reason: "legacy_state_requires_quarantine" | "state_already_exists" }
+  > {
+    return initializeVersionedReplayState(
+      this.ctx.storage as unknown as ReplayCheckpointStorage,
+      initial,
+    );
+  }
+
+  /** Persist one exact pending transition before making any gateway RPC. */
+  async stageCheckpointIntent(
+    pending: PendingReplayIntent,
+  ): Promise<Awaited<ReturnType<typeof stagePendingReplayIntent>>> {
+    return stagePendingReplayIntent(
+      this.ctx.storage as unknown as ReplayCheckpointStorage,
+      pending,
+    );
+  }
+
+  /** Finalize only independently verified evidence bound to the pending operation. */
+  async finalizeCheckpointIntent(
+    pending: PendingReplayIntent,
+    evidence: VerifiedReplayCheckpointEvidence,
+  ): Promise<Awaited<ReturnType<typeof finalizePendingReplayIntent>>> {
+    return finalizePendingReplayIntent(
+      this.ctx.storage as unknown as ReplayCheckpointStorage,
+      pending,
+      evidence,
+    );
+  }
+
+  async hasPendingCheckpointIntent(): Promise<boolean> {
+    return hasPendingReplayIntent(
+      this.ctx.storage as unknown as ReplayCheckpointStorage,
+    );
   }
 
   override async fetch(): Promise<Response> {
