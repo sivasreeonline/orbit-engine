@@ -85,7 +85,7 @@ describe("durable replay checkpoint intent", () => {
     } as typeof intent)).toBe(false);
     expect(await validateReplayCheckpointIntent({
       ...intent,
-      scope: { ...intent.scope, unexpected: true },
+      scope: { ...intent.scope, unexpected: true } as typeof intent.scope,
     })).toBe(false);
   });
 
