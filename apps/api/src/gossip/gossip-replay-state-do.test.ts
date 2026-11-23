@@ -117,20 +117,20 @@ async function acceptAndFinalize(
 describe("GossipReplayStateDO", () => {
   it("commits accepted replay state and survives object reconstruction", async () => {
     const first = makeHarness();
-    const accepted = await first.acceptAndFinalize(object, message(1), 10_000);
+    const accepted = await acceptAndFinalize(first.object, message(1), 10_000);
     expect(accepted.outcome).toBe("ACCEPTED");
 
     const restarted = makeHarness(first.values);
-    const duplicate = await restarted.acceptAndFinalize(object, message(1), 10_000);
+    const duplicate = await acceptAndFinalize(restarted.object, message(1), 10_000);
     expect(duplicate.outcome).toBe("DUPLICATE");
     expect(duplicate.highestSequence).toBe(1);
   });
 
   it("quarantines same-sequence equivocation without changing durable state", async () => {
     const harness = makeHarness();
-    await harness.acceptAndFinalize(object, message(1), 10_000);
+    await acceptAndFinalize(harness.object, message(1), 10_000);
     const before = structuredClone(harness.values.get("replay-state-v1"));
-    const result = await harness.acceptAndFinalize(object, 
+    const result = await acceptAndFinalize(harness.object, 
       message(1, { messageId: "different-message", canonicalDigest: "f".repeat(64) }),
       10_000,
     );
@@ -140,23 +140,23 @@ describe("GossipReplayStateDO", () => {
 
   it("records sequence gaps and clears them only when missing messages arrive", async () => {
     const harness = makeHarness();
-    const gap = await harness.acceptAndFinalize(object, message(3), 10_000);
+    const gap = await acceptAndFinalize(harness.object, message(3), 10_000);
     expect(gap.outcome).toBe("ACCEPTED_WITH_GAP");
     expect(gap.missingSequences).toEqual([1, 2]);
 
-    const one = await harness.acceptAndFinalize(object, message(1), 10_000);
+    const one = await acceptAndFinalize(harness.object, message(1), 10_000);
     expect(one.outcome).toBe("ACCEPTED_WITH_GAP");
     expect(one.missingSequences).toEqual([2]);
 
-    const two = await harness.acceptAndFinalize(object, message(2), 10_000);
+    const two = await acceptAndFinalize(harness.object, message(2), 10_000);
     expect(two.outcome).toBe("ACCEPTED");
     expect(two.missingSequences).toEqual([]);
   });
 
   it("rejects a relationship identity or scope change", async () => {
     const harness = makeHarness();
-    await harness.acceptAndFinalize(object, message(1), 10_000);
-    const result = await harness.acceptAndFinalize(object, 
+    await acceptAndFinalize(harness.object, message(1), 10_000);
+    const result = await acceptAndFinalize(harness.object, 
       message(2, { scope: "other-scope" }),
       10_000,
     );
@@ -170,7 +170,7 @@ describe("GossipReplayStateDO", () => {
       messageType: "CONSISTENCY_PROOF_REQUEST",
       requestNonce: "fresh-nonce-1",
     });
-    expect((await harness.acceptAndFinalize(object, request, 10_000)).outcome)
+    expect((await acceptAndFinalize(harness.object, request, 10_000)).outcome)
       .toBe("ACCEPTED");
 
     const response = message(2, {
@@ -178,23 +178,23 @@ describe("GossipReplayStateDO", () => {
       responseRequestId: request.messageId,
       responseNonce: "fresh-nonce-1",
     });
-    expect((await harness.acceptAndFinalize(object, response, 10_000)).outcome)
+    expect((await acceptAndFinalize(harness.object, response, 10_000)).outcome)
       .toBe("ACCEPTED");
 
     const reused = message(3, {
       messageType: "CONSISTENCY_PROOF_REQUEST",
       requestNonce: "fresh-nonce-1",
     });
-    expect((await harness.acceptAndFinalize(object, reused, 10_000)).outcome)
+    expect((await acceptAndFinalize(harness.object, reused, 10_000)).outcome)
       .toBe("QUARANTINE");
   });
 
   it("blocks expired, oversized-gap and out-of-window messages", async () => {
     const harness = makeHarness();
-    expect((await harness.acceptAndFinalize(object, 
+    expect((await acceptAndFinalize(harness.object, 
       message(1, { expiresAt: 9_999 }), 10_000,
     )).outcome).toBe("BLOCKED");
-    expect((await harness.acceptAndFinalize(object, message(65), 10_000)).outcome)
+    expect((await acceptAndFinalize(harness.object, message(65), 10_000)).outcome)
       .toBe("BLOCKED");
   });
 
