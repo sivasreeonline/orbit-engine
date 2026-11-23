@@ -188,3 +188,12 @@ PR #201 now stores exact canonical replay snapshot bytes and exact canonical mon
 The API finalization evidence field is now `snapshotDigest`, not the authority-specific `authorityStateDigest`. The signed receipt's `checkpointDigest` remains independently bound to the canonical checkpoint body and is persisted as the witness-head digest.
 
 This is provider-neutral orchestration plus synthetic/in-memory tests. A concrete provider adapter and independent evidence authority are still absent. No live append is enabled.
+
+
+## 13. Message-bound durable checkpoint request
+
+The durable API request now persists the triggering sender ID, recipient ID, canonical message digest and base replay-state version in addition to the exact snapshot bytes/digest, scope, predecessor and operation ID. The private gateway validates the closed canonical request, recomputes operation identity and snapshot digest, checks the sender/recipient against the decoded snapshot, and requires the message digest to occur in the retained message-history map before constructing the dedicated replay checkpoint body.
+
+The final signed checkpoint body therefore binds both the resulting replay snapshot and the exact triggering message identity. This closes the gap where a snapshot could be paired with an unrelated triggering message.
+
+The gateway still fails closed with `provider_unavailable` after validation. No concrete storage provider or evidence authority is configured.
