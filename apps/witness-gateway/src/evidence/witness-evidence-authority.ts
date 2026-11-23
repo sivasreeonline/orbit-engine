@@ -172,17 +172,31 @@ export async function issueOrRecoverWitnessEvidence(
     await assertEvidenceAuthorityBundleMatchesRequest(request, issued);
     return issued;
   } catch (error) {
-    if (!(error instanceof WitnessEvidenceAuthorityAmbiguousCommitError)) throw error;
-    const recovered = await authority.readEvidenceByOperation(
-      request.scope,
-      request.checkpointBody.operationId,
-    );
-    if (!recovered) {
+    if (error instanceof WitnessEvidenceAuthorityOperationConflictError) throw error;
+    // RPC/service-binding errors may not preserve custom Error prototypes.
+    // Always perform immutable operation lookup after a failed issuance call;
+    // this is safe because the lookup is exact and cannot mint or rebase.
+    let recovered: WitnessEvidenceAuthorityBundle | null;
+    try {
+      recovered = await authority.readEvidenceByOperation(
+        request.scope,
+        request.checkpointBody.operationId,
+      );
+    } catch {
+      throw new WitnessEvidenceAuthorityUnavailableError(
+        "evidence issuance failed and immutable operation lookup is unavailable",
+      );
+    }
+    if (recovered) {
+      await assertEvidenceAuthorityBundleMatchesRequest(request, recovered);
+      return recovered;
+    }
+    if (error instanceof WitnessEvidenceAuthorityAmbiguousCommitError ||
+        error instanceof WitnessEvidenceAuthorityUnavailableError) {
       throw new WitnessEvidenceAuthorityUnavailableError(
         "ambiguous evidence issuance has no immutable operation record",
       );
     }
-    await assertEvidenceAuthorityBundleMatchesRequest(request, recovered);
-    return recovered;
+    throw error;
   }
 }
