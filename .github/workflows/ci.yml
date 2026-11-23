@@ -6,6 +6,7 @@ on:
     paths:
       - "apps/web/**"
       - "apps/api/**"
+      - "apps/witness-gateway/**"
       - "docs/**"
       - "migrations/**"
       - "scripts/**"
@@ -18,6 +19,7 @@ on:
     paths:
       - "apps/web/**"
       - "apps/api/**"
+      - "apps/witness-gateway/**"
       - "docs/**"
       - "migrations/**"
       - "scripts/**"
@@ -35,6 +37,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  witness-gateway:
+    name: Private witness gateway typecheck, tests and dry-run
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/witness-gateway
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Workers runtime integration tests
+        run: npm run test:workers
+
+      - name: Worker deployment dry run
+        run: npx wrangler deploy --dry-run
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
   web:
     name: Web typecheck, tests and build
     runs-on: ubuntu-latest
