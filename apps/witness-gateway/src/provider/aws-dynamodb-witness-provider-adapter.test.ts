@@ -191,6 +191,30 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
       .rejects.toBeInstanceOf(WitnessAppendConflict);
   });
 
+
+  it("rejects incorrect snapshot or checkpoint-body digests before writing any DynamoDB item", async () => {
+    const testScope = { ...scope, witnessId: "witness-digest-preflight" };
+    const predecessor = { generation: 0, digest: zero };
+    const checkpoint = await makeCheckpoint({
+      ...testScope,
+    } as WitnessCheckpointScope, {
+      version: 1,
+      senderId: "monitor-sender",
+      recipientId: "monitor-recipient",
+      highestSequence: 1,
+      seenByMessageId: { "message-1": { sequence: 1, digest: "a".repeat(64) } },
+    }, predecessor);
+    await expect(adapter.appendIfCurrent({
+      ...checkpoint,
+      canonicalSnapshotBytes: new TextEncoder().encode("{}"),
+    }, predecessor, "bad-snapshot-bytes")).rejects.toThrow("snapshotDigest");
+    await expect(adapter.appendIfCurrent({
+      ...checkpoint,
+      canonicalCheckpointBodyBytes: new TextEncoder().encode("{}"),
+    }, predecessor, "bad-checkpoint-bytes")).rejects.toThrow("checkpointDigest");
+    expect(await adapter.readLatest(testScope)).toBeNull();
+  });
+
   it("serializes independent concurrent writers with exactly one winner", async () => {
     const genesisSnapshot = {
       version: 1,
@@ -250,3 +274,18 @@ describe("DynamoDB adapter local-only factory", () => {
     })).toThrow("loopback");
   });
 });
+
+  it("rejects loopback URLs with credentials, path, query or fragment", () => {
+    for (const endpointUrl of [
+      "http://user:pass@127.0.0.1:8000",
+      "http://127.0.0.1:8000/other-path",
+      "http://127.0.0.1:8000?redirect=true",
+      "http://127.0.0.1:8000#fragment",
+    ]) {
+      expect(() => createLocalDynamoDBWitnessProviderAdapter({
+        endpointUrl,
+        region: "us-east-1",
+        tableName: "local-witness-table",
+      })).toThrow("plain loopback");
+    }
+  });
