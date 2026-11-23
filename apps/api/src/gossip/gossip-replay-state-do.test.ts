@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GossipReplayStateDO, type VerifiedGossipMessage } from "./gossip-replay-state-do";
+import { GossipReplayStateDO, rearmPendingCheckpointAlarm, type VerifiedGossipMessage } from "./gossip-replay-state-do";
 import type { Env } from "../env";
 vi.mock("../witness/witness-gateway-client", () => ({
   checkpointReplayViaWitnessGateway: vi.fn(),
@@ -67,6 +67,7 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
   } as unknown as DurableObjectState;
   return {
     object: new GossipReplayStateDO(state, env as Env),
+    storage,
     values,
     getAlarm: () => alarmTime,
     clearAlarm: () => {
@@ -285,10 +286,9 @@ describe("GossipReplayStateDO", () => {
     );
 
     first.clearAlarm();
-    const restarted = makeHarness(first.values);
-    await restarted.ready();
+    await rearmPendingCheckpointAlarm(first.storage);
 
-    expect(restarted.getAlarm()).toEqual(expect.any(Number));
+    expect(first.getAlarm()).toEqual(expect.any(Number));
   });
 
   it("retries pending recovery from the Durable Object alarm and backs off on failure", async () => {
