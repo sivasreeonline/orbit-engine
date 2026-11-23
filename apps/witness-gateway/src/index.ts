@@ -18,6 +18,7 @@ import {
   type ExpectedWitnessScope,
   type PinnedRootKey,
   type VerifiedTrustBundle,
+  type VerifiedTreeHead,
   type WitnessCheckpointBody,
   type WitnessReceiptEnvelope,
   type WitnessTreeHeadEnvelope,
@@ -385,7 +386,7 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
       return { verified: false, reason: "receipt_invalid" };
     }
 
-    let currentHead;
+    let currentHead: VerifiedTreeHead;
     try {
       currentHead = await verifySignedTreeHead(
         request.treeHeadEnvelope,
