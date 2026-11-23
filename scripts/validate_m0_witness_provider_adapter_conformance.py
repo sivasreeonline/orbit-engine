@@ -44,6 +44,9 @@ class Checkpoint:
     phase: str
     checkpoint_digest: str
     previous_digest: str
+    # Digest of the complete monitor replay snapshot committed by this artifact.
+    # Empty for generic provider conformance cases that are not replay snapshots.
+    snapshot_digest: str = ""
 
 
 @dataclass(frozen=True)
