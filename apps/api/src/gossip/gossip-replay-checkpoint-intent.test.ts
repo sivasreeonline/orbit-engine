@@ -65,10 +65,8 @@ describe("durable replay checkpoint intent", () => {
 
     const tampered = {
       ...intent,
-      canonicalCheckpointBody: intent.canonicalCheckpointBody.replace(
-        '"highestSequence":1',
-        '"highestSequence":2',
-      ),
+      canonicalSnapshotBase64Url: intent.canonicalSnapshotBase64Url.slice(0, -1) +
+        (intent.canonicalSnapshotBase64Url.endsWith("A") ? "B" : "A"),
     };
     expect(await validateReplayCheckpointIntent(tampered)).toBe(false);
   });
