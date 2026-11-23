@@ -43,9 +43,9 @@ function apiCallerEnv() {
   };
 }
 
-const RECEIPT_PREFIX = "SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\\0";
-const TRUST_PREFIX = "SKYHIGH-FENCE-001-WITNESS-TRUST-BUNDLE-V1\\0";
-const TREE_PREFIX = "SKYHIGH-FENCE-001-WITNESS-TREE-HEAD-V1\\0";
+const RECEIPT_PREFIX = "SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\0";
+const TRUST_PREFIX = "SKYHIGH-FENCE-001-WITNESS-TRUST-BUNDLE-V1\0";
+const TREE_PREFIX = "SKYHIGH-FENCE-001-WITNESS-TREE-HEAD-V1\0";
 const TEST_ROOT_SEED = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 const TEST_ROOT_KEY_ID = "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c";
 const RECEIPT_KEY_ID = "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9";
@@ -64,7 +64,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 function base64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 function hex(bytes: Uint8Array): string {
