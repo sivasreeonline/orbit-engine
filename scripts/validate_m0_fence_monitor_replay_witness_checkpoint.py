@@ -61,6 +61,7 @@ def canonical_snapshot_bytes(snapshot: dict[str, Any]) -> bytes:
         or not isinstance(snapshot.get("scope"), str)
         or type(snapshot.get("highestSequence")) is not int
         or snapshot["highestSequence"] < 0
+        or snapshot["highestSequence"] > 9_007_199_254_740_991
         or not isinstance(snapshot.get("seenBySequence"), dict)
         or not isinstance(snapshot.get("seenByMessageId"), dict)
         or not isinstance(snapshot.get("outstandingRequests"), dict)
@@ -92,12 +93,14 @@ def canonical_snapshot_bytes(snapshot: dict[str, Any]) -> bytes:
     for sequence, entry in snapshot["seenBySequence"].items():
         if (
             not isinstance(sequence, str)
-            or not sequence.isdigit()
+            or not sequence
+            or any(character not in "0123456789" for character in sequence)
             or sequence.startswith("0")
             or not isinstance(entry, dict)
             or set(entry) != {"messageId", "digest"}
             or not isinstance(entry["messageId"], str)
             or not entry["messageId"]
+            or len(entry["messageId"]) > 256
             or not isinstance(entry["digest"], str)
             or len(entry["digest"]) != 64
             or any(character not in "0123456789abcdef" for character in entry["digest"])
@@ -115,10 +118,12 @@ def canonical_snapshot_bytes(snapshot: dict[str, Any]) -> bytes:
         if (
             not isinstance(message_id, str)
             or not message_id
+            or len(message_id) > 256
             or not isinstance(entry, dict)
             or set(entry) != {"sequence", "digest"}
             or type(entry["sequence"]) is not int
             or entry["sequence"] < 1
+            or entry["sequence"] > 9_007_199_254_740_991
             or not isinstance(entry["digest"], str)
             or len(entry["digest"]) != 64
             or any(character not in "0123456789abcdef" for character in entry["digest"])
@@ -137,8 +142,10 @@ def canonical_snapshot_bytes(snapshot: dict[str, Any]) -> bytes:
             or set(request) != {"nonce", "expiresAt"}
             or not isinstance(request["nonce"], str)
             or not request["nonce"]
+            or len(request["nonce"]) > 256
             or type(request["expiresAt"]) is not int
             or request["expiresAt"] < 0
+            or request["expiresAt"] > 9_007_199_254_740_991
             or request["nonce"] in snapshot["consumedNonces"]
         ):
             raise ReplayCheckpointError("outstanding request entry is malformed")
