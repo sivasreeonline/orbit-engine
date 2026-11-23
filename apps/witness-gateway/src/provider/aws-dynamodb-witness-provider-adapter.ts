@@ -17,6 +17,20 @@ import {
   type WitnessProviderAdapter,
 } from "./witness-provider-adapter";
 
+interface DynamoDBCheckpointMetadata {
+  readonly scope: WitnessCheckpointScope;
+  readonly generation: number;
+  readonly operationId: string;
+  readonly phase: string;
+  readonly snapshotDigest: string;
+  readonly checkpointDigest: string;
+  readonly previousDigest: string;
+  readonly snapshotByteLength: number;
+  readonly checkpointBodyByteLength: number;
+  readonly snapshotChunkCount: number;
+  readonly checkpointBodyChunkCount: number;
+}
+
 const ZERO_DIGEST = "0".repeat(64);
 const DIGEST = /^[0-9a-f]{64}$/;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
@@ -389,19 +403,7 @@ export class AwsDynamoDBWitnessProviderAdapter implements WitnessProviderAdapter
     return `SCOPE#${await this.sha256Hex(new TextEncoder().encode(serialized))}`;
   }
 
-  private parseCheckpointMetadata(value: string): {
-    scope: WitnessCheckpointScope;
-    generation: number;
-    operationId: string;
-    phase: string;
-    snapshotDigest: string;
-    checkpointDigest: string;
-    previousDigest: string;
-    snapshotByteLength: number;
-    checkpointBodyByteLength: number;
-    snapshotChunkCount: number;
-    checkpointBodyChunkCount: number;
-  } {
+  private parseCheckpointMetadata(value: string): DynamoDBCheckpointMetadata {
     const parsed: unknown = JSON.parse(value);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       throw new Error("DynamoDB checkpoint metadata is malformed");
@@ -420,7 +422,7 @@ export class AwsDynamoDBWitnessProviderAdapter implements WitnessProviderAdapter
       !Number.isSafeInteger(item.snapshotChunkCount) ||
       !Number.isSafeInteger(item.checkpointBodyChunkCount)
     ) throw new Error("DynamoDB checkpoint metadata fields are malformed");
-    return item as unknown as ReturnType<AwsDynamoDBWitnessProviderAdapter["parseCheckpointMetadata"]>;
+    return item as unknown as DynamoDBCheckpointMetadata;
   }
 
   private stringAttribute(item: Record<string, AttributeValue>, key: string): string {
