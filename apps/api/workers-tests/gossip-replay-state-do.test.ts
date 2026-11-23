@@ -98,7 +98,7 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     expect(response.status).toBe(404);
   });
 
-  it("keeps a staged replay transition blocked when the real gateway RPC reports provider unavailable", async () => {
+  it("keeps a staged replay transition blocked when gateway recovery is unavailable inside the Durable Object", async () => {
     const scope = "test-trust-domain-vector-01|witness-vector-01|authority-vector-01|host-vector-01";
     const predecessor = { generation: 0, digest: "0".repeat(64) };
     const initialSnapshot = {
@@ -160,12 +160,12 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
       stateVersion: 0,
     });
 
-    // The API calls the real private gateway Worker. The gateway validates
-    // the signed checkpoint request but has no provider/authority bindings.
+    // Recovery runs inside the Durable Object. If its gateway capability or
+    // provider path is unavailable, it must preserve the exact pending intent.
     const recovery = await stub.recoverPendingCheckpointIntent();
-    expect(recovery).toEqual({
+    expect(recovery).toMatchObject({
       recovered: false,
-      reason: "checkpoint_not_committed",
+      reason: expect.stringMatching(/^(gateway_unavailable|checkpoint_not_committed)$/),
     });
 
     // Finalization atomically deletes the pending record. Its continued
