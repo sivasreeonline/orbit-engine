@@ -125,6 +125,7 @@ function validateSnapshot(
   for (const [sequence, entry] of Object.entries(snapshot.seenBySequence)) {
     if (
       !/^[1-9][0-9]*$/.test(sequence) ||
+      Number(sequence) > snapshot.highestSequence ||
       !isRecord(entry) ||
       !hasExactKeys(entry, ["messageId", "digest"]) ||
       !validNonEmpty(entry.messageId) ||
