@@ -1,5 +1,6 @@
 import canonicalize from "canonicalize";
 import {
+  consistencyProof,
   inclusionProof,
   merkleTreeHash,
   type PinnedRootKey,
@@ -11,6 +12,7 @@ import {
   verifyReceiptInclusion,
   verifySignedTreeHead,
   verifyTrustBundleEnvelope,
+  verifyTreeHeadExtension,
 } from "../../api/src/witness/witness-profile-verifier";
 import {
   WitnessEvidenceAuthorityOperationConflictError,
@@ -76,6 +78,7 @@ async function generateSigningKey(): Promise<{
 
 export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthority {
   private readonly records = new Map<string, WitnessEvidenceAuthorityBundle>();
+  private readonly logEntries: Uint8Array[] = [];
   private readonly rootKeyPromise = generateSigningKey();
   private readonly receiptKeyPromise = generateSigningKey();
   private readonly logKeyPromise = generateSigningKey();
@@ -160,7 +163,11 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
       signature: await sign(receiptSigning.privateKey, RECEIPT_PREFIX, receiptBody),
     };
     const leafBytes = canonicalBytes(receiptEnvelope);
-    const rootHash = hex(await merkleTreeHash([leafBytes]));
+    const priorTreeSize = this.logEntries.length;
+    this.logEntries.push(leafBytes);
+    const entries = this.logEntries.map((entry) => entry.slice());
+    const leafIndex = entries.length - 1;
+    const rootHash = hex(await merkleTreeHash(entries));
     const treeHeadBody = {
       profile: "sky-high-fence-witness-merkle-v1" as const,
       schemaVersion: 1 as const,
@@ -168,7 +175,7 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
       authorityId: request.scope.authorityId,
       hostId: request.scope.hostId,
       logId: "synthetic-test-log",
-      treeSize: 1,
+      treeSize: entries.length,
       rootHash,
       timestamp: now,
       keyId: logSigning.keyId,
@@ -183,9 +190,11 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
       trustBundleEnvelope,
       receiptEnvelope,
       treeHeadEnvelope,
-      leafIndex: 0,
-      inclusionProofHex: (await inclusionProof(0, [leafBytes])).map(hex),
-      consistencyProofHex: [],
+      leafIndex,
+      inclusionProofHex: (await inclusionProof(leafIndex, entries)).map(hex),
+      consistencyProofHex: priorTreeSize > 0
+        ? (await consistencyProof(priorTreeSize, entries)).map(hex)
+        : [],
     };
     this.records.set(key, bundle);
     return bundle;
@@ -196,6 +205,41 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
     operationId: string,
   ): Promise<WitnessEvidenceAuthorityBundle | null> {
     return this.records.get(this.operationKey(scope, operationId)) ?? null;
+  }
+
+  async verifyIssuedBundleExtension(
+    priorBundle: WitnessEvidenceAuthorityBundle,
+    currentBundle: WitnessEvidenceAuthorityBundle,
+  ): Promise<void> {
+    const [root, receiptSigning, logSigning] = await Promise.all([
+      this.rootKeyPromise,
+      this.receiptKeyPromise,
+      this.logKeyPromise,
+    ]);
+    const pinnedRoots: PinnedRootKey[] = [{
+      keyId: root.keyId,
+      publicKeyBase64Url: base64url(root.publicKey),
+    }];
+    const now = Math.floor(Date.now() / 1_000);
+    const trust = await verifyTrustBundleEnvelope(priorBundle.trustBundleEnvelope, pinnedRoots, {
+      generation: 0,
+      digest: ZERO_DIGEST,
+      trustDomainId: priorBundle.trustBundleEnvelope.body.trustDomainId,
+      witnessId: priorBundle.trustBundleEnvelope.body.witnessId,
+    });
+    const priorHead = await verifySignedTreeHead(priorBundle.treeHeadEnvelope, trust, now, {
+      witnessId: priorBundle.treeHeadEnvelope.body.witnessId,
+      authorityId: priorBundle.treeHeadEnvelope.body.authorityId,
+      hostId: priorBundle.treeHeadEnvelope.body.hostId,
+    });
+    const currentHead = await verifySignedTreeHead(currentBundle.treeHeadEnvelope, trust, now, {
+      witnessId: currentBundle.treeHeadEnvelope.body.witnessId,
+      authorityId: currentBundle.treeHeadEnvelope.body.authorityId,
+      hostId: currentBundle.treeHeadEnvelope.body.hostId,
+    });
+    await verifyTreeHeadExtension(priorHead, currentHead, currentBundle.consistencyProofHex);
+    void receiptSigning;
+    void logSigning;
   }
 
   async verifyIssuedBundle(
