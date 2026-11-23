@@ -85,6 +85,16 @@ def main() -> None:
         pass
     else:
         raise AssertionError("non-finite JSON number was accepted")
+    inconsistent = sample(1)
+    inconsistent["seenByMessageId"]["message-1"]["sequence"] = 2
+    try:
+        snapshot_digest(inconsistent)
+    except ReplayCheckpointError:
+        pass
+    else:
+        raise AssertionError("inconsistent replay indexes were accepted")
+    print("PASS replay snapshot cross-index consistency is enforced")
+
     print("PASS non-canonical JSON values are rejected")
 
     competing = InMemoryWitnessAdapter()
