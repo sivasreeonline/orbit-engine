@@ -61,6 +61,9 @@ describe("private witness gateway client", () => {
             reason: "malformed_request" as const,
           };
         },
+        async checkpointReplay() {
+          return { checkpointed: false as const, reason: "provider_unavailable" as const };
+        },
       },
     };
 
@@ -92,6 +95,9 @@ describe("private witness gateway client", () => {
         async verifyEvidence() {
           called = true;
           return { verified: false as const, reason: "malformed_request" as const };
+        },
+        async checkpointReplay() {
+          return { checkpointed: false as const, reason: "provider_unavailable" as const };
         },
       },
     }, new Uint8Array());
@@ -134,6 +140,9 @@ describe("private witness gateway client", () => {
             treeSize: 2,
             receiptLeafHash: "3".repeat(64),
           };
+        },
+        async checkpointReplay() {
+          return { checkpointed: false as const, reason: "provider_unavailable" as const };
         },
       },
     };
