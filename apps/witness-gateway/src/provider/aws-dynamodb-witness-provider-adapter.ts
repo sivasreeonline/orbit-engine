@@ -3,6 +3,7 @@ import {
   GetItemCommand,
   TransactWriteItemsCommand,
   type AttributeValue,
+  type DynamoDBClientConfig,
   type TransactWriteItem,
 } from "@aws-sdk/client-dynamodb";
 import canonicalize from "canonicalize";
@@ -37,6 +38,57 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
 const CHUNK_BYTES = 32 * 1024;
 const MAX_SNAPSHOT_BYTES = 512 * 1024;
 const MAX_CHECKPOINT_BODY_BYTES = 64 * 1024;
+
+interface FetchDynamoDBRequest {
+  readonly protocol: string;
+  readonly hostname: string;
+  readonly port?: number;
+  readonly path: string;
+  readonly method: string;
+  readonly headers: Record<string, string>;
+  readonly body?: string | Uint8Array | ArrayBuffer;
+}
+
+/** Web Fetch transport for AWS SDK v3; avoids Node socket handlers in Workers. */
+export function createFetchDynamoDBRequestHandler():
+  NonNullable<DynamoDBClientConfig["requestHandler"]> {
+  return {
+    async handle(request: FetchDynamoDBRequest) {
+      const authority = `${request.protocol}//${request.hostname}${request.port ? `:${request.port}` : ""}`;
+      const url = new URL(request.path, authority);
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(request.headers)) {
+        const normalized = name.toLowerCase();
+        if (
+          normalized === "host" ||
+          normalized === "content-length" ||
+          normalized === "connection" ||
+          normalized === "transfer-encoding"
+        ) continue;
+        headers.set(name, value);
+      }
+      const response = await fetch(url, {
+        method: request.method,
+        headers,
+        ...(request.body === undefined ? {} : { body: request.body as BodyInit }),
+      });
+      const responseHeaders: Record<string, string> = {};
+      response.headers.forEach((value, name) => {
+        responseHeaders[name] = value;
+      });
+      return {
+        response: {
+          statusCode: response.status,
+          headers: responseHeaders,
+          body: new Uint8Array(await response.arrayBuffer()),
+        },
+      };
+    },
+    destroy() {
+      // Fetch owns and releases each request's resources.
+    },
+  } as unknown as NonNullable<DynamoDBClientConfig["requestHandler"]>;
+}
 
 export interface AwsDynamoDBWitnessProviderConfig {
   readonly endpointUrl: string;
@@ -492,6 +544,7 @@ export function createLocalDynamoDBWitnessProviderAdapter(
       secretAccessKey: config.secretAccessKey ?? "local",
       ...(config.sessionToken ? { sessionToken: config.sessionToken } : {}),
     },
+    requestHandler: createFetchDynamoDBRequestHandler(),
   });
   return new AwsDynamoDBWitnessProviderAdapter(client, config.tableName);
 }
