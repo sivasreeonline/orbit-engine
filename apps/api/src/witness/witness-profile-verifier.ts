@@ -333,8 +333,10 @@ export async function verifyTrustBundleEnvelope(
 
   const roots = pinnedRoots.filter((root) => root.keyId === envelope.rootKeyId);
   if (roots.length !== 1) throw new TypeError("trust-bundle root key is missing or ambiguous");
-  const rootBytes = decodeBase64Url(roots[0].publicKeyBase64Url);
-  if (rootBytes.length !== 32 || hex(await sha256(rootBytes)) !== roots[0].keyId) {
+  const root = roots[0];
+  if (!root) throw new TypeError("pinned root key is missing");
+  const rootBytes = decodeBase64Url(root.publicKeyBase64Url);
+  if (rootBytes.length !== 32 || hex(await sha256(rootBytes)) !== root.keyId) {
     throw new TypeError("pinned root key fingerprint mismatch");
   }
   const signature = decodeBase64Url(envelope.rootSignature);
@@ -442,6 +444,7 @@ export async function verifyReceiptAgainstTrustedBundle(
   const matches = trustBundle.keys.filter((key) => key.keyId === receipt.keyId);
   if (matches.length !== 1) throw new TypeError("receipt signing key is missing or ambiguous");
   const key = matches[0];
+  if (!key) throw new TypeError("receipt signing key is missing");
   if (
     key.purpose !== "WITNESS_RECEIPT_SIGNING" ||
     key.witnessId !== receipt.witnessId ||
@@ -518,6 +521,7 @@ export async function verifySignedTreeHead(
   const matches = trustBundle.keys.filter((key) => key.keyId === body.keyId);
   if (matches.length !== 1) throw new TypeError("tree-head signing key is missing or ambiguous");
   const key = matches[0];
+  if (!key) throw new TypeError("tree-head signing key is missing");
   if (
     key.purpose !== "WITNESS_LOG_SIGNING" ||
     key.witnessId !== body.witnessId ||
@@ -569,7 +573,11 @@ function largestPowerOfTwoLessThan(value: number): number {
 
 export async function merkleTreeHash(entries: readonly Uint8Array[]): Promise<Uint8Array> {
   if (entries.length === 0) return sha256(new Uint8Array());
-  if (entries.length === 1) return leafHash(entries[0]);
+  if (entries.length === 1) {
+    const onlyEntry = entries[0];
+    if (!onlyEntry) throw new TypeError("Merkle leaf is missing");
+    return leafHash(onlyEntry);
+  }
   const split = largestPowerOfTwoLessThan(entries.length);
   return nodeHash(
     await merkleTreeHash(entries.slice(0, split)),
@@ -700,9 +708,10 @@ export async function verifyConsistencyProof(
       sn >>= 1;
     }
   }
-  let firstCalculated = path[0];
-  let secondCalculated = path[0];
-  if (!firstCalculated) return false;
+  const firstPathNode = path[0];
+  if (!firstPathNode) return false;
+  let firstCalculated = firstPathNode;
+  let secondCalculated = firstPathNode;
   for (const sibling of path.slice(1)) {
     if (sn === 0) return false;
     if ((fn & 1) === 1 || fn === sn) {
