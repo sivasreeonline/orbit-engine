@@ -52,6 +52,13 @@ export async function initializeVersionedReplayState(
   | { readonly initialized: true }
   | { readonly initialized: false; readonly reason: "legacy_state_requires_quarantine" | "state_already_exists" }
 > {
+  if (
+    initial.version !== 2 || !Number.isSafeInteger(initial.stateVersion) || initial.stateVersion < 0 ||
+    !Number.isSafeInteger(initial.witnessHead.generation) || initial.witnessHead.generation < 0 ||
+    !Number.isSafeInteger(initial.witnessHead.treeSize) || initial.witnessHead.treeSize < 0 ||
+    !/^[0-9a-f]{64}$/.test(initial.witnessHead.digest) ||
+    !/^[0-9a-f]{64}$/.test(initial.witnessHead.treeHeadDigest)
+  ) throw new TypeError("initial versioned replay state is malformed");
   return storage.transaction(async (txn) => {
     const legacy = await txn.get<unknown>(LEGACY_REPLAY_STATE_KEY);
     if (legacy !== undefined) {
@@ -145,7 +152,7 @@ export async function finalizePendingReplayIntent(
       evidence.predecessorDigest !== stored.intent.expectedPredecessor.digest ||
       !Number.isSafeInteger(evidence.generation) ||
       evidence.generation !== current.witnessHead.generation + 1 ||
-      !Number.isSafeInteger(evidence.treeSize) || evidence.treeSize < 1 ||
+      !Number.isSafeInteger(evidence.treeSize) || evidence.treeSize <= current.witnessHead.treeSize ||
       !/^[0-9a-f]{64}$/.test(evidence.treeHeadDigest) ||
       !/^[0-9a-f]{64}$/.test(evidence.receiptLeafHash)
     ) return { finalized: false, reason: "evidence_binding_mismatch" } as const;
