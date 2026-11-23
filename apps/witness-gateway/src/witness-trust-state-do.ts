@@ -21,6 +21,8 @@ export interface StoredWitnessTreeHead {
   readonly digest: string;
   /** Trust-bundle generation under which this head was verified and accepted. */
   readonly trustBundleDigest: string;
+  /** Root-verified trust bundle snapshot used when this head was accepted. */
+  readonly trustBundleEnvelope: unknown;
   readonly envelope: unknown;
 }
 
@@ -294,6 +296,7 @@ export class WitnessTrustStateDO extends DurableObject<unknown> {
         treeHead: {
           digest: nextDigest,
           trustBundleDigest: stored.trustBundle.digest,
+          trustBundleEnvelope: stored.trustBundle.envelope,
           envelope: input.envelope,
         },
       };
