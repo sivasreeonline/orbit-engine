@@ -99,6 +99,12 @@ function sameCanonical(left: unknown, right: unknown): boolean {
   return canonicalString(left) === canonicalString(right);
 }
 
+async function canonicalDigest(value: unknown): Promise<string> {
+  const bytes = new TextEncoder().encode(canonicalString(value));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function assertScopeMatches(
   actual: MonitorReplayProviderCheckpoint["scope"],
   expected: MonitorReplayTrustScope,
@@ -159,8 +165,17 @@ async function assertLatestRecord(
     record.checkpoint.phase !== REPLAY_PHASE ||
     !/^[0-9a-f]{64}$/.test(record.checkpoint.checkpointDigest) ||
     !/^[0-9a-f]{64}$/.test(record.checkpoint.snapshotDigest) ||
-    !/^[0-9a-f]{64}$/.test(record.checkpoint.previousDigest)
+    !/^[0-9a-f]{64}$/.test(record.checkpoint.previousDigest) ||
+    record.checkpoint.checkpointBody.profile !== "sky-high-fence-witness-v1" ||
+    record.checkpoint.checkpointBody.phase !== "ACCEPTED" ||
+    record.checkpoint.checkpointBody.generation !== record.checkpoint.generation ||
+    record.checkpoint.checkpointBody.operationId !== record.checkpoint.operationId ||
+    record.checkpoint.checkpointBody.previousCheckpointDigest !== record.checkpoint.previousDigest ||
+    record.checkpoint.checkpointBody.authorityStateDigest !== record.checkpoint.snapshotDigest
   ) throw new WitnessProviderIntegrityError("latest provider checkpoint metadata is malformed");
+  if (await canonicalDigest(record.checkpoint.checkpointBody) !== record.checkpoint.checkpointDigest) {
+    throw new WitnessProviderIntegrityError("latest provider checkpoint artifact digest is invalid");
+  }
   assertReceiptMatchesCheckpoint(record);
   await verifyRecord(record);
 }
@@ -214,7 +229,7 @@ export async function checkpointMonitorReplaySnapshot(
     if (
       latest.checkpoint.operationId !== priorOperation.checkpoint.operationId ||
       latest.checkpoint.checkpointDigest !== priorOperation.checkpoint.checkpointDigest ||
-      !sameCanonical(latest.receiptEnvelope, priorOperation.receiptEnvelope)
+      !sameCanonical(latest, priorOperation)
     ) throw new WitnessProviderIntegrityError("replayed snapshot operation is no longer the current witness head");
     return resultFromRecord("ALREADY_CHECKPOINTED", priorOperation);
   }
@@ -270,7 +285,7 @@ export async function checkpointMonitorReplaySnapshot(
   if (
     strongLatest.checkpoint.operationId !== artifact.operationId ||
     strongLatest.checkpoint.checkpointDigest !== artifact.checkpointDigest ||
-    !sameCanonical(strongLatest.receiptEnvelope, committed.receiptEnvelope)
+    !sameCanonical(strongLatest, committed)
   ) throw new WitnessProviderIntegrityError("strong latest readback differs from the exact appended replay checkpoint");
 
   return resultFromRecord("CHECKPOINTED", committed);
