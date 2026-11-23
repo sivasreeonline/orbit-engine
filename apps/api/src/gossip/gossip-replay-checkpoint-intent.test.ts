@@ -71,6 +71,24 @@ describe("durable replay checkpoint intent", () => {
     expect(await validateReplayCheckpointIntent(tampered)).toBe(false);
   });
 
+  it("rejects extra fields in persisted intent and scope objects", async () => {
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      scope,
+      expectedPredecessor: predecessor,
+      nextState: { version: 1 },
+    });
+
+    expect(await validateReplayCheckpointIntent({
+      ...intent,
+      unexpected: true,
+    } as typeof intent)).toBe(false);
+    expect(await validateReplayCheckpointIntent({
+      ...intent,
+      scope: { ...intent.scope, unexpected: true },
+    })).toBe(false);
+  });
+
   it("rejects non-plain snapshots", async () => {
     await expect(createReplayCheckpointIntent({
       baseStateVersion: 0,
