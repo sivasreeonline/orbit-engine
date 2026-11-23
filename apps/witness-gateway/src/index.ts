@@ -550,12 +550,13 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
         !/^[A-Za-z0-9_-]+$/.test(parsed.canonicalSnapshotBase64Url)
       ) return { checkpointed: false, reason: "malformed_request" };
 
+      const requestedScope = parsed.scope as Record<string, unknown>;
       const allowedScopes = parseAllowedWitnessScopes(this.env.WITNESS_TRUST_SCOPES);
       if (!allowedScopes || !allowedScopes.some((scope) =>
-        scope.trustDomainId === parsed.scope!.trustDomainId &&
-        scope.witnessId === parsed.scope!.witnessId &&
-        scope.authorityId === parsed.scope!.authorityId &&
-        scope.hostId === parsed.scope!.hostId
+        scope.trustDomainId === requestedScope.trustDomainId &&
+        scope.witnessId === requestedScope.witnessId &&
+        scope.authorityId === requestedScope.authorityId &&
+        scope.hostId === requestedScope.hostId
       )) return { checkpointed: false, reason: "trust_scope_denied" };
 
       const encoded = parsed.canonicalSnapshotBase64Url;
