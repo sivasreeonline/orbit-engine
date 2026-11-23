@@ -22,6 +22,11 @@ Python reference implementations use RFC 8785 canonical JSON.
 
 `snapshotDigest = SHA256(canonicalSnapshotBytes)`
 
+The provider scope binds trust domain, witness, authority, host, sender,
+recipient and replay scope. The relationship fields prevent two monitor
+relationships from sharing a provider checkpoint namespace even if they use
+the same authority and host.
+
 The deterministic provider operation identifier is:
 
 `fence-monitor-replay-${snapshotDigest}`
