@@ -419,7 +419,7 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
       body: receiptBody,
       signature: await sign(
         receiptPrivateKey,
-        "SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\\0",
+        "SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\0",
         receiptBody,
       ),
     };
