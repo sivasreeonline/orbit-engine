@@ -17,7 +17,7 @@ export class DurableWitnessTrustStateStore {
   constructor(private readonly namespace: DurableObjectNamespace) {}
 
   private stub(scope: WitnessTrustScope): WitnessTrustStateStub {
-    const id = this.namespace.idFromName(`${scope.trustDomainId}:${scope.witnessId}`);
+    const id = this.namespace.idFromName(`${scope.trustDomainId.length}:${scope.trustDomainId}${scope.witnessId.length}:${scope.witnessId}`);
     return this.namespace.get(id) as unknown as WitnessTrustStateStub;
   }
 
