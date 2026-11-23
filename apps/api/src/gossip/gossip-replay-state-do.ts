@@ -364,6 +364,11 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     );
   }
 
+  /** Read the exact persisted request for restart recovery; never reconstruct it from current state. */
+  async getPendingCheckpointIntent(): Promise<PendingReplayIntent | undefined> {
+    return this.ctx.storage.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
+  }
+
   async hasPendingCheckpointIntent(): Promise<boolean> {
     return hasPendingReplayIntent(
       this.ctx.storage as unknown as ReplayCheckpointStorage,
