@@ -129,3 +129,12 @@ The initial profile slice has now been extended:
 Exact-head CI run #2677 passed on `244de56ecc0188412c1d7f2b3b3ee56dff50e4f7` (API, private gateway and web jobs).
 
 This remains provider-neutral logic and in-memory test evidence. It does not constitute a configured durable provider, an independent evidence authority, or production qualification.
+
+
+## Durable request and message binding progress — 2026-11-23
+
+The API's durable replay request now carries the triggering message's sender ID, recipient ID and canonical message digest, together with base state version, snapshot byte length, scope, predecessor and exact snapshot bytes. Pending-intent validation rechecks those fields and the canonical request bytes on restart; the pending transition wrapper rejects a message that differs from the identity persisted in the checkpoint intent.
+
+The private gateway now parses this closed request, validates the caller scope and deterministic operation ID, decodes and re-hashes the exact snapshot bytes, verifies the sender/recipient identity against the snapshot, and requires the triggering message digest to appear in the snapshot's retained message history. It constructs and validates the dedicated monitor replay checkpoint body and computes its distinct checkpoint digest. The deployment still returns `provider_unavailable` after validation because no concrete provider/evidence authority is configured.
+
+Exact-head CI run #2701 passed on `144131dbc691e0670b02b64da585ee9fe2984d91`, including API typecheck/unit tests/Workers runtime integration, private gateway typecheck/tests/dry-run, schema and cryptographic conformance, and the synthetic DynamoDB Local checks.
