@@ -37,13 +37,31 @@ export interface ReplayCheckpointStorageTransaction {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
   delete(key: string): Promise<boolean>;
-  get<T>(key: string): Promise<T | undefined>;
 }
 
 export interface ReplayCheckpointStorage {
   transaction<T>(
     callback: (txn: ReplayCheckpointStorageTransaction) => Promise<T>,
   ): Promise<T>;
+}
+
+export async function initializeVersionedReplayState(
+  storage: ReplayCheckpointStorage,
+  initial: VersionedReplayState,
+): Promise<
+  | { readonly initialized: true }
+  | { readonly initialized: false; readonly reason: "legacy_state_requires_quarantine" | "state_already_exists" }
+> {
+  return storage.transaction(async (txn) => {
+    const legacy = await txn.get<unknown>(LEGACY_REPLAY_STATE_KEY);
+    if (legacy !== undefined) {
+      return { initialized: false, reason: "legacy_state_requires_quarantine" } as const;
+    }
+    const current = await txn.get<VersionedReplayState>(REPLAY_STATE_ENVELOPE_KEY);
+    if (current) return { initialized: false, reason: "state_already_exists" } as const;
+    await txn.put(REPLAY_STATE_ENVELOPE_KEY, initial);
+    return { initialized: true } as const;
+  });
 }
 
 export type StagePendingIntentResult =
@@ -62,10 +80,6 @@ export type FinalizePendingIntentResult =
       readonly reason: "pending_intent_missing" | "pending_intent_mismatch" |
         "state_version_changed" | "evidence_binding_mismatch" | "invalid_pending_intent";
     };
-
-function sameSnapshot(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
 
 /**
  * Persist intent before any gateway call. This transaction never changes the
