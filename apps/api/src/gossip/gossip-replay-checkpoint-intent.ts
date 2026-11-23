@@ -46,9 +46,16 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
     Object.getPrototypeOf(value) === Object.prototype;
 }
 
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
 function parseScope(value: string): ReplayCheckpointScope {
   const parts = value.split("|");
-  if (parts.length !== 4 || parts.some((part) => part.length === 0 || part.trim() !== part)) {
+  if (parts.length !== 4 || parts.some((part) =>
+    part.length === 0 || part.length > 256 || part.trim() !== part
+  )) {
     throw new TypeError("replay checkpoint scope must contain four non-empty canonical parts");
   }
   return {
@@ -138,7 +145,19 @@ export async function validateReplayCheckpointIntent(
     !Number.isSafeInteger(intent.baseStateVersion) ||
     intent.baseStateVersion < 0 ||
     !isPlainRecord(intent.scope) ||
+    !hasExactKeys(intent, [
+      "version",
+      "baseStateVersion",
+      "scope",
+      "expectedPredecessor",
+      "operationId",
+      "snapshotDigest",
+      "canonicalSnapshotBase64Url",
+      "canonicalCheckpointBody",
+    ]) ||
+    !hasExactKeys(intent.scope, ["trustDomainId", "witnessId", "authorityId", "hostId"]) ||
     !isPlainRecord(intent.expectedPredecessor) ||
+    !hasExactKeys(intent.expectedPredecessor, ["generation", "digest"]) ||
     !DIGEST.test(intent.snapshotDigest) ||
     intent.operationId !== `fence-monitor-replay-${intent.snapshotDigest}` ||
     typeof intent.canonicalSnapshotBase64Url !== "string" ||
