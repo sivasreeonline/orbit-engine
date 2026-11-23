@@ -211,11 +211,7 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
     priorBundle: WitnessEvidenceAuthorityBundle,
     currentBundle: WitnessEvidenceAuthorityBundle,
   ): Promise<void> {
-    const [root, receiptSigning, logSigning] = await Promise.all([
-      this.rootKeyPromise,
-      this.receiptKeyPromise,
-      this.logKeyPromise,
-    ]);
+    const root = await this.rootKeyPromise;
     const pinnedRoots: PinnedRootKey[] = [{
       keyId: root.keyId,
       publicKeyBase64Url: base64url(root.publicKey),
@@ -238,8 +234,6 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
       hostId: currentBundle.treeHeadEnvelope.body.hostId,
     });
     await verifyTreeHeadExtension(priorHead, currentHead, currentBundle.consistencyProofHex);
-    void receiptSigning;
-    void logSigning;
   }
 
   async verifyIssuedBundle(
