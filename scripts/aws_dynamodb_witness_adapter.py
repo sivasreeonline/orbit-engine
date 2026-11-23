@@ -74,6 +74,7 @@ def _checkpoint_document(value: Any) -> dict[str, Any]:
         "phase": value.phase,
         "checkpoint_digest": value.checkpoint_digest,
         "previous_digest": value.previous_digest,
+        "snapshot_digest": value.snapshot_digest,
     }
 
 
@@ -106,6 +107,7 @@ def _decode_record(item: dict[str, Any] | None) -> Any:
         phase=checkpoint_body["phase"],
         checkpoint_digest=checkpoint_body["checkpoint_digest"],
         previous_digest=checkpoint_body["previous_digest"],
+        snapshot_digest=checkpoint_body.get("snapshot_digest", ""),
     )
     receipt = contract.Receipt(
         scope=contract.Scope(**receipt_body["scope"]),
