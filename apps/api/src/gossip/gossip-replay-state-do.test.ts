@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { GossipReplayStateDO, type VerifiedGossipMessage } from "./gossip-replay-state-do";
+import {
+  GossipReplayStateDO,
+  type GossipReplayResult,
+  type GossipReplayPendingIntent,
+  type VerifiedGossipMessage,
+} from "./gossip-replay-state-do";
+import { buildMonitorReplayCheckpointArtifact } from "../witness/monitor-replay-checkpoint";
 import type { Env } from "../env";
 
 interface FakeStorage {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
+  delete(key: string): Promise<boolean>;
   transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T>;
 }
 
@@ -16,6 +23,9 @@ function makeHarness(existing?: Map<string, unknown>) {
     },
     async put<T>(key: string, value: T): Promise<void> {
       values.set(key, structuredClone(value));
+    },
+    async delete(key: string): Promise<boolean> {
+      return values.delete(key);
     },
     async transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T> {
       const snapshot = structuredClone([...values.entries()]);
@@ -53,23 +63,74 @@ function message(
   };
 }
 
+async function finalizePending(
+  object: GossipReplayStateDO,
+  pending: GossipReplayPendingIntent,
+): Promise<GossipReplayResult> {
+  const scope = {
+    trustDomainId: "test-trust-domain",
+    witnessId: "test-witness",
+    authorityId: "test-authority",
+    hostId: "test-host",
+    senderId: pending.snapshot.senderId,
+    recipientId: pending.snapshot.recipientId,
+    replayScope: pending.snapshot.scope,
+  };
+  const artifact = await buildMonitorReplayCheckpointArtifact(
+    pending.snapshot,
+    scope,
+    pending.expectedGeneration + 1,
+    pending.expectedPreviousDigest,
+  );
+  const finalized = await object.finalizeCheckpointIntent({
+    operationId: pending.operationId,
+    snapshotDigest: pending.snapshotDigest,
+    generation: pending.expectedGeneration + 1,
+    checkpointDigest: artifact.checkpointDigest,
+    receiptDigest: "b".repeat(64),
+    verification: {
+      verified: true,
+      trustBundleDigest: "c".repeat(64),
+      treeHeadDigest: "d".repeat(64),
+      treeSize: pending.expectedGeneration + 1,
+      receiptLeafHash: "e".repeat(64),
+    },
+  });
+  if (!finalized.replay) {
+    throw new Error(`synthetic checkpoint finalization failed: ${finalized.status}: ${finalized.reason}`);
+  }
+  return finalized.replay;
+}
+
+async function acceptAndFinalize(
+  object: GossipReplayStateDO,
+  value: VerifiedGossipMessage,
+  trustedNow: number,
+): Promise<GossipReplayResult> {
+  const prepared = await object.prepareCheckpointIntent(value, trustedNow);
+  if (prepared.outcome !== "CHECKPOINT_PENDING" || !prepared.pendingIntent) {
+    return prepared;
+  }
+  return finalizePending(object, prepared.pendingIntent);
+}
+
 describe("GossipReplayStateDO", () => {
   it("commits accepted replay state and survives object reconstruction", async () => {
     const first = makeHarness();
-    const accepted = await first.object.acceptVerifiedMessage(message(1), 10_000);
+    const accepted = await first.acceptAndFinalize(object, message(1), 10_000);
     expect(accepted.outcome).toBe("ACCEPTED");
 
     const restarted = makeHarness(first.values);
-    const duplicate = await restarted.object.acceptVerifiedMessage(message(1), 10_000);
+    const duplicate = await restarted.acceptAndFinalize(object, message(1), 10_000);
     expect(duplicate.outcome).toBe("DUPLICATE");
     expect(duplicate.highestSequence).toBe(1);
   });
 
   it("quarantines same-sequence equivocation without changing durable state", async () => {
     const harness = makeHarness();
-    await harness.object.acceptVerifiedMessage(message(1), 10_000);
+    await harness.acceptAndFinalize(object, message(1), 10_000);
     const before = structuredClone(harness.values.get("replay-state-v1"));
-    const result = await harness.object.acceptVerifiedMessage(
+    const result = await harness.acceptAndFinalize(object, 
       message(1, { messageId: "different-message", canonicalDigest: "f".repeat(64) }),
       10_000,
     );
@@ -79,23 +140,23 @@ describe("GossipReplayStateDO", () => {
 
   it("records sequence gaps and clears them only when missing messages arrive", async () => {
     const harness = makeHarness();
-    const gap = await harness.object.acceptVerifiedMessage(message(3), 10_000);
+    const gap = await harness.acceptAndFinalize(object, message(3), 10_000);
     expect(gap.outcome).toBe("ACCEPTED_WITH_GAP");
     expect(gap.missingSequences).toEqual([1, 2]);
 
-    const one = await harness.object.acceptVerifiedMessage(message(1), 10_000);
+    const one = await harness.acceptAndFinalize(object, message(1), 10_000);
     expect(one.outcome).toBe("ACCEPTED_WITH_GAP");
     expect(one.missingSequences).toEqual([2]);
 
-    const two = await harness.object.acceptVerifiedMessage(message(2), 10_000);
+    const two = await harness.acceptAndFinalize(object, message(2), 10_000);
     expect(two.outcome).toBe("ACCEPTED");
     expect(two.missingSequences).toEqual([]);
   });
 
   it("rejects a relationship identity or scope change", async () => {
     const harness = makeHarness();
-    await harness.object.acceptVerifiedMessage(message(1), 10_000);
-    const result = await harness.object.acceptVerifiedMessage(
+    await harness.acceptAndFinalize(object, message(1), 10_000);
+    const result = await harness.acceptAndFinalize(object, 
       message(2, { scope: "other-scope" }),
       10_000,
     );
@@ -109,7 +170,7 @@ describe("GossipReplayStateDO", () => {
       messageType: "CONSISTENCY_PROOF_REQUEST",
       requestNonce: "fresh-nonce-1",
     });
-    expect((await harness.object.acceptVerifiedMessage(request, 10_000)).outcome)
+    expect((await harness.acceptAndFinalize(object, request, 10_000)).outcome)
       .toBe("ACCEPTED");
 
     const response = message(2, {
@@ -117,23 +178,23 @@ describe("GossipReplayStateDO", () => {
       responseRequestId: request.messageId,
       responseNonce: "fresh-nonce-1",
     });
-    expect((await harness.object.acceptVerifiedMessage(response, 10_000)).outcome)
+    expect((await harness.acceptAndFinalize(object, response, 10_000)).outcome)
       .toBe("ACCEPTED");
 
     const reused = message(3, {
       messageType: "CONSISTENCY_PROOF_REQUEST",
       requestNonce: "fresh-nonce-1",
     });
-    expect((await harness.object.acceptVerifiedMessage(reused, 10_000)).outcome)
+    expect((await harness.acceptAndFinalize(object, reused, 10_000)).outcome)
       .toBe("QUARANTINE");
   });
 
   it("blocks expired, oversized-gap and out-of-window messages", async () => {
     const harness = makeHarness();
-    expect((await harness.object.acceptVerifiedMessage(
+    expect((await harness.acceptAndFinalize(object, 
       message(1, { expiresAt: 9_999 }), 10_000,
     )).outcome).toBe("BLOCKED");
-    expect((await harness.object.acceptVerifiedMessage(message(65), 10_000)).outcome)
+    expect((await harness.acceptAndFinalize(object, message(65), 10_000)).outcome)
       .toBe("BLOCKED");
   });
 
