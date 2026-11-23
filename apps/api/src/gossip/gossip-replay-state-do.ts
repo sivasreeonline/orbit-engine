@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import canonicalize from "canonicalize";
 import type { Env } from "../env";
+import type { WitnessCheckpointBody } from "../witness/witness-profile-verifier";
 
 const MAX_TTL_SECONDS = 300;
 const MAX_CLOCK_SKEW_SECONDS = 30;
@@ -263,14 +264,18 @@ function prune(state: StoredState, trustedNow: number): void {
   }
 }
 
-async function digestSnapshot(snapshot: GossipReplaySnapshot): Promise<string> {
-  const canonical = canonicalize(snapshot);
+async function digestCanonicalValue(value: unknown): Promise<string> {
+  const canonical = canonicalize(value);
   if (typeof canonical !== "string") throw new TypeError("replay snapshot is not RFC 8785 canonicalizable");
   const bytes = new TextEncoder().encode(canonical);
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", buffer));
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function digestSnapshot(snapshot: GossipReplaySnapshot): Promise<string> {
+  return digestCanonicalValue(snapshot);
 }
 
 /**
@@ -560,6 +565,7 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     readonly snapshotDigest: string;
     readonly generation: number;
     readonly checkpointDigest: string;
+    readonly checkpointBody: WitnessCheckpointBody;
     readonly receiptDigest: string;
     readonly verification: WitnessVerificationAttestation;
   }): Promise<GossipReplayFinalizeResult> {
@@ -607,6 +613,36 @@ export class GossipReplayStateDO extends DurableObject<Env> {
         return {
           status: "QUARANTINE",
           reason: "finalization metadata does not match the exact pending operation",
+        };
+      }
+      const checkpointBody = input.checkpointBody;
+      let computedCheckpointDigest: string;
+      try {
+        computedCheckpointDigest = await digestCanonicalValue(checkpointBody);
+      } catch {
+        return {
+          status: "QUARANTINE",
+          reason: "checkpoint body is not canonicalizable",
+        };
+      }
+      if (
+        computedCheckpointDigest !== input.checkpointDigest ||
+        checkpointBody.profile !== "sky-high-fence-witness-v1" ||
+        checkpointBody.schemaVersion !== 1 ||
+        checkpointBody.phase !== "ACCEPTED" ||
+        checkpointBody.operationId !== pending.operationId ||
+        checkpointBody.generation !== input.generation ||
+        checkpointBody.previousCheckpointDigest !== pending.expectedPreviousDigest ||
+        checkpointBody.authorityStateDigest !== pending.snapshotDigest ||
+        checkpointBody.epoch !== pending.snapshot.highestSequence ||
+        checkpointBody.recordVersion !== pending.snapshot.version ||
+        !nonEmpty(checkpointBody.authorityId) ||
+        !nonEmpty(checkpointBody.hostId) ||
+        !validDigest(checkpointBody.responseDigest)
+      ) {
+        return {
+          status: "QUARANTINE",
+          reason: "cryptographic checkpoint artifact does not bind the pending replay snapshot",
         };
       }
       if (
