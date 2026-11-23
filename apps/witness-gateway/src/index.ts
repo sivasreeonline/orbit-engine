@@ -281,6 +281,89 @@ async function canonicalEnvelopeDigest(value: unknown): Promise<string> {
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+export interface BuiltMonitorReplayCheckpoint {
+  readonly snapshot: Record<string, unknown>;
+  readonly checkpointBody: MonitorReplayCheckpointBody;
+  readonly checkpointDigest: string;
+  readonly canonicalCheckpointBodyBytes: Uint8Array;
+}
+
+export async function buildMonitorReplayCheckpoint(input: {
+  readonly scope: WitnessCheckpointScope;
+  readonly senderId: string;
+  readonly recipientId: string;
+  readonly messageDigest: string;
+  readonly baseStateVersion: number;
+  readonly operationId: string;
+  readonly expectedPredecessor: { readonly generation: number; readonly digest: string };
+  readonly snapshotDigest: string;
+  readonly snapshotBytes: Uint8Array;
+}): Promise<BuiltMonitorReplayCheckpoint> {
+  if (
+    !/^[0-9a-f]{64}$/.test(input.snapshotDigest) ||
+    !/^[0-9a-f]{64}$/.test(input.messageDigest) ||
+    !Number.isSafeInteger(input.baseStateVersion) ||
+    input.baseStateVersion < 0 ||
+    !Number.isSafeInteger(input.expectedPredecessor.generation) ||
+    input.expectedPredecessor.generation < 0 ||
+    !/^[0-9a-f]{64}$/.test(input.expectedPredecessor.digest) ||
+    input.snapshotBytes.length === 0 ||
+    input.snapshotBytes.length > 512 * 1024
+  ) throw new TypeError("monitor replay checkpoint request metadata is malformed");
+
+  const snapshotText = new TextDecoder("utf-8", { fatal: true }).decode(input.snapshotBytes);
+  const snapshot: unknown = JSON.parse(snapshotText);
+  if (
+    !isRecord(snapshot) ||
+    canonicalize(snapshot) !== snapshotText ||
+    snapshot.senderId !== input.senderId ||
+    snapshot.recipientId !== input.recipientId ||
+    !isRecord(snapshot.seenByMessageId) ||
+    !Object.values(snapshot.seenByMessageId).some((entry) =>
+      isRecord(entry) && entry.digest === input.messageDigest
+    )
+  ) throw new TypeError("canonical replay snapshot does not bind the triggering message identity");
+
+  const snapshotHash = new Uint8Array(await crypto.subtle.digest("SHA-256", input.snapshotBytes));
+  const actualSnapshotDigest = [...snapshotHash]
+    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (actualSnapshotDigest !== input.snapshotDigest) {
+    throw new TypeError("canonical replay snapshot digest mismatch");
+  }
+
+  const checkpointBody: MonitorReplayCheckpointBody = {
+    profile: "sky-high-fence-monitor-replay-v1",
+    schemaVersion: 1,
+    trustDomainId: input.scope.trustDomainId,
+    witnessId: input.scope.witnessId,
+    authorityId: input.scope.authorityId,
+    hostId: input.scope.hostId,
+    senderId: input.senderId,
+    recipientId: input.recipientId,
+    generation: input.expectedPredecessor.generation + 1,
+    operationId: input.operationId,
+    phase: "MONITOR_GOSSIP_REPLAY_V1",
+    previousCheckpointDigest: input.expectedPredecessor.digest,
+    snapshotDigest: input.snapshotDigest,
+    snapshotByteLength: input.snapshotBytes.length,
+    baseStateVersion: input.baseStateVersion,
+    messageDigest: input.messageDigest,
+  };
+  validateMonitorReplayCheckpointBody(checkpointBody);
+  const serialized = canonicalize(checkpointBody);
+  if (typeof serialized !== "string") {
+    throw new TypeError("monitor replay checkpoint body is not canonical JSON");
+  }
+  const canonicalCheckpointBodyBytes = new TextEncoder().encode(serialized);
+  const checkpointHash = new Uint8Array(await crypto.subtle.digest(
+    "SHA-256",
+    canonicalCheckpointBodyBytes,
+  ));
+  const checkpointDigest = [...checkpointHash]
+    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return { snapshot, checkpointBody, checkpointDigest, canonicalCheckpointBodyBytes };
+}
+
 /**
  * Private RPC-only gateway. The default HTTP surface is closed; evidence
  * verification requires an authenticated workload proof and pinned trust scope.
