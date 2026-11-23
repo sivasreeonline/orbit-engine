@@ -1,4 +1,6 @@
+import canonicalize from "canonicalize";
 import { describe, expect, it } from "vitest";
+import { deriveReplayCheckpointOperationId } from "../../../api/src/gossip/gossip-replay-checkpoint-intent";
 import {
   checkpointMonitorReplaySnapshot,
   MonitorReplayCheckpointError,
@@ -13,6 +15,7 @@ import {
   type WitnessCheckpointScope,
   type WitnessProviderAdapter,
 } from "./witness-provider-adapter";
+import type { MonitorReplayCheckpointBody } from "../../../api/src/witness/witness-profile-verifier";
 
 const ZERO_DIGEST = "0".repeat(64);
 const scope: WitnessCheckpointScope = {
@@ -28,6 +31,7 @@ class InMemoryAdapter implements WitnessProviderAdapter {
   readonly idempotency = new Map<string, string>();
   loseNextAck = false;
   forceStaleLatest = false;
+  corruptCheckpointReadback = false;
   private lastLatest: StoredWitnessCheckpoint | null = null;
 
   async appendIfCurrent(
@@ -43,9 +47,11 @@ class InMemoryAdapter implements WitnessProviderAdapter {
       checkpoint.generation,
       checkpoint.operationId,
       checkpoint.phase,
+      checkpoint.snapshotDigest,
       checkpoint.checkpointDigest,
       checkpoint.previousDigest,
       Array.from(checkpoint.canonicalSnapshotBytes).join(","),
+      Array.from(checkpoint.canonicalCheckpointBodyBytes).join(","),
     ].join("|");
     const priorKey = this.idempotency.get(idempotencyKey);
     if (priorKey) {
@@ -104,6 +110,15 @@ class InMemoryAdapter implements WitnessProviderAdapter {
       record &&
       JSON.stringify(record.checkpoint.scope) !== JSON.stringify(requestedScope)
     ) return null;
+    if (record && this.corruptCheckpointReadback) {
+      return {
+        ...record,
+        checkpoint: {
+          ...record.checkpoint,
+          canonicalCheckpointBodyBytes: new TextEncoder().encode("{}"),
+        },
+      };
+    }
     return record;
   }
 }
@@ -125,80 +140,132 @@ const sample = {
   missingSequences: [],
 };
 
+async function checkpointBodyFor(
+  snapshot: typeof sample,
+  predecessor: { readonly generation: number; readonly digest: string },
+): Promise<MonitorReplayCheckpointBody> {
+  const serialized = canonicalize(snapshot);
+  if (typeof serialized !== "string") throw new Error("sample snapshot is not canonicalizable");
+  const bytes = new TextEncoder().encode(serialized);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const snapshotDigest = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const operationId = await deriveReplayCheckpointOperationId({
+    scope,
+    expectedPredecessor: predecessor,
+    snapshotDigest,
+  });
+  return {
+    profile: "sky-high-fence-monitor-replay-v1",
+    schemaVersion: 1,
+    trustDomainId: scope.trustDomainId,
+    witnessId: scope.witnessId,
+    authorityId: scope.authorityId,
+    hostId: scope.hostId,
+    senderId: snapshot.senderId,
+    recipientId: snapshot.recipientId,
+    generation: predecessor.generation + 1,
+    operationId,
+    phase: "MONITOR_GOSSIP_REPLAY_V1",
+    previousCheckpointDigest: predecessor.digest,
+    snapshotDigest,
+    snapshotByteLength: bytes.length,
+    baseStateVersion: predecessor.generation,
+    messageDigest: "1".repeat(64),
+  };
+}
+
 describe("provider-neutral monitor replay checkpoint coordinator", () => {
-  it("canonicalizes snapshot bytes and appends exactly one immutable generation", async () => {
+  it("stores and reads back distinct canonical snapshot and checkpoint-body digests", async () => {
     const adapter = new InMemoryAdapter();
-    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample);
-    expect(first).toMatchObject({ status: "CHECKPOINTED", generation: 1 });
-    const reordered = Object.fromEntries(Object.entries(sample).reverse());
-    const retry = await checkpointMonitorReplaySnapshot(adapter, scope, reordered);
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
+    expect(first).toMatchObject({
+      status: "CHECKPOINTED",
+      generation: 1,
+      snapshotDigest: body.snapshotDigest,
+    });
+    expect(first.checkpointDigest).not.toBe(first.snapshotDigest);
+    const stored = adapter.records[0]?.checkpoint;
+    expect(stored?.snapshotDigest).toBe(first.snapshotDigest);
+    expect(stored?.checkpointDigest).toBe(first.checkpointDigest);
+    expect(new TextDecoder().decode(stored?.canonicalSnapshotBytes)).toBe(canonicalize(sample));
+    expect(new TextDecoder().decode(stored?.canonicalCheckpointBodyBytes)).toBe(canonicalize(body));
+
+    const reordered = Object.fromEntries(Object.entries(sample).reverse()) as typeof sample;
+    const retryBody = await checkpointBodyFor(reordered, predecessor);
+    const retry = await checkpointMonitorReplaySnapshot(adapter, scope, reordered, retryBody, predecessor);
     expect(retry).toMatchObject({
       status: "ALREADY_CHECKPOINTED",
       generation: 1,
-      digest: first.digest,
+      snapshotDigest: first.snapshotDigest,
+      checkpointDigest: first.checkpointDigest,
       operationId: first.operationId,
     });
     expect(adapter.records).toHaveLength(1);
   });
 
-  it("uses the persisted predecessor for stable operation identity and retry", async () => {
+  it("uses persisted predecessor identity for stable operation ID and retry", async () => {
     const adapter = new InMemoryAdapter();
     const predecessor = { generation: 0, digest: ZERO_DIGEST };
-    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, predecessor);
-    const retry = await checkpointMonitorReplaySnapshot(adapter, scope, sample, predecessor);
-    expect(retry).toMatchObject({
-      status: "ALREADY_CHECKPOINTED",
-      operationId: first.operationId,
-      generation: first.generation,
-      digest: first.digest,
-    });
-    expect(first.operationId).not.toBe(`fence-monitor-replay-${first.digest}`);
+    const body = await checkpointBodyFor(sample, predecessor);
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
+    const retryBody = await checkpointBodyFor(sample, predecessor);
+    const retry = await checkpointMonitorReplaySnapshot(adapter, scope, sample, retryBody, predecessor);
+    expect(retry.operationId).toBe(first.operationId);
+    expect(first.operationId).not.toBe(`fence-monitor-replay-${first.snapshotDigest}`);
     expect(adapter.records).toHaveLength(1);
   });
 
   it("does not rebase a persisted predecessor after the witness head advances", async () => {
     const adapter = new InMemoryAdapter();
-    await checkpointMonitorReplaySnapshot(adapter, scope, sample);
-    await expect(checkpointMonitorReplaySnapshot(
-      adapter,
-      scope,
-      { ...sample, highestSequence: 2 },
-      { generation: 0, digest: ZERO_DIGEST },
-    )).rejects.toMatchObject({
-      name: "MonitorReplayCheckpointError",
-      reason: "stale_operation",
-    });
+    const genesis = { generation: 0, digest: ZERO_DIGEST };
+    const firstBody = await checkpointBodyFor(sample, genesis);
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis);
+    const candidate = { ...sample, highestSequence: 2 };
+    const staleBody = await checkpointBodyFor(candidate, genesis);
+    await expect(checkpointMonitorReplaySnapshot(adapter, scope, candidate, staleBody, genesis))
+      .rejects.toMatchObject({ name: "MonitorReplayCheckpointError", reason: "stale_operation" });
     expect(adapter.records).toHaveLength(1);
+    expect(first.generation).toBe(1);
   });
 
   it("recovers a lost acknowledgement by immutable operation lookup", async () => {
     const adapter = new InMemoryAdapter();
     adapter.loseNextAck = true;
-    const result = await checkpointMonitorReplaySnapshot(adapter, scope, sample);
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    const result = await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
     expect(result).toMatchObject({ status: "CHECKPOINTED", generation: 1 });
     expect(adapter.records).toHaveLength(1);
   });
 
   it("rejects a previously committed operation after a successor becomes current", async () => {
     const adapter = new InMemoryAdapter();
-    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample);
-    await checkpointMonitorReplaySnapshot(adapter, scope, { ...sample, highestSequence: 2 });
-    await expect(checkpointMonitorReplaySnapshot(adapter, scope, sample))
-      .rejects.toMatchObject({
-        name: "MonitorReplayCheckpointError",
-        reason: "stale_operation",
-      });
+    const genesis = { generation: 0, digest: ZERO_DIGEST };
+    const firstBody = await checkpointBodyFor(sample, genesis);
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis);
+    const successor = { ...sample, highestSequence: 2 };
+    const nextPredecessor = { generation: first.generation, digest: first.checkpointDigest };
+    const secondBody = await checkpointBodyFor(successor, nextPredecessor);
+    await checkpointMonitorReplaySnapshot(adapter, scope, successor, secondBody, nextPredecessor);
+    const retryBody = await checkpointBodyFor(sample, genesis);
+    await expect(checkpointMonitorReplaySnapshot(adapter, scope, sample, retryBody, genesis))
+      .rejects.toMatchObject({ name: "MonitorReplayCheckpointError", reason: "stale_operation" });
     expect(first.generation).toBe(1);
   });
 
   it("rejects a stale competing predecessor instead of rebasing", async () => {
     const adapter = new InMemoryAdapter();
-    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample);
+    const genesis = { generation: 0, digest: ZERO_DIGEST };
+    const firstBody = await checkpointBodyFor(sample, genesis);
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis);
     const candidate = { ...sample, highestSequence: 2 };
     const other = { ...sample, highestSequence: 3 };
-    // Force both coordinator calls to observe the same predecessor. Without
-    // this barrier the second call may legitimately start after the first has
-    // committed and append a sequential successor, which is not a CAS race.
+    const [candidateBody, otherBody] = await Promise.all([
+      checkpointBodyFor(candidate, { generation: first.generation, digest: first.checkpointDigest }),
+      checkpointBodyFor(other, { generation: first.generation, digest: first.checkpointDigest }),
+    ]);
     const readLatest = adapter.readLatest.bind(adapter);
     let initialReads = 0;
     let releaseInitialReads!: () => void;
@@ -214,40 +281,58 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
       return readLatest(requestedScope);
     };
     const outcomes = await Promise.allSettled([
-      checkpointMonitorReplaySnapshot(adapter, scope, candidate),
-      checkpointMonitorReplaySnapshot(adapter, scope, other),
+      checkpointMonitorReplaySnapshot(adapter, scope, candidate, candidateBody, {
+        generation: first.generation,
+        digest: first.checkpointDigest,
+      }),
+      checkpointMonitorReplaySnapshot(adapter, scope, other, otherBody, {
+        generation: first.generation,
+        digest: first.checkpointDigest,
+      }),
     ]);
     expect(outcomes.filter((item) => item.status === "fulfilled")).toHaveLength(1);
     expect(outcomes.filter((item) => item.status === "rejected")).toHaveLength(1);
     expect(adapter.records).toHaveLength(2);
-    expect(adapter.records[1]?.checkpoint.previousDigest).toBe(first.digest);
+    expect(adapter.records[1]?.checkpoint.previousDigest).toBe(first.checkpointDigest);
   });
 
-  it("rejects invalid scopes and non-JSON snapshots", async () => {
+  it("rejects altered checkpoint-body readback even when the snapshot bytes are unchanged", async () => {
     const adapter = new InMemoryAdapter();
-    await expect(checkpointMonitorReplaySnapshot(adapter, { ...scope, hostId: "" }, sample))
-      .rejects.toBeInstanceOf(MonitorReplayCheckpointError);
-    await expect(checkpointMonitorReplaySnapshot(adapter, scope, { value: Number.NaN }))
-      .rejects.toMatchObject({ reason: "invalid_snapshot" });
-    await expect(checkpointMonitorReplaySnapshot(adapter, scope, []))
-      .rejects.toMatchObject({ reason: "invalid_snapshot" });
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
+    adapter.corruptCheckpointReadback = true;
+    await expect(checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor))
+      .rejects.toMatchObject({ name: "MonitorReplayCheckpointError", reason: "operation_conflict" });
   });
 
-  it("rejects malformed or empty receipt bindings on readback", async () => {
+  it("rejects checkpoint bodies bound to another snapshot, scope, or sender relationship", async () => {
     const adapter = new InMemoryAdapter();
-    const original = adapter.appendIfCurrent.bind(adapter);
-    adapter.appendIfCurrent = async (...args) => {
-      const receipt = await original(...args);
-      return { ...receipt, checkpointDigest: "f".repeat(64) };
-    };
-    await expect(checkpointMonitorReplaySnapshot(adapter, scope, sample))
-      .rejects.toMatchObject({ reason: "receipt_mismatch" });
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, scope, sample, { ...body, snapshotDigest: "f".repeat(64) }, predecessor,
+    )).rejects.toMatchObject({ reason: "invalid_checkpoint_body" });
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, scope, sample, { ...body, trustDomainId: "other-domain" }, predecessor,
+    )).rejects.toMatchObject({ reason: "invalid_checkpoint_body" });
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, scope, sample, { ...body, senderId: "someone-else" }, predecessor,
+    )).rejects.toMatchObject({ reason: "invalid_checkpoint_body" });
   });
 
-  it("rejects a stale strong-read simulation after append", async () => {
+  it("rejects invalid scopes, malformed predecessors, and non-JSON snapshots", async () => {
     const adapter = new InMemoryAdapter();
-    adapter.forceStaleLatest = true;
-    await expect(checkpointMonitorReplaySnapshot(adapter, scope, sample))
-      .rejects.toMatchObject({ reason: "latest_readback_mismatch" });
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, { ...scope, hostId: "" }, sample, body, predecessor,
+    )).rejects.toMatchObject({ reason: "invalid_scope" });
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, scope, sample, body, { generation: -1, digest: ZERO_DIGEST },
+    )).rejects.toMatchObject({ reason: "invalid_predecessor" });
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, scope, { invalid: undefined }, body, predecessor,
+    )).rejects.toBeInstanceOf(MonitorReplayCheckpointError);
   });
 });
