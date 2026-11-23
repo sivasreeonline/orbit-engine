@@ -65,7 +65,8 @@ async function privateKeyFromSeed(seedHex: string): Promise<CryptoKey> {
 async function publicKeyBytes(privateKey: CryptoKey): Promise<Uint8Array> {
   const jwk = await crypto.subtle.exportKey("jwk", privateKey);
   if (!jwk.x) throw new Error("Ed25519 public coordinate missing");
-  const binary = atob(jwk.x.replace(/-/g, "+").replace(/_/g, "/") + "==");
+  const encoded = jwk.x.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(encoded + "=".repeat((4 - (encoded.length % 4)) % 4));
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
