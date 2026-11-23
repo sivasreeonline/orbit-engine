@@ -200,6 +200,9 @@ describe("GossipReplayStateDO", () => {
     const proposedState = { highestSequence: 1, messageId: "message-1" };
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
       scope: "domain-a|witness-a|authority-a|host-a",
       expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
       nextState: proposedState,
@@ -250,6 +253,9 @@ describe("GossipReplayStateDO", () => {
     const proposedState = { highestSequence: 1 };
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
       scope: "domain-a|witness-a|authority-a|host-a",
       expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
       nextState: proposedState,
@@ -277,6 +283,9 @@ describe("GossipReplayStateDO", () => {
     const proposedState = { highestSequence: 1 };
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
       scope: "domain-a|witness-a|authority-a|host-a",
       expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
       nextState: proposedState,
@@ -312,6 +321,9 @@ describe("GossipReplayStateDO", () => {
     const proposedState = { highestSequence: 1 };
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
       scope: "domain-a|witness-a|authority-a|host-a",
       expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
       nextState: proposedState,
@@ -346,6 +358,9 @@ describe("GossipReplayStateDO", () => {
     const proposedState = { highestSequence: 1 };
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
       scope: "domain-a|witness-a|authority-a|host-a",
       expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
       nextState: proposedState,
@@ -388,6 +403,9 @@ describe("GossipReplayStateDO", () => {
     const proposedState = { highestSequence: 1, messageId: "message-1" };
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
       scope: "domain-a|witness-a|authority-a|host-a",
       expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
       nextState: proposedState,
@@ -445,6 +463,9 @@ describe("GossipReplayStateDO", () => {
     const proposedState = { highestSequence: 1, messageId: "message-1" };
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
       scope: "domain-a|witness-a|authority-a|host-a",
       expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
       nextState: proposedState,
@@ -510,6 +531,9 @@ describe("GossipReplayStateDO", () => {
     const proposedState = { highestSequence: 1 };
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
       scope: "domain-a|witness-a|authority-a|host-a",
       expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
       nextState: proposedState,
