@@ -287,7 +287,7 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
     await expect(verifySignedTreeHead(
       f.currentHead,
       {
-        body: wrongPurpose as WitnessTrustBundleBody,
+        body: wrongPurpose as unknown as WitnessTrustBundleBody,
         digest: ZERO_DIGEST,
         rootKeyId: trustVector.testRootKey.keyId,
       } as VerifiedTrustBundle,
