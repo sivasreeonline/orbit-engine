@@ -63,6 +63,8 @@ describe("monitor replay checkpoint artifact mapping", () => {
     );
 
     expect(artifact.snapshotDigest).toBe(await digest(artifact.canonicalSnapshotBytes));
+    // Shared Python/TypeScript conformance vector for the same RFC 8785 bytes.
+    expect(artifact.snapshotDigest).toBe("3e67d5db1c0f34ddd48fd964ef7b3993ee395f3fd166010ebd74076594dba7cb");
     expect(artifact.operationId).toBe(`fence-monitor-replay-${artifact.snapshotDigest}`);
     expect(artifact.checkpointBody).toMatchObject({
       profile: "sky-high-fence-witness-v1",
@@ -77,10 +79,11 @@ describe("monitor replay checkpoint artifact mapping", () => {
       epoch: 4,
       recordVersion: 1,
     });
-    expect(artifact.checkpointBody.responseDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(artifact.checkpointBody.responseDigest).toBe("6f6d145824a1186726d43b65ff6edff79631be9e088f33e655386d3c1b189a5d");
     expect(artifact.checkpointDigest).toBe(await digest(
       new TextEncoder().encode(canonicalize(artifact.checkpointBody)!),
     ));
+    expect(artifact.checkpointDigest).toBe("c9db31c134f4e476758bca6860ce8dd4567691fae04a78dc18814cf9e1426ce2");
     expect(artifact.checkpointDigest).not.toBe(artifact.snapshotDigest);
     expect(artifact.providerCheckpoint).toMatchObject({
       generation: 1,
