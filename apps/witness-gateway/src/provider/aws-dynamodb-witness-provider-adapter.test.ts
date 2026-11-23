@@ -84,7 +84,7 @@ async function makeCheckpoint(
 describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB Local only)", () => {
   const tableName = `fence-dual-digest-${randomUUID().replace(/-/g, "").slice(0, 18)}`;
   const client = new DynamoDBClient({
-    endpoint,
+    endpoint: endpoint!,
     region,
     credentials: { accessKeyId: "local", secretAccessKey: "local" },
   });
@@ -211,7 +211,7 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
       }, predecessor),
     ));
     const clients = candidates.map(() => new DynamoDBClient({
-      endpoint,
+      endpoint: endpoint!,
       region,
       credentials: { accessKeyId: "local", secretAccessKey: "local" },
     }));
