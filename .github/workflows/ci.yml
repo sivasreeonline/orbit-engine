@@ -72,7 +72,7 @@ jobs:
         run: npx wrangler deploy --dry-run --config provider.wrangler.jsonc
 
       - name: Worker deployment dry run
-        run: npx wrangler deploy --dry-run
+        run: npx wrangler deploy --dry-run --env production
 
       - name: Dependency audit
         run: npm audit --audit-level=high
