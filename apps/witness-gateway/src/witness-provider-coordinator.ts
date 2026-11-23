@@ -99,9 +99,15 @@ function sameCanonical(left: unknown, right: unknown): boolean {
   return canonicalString(left) === canonicalString(right);
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
 async function canonicalDigest(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(canonicalString(value));
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", toArrayBuffer(bytes)));
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
