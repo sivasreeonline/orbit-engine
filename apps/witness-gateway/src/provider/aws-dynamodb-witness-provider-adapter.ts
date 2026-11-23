@@ -21,7 +21,7 @@ interface DynamoDBCheckpointMetadata {
   readonly scope: WitnessCheckpointScope;
   readonly generation: number;
   readonly operationId: string;
-  readonly phase: string;
+  readonly phase: "MONITOR_GOSSIP_REPLAY_V1";
   readonly snapshotDigest: string;
   readonly checkpointDigest: string;
   readonly previousDigest: string;
@@ -72,10 +72,10 @@ export class AwsDynamoDBWitnessProviderAdapter implements WitnessProviderAdapter
     const record = await this.readRecord(scope, metadata.operationId);
     if (
       !record ||
-      record.checkpoint.generation !== metadata.generation ||
-      record.checkpoint.checkpointDigest !== metadata.checkpointDigest
+      record.stored.checkpoint.generation !== metadata.generation ||
+      record.stored.checkpoint.checkpointDigest !== metadata.checkpointDigest
     ) throw new Error("DynamoDB HEAD does not resolve to its exact immutable operation record");
-    return record;
+    return record.stored;
   }
 
   async readByOperation(
@@ -413,7 +413,7 @@ export class AwsDynamoDBWitnessProviderAdapter implements WitnessProviderAdapter
       !item.scope || typeof item.scope !== "object" ||
       !Number.isSafeInteger(item.generation) ||
       typeof item.operationId !== "string" ||
-      typeof item.phase !== "string" ||
+      item.phase !== "MONITOR_GOSSIP_REPLAY_V1" ||
       typeof item.snapshotDigest !== "string" ||
       typeof item.checkpointDigest !== "string" ||
       typeof item.previousDigest !== "string" ||
