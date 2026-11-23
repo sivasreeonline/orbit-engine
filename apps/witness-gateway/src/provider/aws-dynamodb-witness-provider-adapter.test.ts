@@ -8,10 +8,7 @@ import canonicalize from "canonicalize";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { deriveReplayCheckpointOperationId } from "../../../api/src/gossip/gossip-replay-checkpoint-intent";
-import {
-  AwsDynamoDBWitnessProviderAdapter,
-  createLocalDynamoDBWitnessProviderAdapter,
-} from "./aws-dynamodb-witness-provider-adapter";
+import { AwsDynamoDBWitnessProviderAdapter } from "./aws-dynamodb-witness-provider-adapter";
 import {
   WitnessAppendConflict,
   WitnessIdempotencyConflict,
@@ -37,6 +34,7 @@ async function sha256(bytes: Uint8Array): Promise<string> {
 }
 
 async function makeCheckpoint(
+  checkpointScope: WitnessCheckpointScope,
   snapshot: Record<string, unknown>,
   predecessor: { readonly generation: number; readonly digest: string },
 ): Promise<WitnessCheckpoint> {
@@ -45,17 +43,17 @@ async function makeCheckpoint(
   const canonicalSnapshotBytes = new TextEncoder().encode(snapshotJson);
   const snapshotDigest = await sha256(canonicalSnapshotBytes);
   const operationId = await deriveReplayCheckpointOperationId({
-    scope,
+    scope: checkpointScope,
     expectedPredecessor: predecessor,
     snapshotDigest,
   });
   const body = {
     profile: "sky-high-fence-monitor-replay-v1",
     schemaVersion: 1,
-    trustDomainId: scope.trustDomainId,
-    witnessId: scope.witnessId,
-    authorityId: scope.authorityId,
-    hostId: scope.hostId,
+    trustDomainId: checkpointScope.trustDomainId,
+    witnessId: checkpointScope.witnessId,
+    authorityId: checkpointScope.authorityId,
+    hostId: checkpointScope.hostId,
     senderId: "monitor-sender",
     recipientId: "monitor-recipient",
     generation: predecessor.generation + 1,
@@ -71,7 +69,7 @@ async function makeCheckpoint(
   if (typeof bodyJson !== "string") throw new Error("checkpoint body not canonical JSON");
   const canonicalCheckpointBodyBytes = new TextEncoder().encode(bodyJson);
   return {
-    scope,
+    scope: checkpointScope,
     generation: predecessor.generation + 1,
     operationId,
     phase: "MONITOR_GOSSIP_REPLAY_V1",
@@ -110,11 +108,7 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
       if (result.Table?.TableStatus === "ACTIVE") break;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    adapter = createLocalDynamoDBWitnessProviderAdapter({
-      endpointUrl: endpoint!,
-      region,
-      tableName,
-    });
+    adapter = new AwsDynamoDBWitnessProviderAdapter(client, tableName);
   });
 
   afterAll(async () => {
@@ -134,8 +128,9 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
       seenByMessageId: { "message-1": { sequence: 1, digest: "a".repeat(64) } },
       largeEvidenceMarker: "x".repeat(96 * 1024),
     };
+    const testScope = { ...scope, witnessId: "witness-exact-byte-readback" };
     const predecessor = { generation: 0, digest: zero };
-    const checkpoint = await makeCheckpoint(snapshot, predecessor);
+    const checkpoint = await makeCheckpoint(testScope, snapshot, predecessor);
     const receipt = await adapter.appendIfCurrent(checkpoint, predecessor, checkpoint.operationId);
 
     expect(receipt).toMatchObject({
@@ -144,8 +139,8 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
       checkpointDigest: checkpoint.checkpointDigest,
       previousDigest: zero,
     });
-    const byOperation = await adapter.readByOperation(scope, checkpoint.operationId);
-    const latest = await adapter.readLatest(scope);
+    const byOperation = await adapter.readByOperation(testScope, checkpoint.operationId);
+    const latest = await adapter.readLatest(testScope);
     expect(byOperation).not.toBeNull();
     expect(latest).not.toBeNull();
     expect(byOperation?.checkpoint.canonicalSnapshotBytes).toEqual(checkpoint.canonicalSnapshotBytes);
@@ -163,12 +158,13 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
       highestSequence: 1,
       seenByMessageId: { "message-1": { sequence: 1, digest: "a".repeat(64) } },
     };
+    const testScope = { ...scope, witnessId: "witness-idempotency-retry" };
     const predecessor = { generation: 0, digest: zero };
-    const checkpoint = await makeCheckpoint(snapshot, predecessor);
+    const checkpoint = await makeCheckpoint(testScope, snapshot, predecessor);
     const first = await adapter.appendIfCurrent(checkpoint, predecessor, "stable-idempotency-key");
     const retry = await adapter.appendIfCurrent(checkpoint, predecessor, "stable-idempotency-key");
     expect(retry).toEqual(first);
-    expect((await adapter.readLatest(scope))?.checkpoint.generation).toBe(1);
+    expect((await adapter.readLatest(testScope))?.checkpoint.generation).toBe(1);
   });
 
   it("rejects idempotency-key rebinding and stale predecessor appends", async () => {
@@ -179,10 +175,11 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
       highestSequence: 1,
       seenByMessageId: { "message-1": { sequence: 1, digest: "a".repeat(64) } },
     };
+    const testScope = { ...scope, witnessId: "witness-conflict-tests" };
     const predecessor = { generation: 0, digest: zero };
-    const checkpoint = await makeCheckpoint(snapshot, predecessor);
+    const checkpoint = await makeCheckpoint(testScope, snapshot, predecessor);
     await adapter.appendIfCurrent(checkpoint, predecessor, "bound-idempotency-key");
-    const changed = await makeCheckpoint({ ...snapshot, highestSequence: 2 }, predecessor);
+    const changed = await makeCheckpoint(testScope, { ...snapshot, highestSequence: 2 }, predecessor);
     await expect(adapter.appendIfCurrent(changed, predecessor, "bound-idempotency-key"))
       .rejects.toBeInstanceOf(WitnessIdempotencyConflict);
     await expect(adapter.appendIfCurrent(changed, predecessor, "different-idempotency-key"))
@@ -197,13 +194,14 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
       highestSequence: 1,
       seenByMessageId: { "message-1": { sequence: 1, digest: "a".repeat(64) } },
     };
+    const testScope = { ...scope, witnessId: "witness-concurrency" };
     const genesisPredecessor = { generation: 0, digest: zero };
-    const genesis = await makeCheckpoint(genesisSnapshot, genesisPredecessor);
+    const genesis = await makeCheckpoint(testScope, genesisSnapshot, genesisPredecessor);
     await adapter.appendIfCurrent(genesis, genesisPredecessor, "race-genesis");
 
     const predecessor = { generation: 1, digest: genesis.checkpointDigest };
     const candidates = await Promise.all([2, 3, 4, 5].map((sequence) =>
-      makeCheckpoint({
+      makeCheckpoint(testScope, {
         ...genesisSnapshot,
         highestSequence: sequence,
         seenByMessageId: {
@@ -212,26 +210,23 @@ describe.skipIf(!endpoint)("AWS DynamoDB dual-digest provider adapter (DynamoDB 
         },
       }, predecessor),
     ));
-    const adapters = candidates.map(() => new AwsDynamoDBWitnessProviderAdapter(
-      new DynamoDBClient({
-        endpoint,
-        region,
-        credentials: { accessKeyId: "local", secretAccessKey: "local" },
-      }),
-      tableName,
-    ));
+    const clients = candidates.map(() => new DynamoDBClient({
+      endpoint,
+      region,
+      credentials: { accessKeyId: "local", secretAccessKey: "local" },
+    }));
+    const adapters = clients.map((independentClient) =>
+      new AwsDynamoDBWitnessProviderAdapter(independentClient, tableName)
+    );
     try {
       const outcomes = await Promise.allSettled(candidates.map((candidate, index) =>
         adapters[index]!.appendIfCurrent(candidate, predecessor, candidate.operationId),
       ));
       expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
       expect(outcomes.filter((outcome) => outcome.status === "rejected")).toHaveLength(3);
-      expect((await adapter.readLatest(scope))?.checkpoint.generation).toBe(2);
+      expect((await adapter.readLatest(testScope))?.checkpoint.generation).toBe(2);
     } finally {
-      adapters.forEach((item) => {
-        // Each independent SDK client owns its own HTTP resources.
-        (item as unknown as { client?: DynamoDBClient }).client?.destroy();
-      });
+      clients.forEach((independentClient) => independentClient.destroy());
     }
   });
 });
