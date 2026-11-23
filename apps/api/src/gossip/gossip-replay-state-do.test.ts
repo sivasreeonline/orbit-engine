@@ -325,6 +325,44 @@ describe("GossipReplayStateDO", () => {
     vi.mocked(checkpointReplayViaWitnessGateway).mockReset();
   });
 
+  it("does not endlessly retry a corrupted pending intent from the alarm", async () => {
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    const proposedState = { highestSequence: 1 };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    await harness.object.stageCheckpointIntent(
+      await createPendingReplayIntent(intent, message(1), proposedState),
+    );
+    const corrupted = harness.values.get("replay-checkpoint-pending-v1") as {
+      intent: { snapshotDigest: string };
+    };
+    corrupted.intent.snapshotDigest = "f".repeat(64);
+    harness.values.set("replay-checkpoint-pending-v1", corrupted);
+    harness.clearAlarm();
+
+    await harness.object.alarm();
+
+    expect(checkpointReplayViaWitnessGateway).not.toHaveBeenCalled();
+    expect(harness.getAlarm()).toBeNull();
+    expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(true);
+  });
+
   it("preserves pending intent when the provider is unavailable during recovery", async () => {
     vi.mocked(checkpointReplayViaWitnessGateway).mockResolvedValue({
       checkpointed: false,
