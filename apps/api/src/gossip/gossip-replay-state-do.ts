@@ -47,8 +47,21 @@ export interface GossipReplayResult {
   readonly missingSequences: readonly number[];
 }
 
-interface StoredState {
+export interface GossipReplaySnapshot {
   readonly version: 1;
+  readonly senderId: string;
+  readonly recipientId: string;
+  readonly scope: string;
+  readonly highestSequence: number;
+  readonly seenBySequence: Readonly<Record<string, { readonly messageId: string; readonly digest: string }>>;
+  readonly seenByMessageId: Readonly<Record<string, { readonly sequence: number; readonly digest: string }>>;
+  readonly outstandingRequests: Readonly<Record<string, { readonly nonce: string; readonly expiresAt: number }>>;
+  readonly consumedNonces: readonly string[];
+  readonly missingSequences: readonly number[];
+}
+
+type StoredState = {
+  version: 1;
   senderId: string;
   recipientId: string;
   scope: string;
@@ -58,7 +71,7 @@ interface StoredState {
   outstandingRequests: Record<string, { nonce: string; expiresAt: number }>;
   consumedNonces: string[];
   missingSequences: number[];
-}
+};
 
 function emptyState(): StoredState {
   return {
@@ -126,6 +139,27 @@ function prune(state: StoredState, trustedNow: number): void {
 export class GossipReplayStateDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+  }
+
+  /**
+   * Returns the complete replay-state snapshot for checkpointing. The arrays
+   * representing sets are normalized so equivalent states have identical bytes.
+   */
+  async readSnapshot(): Promise<GossipReplaySnapshot> {
+    const state =
+      (await this.ctx.storage.get<StoredState>("replay-state-v1")) ?? emptyState();
+    return {
+      version: state.version,
+      senderId: state.senderId,
+      recipientId: state.recipientId,
+      scope: state.scope,
+      highestSequence: state.highestSequence,
+      seenBySequence: state.seenBySequence,
+      seenByMessageId: state.seenByMessageId,
+      outstandingRequests: state.outstandingRequests,
+      consumedNonces: [...state.consumedNonces].sort(),
+      missingSequences: [...state.missingSequences].sort((left, right) => left - right),
+    };
   }
 
   async acceptVerifiedMessage(

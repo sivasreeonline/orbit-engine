@@ -34,6 +34,10 @@ class Scope:
     witness_id: str
     authority_id: str
     host_id: str
+    # Optional replay relationship binding; generic witness adapter cases omit it.
+    sender_id: str = ""
+    recipient_id: str = ""
+    replay_scope: str = ""
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,9 @@ class Checkpoint:
     phase: str
     checkpoint_digest: str
     previous_digest: str
+    # Digest of the complete monitor replay snapshot committed by this artifact.
+    # Empty for generic provider conformance cases that are not replay snapshots.
+    snapshot_digest: str = ""
 
 
 @dataclass(frozen=True)

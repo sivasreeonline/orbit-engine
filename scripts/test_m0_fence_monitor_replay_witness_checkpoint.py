@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Synthetic monitor replay snapshot witness-checkpoint tests."""
 from __future__ import annotations
-import copy
-from validate_m0_fence_monitor_replay_witness_checkpoint import ReplayCheckpointError, checkpoint_replay_snapshot, reconcile_replay_snapshot, snapshot_digest
+from validate_m0_fence_monitor_replay_witness_checkpoint import (
+    ReplayCheckpointError,
+    build_checkpoint_artifact,
+    checkpoint_replay_snapshot,
+    is_empty_replay_snapshot,
+    reconcile_replay_snapshot,
+    snapshot_digest,
+)
 from validate_m0_witness_provider_adapter_conformance import AppendConflict, InMemoryWitnessAdapter, LoseAcknowledgementOnce, Scope
 
-SCOPE = Scope("monitor-test-domain", "monitor-test-witness", "monitor-a", "monitor-b")
+SCOPE = Scope("monitor-trust-domain", "monitor-witness", "monitor-authority", "monitor-host", "monitor-a", "monitor-b", "domain|witness|authority|host")
 
 def sample(sequence: int = 1) -> dict:
     return {"version": 1, "senderId": "monitor-a", "recipientId": "monitor-b",
@@ -14,19 +20,58 @@ def sample(sequence: int = 1) -> dict:
         "seenByMessageId": {f"message-{sequence}": {"sequence": sequence, "digest": f"{sequence:064x}"}},
         "outstandingRequests": {}, "consumedNonces": [], "missingSequences": []}
 
+def vector_snapshot() -> dict:
+    return {
+        "version": 1,
+        "senderId": "monitor-a",
+        "recipientId": "monitor-b",
+        "scope": "domain|witness|authority|host",
+        "highestSequence": 4,
+        "seenBySequence": {
+            "2": {"messageId": "message-2", "digest": "2" * 64},
+            "4": {"messageId": "message-4", "digest": "4" * 64},
+        },
+        "seenByMessageId": {
+            "message-2": {"sequence": 2, "digest": "2" * 64},
+            "message-4": {"sequence": 4, "digest": "4" * 64},
+        },
+        "outstandingRequests": {
+            "message-4": {"nonce": "nonce-4", "expiresAt": 1_900_000_000},
+        },
+        "consumedNonces": ["nonce-z", "nonce-a"],
+        "missingSequences": [3, 1],
+    }
+
 def main() -> None:
     adapter = InMemoryWitnessAdapter()
     first = sample(1)
     accepted = checkpoint_replay_snapshot(adapter, SCOPE, first)
     assert accepted["status"] == "CHECKPOINTED"
+    assert accepted["snapshotDigest"] == snapshot_digest(first)
+    assert accepted["checkpointBody"]["authorityStateDigest"] == accepted["snapshotDigest"]
+    assert accepted["checkpointBody"]["phase"] == "ACCEPTED"
     assert reconcile_replay_snapshot(adapter, SCOPE, first)["status"] == "MATCH"
     assert checkpoint_replay_snapshot(adapter, SCOPE, first)["status"] == "ALREADY_CHECKPOINTED"
     changed_order = dict(reversed(list(first.items())))
     assert snapshot_digest(changed_order) == snapshot_digest(first)
-    print("PASS canonical snapshot digest and exact retry idempotency")
 
-    tampered = copy.deepcopy(first)
-    tampered["highestSequence"] = 0
+    vector = vector_snapshot()
+    artifact = build_checkpoint_artifact(
+        SCOPE,
+        vector,
+        generation=1,
+        previous_digest="0" * 64,
+    )
+    assert artifact["snapshotDigest"] == "3e67d5db1c0f34ddd48fd964ef7b3993ee395f3fd166010ebd74076594dba7cb"
+    assert artifact["operationId"] == f"fence-monitor-replay-{artifact['snapshotDigest']}"
+    assert artifact["checkpointBody"]["authorityStateDigest"] == artifact["snapshotDigest"]
+    assert artifact["checkpointBody"]["responseDigest"] == "6f6d145824a1186726d43b65ff6edff79631be9e088f33e655386d3c1b189a5d"
+    assert artifact["checkpointDigest"] == "c9db31c134f4e476758bca6860ce8dd4567691fae04a78dc18814cf9e1426ce2"
+    assert artifact["checkpointDigest"] != artifact["snapshotDigest"]
+    print("PASS shared TypeScript/Python RFC 8785 checkpoint artifact vector")
+
+
+    tampered = sample(2)
     result = reconcile_replay_snapshot(adapter, SCOPE, tampered)
     assert result["status"] == "QUARANTINE" and result["witnessDigest"] == accepted["digest"]
     print("PASS stale or altered local replay snapshot is quarantined")
@@ -46,6 +91,13 @@ def main() -> None:
 
     empty = InMemoryWitnessAdapter()
     assert reconcile_replay_snapshot(empty, SCOPE, {})["status"] == "NO_CHECKPOINT_EMPTY_STATE"
+    actual_empty_do_snapshot = {
+        "version": 1, "senderId": "", "recipientId": "", "scope": "",
+        "highestSequence": 0, "seenBySequence": {}, "seenByMessageId": {},
+        "outstandingRequests": {}, "consumedNonces": [], "missingSequences": [],
+    }
+    assert is_empty_replay_snapshot(actual_empty_do_snapshot)
+    assert reconcile_replay_snapshot(empty, SCOPE, actual_empty_do_snapshot)["status"] == "NO_CHECKPOINT_EMPTY_STATE"
     assert reconcile_replay_snapshot(empty, SCOPE, first)["status"] == "QUARANTINE"
     print("PASS unanchored non-empty local state quarantines")
 
@@ -55,7 +107,17 @@ def main() -> None:
         pass
     else:
         raise AssertionError("non-finite JSON number was accepted")
-    print("PASS non-canonical JSON values are rejected")
+    inconsistent = sample(1)
+    inconsistent["seenByMessageId"]["message-1"]["sequence"] = 2
+    try:
+        snapshot_digest(inconsistent)
+    except ReplayCheckpointError:
+        pass
+    else:
+        raise AssertionError("inconsistent replay indexes were accepted")
+    print("PASS replay snapshot cross-index consistency is enforced")
+
+    print("PASS malformed replay snapshots are rejected before canonicalization")
 
     competing = InMemoryWitnessAdapter()
     checkpoint_replay_snapshot(competing, SCOPE, first)
