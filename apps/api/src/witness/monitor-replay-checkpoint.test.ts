@@ -15,7 +15,7 @@ const scope: MonitorReplayTrustScope = {
   hostId: "monitor-host",
   senderId: "monitor-a",
   recipientId: "monitor-b",
-  replayScope: "monitor-domain|monitor-witness|monitor-authority|monitor-host",
+  replayScope: "domain|witness|authority|host",
 };
 
 function snapshot(): GossipReplaySnapshot {
@@ -23,7 +23,7 @@ function snapshot(): GossipReplaySnapshot {
     version: 1,
     senderId: "monitor-a",
     recipientId: "monitor-b",
-    scope: "monitor-domain|monitor-witness|monitor-authority|monitor-host",
+    scope: "domain|witness|authority|host",
     highestSequence: 4,
     seenBySequence: {
       "2": { messageId: "message-2", digest: "2".repeat(64) },
