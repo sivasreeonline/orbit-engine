@@ -40,6 +40,11 @@ export default defineConfig({
             FENCE_TEST_CALLER_ID: callerId,
             FENCE_TEST_CALLER_KEY_ID: keyId,
             FENCE_TEST_CALLER_PRIVATE_KEY_PKCS8: base64Url(privateKeyPkcs8),
+            // Durable Objects use the production Env field names when signing
+            // their recovery RPC; supply the same ephemeral test identity.
+            WORKLOAD_CALLER_ID: callerId,
+            WORKLOAD_CALLER_KEY_ID: keyId,
+            WORKLOAD_CALLER_PRIVATE_KEY_PKCS8: base64Url(privateKeyPkcs8),
           },
           workers: [
             {
