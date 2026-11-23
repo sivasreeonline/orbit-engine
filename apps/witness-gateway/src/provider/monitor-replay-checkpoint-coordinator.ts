@@ -1,4 +1,5 @@
 import canonicalize from "canonicalize";
+import { deriveReplayCheckpointOperationId } from "../../../api/src/gossip/gossip-replay-checkpoint-intent";
 import {
   WitnessAmbiguousCommit,
   WitnessAppendConflict,
@@ -184,6 +185,7 @@ export async function checkpointMonitorReplaySnapshot(
   adapter: WitnessProviderAdapter,
   scope: WitnessCheckpointScope,
   snapshot: unknown,
+  expectedPredecessor?: { readonly generation: number; readonly digest: string },
 ): Promise<MonitorReplayCheckpointResult> {
   if (!validScope(scope)) {
     throw new MonitorReplayCheckpointError("invalid_scope", "witness checkpoint scope is malformed");
@@ -192,7 +194,17 @@ export async function checkpointMonitorReplaySnapshot(
   const bytes = canonicalSnapshotBytes(snapshot);
   const digest = await sha256Hex(bytes);
   if (!DIGEST.test(digest)) throw new Error("SHA-256 returned an invalid digest");
-  const operationId = `fence-monitor-replay-${digest}`;
+  if (expectedPredecessor && (
+    !Number.isSafeInteger(expectedPredecessor.generation) ||
+    expectedPredecessor.generation < 0 ||
+    !DIGEST.test(expectedPredecessor.digest)
+  )) {
+    throw new MonitorReplayCheckpointError("invalid_scope", "expected witness predecessor is malformed");
+  }
+
+  const operationId = expectedPredecessor
+    ? await deriveReplayCheckpointOperationId({ scope, expectedPredecessor, snapshotDigest: digest })
+    : `fence-monitor-replay-${digest}`;
 
   const existing = await adapter.readByOperation(scope, operationId);
   if (existing) {
@@ -224,14 +236,24 @@ export async function checkpointMonitorReplaySnapshot(
   if (latest && !sameScope(latest.checkpoint.scope, scope)) {
     throw new MonitorReplayCheckpointError("invalid_scope", "latest witness record has another scope");
   }
-  const expectedGeneration = latest?.checkpoint.generation ?? 0;
-  const expectedDigest = latest?.checkpoint.checkpointDigest ?? ZERO_DIGEST;
+  const expectedGeneration = expectedPredecessor?.generation ?? (latest?.checkpoint.generation ?? 0);
+  const expectedDigest = expectedPredecessor?.digest ?? (latest?.checkpoint.checkpointDigest ?? ZERO_DIGEST);
   if (
     !Number.isSafeInteger(expectedGeneration) ||
     expectedGeneration < 0 ||
     !DIGEST.test(expectedDigest)
   ) {
     throw new MonitorReplayCheckpointError("latest_readback_mismatch", "latest witness predecessor is malformed");
+  }
+
+  if (
+    (latest?.checkpoint.generation ?? 0) !== expectedGeneration ||
+    (latest?.checkpoint.checkpointDigest ?? ZERO_DIGEST) !== expectedDigest
+  ) {
+    throw new MonitorReplayCheckpointError(
+      "stale_operation",
+      "witness latest head does not match the persisted expected predecessor",
+    );
   }
 
   const checkpoint: WitnessCheckpoint = {
