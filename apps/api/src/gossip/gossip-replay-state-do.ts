@@ -256,7 +256,10 @@ function prune(state: StoredState, trustedNow: number): void {
     }
   }
   for (const [requestId, request] of Object.entries(state.outstandingRequests)) {
-    if (request.expiresAt <= trustedNow) delete state.outstandingRequests[requestId];
+    if (
+      request.expiresAt <= trustedNow ||
+      !state.seenByMessageId[requestId]
+    ) delete state.outstandingRequests[requestId];
   }
 }
 
