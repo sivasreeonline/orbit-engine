@@ -138,3 +138,12 @@ The API's durable replay request now carries the triggering message's sender ID,
 The private gateway now parses this closed request, validates the caller scope and deterministic operation ID, decodes and re-hashes the exact snapshot bytes, verifies the sender/recipient identity against the snapshot, and requires the triggering message digest to appear in the snapshot's retained message history. It constructs and validates the dedicated monitor replay checkpoint body and computes its distinct checkpoint digest. The deployment still returns `provider_unavailable` after validation because no concrete provider/evidence authority is configured.
 
 Exact-head CI run #2701 passed on `144131dbc691e0670b02b64da585ee9fe2984d91`, including API typecheck/unit tests/Workers runtime integration, private gateway typecheck/tests/dry-run, schema and cryptographic conformance, and the synthetic DynamoDB Local checks.
+
+
+## Independent evidence-authority contract progress — 2026-11-23
+
+Added `apps/witness-gateway/src/evidence/witness-evidence-authority.ts`, deliberately separate from the storage provider adapter. Its request carries the exact canonical monitor-replay checkpoint bytes and digest. Its response carries the exact checkpoint readback, root-signed trust bundle, signed receipt, signed tree head, leaf index and inclusion/consistency paths.
+
+The contract requires idempotent `issueOrRecoverEvidence` and immutable `readEvidenceByOperation`. Its byte/identity guard checks canonical checkpoint bytes and digest, trust scope, receipt generation/operation/checkpoint/predecessor bindings, signed-head scope and proof metadata. It does **not** verify cryptographic signatures or proofs; the gateway's existing `verifyEvidence` path remains mandatory. Ambiguous issuance acknowledgements recover only by the same immutable operation ID and exact bytes.
+
+Synthetic tests cover exact-byte mismatch, wrong operation identity and lost-ack recovery. The contract is not yet configured as a service binding or integrated into `checkpointReplay`; no provider writes are enabled.
