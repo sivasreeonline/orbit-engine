@@ -205,9 +205,9 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
       trustedNow,
       f.scope,
     );
-    expect(current.treeSize).toBe(2);
+    expect(current.body.treeSize).toBe(2);
     await expect(verifySignedTreeHead(f.priorHead, trust, trustedNow, f.scope))
-      .resolves.toMatchObject({ treeSize: 1 });
+      .resolves.toMatchObject({ body: { treeSize: 1 } });
   });
 
   it("verifies full-envelope receipt inclusion and prior-head consistency", async () => {
@@ -240,7 +240,7 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
       expectedScope: f.scope,
       leafIndex: 0,
       inclusionProofHex: proofHex,
-      priorTreeHead: f.priorHead.body,
+      priorTreeHeadEnvelope: f.priorHead,
       consistencyProofHex: priorConsistency.map(hex),
     });
     expect(verified.treeHead).toEqual(verifiedHead);
@@ -304,20 +304,29 @@ describe("FENCE-001 Worker cryptographic profile verifier", () => {
 
   it("rejects tree-size rollback, same-size conflicting roots and altered consistency paths", async () => {
     const f = await fixtures();
-    await expect(verifyTreeHeadExtension(
-      { ...f.priorHead.body, treeSize: 3 },
-      f.currentHead.body,
-      [],
-    )).rejects.toThrow("rollback");
-    await expect(verifyTreeHeadExtension(
-      f.currentHead.body,
-      { ...f.currentHead.body, rootHash: "f".repeat(64) },
-      [],
-    )).rejects.toThrow("consistency");
-    await expect(verifyTreeHeadExtension(
-      f.priorHead.body,
-      f.currentHead.body,
-      ["f".repeat(64)],
-    )).rejects.toThrow("consistency");
+    const trust = await verifyTrustBundleEnvelope(f.trustEnvelope, f.pinnedRoots, f.expectedTrustState);
+    const prior = await verifySignedTreeHead(f.priorHead, trust, trustedNow, f.scope);
+    const current = await verifySignedTreeHead(f.currentHead, trust, trustedNow, f.scope);
+
+    const rollbackBody = { ...f.currentHead.body, treeSize: 3 };
+    const rollbackHead = {
+      body: rollbackBody,
+      signature: await sign(f.logPrivateKey, TREE_PREFIX, rollbackBody),
+    };
+    const verifiedRollback = await verifySignedTreeHead(rollbackHead, trust, trustedNow, f.scope);
+    await expect(verifyTreeHeadExtension(verifiedRollback, current, []))
+      .rejects.toThrow("rollback");
+
+    const conflictingBody = { ...f.currentHead.body, rootHash: "f".repeat(64) };
+    const conflictingHead = {
+      body: conflictingBody,
+      signature: await sign(f.logPrivateKey, TREE_PREFIX, conflictingBody),
+    };
+    const verifiedConflict = await verifySignedTreeHead(conflictingHead, trust, trustedNow, f.scope);
+    await expect(verifyTreeHeadExtension(current, verifiedConflict, []))
+      .rejects.toThrow("consistency");
+
+    await expect(verifyTreeHeadExtension(prior, current, ["f".repeat(64)]))
+      .rejects.toThrow("consistency");
   });
 });
