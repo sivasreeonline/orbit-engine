@@ -25,6 +25,12 @@ export interface VerifiedReplayCheckpointEvidence {
   readonly verified: true;
   readonly operationId: string;
   readonly snapshotDigest: string;
+  readonly checkpointDigest: string;
+  readonly authorityStateDigest: string;
+  readonly trustDomainId: string;
+  readonly witnessId: string;
+  readonly authorityId: string;
+  readonly hostId: string;
   readonly predecessorGeneration: number;
   readonly predecessorDigest: string;
   readonly generation: number;
@@ -148,6 +154,12 @@ export async function finalizePendingReplayIntent(
       evidence.verified !== true ||
       evidence.operationId !== stored.intent.operationId ||
       evidence.snapshotDigest !== stored.intent.snapshotDigest ||
+      evidence.authorityStateDigest !== stored.intent.snapshotDigest ||
+      evidence.trustDomainId !== stored.intent.scope.trustDomainId ||
+      evidence.witnessId !== stored.intent.scope.witnessId ||
+      evidence.authorityId !== stored.intent.scope.authorityId ||
+      evidence.hostId !== stored.intent.scope.hostId ||
+      !/^[0-9a-f]{64}$/.test(evidence.checkpointDigest) ||
       evidence.predecessorGeneration !== stored.intent.expectedPredecessor.generation ||
       evidence.predecessorDigest !== stored.intent.expectedPredecessor.digest ||
       !Number.isSafeInteger(evidence.generation) ||
@@ -163,7 +175,7 @@ export async function finalizePendingReplayIntent(
       snapshot: stored.proposedState,
       witnessHead: {
         generation: evidence.generation,
-        digest: evidence.treeHeadDigest,
+        digest: evidence.checkpointDigest,
         treeSize: evidence.treeSize,
         treeHeadDigest: evidence.treeHeadDigest,
       },
