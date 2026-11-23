@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   authenticateApiWorkerWithWitnessGateway,
+  checkpointReplayViaWitnessGateway,
   verifyEvidenceViaWitnessGateway,
 } from "./witness-gateway-client";
 
@@ -154,6 +155,41 @@ describe("private witness gateway client", () => {
       scope: "witness:verify-evidence",
       method: "POST",
       path: "/rpc/verify-evidence",
+    });
+    expect(receivedBody).toBe(body);
+  });
+
+  it("signs the replay-checkpoint operation with its dedicated scope and exact body", async () => {
+    const config = await signerConfig();
+    const body = new TextEncoder().encode('{"operationId":"fence-monitor-replay-test"}');
+    let receivedProof: unknown;
+    let receivedBody: Uint8Array | undefined;
+    const env = {
+      WORKLOAD_CALLER_ID: config.callerId,
+      WORKLOAD_CALLER_KEY_ID: config.keyId,
+      WORKLOAD_CALLER_PRIVATE_KEY_PKCS8: config.privateKeyPkcs8,
+      WITNESS_GATEWAY: {
+        async authenticate() {
+          return { authenticated: false as const, reason: "unknown_key" as const };
+        },
+        async verifyEvidence() {
+          return { verified: false as const, reason: "malformed_request" as const };
+        },
+        async checkpointReplay(proof: unknown, requestBody: Uint8Array) {
+          receivedProof = proof;
+          receivedBody = requestBody;
+          return { checkpointed: false as const, reason: "provider_unavailable" as const };
+        },
+      },
+    };
+
+    const result = await checkpointReplayViaWitnessGateway(env, body);
+    expect(result).toEqual({ checkpointed: false, reason: "provider_unavailable" });
+    expect(receivedProof).toMatchObject({
+      audience: "sky-high-witness-gateway",
+      scope: "witness:checkpoint-replay",
+      method: "POST",
+      path: "/rpc/checkpoint-replay",
     });
     expect(receivedBody).toBe(body);
   });
