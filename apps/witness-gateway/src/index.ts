@@ -6,6 +6,7 @@ import {
   type WorkloadProof,
 } from "../../api/src/witness/workload-identity";
 import { DurableWorkloadNonceStore } from "../../api/src/auth/durable-workload-nonce-store";
+import type { WitnessGatewayRpc } from "../../api/src/witness/witness-gateway-contract";
 
 const AUDIENCE = "sky-high-witness-gateway";
 const SCOPE = "witness:authorize";
@@ -17,13 +18,6 @@ export interface GatewayEnv {
   readonly WITNESS_TRUST_STATE: DurableObjectNamespace;
   /** JSON array of pinned public-key records; never a private key. */
   readonly WORKLOAD_CALLER_KEYS?: string;
-}
-
-export interface WitnessGatewayRpc {
-  authenticate(
-    proof: WorkloadProof,
-    body: Uint8Array,
-  ): Promise<WorkloadAuthenticationResult>;
 }
 
 /** Parse the pinned public-key allowlist. Missing or malformed config fails closed. */
@@ -92,6 +86,7 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
 
 }
 
+export type { WitnessGatewayRpc } from "../../api/src/witness/witness-gateway-contract";
 export { WorkloadNonceReplayDO } from "../../api/src/auth/workload-nonce-replay-do";
 export { WitnessTrustStateDO } from "./witness-trust-state-do";
 
