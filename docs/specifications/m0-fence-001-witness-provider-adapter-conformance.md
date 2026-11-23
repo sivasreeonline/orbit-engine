@@ -117,3 +117,6 @@ The local-only factory uses a Fetch-based AWS SDK request handler rather than a 
 
 
 Before any transaction, the TypeScript adapter recomputes the snapshot and checkpoint-body SHA-256 values from the supplied exact bytes and rejects a mismatch without writing. Its local factory also rejects non-loopback endpoints and loopback URLs containing credentials, paths, query strings or fragments. These negative cases are part of the DynamoDB Local CI integration suite.
+
+
+A separate workerd test now instantiates the AWS SDK DynamoDB client with the custom Fetch request handler and sends a SigV4-signed `GetItem` request through the Worker Fetch API against a synthetic response. This validates the request-handler transport in workerd only; it is not a real AWS/DynamoDB Local integration test. The Node-based DynamoDB Local suite separately validates transactional provider behavior.
