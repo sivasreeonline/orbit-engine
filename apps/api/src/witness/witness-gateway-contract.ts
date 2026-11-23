@@ -28,6 +28,24 @@ export type WitnessEvidenceVerificationResult =
         | "trust_state_unavailable";
     };
 
+export type WitnessReplayCheckpointResult =
+  | {
+      readonly checkpointed: true;
+      /** Canonical FENCE-001 evidence-verification request bytes returned by the gateway. */
+      readonly canonicalEvidenceBody: Uint8Array;
+    }
+  | {
+      readonly checkpointed: false;
+      readonly reason:
+        | "malformed_request"
+        | "workload_authentication_failed"
+        | "trust_scope_denied"
+        | "provider_unavailable"
+        | "append_conflict"
+        | "ambiguous_commit"
+        | "readback_mismatch";
+    };
+
 /** Typed RPC surface shared by the API caller and private gateway Worker. */
 export interface WitnessGatewayRpc {
   authenticate(
@@ -39,4 +57,9 @@ export interface WitnessGatewayRpc {
     proof: WorkloadProof,
     canonicalEvidenceBody: Uint8Array,
   ): Promise<WitnessEvidenceVerificationResult>;
+
+  checkpointReplay(
+    proof: WorkloadProof,
+    canonicalCheckpointBody: Uint8Array,
+  ): Promise<WitnessReplayCheckpointResult>;
 }
