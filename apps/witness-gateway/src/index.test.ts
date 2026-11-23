@@ -154,7 +154,18 @@ describe("buildMonitorReplayCheckpoint", () => {
 
   it("rejects a snapshot whose bytes do not match the persisted digest", async () => {
     const { input } = await requestFixture();
-    const changedBytes = new TextEncoder().encode("{}");
+    const changedSnapshot = {
+      version: 1,
+      senderId: input.senderId,
+      recipientId: input.recipientId,
+      highestSequence: 2,
+      seenByMessageId: {
+        "message-1": { sequence: 1, digest: input.messageDigest },
+      },
+    };
+    const changedCanonical = canonicalize(changedSnapshot);
+    if (typeof changedCanonical !== "string") throw new Error("changed snapshot not canonical");
+    const changedBytes = new TextEncoder().encode(changedCanonical);
     await expect(buildMonitorReplayCheckpoint({
       ...input,
       snapshotBytes: changedBytes,
