@@ -17,7 +17,7 @@ export type WitnessEvidenceVerificationResult =
       readonly predecessorGeneration: number;
       readonly predecessorDigest: string;
       readonly generation: number;
-      readonly authorityStateDigest: string;
+      readonly snapshotDigest: string;
       readonly treeHeadDigest: string;
       readonly treeSize: number;
       readonly receiptLeafHash: string;
