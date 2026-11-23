@@ -28,6 +28,9 @@ describe("durable pending replay intent", () => {
     };
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: message.senderId,
+      recipientId: message.recipientId,
+      messageDigest: message.canonicalDigest,
       scope,
       expectedPredecessor: predecessor,
       nextState: proposedState,
@@ -42,6 +45,9 @@ describe("durable pending replay intent", () => {
   it("rejects a proposed state that differs from the checkpoint snapshot", async () => {
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: message.senderId,
+      recipientId: message.recipientId,
+      messageDigest: message.canonicalDigest,
       scope,
       expectedPredecessor: predecessor,
       nextState: { version: 1, highestSequence: 1 },
@@ -57,6 +63,9 @@ describe("durable pending replay intent", () => {
     const proposedState = { version: 1, highestSequence: 1 };
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 7,
+      senderId: message.senderId,
+      recipientId: message.recipientId,
+      messageDigest: message.canonicalDigest,
       scope,
       expectedPredecessor: predecessor,
       nextState: proposedState,
