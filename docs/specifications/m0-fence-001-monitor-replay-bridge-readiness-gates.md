@@ -129,3 +129,10 @@ The dedicated replay checkpoint profile now has:
 Exact-head CI run #2677 passed on `244de56ecc0188412c1d7f2b3b3ee56dff50e4f7`.
 
 **Remaining gates:** gateway checkpoint construction must create the dedicated profile from the persisted replay intent; the storage provider must be concretely implemented and qualified; an independently administered evidence authority must issue/recover signed receipt + signed tree head + inclusion/consistency proofs; gateway verification and API finalization must be exercised end-to-end with those exact artifacts. No production provider writes or student execution are enabled.
+
+
+## 11. Message-bound request construction update
+
+The durable intent and gateway request now bind sender ID, recipient ID, canonical message digest, base state version, exact snapshot byte length, and scope/predecessor/operation identity. Gateway validation re-hashes the exact snapshot, confirms sender/recipient match the decoded snapshot, and requires the triggering message digest to be represented in retained message history before constructing the dedicated signed checkpoint body.
+
+Exact-head CI run #2701 passed on `144131dbc691e0670b02b64da585ee9fe2984d91`. Provider writes remain disabled; the next missing layer is a separate evidence-authority contract and a concrete storage provider.
