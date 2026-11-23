@@ -11,6 +11,9 @@ describe("durable replay checkpoint intent", () => {
   it("creates deterministic operation IDs and canonical request bytes", async () => {
     const input = {
       baseStateVersion: 4,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: "a".repeat(64),
       scope,
       expectedPredecessor: predecessor,
       nextState: { version: 1, highestSequence: 7, seen: { "7": "a".repeat(64) } },
@@ -26,6 +29,9 @@ describe("durable replay checkpoint intent", () => {
   it("separates idempotency keys across scope and predecessor while preserving retries", async () => {
     const base = {
       baseStateVersion: 4,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: "a".repeat(64),
       scope,
       expectedPredecessor: predecessor,
       nextState: { version: 1, highestSequence: 7 },
@@ -48,6 +54,9 @@ describe("durable replay checkpoint intent", () => {
   it("binds the request to its base state version and exact witness predecessor", async () => {
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 8,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: "a".repeat(64),
       scope,
       expectedPredecessor: { generation: 3, digest: "b".repeat(64) },
       nextState: { version: 1, highestSequence: 9 },
@@ -64,6 +73,9 @@ describe("durable replay checkpoint intent", () => {
   it("rejects malformed relationship scopes and predecessor digests", async () => {
     await expect(createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: "a".repeat(64),
       scope: "domain|witness|authority",
       expectedPredecessor: predecessor,
       nextState: { version: 1 },
@@ -71,6 +83,9 @@ describe("durable replay checkpoint intent", () => {
 
     await expect(createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: "a".repeat(64),
       scope,
       expectedPredecessor: { generation: 0, digest: "not-a-digest" },
       nextState: { version: 1 },
@@ -80,6 +95,9 @@ describe("durable replay checkpoint intent", () => {
   it("detects tampering with persisted request bytes", async () => {
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 1,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: "a".repeat(64),
       scope,
       expectedPredecessor: predecessor,
       nextState: { version: 1, highestSequence: 1 },
@@ -96,6 +114,9 @@ describe("durable replay checkpoint intent", () => {
   it("rejects extra fields in persisted intent and scope objects", async () => {
     const intent = await createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: "a".repeat(64),
       scope,
       expectedPredecessor: predecessor,
       nextState: { version: 1 },
@@ -114,6 +135,9 @@ describe("durable replay checkpoint intent", () => {
   it("rejects non-plain snapshots", async () => {
     await expect(createReplayCheckpointIntent({
       baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: "a".repeat(64),
       scope,
       expectedPredecessor: predecessor,
       nextState: Object.create({ inherited: true }) as Record<string, unknown>,
