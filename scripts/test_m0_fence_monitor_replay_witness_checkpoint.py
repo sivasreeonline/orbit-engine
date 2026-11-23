@@ -47,8 +47,7 @@ def main() -> None:
     print("PASS snapshot digest is bound separately from cryptographic checkpoint artifact digest")
     print("PASS canonical snapshot digest and exact retry idempotency")
 
-    tampered = copy.deepcopy(first)
-    tampered["highestSequence"] = 0
+    tampered = sample(2)
     result = reconcile_replay_snapshot(adapter, SCOPE, tampered)
     assert result["status"] == "QUARANTINE" and result["witnessDigest"] == accepted["digest"]
     print("PASS stale or altered local replay snapshot is quarantined")
