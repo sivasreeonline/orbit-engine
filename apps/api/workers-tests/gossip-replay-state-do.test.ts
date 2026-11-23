@@ -58,6 +58,7 @@ async function finalizePending(
     snapshotDigest: pending.snapshotDigest,
     generation: pending.expectedGeneration + 1,
     checkpointDigest: artifact.checkpointDigest,
+    checkpointBody: artifact.checkpointBody,
     receiptDigest: "b".repeat(64),
     verification: {
       verified: true,
@@ -234,6 +235,7 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
       snapshotDigest: pending.snapshotDigest,
       generation: pending.expectedGeneration + 1,
       checkpointDigest: artifact.checkpointDigest,
+      checkpointBody: artifact.checkpointBody,
       receiptDigest: "b".repeat(64),
       verification: {
         verified: true as const,
