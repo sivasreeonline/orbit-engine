@@ -63,18 +63,20 @@ export async function createApiWorkloadProof(
   config: WorkloadSignerConfig,
   body: Uint8Array,
 ): Promise<WorkloadProofCreationResult> {
+  const callerId = config?.callerId;
+  const keyId = config?.keyId;
+  const privateKeyPkcs8 = config?.privateKeyPkcs8;
   if (
-    !config ||
-    !IDENTIFIER.test(config.callerId ?? "") ||
-    !KEY_ID.test(config.keyId ?? "") ||
-    !config.privateKeyPkcs8 ||
+    !IDENTIFIER.test(callerId ?? "") ||
+    !KEY_ID.test(keyId ?? "") ||
+    !privateKeyPkcs8 ||
     !(body instanceof Uint8Array)
   ) {
     return { created: false, reason: "caller_identity_unconfigured" };
   }
 
   try {
-    const privateKeyBytes = decodeBase64Url(config.privateKeyPkcs8);
+    const privateKeyBytes = decodeBase64Url(privateKeyPkcs8);
     if (privateKeyBytes.length < 32 || privateKeyBytes.length > 128) {
       return { created: false, reason: "caller_proof_signing_failed" };
     }
@@ -90,8 +92,8 @@ export async function createApiWorkloadProof(
     const nonceBytes = new Uint8Array(24);
     crypto.getRandomValues(nonceBytes);
     const unsigned = {
-      callerId: config.callerId,
-      keyId: config.keyId,
+      callerId,
+      keyId,
       audience: AUDIENCE,
       scope: SCOPE,
       method: METHOD,
