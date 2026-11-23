@@ -184,3 +184,12 @@ The local DynamoDB adapter factory now supplies an AWS SDK v3 request handler ba
 Additional tests prove that the local factory rejects both a real AWS DynamoDB endpoint and HTTPS loopback endpoints. The factory accepts only HTTP loopback endpoints. This is a hard local-test guard, not a live AWS configuration path.
 
 Cloudflare workerd runtime compatibility remains unqualified until a dedicated workerd-to-DynamoDB-Local integration test is added. The adapter is not deployed, and no live AWS writes are possible through the local-only factory.
+
+
+## Provider pre-append digest and endpoint hardening — 2026-11-23
+
+The DynamoDB adapter now recomputes both SHA-256 values before opening a transaction and refuses to write if the exact snapshot bytes do not match `snapshotDigest` or the exact checkpoint-body bytes do not match `checkpointDigest`. Tests assert that either mismatch leaves the witness head empty.
+
+The local factory additionally rejects endpoint URLs containing credentials, paths, query strings or fragments, as well as all non-loopback and non-HTTP endpoints. The only accepted form is a plain HTTP loopback endpoint.
+
+Exact-head CI run #2767 passed on `1a953d88ccff6a188bee8a5743ede37508431995`, including the new negative preflight tests and DynamoDB Local integration.
