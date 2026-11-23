@@ -2,7 +2,14 @@
 """Synthetic monitor replay snapshot witness-checkpoint tests."""
 from __future__ import annotations
 import copy
-from validate_m0_fence_monitor_replay_witness_checkpoint import ReplayCheckpointError, checkpoint_replay_snapshot, reconcile_replay_snapshot, snapshot_digest
+from validate_m0_fence_monitor_replay_witness_checkpoint import (
+    ReplayCheckpointError,
+    build_checkpoint_artifact,
+    checkpoint_replay_snapshot,
+    is_empty_replay_snapshot,
+    reconcile_replay_snapshot,
+    snapshot_digest,
+)
 from validate_m0_witness_provider_adapter_conformance import AppendConflict, InMemoryWitnessAdapter, LoseAcknowledgementOnce, Scope
 
 SCOPE = Scope("monitor-test-domain", "monitor-test-witness", "monitor-a", "monitor-b")
@@ -19,10 +26,25 @@ def main() -> None:
     first = sample(1)
     accepted = checkpoint_replay_snapshot(adapter, SCOPE, first)
     assert accepted["status"] == "CHECKPOINTED"
+    assert accepted["snapshotDigest"] == snapshot_digest(first)
+    assert accepted["checkpointDigest"] != accepted["snapshotDigest"]
+    assert accepted["checkpointBody"]["authorityStateDigest"] == accepted["snapshotDigest"]
+    assert accepted["checkpointBody"]["phase"] == "ACCEPTED"
     assert reconcile_replay_snapshot(adapter, SCOPE, first)["status"] == "MATCH"
     assert checkpoint_replay_snapshot(adapter, SCOPE, first)["status"] == "ALREADY_CHECKPOINTED"
     changed_order = dict(reversed(list(first.items())))
     assert snapshot_digest(changed_order) == snapshot_digest(first)
+
+    artifact = build_checkpoint_artifact(
+        SCOPE,
+        first,
+        generation=1,
+        previous_digest="0" * 64,
+    )
+    assert artifact["operationId"] == f"fence-monitor-replay-{snapshot_digest(first)}"
+    assert artifact["checkpointBody"]["authorityStateDigest"] == snapshot_digest(first)
+    assert artifact["checkpointDigest"] != snapshot_digest(first)
+    print("PASS snapshot digest is bound separately from cryptographic checkpoint artifact digest")
     print("PASS canonical snapshot digest and exact retry idempotency")
 
     tampered = copy.deepcopy(first)
@@ -46,6 +68,13 @@ def main() -> None:
 
     empty = InMemoryWitnessAdapter()
     assert reconcile_replay_snapshot(empty, SCOPE, {})["status"] == "NO_CHECKPOINT_EMPTY_STATE"
+    actual_empty_do_snapshot = {
+        "version": 1, "senderId": "", "recipientId": "", "scope": "",
+        "highestSequence": 0, "seenBySequence": {}, "seenByMessageId": {},
+        "outstandingRequests": {}, "consumedNonces": [], "missingSequences": [],
+    }
+    assert is_empty_replay_snapshot(actual_empty_do_snapshot)
+    assert reconcile_replay_snapshot(empty, SCOPE, actual_empty_do_snapshot)["status"] == "NO_CHECKPOINT_EMPTY_STATE"
     assert reconcile_replay_snapshot(empty, SCOPE, first)["status"] == "QUARANTINE"
     print("PASS unanchored non-empty local state quarantines")
 
