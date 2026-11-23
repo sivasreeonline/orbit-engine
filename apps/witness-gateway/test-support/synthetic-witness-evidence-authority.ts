@@ -72,6 +72,80 @@ async function generateSigningKey(): Promise<{
   return { privateKey: pair.privateKey, publicKey, keyId: await fingerprint(publicKey) };
 }
 
+port canonicalize from "canonicalize";
+import {
+  inclusionProof,
+  merkleTreeHash,
+  type PinnedRootKey,
+  type WitnessReceiptEnvelope,
+  type WitnessTreeHeadEnvelope,
+  type WitnessTrustBundleEnvelope,
+  type WitnessSigningKey,
+  verifyReceiptAgainstTrustedBundle,
+  verifyReceiptInclusion,
+  verifySignedTreeHead,
+  verifyTrustBundleEnvelope,
+} from "../../api/src/witness/witness-profile-verifier";
+import {
+  WitnessEvidenceAuthorityOperationConflictError,
+  type WitnessEvidenceAuthority,
+  type WitnessEvidenceAuthorityBundle,
+  type WitnessEvidenceAuthorityRequest,
+} from "../src/evidence/witness-evidence-authority";
+import type { WitnessCheckpointScope } from "../src/provider/witness-provider-adapter";
+
+const RECEIPT_PREFIX = "SKYHIGH-FENCE-001-WITNESS-RECEIPT-V1\0";
+const TRUST_BUNDLE_PREFIX = "SKYHIGH-FENCE-001-WITNESS-TRUST-BUNDLE-V1\0";
+const TREE_HEAD_PREFIX = "SKYHIGH-FENCE-001-WITNESS-TREE-HEAD-V1\0";
+const ZERO_DIGEST = "0".repeat(64);
+
+function canonicalBytes(value: unknown): Uint8Array {
+  const serialized = canonicalize(value);
+  if (typeof serialized !== "string") throw new TypeError("synthetic evidence is not canonicalizable");
+  return new TextEncoder().encode(serialized);
+}
+
+function hex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function base64url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\\+/g, "-").replace(/\\//g, "_");
+}
+
+async function fingerprint(bytes: Uint8Array): Promise<string> {
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
+}
+
+async function sign(
+  key: CryptoKey,
+  prefix: string,
+  body: unknown,
+): Promise<string> {
+  const signature = await crypto.subtle.sign(
+    { name: "Ed25519" },
+    key,
+    new Uint8Array([...new TextEncoder().encode(prefix), ...canonicalBytes(body)]),
+  );
+  return base64url(new Uint8Array(signature));
+}
+
+async function generateSigningKey(): Promise<{
+  readonly privateKey: CryptoKey;
+  readonly publicKey: Uint8Array;
+  readonly keyId: string;
+}> {
+  const pair = await crypto.subtle.generateKey(
+    { name: "Ed25519" },
+    true,
+    ["sign", "verify"],
+  ) as CryptoKeyPair;
+  const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
+  return { privateKey: pair.privateKey, publicKey, keyId: await fingerprint(publicKey) };
+}
+
 function sameScope(a: WitnessCheckpointScope, b: WitnessCheckpointScope): boolean {
   return a.trustDomainId === b.trustDomainId &&
     a.witnessId === b.witnessId &&
