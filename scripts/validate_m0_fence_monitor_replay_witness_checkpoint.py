@@ -174,6 +174,15 @@ def build_checkpoint_artifact(
         if not isinstance(value, str) or not value.strip():
             raise ReplayCheckpointError(f"checkpoint scope {field} is malformed")
 
+    for scope_field, snapshot_field in (
+        ("sender_id", "senderId"),
+        ("recipient_id", "recipientId"),
+        ("replay_scope", "scope"),
+    ):
+        expected_value = getattr(scope, scope_field, "")
+        if expected_value and snapshot.get(snapshot_field) != expected_value:
+            raise ReplayCheckpointError(f"replay snapshot {snapshot_field} does not match provider scope")
+
     digest = snapshot_digest(snapshot)
     operation_id = f"fence-monitor-replay-{digest}"
     operation_descriptor = {
@@ -357,11 +366,22 @@ def main() -> None:
     parser.add_argument("--witness-id", required=True)
     parser.add_argument("--authority-id", required=True)
     parser.add_argument("--host-id", required=True)
+    parser.add_argument("--sender-id", default="")
+    parser.add_argument("--recipient-id", default="")
+    parser.add_argument("--replay-scope", default="")
     parser.add_argument("--reconcile-only", action="store_true")
     args = parser.parse_args()
     factory, adapter_kind = load_adapter_factory()
     snapshot = json.loads(args.snapshot.read_text(encoding="utf-8"))
-    scope = Scope(args.trust_domain_id, args.witness_id, args.authority_id, args.host_id)
+    scope = Scope(
+        args.trust_domain_id,
+        args.witness_id,
+        args.authority_id,
+        args.host_id,
+        args.sender_id,
+        args.recipient_id,
+        args.replay_scope,
+    )
     operation = reconcile_replay_snapshot if args.reconcile_only else checkpoint_replay_snapshot
     result = operation(factory(), scope, snapshot)
     print(f"Monitor replay witness result: {result['status']}")
