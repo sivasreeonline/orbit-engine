@@ -149,6 +149,38 @@ function validateSnapshot(
       !Number.isSafeInteger(request.expiresAt) ||
       (request.expiresAt as number) < 0
     ) throw new TypeError("outstanding request entry is malformed");
+    if (!snapshot.seenByMessageId[requestId]) {
+      throw new TypeError("outstanding request is not bound to a seen replay message");
+    }
+    if (snapshot.consumedNonces.includes(request.nonce)) {
+      throw new TypeError("outstanding request nonce is already consumed");
+    }
+  }
+
+  for (const [sequence, entry] of Object.entries(snapshot.seenBySequence)) {
+    const reverse = snapshot.seenByMessageId[entry.messageId];
+    if (
+      !reverse ||
+      reverse.sequence !== Number(sequence) ||
+      reverse.digest !== entry.digest
+    ) throw new TypeError("replay sequence and message indexes disagree");
+    if (Number(sequence) > snapshot.highestSequence) {
+      throw new TypeError("seen sequence exceeds the replay high-water");
+    }
+  }
+  for (const [messageId, entry] of Object.entries(snapshot.seenByMessageId)) {
+    const forward = snapshot.seenBySequence[String(entry.sequence)];
+    if (
+      !forward ||
+      forward.messageId !== messageId ||
+      forward.digest !== entry.digest
+    ) throw new TypeError("replay message and sequence indexes disagree");
+  }
+  for (const missing of snapshot.missingSequences) {
+    if (
+      missing > snapshot.highestSequence ||
+      Object.hasOwn(snapshot.seenBySequence, String(missing))
+    ) throw new TypeError("missing sequence conflicts with replay high-water or seen messages");
   }
 }
 
