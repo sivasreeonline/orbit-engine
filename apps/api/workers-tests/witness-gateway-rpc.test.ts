@@ -5,10 +5,8 @@ import type { WitnessGatewayRpc } from "../src/witness/witness-gateway-contract"
 import { createApiWorkloadProof } from "../src/witness/workload-proof-signer";
 import {
   authenticateApiWorkerWithWitnessGateway,
-  checkpointReplayViaWitnessGateway,
   verifyEvidenceViaWitnessGateway,
 } from "../src/witness/witness-gateway-client";
-import { deriveReplayCheckpointOperationId } from "../src/gossip/gossip-replay-checkpoint-intent";
 import {
   consistencyProof,
   inclusionProof,
