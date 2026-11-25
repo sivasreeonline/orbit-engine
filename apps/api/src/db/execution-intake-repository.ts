@@ -181,7 +181,7 @@ function persistedProtocolTestBundleId(row: ExistingExecutionRow): string {
   const documentText = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   const document = JSON.parse(documentText) as Record<string, unknown>;
   if (document.protocolVersion !== "v2" ||
-      document.executionId === undefined ||
+      document.executionId !== row.execution_id ||
       document.attemptId !== row.attempt_id ||
       typeof document.testBundleId !== "string" ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(document.testBundleId)) {
@@ -200,8 +200,8 @@ function idempotencyScope(input: CreateExecutionInput, key: string): string {
 }
 
 /**
- * Transactional persistence prototype for the proposed 0003 schema.
- * It is deliberately not wired to HTTP routes or queue dispatch.
+ * Transactional persistence for the proposal-stage execution intake schema.
+ * V2 persistence is opt-in; the outbox publisher deliberately remains v1-only.
  */
 export class PostgresExecutionIntakeRepository {
   constructor(
