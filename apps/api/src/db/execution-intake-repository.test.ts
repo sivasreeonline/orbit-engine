@@ -15,6 +15,7 @@ function fakeClient(options: {
   readonly existing?: Record<string, unknown>[];
   readonly problem?: Record<string, unknown>[];
   readonly failAt?: string;
+  readonly emptyTestCases?: boolean;
 } = {}) {
   const calls: QueryCall[] = [];
   let ended = false;
@@ -39,14 +40,14 @@ function fakeClient(options: {
           sequence: 1,
           visibility: "PUBLIC",
           input_data: new TextEncoder().encode("1 2"),
-          expected_output: new TextEncoder().encode("3\\n"),
+          expected_output: new TextEncoder().encode("3\n"),
         };
         const hiddenCase = {
           id: "case-hidden",
           sequence: 2,
           visibility: "HIDDEN",
           input_data: new TextEncoder().encode("4 5"),
-          expected_output: new TextEncoder().encode("9\\n"),
+          expected_output: new TextEncoder().encode("9\n"),
         };
         return { rows: (options.emptyTestCases ? [] : action === "SUBMIT" ? [publicCase, hiddenCase] : [publicCase]) as unknown as T[] };
       }
