@@ -90,21 +90,35 @@ following capabilities must land as one coordinated, tested change:
 
 ## Current implementation boundary
 
-At the current PR head, opt-in intake can persist the exact v2 request bytes, digest,
+At the current PR head, opt-in intake persists the exact v2 request bytes, digest,
 policy revision and UUID correlation identity in the same transaction as the
 execution records and metadata-only v2 outbox row. The opt-in flag defaults off.
-The outbox publisher explicitly claims v1 rows only; v2 rows remain pending and
-cannot reach the v1-only queue consumer. The queue consumer now accepts the exact three-field v1/v2 discriminator union. The
-handoff repository verifies v2 against the immutable request row: attempt and
-correlation identity, request SHA-256, fatal UTF-8/JSON decoding, exact top-level
-field set, exact limits field set, persisted deadline equality and unexpired deadline.
-Migration `0015_runner_dispatch_protocol_v2.sql` permits a validated v2 dispatch
-intent. Every dispatch lease query remains explicitly v1-only, so the current runner
-cannot claim these v2 intents. The authenticated artifact endpoint and strict Go v2
-consumer are still absent; therefore v2 publication remains disabled and these
-changes do not enable execution.
 
-Required integration tests include v1 regression, v2 valid handoff, missing request,
-wrong attempt, wrong correlation, expired deadline, duplicate delivery, concurrent
-duplicate delivery, lost queue acknowledgement, disabled publication gate, and
-proof that no v2 request can reach a v1-only runner.
+The execution-outbox publisher explicitly claims v1 rows only. A PostgreSQL-backed
+integration test proves v2 execution-outbox rows remain `PENDING` without a lease.
+The queue consumer accepts the exact three-field v1/v2 discriminator union and
+acknowledges a duplicate only after the durable handoff resolves. The handoff
+repository verifies v2 against the immutable request row: attempt and correlation
+identity, request SHA-256, fatal UTF-8/JSON decoding, exact top-level field set,
+exact limits field set, persisted deadline equality and unexpired deadline.
+PostgreSQL-backed concurrent delivery coverage proves twelve simultaneous v2
+deliveries create one durable dispatch intent and eleven duplicates.
+
+Migration `0015_runner_dispatch_protocol_v2.sql` permits a validated v2 dispatch
+intent. Every dispatch lease query remains explicitly v1-only; a PostgreSQL-backed
+test proves v2 dispatch intents remain pending and unleased. The authenticated
+private artifact endpoint returns the original persisted v2 request bytes and
+digest. A same-job CI bridge passes the actual PostgreSQL-backed artifact through
+the Go runner client's signed `FetchArtifact` method, which strictly validates
+the v2 request and all artifact/dispatch bindings. The queue consumer's lost-ack
+test proves a redelivery can safely acknowledge an already-recorded v2 intent.
+
+V2 execution remains disabled: the intake flag defaults off, the v1 publisher
+cannot claim v2 execution-outbox rows, and the current v1 runner-dispatch claim
+path cannot lease v2 intents. These tests establish the proposal-stage custody and
+handoff boundary only; they do not authorize production execution or sandbox use.
+
+The remaining coordinated rollout work is the authenticated v2 claim/lease path,
+a version-aware runner dispatch contract, and qualification of the approved
+isolated sandbox. Those pieces must remain gated until identity, cancellation,
+artifact authorization and M0 isolation criteria are met.
