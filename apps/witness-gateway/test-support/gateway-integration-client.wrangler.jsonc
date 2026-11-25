@@ -15,6 +15,11 @@
       "binding": "WITNESS_PROVIDER",
       "service": "sky-high-dynamodb-local-witness-provider",
       "entrypoint": "DynamoDBLocalWitnessProvider"
+    },
+    {
+      "binding": "WITNESS_GATEWAY_PROVIDER_ONLY",
+      "service": "sky-high-witness-gateway-provider-only",
+      "entrypoint": "WitnessGateway"
     }
   ]
 }
