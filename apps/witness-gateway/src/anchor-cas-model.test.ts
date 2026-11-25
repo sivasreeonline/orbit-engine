@@ -67,6 +67,28 @@ describe("evaluateAnchorCompareAndSet", () => {
     })))).toBe("operation_id_conflict");
   });
 
+  it("recognizes a retry from the immutable operation index after later commits", () => {
+    const first = record();
+    const second = record({
+      sequence: 2,
+      previousRecordDigest: first.recordDigest,
+      recordDigest: d("2"),
+      operationId: "operation-2",
+      requestDigest: d("3"),
+      checkpoint: { ...first.checkpoint, treeSize: 12, treeRootHash: d("f"), treeHeadDigest: d("1") },
+    });
+    expect(evaluateAnchorCompareAndSet(input({
+      current: second,
+      knownOperations: [first, second],
+      proposed: first,
+    }))).toEqual({ action: "ALREADY_APPLIED", record: first });
+    expect(rejectedReason(evaluateAnchorCompareAndSet(input({
+      current: second,
+      knownOperations: [first, second],
+      proposed: record({ requestDigest: d("f"), recordDigest: d("4") }),
+    })))).toBe("operation_id_conflict");
+  });
+
   it("allows only one writer from a shared predecessor", () => {
     const first = record();
     const competing = record({
