@@ -401,6 +401,10 @@ export class PostgresRunnerArtifactRepository {
               requestDocument.sourceSha256 !== computedSourceHash ||
               requestDocument.testBundleId !== testBundleId ||
               requestDocument.comparisonPolicy !== "EXACT_BYTES" ||
+              typeof requestDocument.limits !== "object" || requestDocument.limits === null ||
+              Array.isArray(requestDocument.limits) ||
+              Object.keys(requestDocument.limits as Record<string, unknown>).sort().join(",") !==
+                ["cpuQuotaMillis", "memoryBytes", "wallTimeMillis", "processLimit", "outputBytes", "scratchBytes", "scratchInodes"].sort().join(",") ||
               Date.parse(String(requestDocument.deadlineAt)) !== timestampMs(artifact.request_deadline_at) ||
               Date.parse(String(requestDocument.deadlineAt)) <= Date.now()) {
             throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_mismatch");
