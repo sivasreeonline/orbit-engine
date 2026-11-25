@@ -25,6 +25,14 @@ const REORDER_WINDOW = 64;
 const RETAINED_SEQUENCE_WINDOW = 128;
 const DIGEST = /^[0-9a-f]{64}$/;
 
+export const REPLAY_CHECKPOINT_QUARANTINE_KEY = "replay-checkpoint-quarantine-v1";
+
+interface ReplayCheckpointQuarantine {
+  readonly version: 1;
+  readonly reason: "invalid_pending_intent" | "evidence_not_verified" | "finalization_rejected";
+  readonly quarantinedAt: number;
+}
+
 export type GossipMessageType =
   | "HEAD_ADVERTISEMENT"
   | "EQUIVOCATION_ALERT"
@@ -146,7 +154,8 @@ export async function rearmPendingCheckpointAlarm(
   storage: PendingCheckpointAlarmStorage,
 ): Promise<void> {
   const pending = await storage.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
-  if (pending !== undefined && await storage.getAlarm() === null) {
+  const quarantine = await storage.get<ReplayCheckpointQuarantine>(REPLAY_CHECKPOINT_QUARANTINE_KEY);
+  if (pending !== undefined && quarantine === undefined && await storage.getAlarm() === null) {
     await storage.setAlarm(Date.now() + 1_000);
   }
 }
@@ -377,6 +386,9 @@ export class GossipReplayStateDO extends DurableObject<Env> {
       pending,
     );
     if (staged.staged) {
+      // A newly staged transition is a new operator-authorized attempt. Clear
+      // any quarantine left by a prior, already-resolved pending transition.
+      await this.ctx.storage.delete(REPLAY_CHECKPOINT_QUARANTINE_KEY);
       // Alarm scheduling is deliberately outside the state transaction; the
       // constructor repairs the narrow crash window between commit and alarm.
       await this.ctx.storage.setAlarm(Date.now() + 1_000);
@@ -495,6 +507,20 @@ export class GossipReplayStateDO extends DurableObject<Env> {
   /** Durable retry trigger. Failed recovery keeps the relationship blocked. */
   override async alarm(): Promise<void> {
     const result = await this.recoverPendingCheckpointIntent();
+    if (!result.recovered && (
+      result.reason === "invalid_pending_intent" ||
+      result.reason === "evidence_not_verified" ||
+      result.reason === "finalization_rejected"
+    )) {
+      // Persist quarantine so constructor recovery cannot re-arm this intent
+      // after eviction/restart. The pending bytes and accepted state are kept.
+      await this.ctx.storage.put<ReplayCheckpointQuarantine>(
+        REPLAY_CHECKPOINT_QUARANTINE_KEY,
+        { version: 1, reason: result.reason, quarantinedAt: Date.now() },
+      );
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
     if (
       !result.recovered &&
       (
@@ -504,7 +530,6 @@ export class GossipReplayStateDO extends DurableObject<Env> {
       )
     ) {
       // Retry transient infrastructure/evidence-availability failures only.
-      // Integrity failures stay durably blocked for explicit operator review.
       await this.ctx.storage.setAlarm(Date.now() + 30_000);
     }
   }
