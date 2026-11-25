@@ -392,6 +392,17 @@ describe("GossipReplayStateDO", () => {
     expect(checkpointReplayViaWitnessGateway).not.toHaveBeenCalled();
     expect(harness.getAlarm()).toBeNull();
     expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(true);
+    expect(harness.values.get(REPLAY_CHECKPOINT_QUARANTINE_KEY)).toMatchObject({
+      version: 1,
+      reason: "invalid_pending_intent",
+    });
+
+    // A restart must honor the durable quarantine even if an alarm survived
+    // the crash window between writing the marker and deleting the trigger.
+    await harness.storage.setAlarm(Date.now() + 1_000);
+    await rearmPendingCheckpointAlarm(harness.storage);
+    expect(harness.getAlarm()).toBeNull();
+    expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(true);
   });
 
   it("preserves pending intent when the provider is unavailable during recovery", async () => {
