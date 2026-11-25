@@ -160,15 +160,28 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
       stateVersion: 0,
     });
 
-    // A separate stub acquisition exercises recovery against persisted DO
+    // Separate stub acquisition exercises recovery against persisted DO
     // state, rather than relying on the staging call's in-memory objects.
     const restartedStub = env.GOSSIP_REPLAY.get(id);
-    const recovery = await restartedStub.recoverPendingCheckpointIntent();
-    expect(recovery).toMatchObject({ recovered: true, stateVersion: 1 });
+
+    // Two callers may resume the same durable intent after a restart or alarm.
+    // The storage transaction must allow only one of them to advance state.
+    const concurrentRecoveries = await Promise.all([
+      restartedStub.recoverPendingCheckpointIntent(),
+      restartedStub.recoverPendingCheckpointIntent(),
+    ]);
+    expect(concurrentRecoveries.filter((result) => result.recovered)).toHaveLength(1);
+    expect(concurrentRecoveries.filter((result) => !result.recovered)).toHaveLength(1);
+    expect(concurrentRecoveries.every((result) =>
+      result.recovered ||
+      result.reason === "finalization_rejected" ||
+      result.reason === "no_pending_intent"
+    )).toBe(true);
     expect(await restartedStub.hasPendingCheckpointIntent()).toBe(false);
     expect(await restartedStub.getPendingCheckpointIntent()).toBeUndefined();
-    // A duplicate recovery after the atomic commit must be a no-op: the
-    // completed transition is no longer eligible for provider or evidence RPCs.
+
+    // A later retry after the atomic commit must be a no-op: the completed
+    // transition is no longer eligible for provider or evidence RPCs.
     expect(await restartedStub.recoverPendingCheckpointIntent()).toEqual({
       recovered: false,
       reason: "no_pending_intent",
