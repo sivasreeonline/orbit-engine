@@ -83,16 +83,32 @@ export default defineConfig({
               compatibilityFlags: ["nodejs_compat", "rpc"],
               bindings: {
                 WORKLOAD_CALLER_KEYS: trustedKeys,
-                WITNESS_ROOT_KEYS: JSON.stringify([{
-                  keyId: authorityRootKeyId,
-                  publicKeyBase64Url: base64Url(authorityRootPublicKey),
-                }]),
-                WITNESS_TRUST_SCOPES: JSON.stringify([{
-                  trustDomainId: "runtime-domain",
-                  witnessId: "runtime-witness",
-                  authorityId: "runtime-authority",
-                  hostId: "runtime-host",
-                }]),
+                WITNESS_ROOT_KEYS: JSON.stringify([
+                  {
+                    keyId: authorityRootKeyId,
+                    publicKeyBase64Url: base64Url(authorityRootPublicKey),
+                  },
+                  // Retain the independent fixed cryptographic vector used by
+                  // the gateway's verifier integration test.
+                  {
+                    keyId: "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+                    publicKeyBase64Url: "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+                  },
+                ]),
+                WITNESS_TRUST_SCOPES: JSON.stringify([
+                  {
+                    trustDomainId: "runtime-domain",
+                    witnessId: "runtime-witness",
+                    authorityId: "runtime-authority",
+                    hostId: "runtime-host",
+                  },
+                  {
+                    trustDomainId: "test-trust-domain-vector-01",
+                    witnessId: "witness-vector-01",
+                    authorityId: "authority-vector-01",
+                    hostId: "host-vector-01",
+                  },
+                ]),
               },
               serviceBindings: {
                 WITNESS_PROVIDER: {
