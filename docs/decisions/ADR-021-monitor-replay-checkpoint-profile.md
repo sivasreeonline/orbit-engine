@@ -237,3 +237,12 @@ The positive test:
 The dedicated workerd test passed (1/1). In the same CI run, the TypeScript DynamoDB Local adapter tests passed (8/8), the provider adapter conformance harness passed (12/12), and the existing DynamoDB Local idempotency/concurrency checks passed. Push CI run #45614074386 and pull-request CI run #45614082881 both passed all three jobs on `f417465844b85c90d4029e1e279f8dda1e71b7f5`.
 
 **Qualification boundary:** this closes the local workerd transport and gateway/provider integration gap only. DynamoDB Local is not AWS, the synthetic evidence authority is not separately administered, and the test environment does not prove independent operational control, production durability, disaster recovery or anti-rollback across independent failure domains. No live AWS credentials, production writes or deployments are enabled.
+
+
+## Fail-closed provider-only gateway guard — 2026-11-25
+
+Extended the workerd/DynamoDB Local integration harness with a second gateway instance that has the provider binding but deliberately has no evidence-authority binding. A valid, authenticated checkpoint request must return `provider_unavailable`; the test then reads both latest head and immutable operation from the provider and confirms that neither exists. This proves the gateway does not append to the provider when the independent evidence authority is absent.
+
+The workerd integration suite now passes both cases: provider-only fail-closed/no-write and the full provider + authority + cryptographic verification + exact-byte readback path (2/2). Push CI run #45615016674 and pull-request CI run #45615032202 both passed all three jobs on `63b7c7d66966526d94574f7a1857fc757ee7650d`.
+
+This guard matches the current production posture: without a configured evidence-authority binding, replay checkpoint requests remain unavailable and cannot create provider records. It is a local synthetic fail-closed test, not production authority qualification.
