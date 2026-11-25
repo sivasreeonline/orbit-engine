@@ -131,6 +131,24 @@ describe("decideTrustRecovery", () => {
     })).action).toBe("ADVANCE_ANCHOR");
   });
 
+  it("repairs an anchor-sequence-only rollback even when the tree head bytes match", () => {
+    const anchor = checkpoint();
+    const local = checkpoint({
+      anchorSequence: 6,
+      anchorRecordDigest: d("1"),
+    });
+    expect(decideTrustRecovery(input({
+      local,
+      anchor,
+      witness: anchor,
+      monitors: monitors(anchor),
+    }))).toMatchObject({
+      action: "REPAIR_LOCAL_FORWARD",
+      reason: "anchor_ahead",
+      requiredCheckpoint: anchor,
+    });
+  });
+
   it("advances the anchor only when the witness head extends it and monitors agree", () => {
     const anchor = checkpoint();
     const witness = checkpoint({
