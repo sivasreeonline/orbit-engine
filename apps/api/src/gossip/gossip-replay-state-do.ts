@@ -147,6 +147,7 @@ interface PendingCheckpointAlarmStorage {
   get<T>(key: string): Promise<T | undefined>;
   getAlarm(): Promise<number | null>;
   setAlarm(scheduledTime: number | Date): Promise<void>;
+  deleteAlarm(): Promise<void>;
 }
 
 /** Re-arm the durable retry trigger after reconstruction when a pending intent exists. */
@@ -155,7 +156,13 @@ export async function rearmPendingCheckpointAlarm(
 ): Promise<void> {
   const pending = await storage.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
   const quarantine = await storage.get<ReplayCheckpointQuarantine>(REPLAY_CHECKPOINT_QUARANTINE_KEY);
-  if (pending !== undefined && quarantine === undefined && await storage.getAlarm() === null) {
+  if (quarantine !== undefined) {
+    // Also repair a crash between persisting quarantine and deleting an
+    // already-scheduled alarm.
+    await storage.deleteAlarm();
+    return;
+  }
+  if (pending !== undefined && await storage.getAlarm() === null) {
     await storage.setAlarm(Date.now() + 1_000);
   }
 }
