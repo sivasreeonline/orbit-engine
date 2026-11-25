@@ -33,6 +33,23 @@ export default defineConfig({
         notAfter: 2_000_000_000,
       }]);
 
+      // One independent ephemeral root is generated for the synthetic evidence
+      // authority. Only its public half is pinned by the gateway Worker.
+      const authorityRootPair = await webcrypto.subtle.generateKey(
+        { name: "Ed25519" } as AlgorithmIdentifier,
+        true,
+        ["sign", "verify"],
+      ) as CryptoKeyPair;
+      const authorityRootPublicKey = new Uint8Array(
+        await webcrypto.subtle.exportKey("raw", authorityRootPair.publicKey),
+      );
+      const authorityRootPrivateKeyPkcs8 = new Uint8Array(
+        await webcrypto.subtle.exportKey("pkcs8", authorityRootPair.privateKey),
+      );
+      const authorityRootKeyId = createHash("sha256")
+        .update(authorityRootPublicKey)
+        .digest("hex");
+
       return {
         wrangler: { configPath: "./wrangler.jsonc" },
         miniflare: {
@@ -48,6 +65,17 @@ export default defineConfig({
           },
           workers: [
             {
+              name: "sky-high-synthetic-witness-services",
+              scriptPath: ".test-dist/synthetic-witness-services/index.js",
+              modules: true,
+              compatibilityDate: "2026-11-09",
+              compatibilityFlags: ["nodejs_compat", "rpc"],
+              bindings: {
+                FENCE_TEST_AUTHORITY_ROOT_PRIVATE_KEY_PKCS8: base64Url(authorityRootPrivateKeyPkcs8),
+                FENCE_TEST_AUTHORITY_ROOT_PUBLIC_KEY_BASE64URL: base64Url(authorityRootPublicKey),
+              },
+            },
+            {
               name: "sky-high-witness-gateway",
               scriptPath: ".test-dist/witness-gateway/index.js",
               modules: true,
@@ -56,15 +84,25 @@ export default defineConfig({
               bindings: {
                 WORKLOAD_CALLER_KEYS: trustedKeys,
                 WITNESS_ROOT_KEYS: JSON.stringify([{
-                  keyId: "56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
-                  publicKeyBase64Url: "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+                  keyId: authorityRootKeyId,
+                  publicKeyBase64Url: base64Url(authorityRootPublicKey),
                 }]),
                 WITNESS_TRUST_SCOPES: JSON.stringify([{
-                  trustDomainId: "test-trust-domain-vector-01",
-                  witnessId: "witness-vector-01",
-                  authorityId: "authority-vector-01",
-                  hostId: "host-vector-01",
+                  trustDomainId: "runtime-domain",
+                  witnessId: "runtime-witness",
+                  authorityId: "runtime-authority",
+                  hostId: "runtime-host",
                 }]),
+              },
+              serviceBindings: {
+                WITNESS_PROVIDER: {
+                  name: "sky-high-synthetic-witness-services",
+                  entrypoint: "SyntheticWitnessProvider",
+                },
+                WITNESS_EVIDENCE_AUTHORITY: {
+                  name: "sky-high-synthetic-witness-services",
+                  entrypoint: "SyntheticWitnessEvidenceAuthorityEntrypoint",
+                },
               },
               durableObjects: {
                 WORKLOAD_NONCE_REPLAY: "WorkloadNonceReplayDO",
