@@ -378,7 +378,7 @@ jobs:
       - name: Verify PostgreSQL-backed artifact with the Go runner client
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
-          SKYHIGH_V2_ARTIFACT_FIXTURE_PATH: ${{ runner.temp }}/skyhigh-v2-artifact-fixture.json
+          SKYHIGH_V2_ARTIFACT_FIXTURE_PATH: /tmp/skyhigh-v2-artifact-fixture.json
         run: |
           npx vitest run src/db/runner-artifact-repository.integration.test.ts
           cd ../../services/execution-runner
