@@ -639,6 +639,56 @@ describe("GossipReplayStateDO", () => {
     vi.mocked(verifyEvidenceViaWitnessGateway).mockReset();
   });
 
+  it("durably quarantines an alarm recovery rejected during finalization", async () => {
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    const proposedState = { highestSequence: 1 };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    const pending = await createPendingReplayIntent(intent, message(1), proposedState);
+    await harness.object.stageCheckpointIntent(pending);
+    const before = structuredClone(harness.values.get(REPLAY_STATE_ENVELOPE_KEY));
+    harness.clearAlarm();
+
+    vi.spyOn(harness.object, "recoverPendingCheckpointIntent").mockResolvedValue({
+      recovered: false,
+      reason: "finalization_rejected",
+    });
+
+    await harness.object.alarm();
+
+    expect(harness.values.get("replay-checkpoint-pending-v1")).toEqual(pending);
+    expect(harness.values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(before);
+    expect(harness.values.get(REPLAY_CHECKPOINT_QUARANTINE_KEY)).toMatchObject({
+      version: 1,
+      reason: "finalization_rejected",
+    });
+    expect(harness.getAlarm()).toBeNull();
+
+    await harness.storage.setAlarm(Date.now() + 1_000);
+    await rearmPendingCheckpointAlarm(harness.storage);
+    expect(harness.getAlarm()).toBeNull();
+    expect(harness.values.get("replay-checkpoint-pending-v1")).toEqual(pending);
+  });
+
   it("does not quarantine a replacement intent after an older alarm attempt", async () => {
     const harness = makeHarness();
     const initial: VersionedReplayState = {
