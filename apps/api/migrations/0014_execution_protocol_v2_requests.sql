@@ -68,9 +68,411 @@ BEGIN
     OR request_document->>'executionId' IS DISTINCT FROM NEW.execution_id::text
     OR request_document->>'attemptId' IS DISTINCT FROM NEW.attempt_id::text
     OR request_document->>'correlationId' IS DISTINCT FROM NEW.correlation_id::text
-    OR request_document->>'deadlineAt' IS DISTINCT FROM
-       to_char(NEW.deadline_at AT TIME ZONE 'UTC',
-         'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+    OR COALESCE(request_document->>'deadlineAt', '') !~ 'Z
+    OR request_document->>'comparisonPolicy' IS DISTINCT FROM 'EXACT_BYTES'
+    OR COALESCE(request_document->>'runtimeImageDigest', '')
+       !~ '^sha256:[0-9a-f]{64}
+    RAISE EXCEPTION 'protocol v2 request identity or policy fields are invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  limits_document := request_document->'limits';
+  IF jsonb_typeof(limits_document) IS DISTINCT FROM 'object'
+    OR jsonb_object_length(limits_document) <> 7
+    OR NOT (limits_document ?& ARRAY[
+      'cpuQuotaMillis', 'memoryBytes', 'wallTimeMillis', 'processLimit',
+      'outputBytes', 'scratchBytes', 'scratchInodes'
+    ]) THEN
+    RAISE EXCEPTION 'protocol v2 resource limits are incomplete'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_request_consistency
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_request_consistency
+BEFORE INSERT ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION verify_execution_protocol_request();
+
+CREATE OR REPLACE FUNCTION prevent_execution_protocol_request_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'persisted protocol v2 requests are immutable'
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_requests_immutable
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_requests_immutable
+BEFORE UPDATE OR DELETE ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION prevent_execution_protocol_request_mutation();
+
+INSERT INTO schema_migrations (version, description)
+VALUES (
+  '0014_execution_protocol_v2_requests',
+  'Proposal: immutable byte-exact v2 execution requests bound to intake policy'
+)
+ON CONFLICT (version) DO NOTHING;
+
+COMMIT;
+
+    OR (request_document->>'deadlineAt')::timestamptz
+       IS DISTINCT FROM NEW.deadline_at
+    OR request_document->>'comparisonPolicy' IS DISTINCT FROM 'EXACT_BYTES'
+    OR request_document->>'runtimeImageDigest' !~ '^sha256:[0-9a-f]{64}$'
+    OR request_document->>'sourceSHA256' ~ '[^0-9a-f]'
+    OR length(request_document->>'sourceSHA256') <> 64
+    OR request_document->>'cancellationRef' !~ '^cxl_[0-9a-f]{32}$'
+    OR request_document->>'action' NOT IN ('RUN', 'SUBMIT')
+    OR request_document->>'language' NOT IN ('java', 'python')
+    OR COALESCE(request_document->>'runtimeVersion', '') = ''
+    OR COALESCE(request_document->>'sourceArtifactID', '') = ''
+    OR COALESCE(request_document->>'testBundleID', '') = ''
+    OR COALESCE(request_document->>'problemVersionID', '') = '' THEN
+    RAISE EXCEPTION 'protocol v2 request identity or policy fields are invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  limits_document := request_document->'limits';
+  IF jsonb_typeof(limits_document) IS DISTINCT FROM 'object'
+    OR jsonb_object_length(limits_document) <> 7
+    OR NOT (limits_document ?& ARRAY[
+      'cpuQuotaMillis', 'memoryBytes', 'wallTimeMillis', 'processLimit',
+      'outputBytes', 'scratchBytes', 'scratchInodes'
+    ]) THEN
+    RAISE EXCEPTION 'protocol v2 resource limits are incomplete'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_request_consistency
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_request_consistency
+BEFORE INSERT ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION verify_execution_protocol_request();
+
+CREATE OR REPLACE FUNCTION prevent_execution_protocol_request_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'persisted protocol v2 requests are immutable'
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_requests_immutable
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_requests_immutable
+BEFORE UPDATE OR DELETE ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION prevent_execution_protocol_request_mutation();
+
+INSERT INTO schema_migrations (version, description)
+VALUES (
+  '0014_execution_protocol_v2_requests',
+  'Proposal: immutable byte-exact v2 execution requests bound to intake policy'
+)
+ON CONFLICT (version) DO NOTHING;
+
+COMMIT;
+
+    OR COALESCE(request_document->>'sourceSha256', '')
+       !~ '^[0-9a-f]{64}
+    RAISE EXCEPTION 'protocol v2 request identity or policy fields are invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  limits_document := request_document->'limits';
+  IF jsonb_typeof(limits_document) IS DISTINCT FROM 'object'
+    OR jsonb_object_length(limits_document) <> 7
+    OR NOT (limits_document ?& ARRAY[
+      'cpuQuotaMillis', 'memoryBytes', 'wallTimeMillis', 'processLimit',
+      'outputBytes', 'scratchBytes', 'scratchInodes'
+    ]) THEN
+    RAISE EXCEPTION 'protocol v2 resource limits are incomplete'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_request_consistency
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_request_consistency
+BEFORE INSERT ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION verify_execution_protocol_request();
+
+CREATE OR REPLACE FUNCTION prevent_execution_protocol_request_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'persisted protocol v2 requests are immutable'
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_requests_immutable
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_requests_immutable
+BEFORE UPDATE OR DELETE ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION prevent_execution_protocol_request_mutation();
+
+INSERT INTO schema_migrations (version, description)
+VALUES (
+  '0014_execution_protocol_v2_requests',
+  'Proposal: immutable byte-exact v2 execution requests bound to intake policy'
+)
+ON CONFLICT (version) DO NOTHING;
+
+COMMIT;
+
+    OR (request_document->>'deadlineAt')::timestamptz
+       IS DISTINCT FROM NEW.deadline_at
+    OR request_document->>'comparisonPolicy' IS DISTINCT FROM 'EXACT_BYTES'
+    OR request_document->>'runtimeImageDigest' !~ '^sha256:[0-9a-f]{64}$'
+    OR request_document->>'sourceSHA256' ~ '[^0-9a-f]'
+    OR length(request_document->>'sourceSHA256') <> 64
+    OR request_document->>'cancellationRef' !~ '^cxl_[0-9a-f]{32}$'
+    OR request_document->>'action' NOT IN ('RUN', 'SUBMIT')
+    OR request_document->>'language' NOT IN ('java', 'python')
+    OR COALESCE(request_document->>'runtimeVersion', '') = ''
+    OR COALESCE(request_document->>'sourceArtifactID', '') = ''
+    OR COALESCE(request_document->>'testBundleID', '') = ''
+    OR COALESCE(request_document->>'problemVersionID', '') = '' THEN
+    RAISE EXCEPTION 'protocol v2 request identity or policy fields are invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  limits_document := request_document->'limits';
+  IF jsonb_typeof(limits_document) IS DISTINCT FROM 'object'
+    OR jsonb_object_length(limits_document) <> 7
+    OR NOT (limits_document ?& ARRAY[
+      'cpuQuotaMillis', 'memoryBytes', 'wallTimeMillis', 'processLimit',
+      'outputBytes', 'scratchBytes', 'scratchInodes'
+    ]) THEN
+    RAISE EXCEPTION 'protocol v2 resource limits are incomplete'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_request_consistency
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_request_consistency
+BEFORE INSERT ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION verify_execution_protocol_request();
+
+CREATE OR REPLACE FUNCTION prevent_execution_protocol_request_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'persisted protocol v2 requests are immutable'
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_requests_immutable
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_requests_immutable
+BEFORE UPDATE OR DELETE ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION prevent_execution_protocol_request_mutation();
+
+INSERT INTO schema_migrations (version, description)
+VALUES (
+  '0014_execution_protocol_v2_requests',
+  'Proposal: immutable byte-exact v2 execution requests bound to intake policy'
+)
+ON CONFLICT (version) DO NOTHING;
+
+COMMIT;
+
+    OR COALESCE(request_document->>'cancellationRef', '')
+       !~ '^cxl_[0-9a-f]{32}
+    RAISE EXCEPTION 'protocol v2 request identity or policy fields are invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  limits_document := request_document->'limits';
+  IF jsonb_typeof(limits_document) IS DISTINCT FROM 'object'
+    OR jsonb_object_length(limits_document) <> 7
+    OR NOT (limits_document ?& ARRAY[
+      'cpuQuotaMillis', 'memoryBytes', 'wallTimeMillis', 'processLimit',
+      'outputBytes', 'scratchBytes', 'scratchInodes'
+    ]) THEN
+    RAISE EXCEPTION 'protocol v2 resource limits are incomplete'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_request_consistency
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_request_consistency
+BEFORE INSERT ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION verify_execution_protocol_request();
+
+CREATE OR REPLACE FUNCTION prevent_execution_protocol_request_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'persisted protocol v2 requests are immutable'
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_requests_immutable
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_requests_immutable
+BEFORE UPDATE OR DELETE ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION prevent_execution_protocol_request_mutation();
+
+INSERT INTO schema_migrations (version, description)
+VALUES (
+  '0014_execution_protocol_v2_requests',
+  'Proposal: immutable byte-exact v2 execution requests bound to intake policy'
+)
+ON CONFLICT (version) DO NOTHING;
+
+COMMIT;
+
+    OR (request_document->>'deadlineAt')::timestamptz
+       IS DISTINCT FROM NEW.deadline_at
+    OR request_document->>'comparisonPolicy' IS DISTINCT FROM 'EXACT_BYTES'
+    OR request_document->>'runtimeImageDigest' !~ '^sha256:[0-9a-f]{64}$'
+    OR request_document->>'sourceSHA256' ~ '[^0-9a-f]'
+    OR length(request_document->>'sourceSHA256') <> 64
+    OR request_document->>'cancellationRef' !~ '^cxl_[0-9a-f]{32}$'
+    OR request_document->>'action' NOT IN ('RUN', 'SUBMIT')
+    OR request_document->>'language' NOT IN ('java', 'python')
+    OR COALESCE(request_document->>'runtimeVersion', '') = ''
+    OR COALESCE(request_document->>'sourceArtifactID', '') = ''
+    OR COALESCE(request_document->>'testBundleID', '') = ''
+    OR COALESCE(request_document->>'problemVersionID', '') = '' THEN
+    RAISE EXCEPTION 'protocol v2 request identity or policy fields are invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  limits_document := request_document->'limits';
+  IF jsonb_typeof(limits_document) IS DISTINCT FROM 'object'
+    OR jsonb_object_length(limits_document) <> 7
+    OR NOT (limits_document ?& ARRAY[
+      'cpuQuotaMillis', 'memoryBytes', 'wallTimeMillis', 'processLimit',
+      'outputBytes', 'scratchBytes', 'scratchInodes'
+    ]) THEN
+    RAISE EXCEPTION 'protocol v2 resource limits are incomplete'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_request_consistency
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_request_consistency
+BEFORE INSERT ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION verify_execution_protocol_request();
+
+CREATE OR REPLACE FUNCTION prevent_execution_protocol_request_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'persisted protocol v2 requests are immutable'
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_requests_immutable
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_requests_immutable
+BEFORE UPDATE OR DELETE ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION prevent_execution_protocol_request_mutation();
+
+INSERT INTO schema_migrations (version, description)
+VALUES (
+  '0014_execution_protocol_v2_requests',
+  'Proposal: immutable byte-exact v2 execution requests bound to intake policy'
+)
+ON CONFLICT (version) DO NOTHING;
+
+COMMIT;
+
+    OR COALESCE(request_document->>'action', '') NOT IN ('RUN', 'SUBMIT')
+    OR COALESCE(request_document->>'language', '') NOT IN ('java', 'python')
+    OR COALESCE(request_document->>'runtimeVersion', '') = ''
+    OR COALESCE(request_document->>'sourceArtifactId', '') = ''
+    OR COALESCE(request_document->>'testBundleId', '') = ''
+    OR COALESCE(request_document->>'problemVersionId', '') = '' THEN
+    RAISE EXCEPTION 'protocol v2 request identity or policy fields are invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  limits_document := request_document->'limits';
+  IF jsonb_typeof(limits_document) IS DISTINCT FROM 'object'
+    OR jsonb_object_length(limits_document) <> 7
+    OR NOT (limits_document ?& ARRAY[
+      'cpuQuotaMillis', 'memoryBytes', 'wallTimeMillis', 'processLimit',
+      'outputBytes', 'scratchBytes', 'scratchInodes'
+    ]) THEN
+    RAISE EXCEPTION 'protocol v2 resource limits are incomplete'
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_request_consistency
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_request_consistency
+BEFORE INSERT ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION verify_execution_protocol_request();
+
+CREATE OR REPLACE FUNCTION prevent_execution_protocol_request_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'persisted protocol v2 requests are immutable'
+    USING ERRCODE = '55000';
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_execution_protocol_requests_immutable
+  ON execution_protocol_requests;
+CREATE TRIGGER trg_execution_protocol_requests_immutable
+BEFORE UPDATE OR DELETE ON execution_protocol_requests
+FOR EACH ROW EXECUTE FUNCTION prevent_execution_protocol_request_mutation();
+
+INSERT INTO schema_migrations (version, description)
+VALUES (
+  '0014_execution_protocol_v2_requests',
+  'Proposal: immutable byte-exact v2 execution requests bound to intake policy'
+)
+ON CONFLICT (version) DO NOTHING;
+
+COMMIT;
+
+    OR (request_document->>'deadlineAt')::timestamptz
+       IS DISTINCT FROM NEW.deadline_at
     OR request_document->>'comparisonPolicy' IS DISTINCT FROM 'EXACT_BYTES'
     OR request_document->>'runtimeImageDigest' !~ '^sha256:[0-9a-f]{64}$'
     OR request_document->>'sourceSHA256' ~ '[^0-9a-f]'
