@@ -1,5 +1,6 @@
 import { Client } from "pg";
 import { DatabaseUnavailableError } from "./database-errors";
+import { canonicalTestBundleBytes, type CanonicalTestBundleCase } from "./canonical-test-bundle";
 
 const MAX_SOURCE_BYTES = 256 * 1024;
 const MAX_TEST_CASES = 200;
@@ -14,7 +15,7 @@ export interface FetchRunnerArtifactInput {
   readonly keyId: string;
 }
 
-export interface RunnerArtifactTestCase {
+export interface RunnerArtifactTestCase extends CanonicalTestBundleCase {
   readonly testCaseId: string;
   readonly sequence: number;
   readonly visibility: "PUBLIC" | "HIDDEN";
@@ -129,16 +130,25 @@ async function sha256(bytes: Uint8Array): Promise<string> {
 
 function decodeUtf8(value: Uint8Array, field: string): string {
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(value);
-  } catch {
-    throw new RunnerArtifactIntegrityError(`${field}_invalid_utf8`);
+    return new TextDecoderexport interface CanonicalTestBundleCase {
+  readonly testCaseId: string;
+  readonly sequence: number;
+  readonly visibility: "PUBLIC" | "HIDDEN";
+  readonly input: string;
+  readonly expectedOutput: string;
+}
+
+export class TestBundleEncodingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TestBundleEncodingError";
   }
 }
 
 function appendLengthPrefixed(target: number[], value: Uint8Array): void {
   const length = value.byteLength;
   if (!Number.isSafeInteger(length) || length < 0 || length > 0xffffffff) {
-    throw new RunnerArtifactIntegrityError("runner_artifact_bundle_field_too_large");
+    throw new TestBundleEncodingError("runner_artifact_bundle_field_too_large");
   }
   target.push(
     (length >>> 24) & 0xff,
@@ -151,14 +161,16 @@ function appendLengthPrefixed(target: number[], value: Uint8Array): void {
 
 /**
  * Cross-language canonical format:
- * magic "SKYHIGH-TEST-BUNDLE-V1\\0", u32 case count, then per case:
+ * magic "SKYHIGH-TEST-BUNDLE-V1", u32 case count, then per case:
  * length-prefixed UTF-8 testCaseId, u32 sequence, one visibility byte
  * (1=PUBLIC, 2=HIDDEN), length-prefixed UTF-8 input and expected output.
  * All integers are unsigned big-endian.
  */
-function canonicalTestBundleBytes(testCases: readonly RunnerArtifactTestCase[]): Uint8Array {
+export function canonicalTestBundleBytes(
+  testCases: readonly CanonicalTestBundleCase[],
+): Uint8Array {
   if (testCases.length > 0xffffffff) {
-    throw new RunnerArtifactIntegrityError("runner_artifact_test_case_count_invalid");
+    throw new TestBundleEncodingError("runner_artifact_test_case_count_invalid");
   }
   const target: number[] = [];
   appendLengthPrefixed(target, new TextEncoder().encode("SKYHIGH-TEST-BUNDLE-V1"));
@@ -172,7 +184,7 @@ function canonicalTestBundleBytes(testCases: readonly RunnerArtifactTestCase[]):
     appendLengthPrefixed(target, new TextEncoder().encode(testCase.testCaseId));
     const sequence = testCase.sequence;
     if (!Number.isSafeInteger(sequence) || sequence < 1 || sequence > 0xffffffff) {
-      throw new RunnerArtifactIntegrityError("runner_artifact_test_sequence_invalid");
+      throw new TestBundleEncodingError("runner_artifact_test_sequence_invalid");
     }
     target.push(
       (sequence >>> 24) & 0xff,
