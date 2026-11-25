@@ -11,6 +11,7 @@
     "typecheck": "npm run generate-types && tsc --noEmit",
     "test": "vitest run",
     "test:workers": "vitest run --config vitest.workers.config.ts",
+    "test:workers:dynamodb-local": "vitest run --config vitest.dynamodb-local.workers.config.ts",
     "build": "npm run typecheck && npm test && npm run test:workers && wrangler deploy --dry-run"
   },
   "devDependencies": {
