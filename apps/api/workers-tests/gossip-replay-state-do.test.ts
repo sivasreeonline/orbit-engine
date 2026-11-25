@@ -98,8 +98,8 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     expect(response.status).toBe(404);
   });
 
-  it("keeps a staged replay transition blocked when gateway recovery is unavailable inside the Durable Object", async () => {
-    const scope = "test-trust-domain-vector-01|witness-vector-01|authority-vector-01|host-vector-01";
+  it("recovers a staged replay transition through gateway, provider and evidence authority before atomic finalization", async () => {
+    const scope = "runtime-domain|runtime-witness|runtime-authority|runtime-host";
     const predecessor = { generation: 0, digest: "0".repeat(64) };
     const initialSnapshot = {
       version: 1,
@@ -119,7 +119,7 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
       },
     };
     const id = env.GOSSIP_REPLAY.idFromName(
-      `workers-runtime:gateway-fail-closed:${crypto.randomUUID()}`,
+      `workers-runtime:gateway-positive-recovery:${crypto.randomUUID()}`,
     );
     const stub = env.GOSSIP_REPLAY.get(id);
     expect(await stub.initializeCheckpointedState({
@@ -160,24 +160,22 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
       stateVersion: 0,
     });
 
-    // Recovery runs inside the Durable Object. If its gateway capability or
-    // provider path is unavailable, it must preserve the exact pending intent.
-    const recovery = await stub.recoverPendingCheckpointIntent();
-    expect(recovery).toEqual({
-      recovered: false,
-      reason: "checkpoint_not_committed",
-    });
+    // A separate stub acquisition exercises recovery against persisted DO
+    // state, rather than relying on the staging call's in-memory objects.
+    const restartedStub = env.GOSSIP_REPLAY.get(id);
+    const recovery = await restartedStub.recoverPendingCheckpointIntent();
+    expect(recovery).toMatchObject({ recovered: true, stateVersion: 1 });
+    expect(await restartedStub.hasPendingCheckpointIntent()).toBe(false);
+    expect(await restartedStub.getPendingCheckpointIntent()).toBeUndefined();
 
-    // Finalization atomically deletes the pending record. Its continued
-    // presence proves the proposed snapshot was not promoted to accepted state.
-    expect(await stub.hasPendingCheckpointIntent()).toBe(true);
-    expect(await stub.getPendingCheckpointIntent()).toMatchObject({
-      transitionDigest: pending.transitionDigest,
-      intent: {
-        operationId: pending.intent.operationId,
-        canonicalCheckpointBody: pending.intent.canonicalCheckpointBody,
-      },
-    });
-  });
+    // Versioned state cannot be bypassed through the legacy acceptance API.
+    const blocked = await restartedStub.acceptVerifiedMessage({
+      ...message,
+      messageId: "runtime-checkpoint-message-after-finalization",
+      sequence: 2,
+      canonicalDigest: "b".repeat(64),
+    }, 10_000);
+    expect(blocked.outcome).toBe("BLOCKED");
+  });;
 
 });
