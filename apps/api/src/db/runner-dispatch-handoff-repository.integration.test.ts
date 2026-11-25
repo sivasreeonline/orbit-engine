@@ -72,7 +72,7 @@ describe.skipIf(!databaseUrl)("runner dispatch handoff PostgreSQL integration", 
       [
         "SELECT count(*)::text AS count, (array_agg(attempt_id::text))[1] AS attempt_id,",
         "  min(protocol_version) AS protocol_version, min(delivery_state) AS delivery_state,",
-        "  bool_or(lease_owner IS NOT NULL) AS has_lease"
+        "  bool_or(lease_owner IS NOT NULL) AS has_lease",
         "FROM runner_dispatch_outbox WHERE execution_id = $1::uuid",
       ].join("\n"),
       [created.executionId],
