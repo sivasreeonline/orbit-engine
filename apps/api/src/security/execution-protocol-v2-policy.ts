@@ -90,6 +90,11 @@ export function loadExecutionProtocolV2Policy(
     throw new ExecutionProtocolV2PolicyError("protocol_v2_policy_runtime_image_digest_invalid");
   }
 
+  const wallTimeMillis = positiveInteger(env, "EXECUTION_WALL_TIME_MILLIS");
+  if (wallTimeMillis > 600000) {
+    throw new ExecutionProtocolV2PolicyError("protocol_v2_policy_wall_time_out_of_range");
+  }
+
   const scratchBytes = positiveInteger(env, "EXECUTION_SCRATCH_BYTES");
   const scratchInodes = positiveInteger(env, "EXECUTION_SCRATCH_INODES");
   if (scratchBytes > 536870912 || scratchInodes > 8192) {
@@ -102,7 +107,7 @@ export function loadExecutionProtocolV2Policy(
     limits: {
       cpuQuotaMillis: positiveInteger(env, "EXECUTION_CPU_QUOTA_MILLIS"),
       memoryBytes: positiveInteger(env, "EXECUTION_MEMORY_BYTES"),
-      wallTimeMillis: positiveInteger(env, "EXECUTION_WALL_TIME_MILLIS"),
+      wallTimeMillis,
       processLimit: positiveInteger(env, "EXECUTION_PROCESS_LIMIT"),
       outputBytes: positiveInteger(env, "EXECUTION_OUTPUT_BYTES"),
       scratchBytes,
