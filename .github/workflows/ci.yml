@@ -156,9 +156,13 @@ jobs:
         working-directory: apps/witness-gateway
         run: npx wrangler deploy --dry-run --outdir ../api/.test-dist/witness-gateway
 
-      - name: Bundle synthetic provider and evidence authority for workerd RPC integration tests
+      - name: Bundle isolated synthetic provider Worker for workerd RPC integration tests
         working-directory: apps/witness-gateway
-        run: npx wrangler deploy --dry-run --config test-support/synthetic-services.wrangler.jsonc --outdir "$GITHUB_WORKSPACE/apps/api/.test-dist/synthetic-witness-services"
+        run: npx wrangler deploy --dry-run --config test-support/synthetic-provider.wrangler.jsonc --outdir "$GITHUB_WORKSPACE/apps/api/.test-dist/synthetic-witness-provider"
+
+      - name: Bundle isolated synthetic evidence authority Worker for workerd RPC integration tests
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --config test-support/synthetic-evidence-authority.wrangler.jsonc --outdir "$GITHUB_WORKSPACE/apps/api/.test-dist/synthetic-evidence-authority"
 
       - name: Durable Object Workers runtime integration tests
         env:
