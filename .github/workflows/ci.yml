@@ -282,6 +282,17 @@ jobs:
         run: |
           docker run -d --name fence-dynamodb-local -p 8000:8000 amazon/dynamodb-local:3.3.2 -jar DynamoDBLocal.jar -inMemory -sharedDb
 
+      - name: Wait for DynamoDB Local HTTP endpoint
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --silent --show-error --max-time 2 -o /dev/null http://127.0.0.1:8000; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "DynamoDB Local did not become reachable"
+          exit 1
+
       - name: Bundle gateway for DynamoDB Local workerd integration
         working-directory: apps/witness-gateway
         run: npx wrangler deploy --dry-run --config wrangler.jsonc --outdir .test-dist/witness-gateway
