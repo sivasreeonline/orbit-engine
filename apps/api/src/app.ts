@@ -219,7 +219,7 @@ export function createApiHandler(dependencies: ApiDependencies) {
     }
 
     const principal = authentication.principal;
-    if (!principal.tenantId || !principal.userId) {
+    if (!principal.tenantId.trim() || !principal.userId.trim()) {
       return errorResponse(
         "INVALID_IDENTITY_CONTEXT",
         "The authenticated identity is missing its tenant context.",

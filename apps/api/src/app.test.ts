@@ -172,6 +172,47 @@ describe("M1 API control plane", () => {
     expect(repository.listPublished).not.toHaveBeenCalled();
   });
 
+  it("ignores client-supplied user and tenant headers and uses only the authenticated principal", async () => {
+    const listPublished = vi.fn(async (_tenantId: string, _limit: number) => [summary]);
+    const { handler } = makeHarness({ repository: { listPublished } });
+
+    const response = await handler(makeRequest("/api/v1/problems", {
+      headers: {
+        "X-Tenant-ID": "40000000-0000-4000-8000-000000000099",
+        "X-User-ID": "50000000-0000-4000-8000-000000000099",
+        "X-User-Role": "admin",
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(listPublished).toHaveBeenCalledWith(authenticated.principal.tenantId, 20);
+    expect(listPublished).not.toHaveBeenCalledWith(
+      "40000000-0000-4000-8000-000000000099",
+      20,
+    );
+  });
+
+  it.each([
+    { userId: "", tenantId: authenticated.principal.tenantId },
+    { userId: authenticated.principal.userId, tenantId: "" },
+    { userId: "   ", tenantId: authenticated.principal.tenantId },
+    { userId: authenticated.principal.userId, tenantId: "   " },
+  ])("rejects an authenticated principal with missing identity context", async (principal) => {
+    const listPublished = vi.fn(async (_tenantId: string, _limit: number) => [summary]);
+    const { handler } = makeHarness({
+      auth: { authenticated: true, principal: { ...authenticated.principal, ...principal } },
+      repository: { listPublished },
+    });
+
+    const response = await handler(makeRequest("/api/v1/problems"));
+
+    expect(response.status).toBe(403);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "INVALID_IDENTITY_CONTEXT", retryable: false },
+    });
+    expect(listPublished).not.toHaveBeenCalled();
+  });
+
   it("lists published problems using the authenticated tenant and bounded limit", async () => {
     const listPublished = vi.fn(async (_tenantId: string, _limit: number) => [summary]);
     const { handler } = makeHarness({ repository: { listPublished } });
