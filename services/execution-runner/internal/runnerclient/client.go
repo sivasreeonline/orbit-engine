@@ -26,6 +26,7 @@ import (
 
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/acceptancejournal"
 	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/runnerauth"
+	"github.com/sivasreeonline/orbit-engine/services/execution-runner/internal/protocol"
 )
 
 const (
@@ -137,6 +138,11 @@ type ArtifactTestCase struct {
 	ExpectedOutput string `json:"expectedOutput"`
 }
 
+type ProtocolRequestArtifact struct {
+	RequestBytesBase64 string `json:"requestBytesBase64"`
+	RequestSHA256 string `json:"requestSha256"`
+}
+
 type ExecutionArtifact struct {
 	ExecutionID string `json:"executionId"`
 	AttemptID string `json:"attemptId"`
@@ -152,6 +158,7 @@ type ExecutionArtifact struct {
 	TestBundleID string `json:"testBundleId"`
 	TestBundleSHA256 string `json:"testBundleSha256"`
 	TestCases []ArtifactTestCase `json:"testCases"`
+	ProtocolRequest *ProtocolRequestArtifact `json:"protocolRequest,omitempty"`
 }
 
 type RemoteError struct {
@@ -772,6 +779,36 @@ func validateCompletionInput(result CompletionInput) error {
 }
 
 func validateArtifact(dispatch Dispatch, artifact ExecutionArtifact) error {
+	if dispatch.ProtocolVersion == "v1" {
+		if artifact.ProtocolRequest != nil {
+			return errors.New("v1 artifact unexpectedly contains a protocol v2 request")
+		}
+	} else if dispatch.ProtocolVersion == "v2" {
+		if artifact.ProtocolRequest == nil || artifact.ProtocolRequest.RequestBytesBase64 == "" {
+			return errors.New("v2 artifact is missing its immutable protocol request")
+		}
+		raw, err := base64.StdEncoding.DecodeString(artifact.ProtocolRequest.RequestBytesBase64)
+		if err != nil {
+			return errors.New("v2 artifact protocol request is not valid base64")
+		}
+		request, err := protocol.DecodeV2Request(raw, artifact.ProtocolRequest.RequestSHA256, time.Now().UTC())
+		if err != nil {
+			return fmt.Errorf("v2 artifact protocol request failed strict validation: %w", err)
+		}
+		if request.ExecutionID != dispatch.ExecutionID ||
+			request.AttemptID != dispatch.AttemptID ||
+			request.ProblemVersionID != artifact.ProblemVersionID ||
+			string(request.Action) != artifact.Action ||
+			string(request.Language) != artifact.Language ||
+			request.RuntimeVersion != artifact.RuntimeVersion ||
+			request.SourceArtifactID != artifact.SourceArtifactID ||
+			request.SourceSHA256 != artifact.SourceSHA256 ||
+			request.TestBundleID != artifact.TestBundleID {
+			return errors.New("v2 artifact protocol request does not match its artifact")
+		}
+	} else {
+		return errors.New("runner dispatch protocol version is unsupported")
+	}
 	if artifact.ExecutionID != dispatch.ExecutionID ||
 		artifact.AttemptID != dispatch.AttemptID ||
 		!uuidPattern.MatchString(artifact.ProblemVersionID) ||
