@@ -94,10 +94,15 @@ At the current PR head, opt-in intake can persist the exact v2 request bytes, di
 policy revision and UUID correlation identity in the same transaction as the
 execution records and metadata-only v2 outbox row. The opt-in flag defaults off.
 The outbox publisher explicitly claims v1 rows only; v2 rows remain pending and
-cannot reach the v1-only queue consumer. The queue consumer and handoff repository
-still accept v1 only, and migration `0005_runner_dispatch_outbox.sql` constrains
-dispatch rows to v1. These are intentional fail-closed boundaries and must not be
-relaxed until the coordinated rollout and integration tests above are ready.
+cannot reach the v1-only queue consumer. The queue consumer now accepts the exact three-field v1/v2 discriminator union. The
+handoff repository verifies v2 against the immutable request row: attempt and
+correlation identity, request SHA-256, fatal UTF-8/JSON decoding, exact top-level
+field set, exact limits field set, persisted deadline equality and unexpired deadline.
+Migration `0015_runner_dispatch_protocol_v2.sql` permits a validated v2 dispatch
+intent. Every dispatch lease query remains explicitly v1-only, so the current runner
+cannot claim these v2 intents. The authenticated artifact endpoint and strict Go v2
+consumer are still absent; therefore v2 publication remains disabled and these
+changes do not enable execution.
 
 Required integration tests include v1 regression, v2 valid handoff, missing request,
 wrong attempt, wrong correlation, expired deadline, duplicate delivery, concurrent
