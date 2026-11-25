@@ -123,3 +123,18 @@ Production rollback protection remains **NOT QUALIFIED** until all of the follow
 - provider and anchor recovery evidence retained and independently audited.
 
 Until then, the existing Durable Object trust state is a local monotonic guard only. Missing, corrupt, unavailable, or inconsistent trust state must fail closed; it must never be reset to generation zero as an automatic recovery path.
+
+
+## 9. Deterministic recovery model implementation — 2026-11-25
+
+Added `apps/witness-gateway/src/trust-recovery-model.ts` as a pure decision model and `trust-recovery-model.test.ts` as its unit suite.
+
+The model classifies independently supplied local, external-anchor, witness and monitor observations. It covers:
+
+- exact agreement and normal continuation;
+- local snapshot repair to a newer anchor, including stale anchor-sequence metadata and a root-signed trust-bundle generation chain;
+- anchor advancement only when both the tree-head consistency proof and any newer trust-bundle chain have been independently verified by the caller;
+- local-ahead, witness rollback, same-size fork, monitor disagreement, insufficient monitor quorum, unavailable anchor/witness, and unproven transitions as quarantine outcomes;
+- root-rotation overlap, successor bundle acceptance, successor tree-head acceptance, old-root removal, and emergency approval.
+
+**Boundary:** this is a deterministic reference/decision model, not a connected anchor client or production recovery controller. It does not verify signatures, Merkle proofs, bundle signatures, monitor identities, or anchor compare-and-set itself. Those proofs must be verified by the calling layer before the corresponding boolean evidence is supplied. No external anchor provider is selected, no runtime recovery path invokes this model yet, and production rollback protection remains **NOT QUALIFIED**.
