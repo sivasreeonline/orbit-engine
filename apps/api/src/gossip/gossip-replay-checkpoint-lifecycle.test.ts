@@ -166,6 +166,54 @@ describe("transactional replay checkpoint lifecycle", () => {
       reason: "evidence_binding_mismatch",
     });
 
+    // A gateway result must also match the exact predecessor and complete
+    // witness scope. A verified flag alone cannot authorize another branch.
+    const wrongPredecessor = await finalizePendingReplayIntent(storage, pending, {
+      verified: true,
+      operationId: pending.intent.operationId,
+      checkpointDigest: "d".repeat(64),
+      snapshotDigest: pending.intent.snapshotDigest,
+      trustDomainId: "domain-a",
+      witnessId: "witness-a",
+      authorityId: "authority-a",
+      hostId: "host-a",
+      predecessorGeneration: 0,
+      predecessorDigest: "f".repeat(64),
+      generation: 1,
+      treeSize: 1,
+      treeHeadDigest: "b".repeat(64),
+      receiptLeafHash: "c".repeat(64),
+    });
+    expect(wrongPredecessor).toEqual({
+      finalized: false,
+      reason: "evidence_binding_mismatch",
+    });
+    expect(values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(initialState);
+    expect(await hasPendingReplayIntent(storage)).toBe(true);
+
+    const wrongScope = await finalizePendingReplayIntent(storage, pending, {
+      verified: true,
+      operationId: pending.intent.operationId,
+      checkpointDigest: "d".repeat(64),
+      snapshotDigest: pending.intent.snapshotDigest,
+      trustDomainId: "domain-a",
+      witnessId: "witness-a",
+      authorityId: "authority-a",
+      hostId: "different-host",
+      predecessorGeneration: 0,
+      predecessorDigest: "0".repeat(64),
+      generation: 1,
+      treeSize: 1,
+      treeHeadDigest: "b".repeat(64),
+      receiptLeafHash: "c".repeat(64),
+    });
+    expect(wrongScope).toEqual({
+      finalized: false,
+      reason: "evidence_binding_mismatch",
+    });
+    expect(values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(initialState);
+    expect(await hasPendingReplayIntent(storage)).toBe(true);
+
     const good = await finalizePendingReplayIntent(storage, pending, {
       verified: true,
       operationId: pending.intent.operationId,
