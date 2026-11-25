@@ -48,6 +48,10 @@ export interface TrustRecoveryInput {
   readonly monitors: readonly MonitorObservation[];
   readonly requiredMonitorCount: number;
   readonly witnessExtendsAnchor: boolean;
+  /** Root-signed bundle chain from local state to the independently stored anchor. */
+  readonly anchorTrustBundleExtendsLocal: boolean;
+  /** Root-signed bundle chain from the anchor to the current witness view. */
+  readonly witnessTrustBundleExtendsAnchor: boolean;
   readonly anchorAvailable: boolean;
 }
 
@@ -102,9 +106,19 @@ export function decideTrustRecovery(input: TrustRecoveryInput): TrustRecoveryDec
   if (local.logId !== anchor.logId || anchor.logId !== witness.logId) {
     return { action: "QUARANTINE", reason: "log_identity_mismatch" };
   }
-  if (local.trustBundleGeneration < anchor.trustBundleGeneration ||
-      anchor.trustBundleGeneration < witness.trustBundleGeneration) {
+  if (local.trustBundleGeneration > anchor.trustBundleGeneration) {
+    return { action: "QUARANTINE", reason: "local_ahead" };
+  }
+  if (anchor.trustBundleGeneration > local.trustBundleGeneration &&
+      !input.anchorTrustBundleExtendsLocal) {
+    return { action: "QUARANTINE", reason: "consistency_unproven" };
+  }
+  if (witness.trustBundleGeneration < anchor.trustBundleGeneration) {
     return { action: "QUARANTINE", reason: "trust_bundle_regression" };
+  }
+  if (witness.trustBundleGeneration > anchor.trustBundleGeneration &&
+      !input.witnessTrustBundleExtendsAnchor) {
+    return { action: "QUARANTINE", reason: "consistency_unproven" };
   }
   if (local.trustBundleGeneration === anchor.trustBundleGeneration &&
       local.trustBundleDigest !== anchor.trustBundleDigest) {
