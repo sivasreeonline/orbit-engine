@@ -1,6 +1,6 @@
 # ADR-021: Dedicated checkpoint profile for monitor replay evidence
 
-**Status:** Proposed; initial schema and TypeScript validation slice implemented in PR #201; architecture/security approval and end-to-end integration remain open  
+**Status:** Proposed; synthetic end-to-end integration implemented in PR #201; architecture/security approval and production qualification remain open  
 **Date:** 2026-11-23  
 **Scope:** FENCE-001 monitor replay checkpoint bridge  
 **Decision owners:** Sky High architecture and security review
@@ -76,13 +76,13 @@ A separate checkpoint-body profile is the smallest change that preserves the est
 
 ## Security and qualification boundaries
 
-This ADR does not select a cloud provider, create signing keys, configure service bindings, authorize external writes, or qualify durability or independence. The proposed profile must receive architecture/security review and fixed synthetic vectors before runtime use. Existing authority-profile and Merkle vectors must remain unchanged and pass.
+This ADR does not select a cloud provider, create signing keys, configure service bindings, authorize external writes, or qualify durability or independence. The proposed profile must receive architecture/security review before production runtime use. Fixed synthetic vectors and a workerd multi-Worker integration path now exercise the profile, but synthetic runtime success is not production qualification. Existing authority-profile and Merkle vectors must remain unchanged and pass.
 
 No production adapter may be enabled until exact checkpoint/snapshot byte readback, signed receipt verification, signed tree-head verification, inclusion/consistency verification, trust-state pinning, lost-ack recovery, restore reconciliation and independent provider qualification are complete.
 
 ## Consequences
 
-- Provider/evidence integration is intentionally blocked until the two digest domains are implemented distinctly.
+- Production provider/evidence integration remains blocked until the two digest domains are implemented distinctly and the independent production trust, durability and qualification gates below are satisfied.
 - The existing authority checkpoint profile remains backward compatible.
 - Existing provider-neutral coordinator tests must be revised to assert distinct snapshot and checkpoint digests.
 - No current code may claim that a replay snapshot digest is itself the signed checkpoint-body digest.
@@ -204,3 +204,18 @@ This is a workerd transport smoke test with a mocked HTTP response; it does not 
 Exact-head CI run #2773 passed on `79149fe4ef44d3373edaa08941b3da012ffa3b9c`, including the workerd transport test, gateway runtime tests, DynamoDB Local integration, API tests and web build.
 
 The remaining gap is a single end-to-end workerd test that uses the gateway's optional provider binding against a real local DynamoDB service, plus a concrete separately administered evidence-authority service. No production provider or authority is configured.
+
+
+## Synthetic positive end-to-end recovery checkpoint — 2026-11-25
+
+PR #201 now exercises the positive recovery path in the local Cloudflare Workers (workerd) runtime across separate API, gateway and synthetic-services Workers:
+
+- The test harness generates an ephemeral caller identity and an independent ephemeral evidence-authority root. The gateway receives the caller public key and pinned authority root public key; the synthetic authority Worker alone receives the authority root private key. The private root is not exposed through an RPC method or returned to the gateway.
+- The gateway uses separate RPC service bindings for the synthetic provider and synthetic evidence authority. The API Durable Object stages the exact pending intent before making gateway calls.
+- Fault injection first commits a provider operation while losing its acknowledgement, then makes evidence issuance unavailable once, then returns a shape-valid inclusion proof with a corrupted hash. Each failure preserves the exact pending intent and leaves the accepted replay state unchanged.
+- A subsequent concurrent recovery attempt obtains the original immutable evidence for the already-committed operation. Independent cryptographic verification succeeds, and the API finalizes the replay snapshot and witness head atomically. Concurrent callers cannot both finalize; a later retry is a no-op.
+- Additional lifecycle tests cover durable quarantine, restart alarm cleanup, stale replacement rejection, atomic quarantine clearing on successful staging, and preservation of quarantine when staging validation fails.
+
+Exact-head CI run #2956 passed on `d76bc7bf16bfb00e202483c088ee1112cf179e47` (API, private witness gateway and web jobs).
+
+**Qualification boundary:** this proves the synthetic positive and negative integration path, not production provider or authority independence. The synthetic provider and authority share a test Worker process boundary and in-memory state. The AWS DynamoDB adapter remains local-only and is not bound into this end-to-end workerd path. A separately administered production evidence authority, production provider qualification, durable anti-rollback trust state, restore/partition testing, independent operational failure domains, architecture/security approval and production root governance remain open. No live AWS credentials, production writes or deployments are enabled.
