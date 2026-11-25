@@ -190,7 +190,7 @@ describe("PostgresExecutionIntakeRepository", () => {
     expect(fake.ended()).toBe(true);
 
     const outbox = fake.calls.find((call) => call.text.includes("INSERT INTO execution_outbox"));
-    const payload = JSON.parse(String(outbox?.values?.[2])) as Record<string, unknown>;
+    const payload = JSON.parse(String(outbox?.values?.[3])) as Record<string, unknown>;
     expect(payload).toEqual({
       executionId: result.executionId,
       attemptId: result.attemptId,
