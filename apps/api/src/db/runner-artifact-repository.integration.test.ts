@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionIntakeRepository } from "./execution-intake-repository";
+import type { ExecutionProtocolV2Policy } from "../security/execution-protocol-v2-policy";
 import { PostgresRunnerDispatchHandoffRepository } from "./runner-dispatch-handoff-repository";
 import { PostgresRunnerDispatchLeaseRepository } from "./runner-dispatch-lease-repository";
 import { PostgresRunnerAcceptanceRepository } from "./runner-acceptance-repository";
@@ -73,6 +74,73 @@ async function createClaimedDispatch(
   const dispatch = claimed.find((item) => item.executionId === created.executionId);
   if (!dispatch) throw new Error("RUNNER_ARTIFACT_DISPATCH_NOT_CLAIMED");
   return { created, dispatch, sourceCode };
+}
+
+
+async function createV2Dispatch(
+  runnerId: string,
+  actorId: string,
+  action: "RUN" | "SUBMIT",
+) {
+  const policy: ExecutionProtocolV2Policy = {
+    policyRevision: "postgres-artifact-v2-integration",
+    runtimeImageDigests: {
+      java: `sha256:${"a".repeat(64)}`,
+      python: `sha256:${"b".repeat(64)}`,
+    },
+    limits: {
+      cpuQuotaMillis: 1_000,
+      memoryBytes: 268_435_456,
+      wallTimeMillis: 60_000,
+      processLimit: 32,
+      outputBytes: 1_048_576,
+      scratchBytes: 16_777_216,
+      scratchInodes: 1_024,
+    },
+  };
+  const intake = new PostgresExecutionIntakeRepository(databaseUrl, undefined, policy);
+  const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
+  const sourceCode = `public class Main { public static void main(String[] args) { System.out.println("v2-${randomUUID()}"); } }\\n`;
+  const created = await intake.create({
+    principal: { tenantId, userId: actorId, roles: ["STUDENT"] },
+    action,
+    problemSlug: "two-sum",
+    language: "java",
+    runtimeVersion: "25",
+    sourceCode,
+    correlationId: `runner-artifact-v2-${randomUUID()}`,
+  }, `runner-artifact-v2-${randomUUID()}`);
+  const handoffResult = await handoff.record({
+    executionId: created.executionId,
+    attemptId: created.attemptId,
+    protocolVersion: "v2",
+  });
+  const leaseToken = randomUUID();
+  // Test-only lease fixture: production claim SQL intentionally remains v1-only.
+  const setup = new Client({ connectionString: databaseUrl });
+  await setup.connect();
+  try {
+    await setup.query(
+      "UPDATE runner_dispatch_outbox SET lease_owner = $2, lease_token = $3::uuid, lease_expires_at = now() + interval '2 minutes' WHERE id = $1::uuid",
+      [handoffResult.dispatchId, runnerId, leaseToken],
+    );
+    await setup.query(
+      "UPDATE execution_jobs SET state = 'CLAIMED', lease_owner = $2, lease_token = $3::uuid, lease_expires_at = now() + interval '2 minutes' WHERE id = $1::uuid",
+      [created.executionId, runnerId, leaseToken],
+    );
+  } finally {
+    await setup.end();
+  }
+  return {
+    created,
+    sourceCode,
+    dispatch: {
+      id: handoffResult.dispatchId,
+      executionId: created.executionId,
+      attemptId: created.attemptId,
+      leaseToken,
+    },
+  };
 }
 
 async function acceptAndStart(
@@ -165,6 +233,75 @@ describe.skipIf(!databaseUrl)("runner private artifact PostgreSQL integration", 
         canonicalTestBundleSha256(submitArtifact.testCases),
       );
       expect(submitArtifact.problemVersionId).toBe("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1");
+    } finally {
+      await setup.end();
+    }
+  }, 25_000);
+
+
+  it("delivers the exact persisted v2 request bytes from PostgreSQL after authenticated start", async () => {
+    const runnerId = randomUUID();
+    const actorId = randomUUID();
+    const keyId = `runner-artifact-v2-${runnerId}`;
+    const setup = new Client({ connectionString: databaseUrl });
+    const artifacts = new PostgresRunnerArtifactRepository(databaseUrl);
+
+    await setup.connect();
+    try {
+      await setup.query(
+        "INSERT INTO runner_machines (id, machine_name) VALUES ($1, $2)",
+        [runnerId, `artifact-v2-runner-${runnerId}`],
+      );
+      await setup.query(
+        "INSERT INTO runner_machine_keys (key_id, runner_id, public_key) VALUES ($1, $2, $3)",
+        [keyId, runnerId, randomBytes(32)],
+      );
+
+      const v2 = await createV2Dispatch(runnerId, actorId, "SUBMIT");
+      await acceptAndStart(runnerId, keyId, v2.created, v2.dispatch);
+      const artifact = await artifacts.fetch({
+        dispatchId: v2.dispatch.id,
+        executionId: v2.created.executionId,
+        attemptId: v2.created.attemptId,
+        leaseToken: v2.dispatch.leaseToken,
+        runnerId,
+        keyId,
+      });
+
+      expect(artifact.action).toBe("SUBMIT");
+      expect(artifact.testCases).toHaveLength(4);
+      expect(artifact.testCases.some((testCase) => testCase.visibility === "HIDDEN")).toBe(true);
+      expect(artifact.protocolRequest).toBeDefined();
+      expect(artifact.protocolRequest?.requestSha256).toMatch(/^[0-9a-f]{64}$/);
+
+      const persisted = await setup.query<{
+        request_bytes: Buffer;
+        request_sha256: string;
+        correlation_id: string;
+      }>(
+        "SELECT request_bytes, request_sha256, correlation_id::text AS correlation_id FROM execution_protocol_requests WHERE execution_id = $1::uuid",
+        [v2.created.executionId],
+      );
+      expect(persisted.rows).toHaveLength(1);
+      const exactBytes = persisted.rows[0]!.request_bytes;
+      const exactSha256 = createHash("sha256").update(exactBytes).digest("hex");
+      expect(exactSha256).toBe(persisted.rows[0]!.request_sha256.trim());
+      expect(artifact.protocolRequest?.requestSha256).toBe(exactSha256);
+      expect(Buffer.from(artifact.protocolRequest!.requestBytesBase64, "base64")).toEqual(exactBytes);
+
+      const requestDocument = JSON.parse(exactBytes.toString("utf8")) as Record<string, unknown>;
+      expect(requestDocument).toMatchObject({
+        protocolVersion: "v2",
+        executionId: v2.created.executionId,
+        attemptId: v2.created.attemptId,
+        correlationId: persisted.rows[0]!.correlation_id,
+        action: "SUBMIT",
+        language: "java",
+        sourceSha256: artifact.sourceSha256,
+        testBundleId: artifact.testBundleId,
+        comparisonPolicy: "EXACT_BYTES",
+      });
+      expect(artifact.sourceCode).toBe(v2.sourceCode);
     } finally {
       await setup.end();
     }
