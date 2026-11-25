@@ -382,7 +382,7 @@ jobs:
         run: |
           npx vitest run src/db/runner-artifact-repository.integration.test.ts
           cd ../../services/execution-runner
-          go test ./internal/runnerclient -run '^TestFetchArtifactAcceptsPostgresBackedV2Artifact
+          go test ./internal/runnerclient -run TestFetchArtifactAcceptsPostgresBackedV2Artifact -count=1
       - name: Apply and re-apply authenticated runner completion migration
         env:
           PGPASSWORD: postgres
