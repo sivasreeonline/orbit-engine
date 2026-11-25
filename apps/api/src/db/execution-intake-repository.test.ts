@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ExecutionProblemNotFoundError,
+  ExecutionTestBundleIntegrityError,
   IdempotencyConflictError,
   PostgresExecutionIntakeRepository,
 } from "./execution-intake-repository";
@@ -102,6 +103,7 @@ describe("PostgresExecutionIntakeRepository", () => {
     expect(result).toEqual({
       executionId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
       attemptId: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1",
+      testBundleId: expect.stringMatching(/^bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1-run-[0-9a-f]{16}$/),
       replayed: false,
     });
     expect(fake.calls[0]?.text).toBe("SET statement_timeout = '5s'");
@@ -132,6 +134,7 @@ describe("PostgresExecutionIntakeRepository", () => {
         attempt_id: created.attemptId,
         execution_id: created.executionId,
         request_sha256: expectedHash,
+        problem_version_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
       }],
     });
     const replayRepository = new PostgresExecutionIntakeRepository(connection, () => replayFake.client);
@@ -173,6 +176,7 @@ describe("PostgresExecutionIntakeRepository", () => {
         attempt_id: "dddddddd-dddd-4ddd-8ddd-ddddddddddd1",
         execution_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
         request_sha256: "0".repeat(64),
+        problem_version_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
       }],
     });
     const repository = new PostgresExecutionIntakeRepository(connection, () => fake.client);
