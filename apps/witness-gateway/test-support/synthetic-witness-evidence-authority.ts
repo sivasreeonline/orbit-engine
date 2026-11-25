@@ -113,6 +113,10 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
   private readonly rootKeyPromise: Promise<SyntheticSigningKey>;
   private readonly receiptKeyPromise = generateSigningKey();
   private readonly logKeyPromise = generateSigningKey();
+  private readonly inFlight = new Map<string, {
+    readonly requestFingerprint: string;
+    readonly promise: Promise<WitnessEvidenceAuthorityBundle>;
+  }>();
 
   constructor(rootKeyPromise: Promise<SyntheticSigningKey> = generateSigningKey()) {
     this.rootKeyPromise = rootKeyPromise;
@@ -132,10 +136,33 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
     return canonicalize({ scope, operationId }) ?? "";
   }
 
-  async issueOrRecoverEvidence(
+  issueOrRecoverEvidence(
     request: WitnessEvidenceAuthorityRequest,
   ): Promise<WitnessEvidenceAuthorityBundle> {
     const key = this.operationKey(request.scope, request.checkpointBody.operationId);
+    const requestFingerprint = canonicalize({
+      checkpointDigest: request.checkpointDigest,
+      checkpointBody: request.checkpointBody,
+      canonicalCheckpointBodyBytes: Array.from(request.canonicalCheckpointBodyBytes),
+    }) ?? "";
+    const inFlight = this.inFlight.get(key);
+    if (inFlight) {
+      if (inFlight.requestFingerprint !== requestFingerprint) {
+        return Promise.reject(new WitnessEvidenceAuthorityOperationConflictError());
+      }
+      return inFlight.promise;
+    }
+
+    const promise = this.issueOrRecoverEvidenceOnce(request).finally(() => {
+      if (this.inFlight.get(key)?.promise === promise) this.inFlight.delete(key);
+    });
+    this.inFlight.set(key, { requestFingerprint, promise });
+    return promise;
+  }
+
+  private async issueOrRecoverEvidenceOnce(
+    request: WitnessEvidenceAuthorityRequest,
+  ): Promise<WitnessEvidenceAuthorityBundle> {
     const existing = this.records.get(key);
     if (existing) {
       if (existing.checkpointDigest !== request.checkpointDigest ||
