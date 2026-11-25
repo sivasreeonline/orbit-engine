@@ -19,11 +19,14 @@ interface Env {
   readonly FENCE_TEST_AUTHORITY_ROOT_PUBLIC_KEY_BASE64URL: string;
   /** One-shot fault injection; available only in the synthetic test Worker. */
   readonly FENCE_TEST_PROVIDER_LOSE_NEXT_ACK?: string;
+  /** Fail evidence issuance once after provider commit to exercise durable retry. */
+  readonly FENCE_TEST_AUTHORITY_FAIL_NEXT_ISSUANCE?: string;
 }
 
 const provider = new SyntheticWitnessProviderAdapter();
 let authority: SyntheticWitnessEvidenceAuthority | undefined;
 let lostAckFaultConsumed = false;
+let authorityFailureConsumed = false;
 
 function getAuthority(env: Env): SyntheticWitnessEvidenceAuthority {
   if (!authority) {
@@ -73,6 +76,12 @@ export class SyntheticWitnessEvidenceAuthorityEntrypoint
   issueOrRecoverEvidence(
     request: WitnessEvidenceAuthorityRequest,
   ): Promise<WitnessEvidenceAuthorityBundle> {
+    if (this.env.FENCE_TEST_AUTHORITY_FAIL_NEXT_ISSUANCE === "true" && !authorityFailureConsumed) {
+      // The provider may already have committed. The API must retain its exact
+      // pending intent and recover the same operation/evidence on a later retry.
+      authorityFailureConsumed = true;
+      throw new Error("simulated evidence-authority outage after provider commit");
+    }
     return getAuthority(this.env).issueOrRecoverEvidence(request);
   }
 
