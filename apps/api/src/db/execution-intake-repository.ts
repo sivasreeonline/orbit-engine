@@ -447,7 +447,8 @@ export class PostgresExecutionIntakeRepository {
     } catch (error) {
       if (error instanceof IdempotencyConflictError ||
           error instanceof ExecutionProblemNotFoundError ||
-          error instanceof ExecutionTestBundleIntegrityError) {
+          error instanceof ExecutionTestBundleIntegrityError ||
+          error instanceof ExecutionProtocolRequestIntegrityError) {
         throw error;
       }
       throw new DatabaseUnavailableError();
