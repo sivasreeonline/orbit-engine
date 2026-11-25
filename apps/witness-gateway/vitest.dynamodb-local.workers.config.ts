@@ -113,6 +113,32 @@ export default defineConfig({
                 WITNESS_TRUST_STATE: "WitnessTrustStateDO",
               },
             },
+            {
+              name: "sky-high-witness-gateway-provider-only",
+              scriptPath: ".test-dist/witness-gateway/index.js",
+              modules: true,
+              compatibilityDate: "2026-11-09",
+              compatibilityFlags: ["nodejs_compat", "rpc"],
+              bindings: {
+                WORKLOAD_CALLER_KEYS: trustedKeys,
+                WITNESS_TRUST_SCOPES: JSON.stringify([{
+                  trustDomainId: "workerd-dynamodb-domain",
+                  witnessId: "workerd-dynamodb-witness",
+                  authorityId: "workerd-dynamodb-authority",
+                  hostId: "workerd-dynamodb-host",
+                }]),
+              },
+              serviceBindings: {
+                WITNESS_PROVIDER: {
+                  name: "sky-high-dynamodb-local-witness-provider",
+                  entrypoint: "DynamoDBLocalWitnessProvider",
+                },
+              },
+              durableObjects: {
+                WORKLOAD_NONCE_REPLAY: "WorkloadNonceReplayDO",
+                WITNESS_TRUST_STATE: "WitnessTrustStateDO",
+              },
+            },
           ],
         },
       };
