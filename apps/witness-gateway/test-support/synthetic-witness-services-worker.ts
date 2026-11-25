@@ -21,12 +21,15 @@ interface Env {
   readonly FENCE_TEST_PROVIDER_LOSE_NEXT_ACK?: string;
   /** Fail evidence issuance once after provider commit to exercise durable retry. */
   readonly FENCE_TEST_AUTHORITY_FAIL_NEXT_ISSUANCE?: string;
+  /** Return one structurally valid but cryptographically invalid inclusion proof. */
+  readonly FENCE_TEST_AUTHORITY_CORRUPT_NEXT_PROOF?: string;
 }
 
 const provider = new SyntheticWitnessProviderAdapter();
 let authority: SyntheticWitnessEvidenceAuthority | undefined;
 let lostAckFaultConsumed = false;
 let authorityFailureConsumed = false;
+let authorityProofCorruptionConsumed = false;
 
 function getAuthority(env: Env): SyntheticWitnessEvidenceAuthority {
   if (!authority) {
@@ -82,7 +85,19 @@ export class SyntheticWitnessEvidenceAuthorityEntrypoint
       authorityFailureConsumed = true;
       throw new Error("simulated evidence-authority outage after provider commit");
     }
-    return getAuthority(this.env).issueOrRecoverEvidence(request);
+    return getAuthority(this.env).issueOrRecoverEvidence(request).then((bundle) => {
+      if (this.env.FENCE_TEST_AUTHORITY_CORRUPT_NEXT_PROOF === "true" && !authorityProofCorruptionConsumed) {
+        // Keep the proof's shape valid so only independent cryptographic
+        // verification detects the corruption; the authority's stored bundle
+        // remains immutable and a later exact retry returns the original proof.
+        authorityProofCorruptionConsumed = true;
+        return {
+          ...bundle,
+          inclusionProofHex: [...bundle.inclusionProofHex, "f".repeat(64)],
+        };
+      }
+      return bundle;
+    });
   }
 
   readEvidenceByOperation(
