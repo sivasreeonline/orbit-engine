@@ -181,7 +181,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
     const fake = fakeClient();
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
-    await expect(repository.record({ ...envelope, protocolVersion: "v2" }))
+    await expect(repository.record({ ...envelope, protocolVersion: "v3" }))
       .rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
     await expect(repository.record({ ...envelope, sourceCode: "must-not-cross" } as never))
       .rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
