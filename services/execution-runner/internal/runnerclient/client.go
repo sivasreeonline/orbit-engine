@@ -636,7 +636,7 @@ func (c *Client) FetchArtifact(
 		return ExecutionArtifact{}, err
 	}
 	artifact := response.Data
-	if err := validateArtifact(dispatch, artifact); err != nil {
+	if err := validateArtifact(dispatch, artifact, c.now()); err != nil {
 		return ExecutionArtifact{}, err
 	}
 	return artifact, nil
@@ -778,7 +778,7 @@ func validateCompletionInput(result CompletionInput) error {
 	return nil
 }
 
-func validateArtifact(dispatch Dispatch, artifact ExecutionArtifact) error {
+func validateArtifact(dispatch Dispatch, artifact ExecutionArtifact, now time.Time) error {
 	if dispatch.ProtocolVersion == "v1" {
 		if artifact.ProtocolRequest != nil {
 			return errors.New("v1 artifact unexpectedly contains a protocol v2 request")
@@ -791,7 +791,7 @@ func validateArtifact(dispatch Dispatch, artifact ExecutionArtifact) error {
 		if err != nil {
 			return errors.New("v2 artifact protocol request is not valid base64")
 		}
-		request, err := protocol.DecodeV2Request(raw, artifact.ProtocolRequest.RequestSHA256, time.Now().UTC())
+		request, err := protocol.DecodeV2Request(raw, artifact.ProtocolRequest.RequestSHA256, now.UTC())
 		if err != nil {
 			return fmt.Errorf("v2 artifact protocol request failed strict validation: %w", err)
 		}
