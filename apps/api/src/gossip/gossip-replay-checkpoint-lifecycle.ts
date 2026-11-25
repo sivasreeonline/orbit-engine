@@ -158,6 +158,8 @@ export async function finalizePendingReplayIntent(
       evidence.authorityId !== stored.intent.scope.authorityId ||
       evidence.hostId !== stored.intent.scope.hostId ||
       !/^[0-9a-f]{64}$/.test(evidence.checkpointDigest) ||
+      current.witnessHead.generation !== stored.intent.expectedPredecessor.generation ||
+      current.witnessHead.digest !== stored.intent.expectedPredecessor.digest ||
       evidence.predecessorGeneration !== stored.intent.expectedPredecessor.generation ||
       evidence.predecessorDigest !== stored.intent.expectedPredecessor.digest ||
       !Number.isSafeInteger(evidence.generation) ||
