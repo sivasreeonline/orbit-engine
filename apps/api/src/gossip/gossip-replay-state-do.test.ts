@@ -559,8 +559,9 @@ describe("GossipReplayStateDO", () => {
       reason: "evidence_not_verified",
     });
 
-    // Simulate constructor recovery after eviction: a durable quarantine must
-    // prevent a fresh alarm from being armed for the same invalid evidence.
+    // Simulate a crash after quarantine persistence but before alarm deletion:
+    // constructor recovery must remove this stale trigger, not just avoid adding one.
+    await harness.storage.setAlarm(Date.now() + 1_000);
     await rearmPendingCheckpointAlarm(harness.storage);
     expect(harness.getAlarm()).toBeNull();
     expect(harness.values.get("replay-checkpoint-pending-v1")).toEqual(pending);
