@@ -72,6 +72,13 @@ describe("loadExecutionProtocolV2Policy", () => {
     })).toThrow(ExecutionProtocolV2PolicyError);
   });
 
+  it("rejects wall times that cannot fit the database deadline window", () => {
+    expect(() => loadExecutionProtocolV2Policy({
+      ...validPolicyEnv,
+      EXECUTION_WALL_TIME_MILLIS: "600001",
+    })).toThrow("protocol_v2_policy_wall_time_out_of_range");
+  });
+
   it("enforces the database's scratch byte and inode ceilings", () => {
     expect(() => loadExecutionProtocolV2Policy({
       ...validPolicyEnv,
