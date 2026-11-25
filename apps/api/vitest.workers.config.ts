@@ -76,6 +76,8 @@ export default defineConfig({
                 // Exercise the gateway coordinator's commit-before-ack recovery
                 // path through the actual synthetic provider Worker RPC.
                 FENCE_TEST_PROVIDER_LOSE_NEXT_ACK: "true",
+                // Provider commit succeeds, but independent evidence issuance is unavailable once.
+                FENCE_TEST_AUTHORITY_FAIL_NEXT_ISSUANCE: "true",
               },
             },
             {
