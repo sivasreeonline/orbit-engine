@@ -176,6 +176,45 @@ jobs:
           $block$;
           SQL
 
+      - name: Verify API role can read public fixtures but not hidden test table
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 <<'SQL'
+          DO $block$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sky_high_api_test') THEN
+              CREATE ROLE sky_high_api_test NOLOGIN;
+            END IF;
+          END
+          $block$;
+
+          GRANT USAGE ON SCHEMA public TO sky_high_api_test;
+          GRANT SELECT ON problems, problem_versions TO sky_high_api_test;
+          GRANT SELECT ON public_problem_test_cases TO sky_high_api_test;
+          REVOKE ALL ON problem_test_cases FROM sky_high_api_test;
+
+          SET ROLE sky_high_api_test;
+          DO $block$
+          DECLARE
+            visible_count integer;
+          BEGIN
+            SELECT count(*) INTO visible_count FROM public_problem_test_cases;
+            IF visible_count <> 2 THEN
+              RAISE EXCEPTION 'Expected API role to see exactly two public fixtures, got %', visible_count;
+            END IF;
+          END
+          $block$;
+          RESET ROLE;
+          SQL
+
+          if psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 \
+            -c "SET ROLE sky_high_api_test; SELECT count(*) FROM problem_test_cases;" >/dev/null 2>&1; then
+            echo "API role unexpectedly read the underlying test-case table." >&2
+            exit 1
+          fi
+          echo "Confirmed API role can read public fixtures but cannot read the underlying test-case table."
+
       - name: Worker deployment dry run
         run: npx wrangler deploy --dry-run
 
