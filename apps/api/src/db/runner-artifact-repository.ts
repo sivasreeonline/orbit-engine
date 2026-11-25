@@ -15,7 +15,7 @@ export interface FetchRunnerArtifactInput {
   readonly keyId: string;
 }
 
-export interface RunnerArtifactTestCase extends CanonicalTestBundleCase {}
+export type RunnerArtifactTestCase = CanonicalTestBundleCase;
 
 export interface RunnerExecutionArtifact {
   readonly executionId: string;
