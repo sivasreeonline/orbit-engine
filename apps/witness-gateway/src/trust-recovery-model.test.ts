@@ -169,6 +169,26 @@ describe("decideTrustRecovery", () => {
     });
   });
 
+  it("advances the anchor when only the root-verified trust-bundle generation changed", () => {
+    const anchor = checkpoint();
+    const witness = checkpoint({
+      trustBundleGeneration: 4,
+      trustBundleDigest: d("e"),
+    });
+    expect(decideTrustRecovery(input({
+      local: anchor,
+      anchor,
+      witness,
+      monitors: monitors(witness),
+      witnessExtendsAnchor: true,
+      witnessTrustBundleExtendsAnchor: true,
+    }))).toMatchObject({
+      action: "ADVANCE_ANCHOR",
+      reason: "witness_ahead",
+      requiredCheckpoint: witness,
+    });
+  });
+
   it("quarantines witness rollback", () => {
     const anchor = checkpoint({ treeSize: 12, treeRootHash: d("e") });
     const witness = checkpoint({ treeSize: 10 });
