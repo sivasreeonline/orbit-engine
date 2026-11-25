@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -593,6 +594,74 @@ func TestRenewLeaseRejectsOutOfBoundsExpiry(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("unbounded heartbeat expiry was accepted")
+	}
+}
+
+func attachV2Request(t *testing.T, dispatch *Dispatch, artifact *ExecutionArtifact) {
+	t.Helper()
+	dispatch.ProtocolVersion = "v2"
+	dispatch.CorrelationID = "10000000-0000-4000-8000-000000000001"
+	deadline := fixedRunnerTime().Add(2 * time.Minute)
+	request := map[string]any{
+		"protocolVersion": "v2",
+		"correlationId": dispatch.CorrelationID,
+		"executionId": dispatch.ExecutionID,
+		"attemptId": dispatch.AttemptID,
+		"problemVersionId": artifact.ProblemVersionID,
+		"action": artifact.Action,
+		"language": artifact.Language,
+		"runtimeVersion": artifact.RuntimeVersion,
+		"runtimeImageDigest": "sha256:" + strings.Repeat("a", 64),
+		"sourceArtifactId": artifact.SourceArtifactID,
+		"sourceSha256": artifact.SourceSHA256,
+		"testBundleId": artifact.TestBundleID,
+		"comparisonPolicy": "EXACT_BYTES",
+		"deadlineAt": deadline.Format(time.RFC3339Nano),
+		"cancellationRef": "cxl_" + strings.Repeat("d", 32),
+		"limits": map[string]int64{
+			"cpuQuotaMillis": 1000, "memoryBytes": 134217728, "wallTimeMillis": 5000,
+			"processLimit": 16, "outputBytes": 65536, "scratchBytes": 1048576, "scratchInodes": 128,
+		},
+	}
+	raw, err := json.Marshal(request)
+	if err != nil { t.Fatal(err) }
+	digest := sha256.Sum256(raw)
+	artifact.ProtocolRequest = &ProtocolRequestArtifact{
+		RequestBytesBase64: base64.StdEncoding.EncodeToString(raw),
+		RequestSHA256: hex.EncodeToString(digest[:]),
+	}
+}
+
+func TestFetchArtifactValidatesExactProtocolV2Request(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	artifact := testArtifact("RUN")
+	attachV2Request(t, &dispatch, &artifact)
+	if err := validateArtifact(dispatch, artifact, fixedRunnerTime()); err != nil {
+		t.Fatalf("valid v2 artifact rejected: %v", err)
+	}
+}
+
+func TestFetchArtifactRejectsCorruptedOrMismatchedProtocolV2Request(t *testing.T) {
+	for name, mutate := range map[string]func(*Dispatch, *ExecutionArtifact){
+		"digest mismatch": func(_ *Dispatch, artifact *ExecutionArtifact) {
+			artifact.ProtocolRequest.RequestSHA256 = strings.Repeat("0", 64)
+		},
+		"correlation mismatch": func(dispatch *Dispatch, _ *ExecutionArtifact) {
+			dispatch.CorrelationID = "10000000-0000-4000-8000-000000000099"
+		},
+		"missing request": func(_ *Dispatch, artifact *ExecutionArtifact) {
+			artifact.ProtocolRequest = nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+			artifact := testArtifact("RUN")
+			attachV2Request(t, &dispatch, &artifact)
+			mutate(&dispatch, &artifact)
+			if err := validateArtifact(dispatch, artifact, fixedRunnerTime()); err == nil {
+				t.Fatal("invalid v2 request was accepted")
+			}
+		})
 	}
 }
 
