@@ -101,7 +101,7 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     const claim = calls.find((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"));
     expect(claim?.text).toContain("FOR UPDATE OF pending, job SKIP LOCKED");
     expect(claim?.text.match(/protocol_version = 'v1'/g)).toHaveLength(2);
-    expect(calls[3]?.text).toContain("protocol_version = 'v1'");
+    expect(calls[4]?.text).toContain("protocol_version = 'v1'");
     expect(claim?.text).toContain("UPDATE execution_jobs AS job");
     expect(claim?.text).toContain("lease_token = claimed.lease_token");
     expect(claim?.text).toContain("'JOB_CLAIMED', 'RUNNER'");
