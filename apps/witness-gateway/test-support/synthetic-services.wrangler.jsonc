@@ -1,0 +1,8 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "sky-high-synthetic-witness-services",
+  "main": "synthetic-witness-services-worker.ts",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat", "rpc"],
+  "workers_dev": false
+}
