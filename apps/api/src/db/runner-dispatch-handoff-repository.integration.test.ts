@@ -31,7 +31,7 @@ describe.skipIf(!databaseUrl)("runner dispatch handoff PostgreSQL integration", 
       executionId: created.executionId,
       attemptId: created.attemptId,
       protocolVersion: "v1",
-    };
+    } as const;
     const results = await Promise.all(Array.from({ length: 12 }, () => handoff.record(envelope)));
     expect(results.filter((result) => result.status === "RECORDED")).toHaveLength(1);
     expect(results.filter((result) => result.status === "DUPLICATE")).toHaveLength(11);
