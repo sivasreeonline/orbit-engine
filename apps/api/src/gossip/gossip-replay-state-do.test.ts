@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GossipReplayStateDO, rearmPendingCheckpointAlarm, type VerifiedGossipMessage } from "./gossip-replay-state-do";
+import { GossipReplayStateDO, rearmPendingCheckpointAlarm, REPLAY_CHECKPOINT_QUARANTINE_KEY, type VerifiedGossipMessage } from "./gossip-replay-state-do";
 import type { Env } from "../env";
 vi.mock("../witness/witness-gateway-client", () => ({
   checkpointReplayViaWitnessGateway: vi.fn(),
@@ -23,6 +23,7 @@ interface FakeStorage {
   delete(key: string): Promise<boolean>;
   getAlarm(): Promise<number | null>;
   setAlarm(scheduledTime: number | Date): Promise<void>;
+  deleteAlarm(): Promise<void>;
   transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T>;
 }
 
@@ -45,6 +46,10 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
     async setAlarm(scheduledTime: number | Date): Promise<void> {
       alarmTime = scheduledTime instanceof Date ? scheduledTime.getTime() : scheduledTime;
       values.set("__durable_alarm__", alarmTime);
+    },
+    async deleteAlarm(): Promise<void> {
+      alarmTime = null;
+      values.delete("__durable_alarm__");
     },
     async transaction<T>(callback: (txn: FakeStorage) => Promise<T>): Promise<T> {
       const snapshot = structuredClone([...values.entries()]);
@@ -549,6 +554,16 @@ describe("GossipReplayStateDO", () => {
     expect(harness.getAlarm()).toBeNull();
     expect(harness.values.get("replay-checkpoint-pending-v1")).toEqual(pending);
     expect(harness.values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(initial);
+    expect(harness.values.get(REPLAY_CHECKPOINT_QUARANTINE_KEY)).toMatchObject({
+      version: 1,
+      reason: "evidence_not_verified",
+    });
+
+    // Simulate constructor recovery after eviction: a durable quarantine must
+    // prevent a fresh alarm from being armed for the same invalid evidence.
+    await rearmPendingCheckpointAlarm(harness.storage);
+    expect(harness.getAlarm()).toBeNull();
+    expect(harness.values.get("replay-checkpoint-pending-v1")).toEqual(pending);
     vi.mocked(checkpointReplayViaWitnessGateway).mockReset();
     vi.mocked(verifyEvidenceViaWitnessGateway).mockReset();
   });
