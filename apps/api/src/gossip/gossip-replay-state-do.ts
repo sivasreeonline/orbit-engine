@@ -541,9 +541,7 @@ export class GossipReplayStateDO extends DurableObject<Env> {
         );
         return true;
       });
-      if (quarantined || await this.ctx.storage.get("replay-checkpoint-pending-v1") === undefined) {
-        await this.ctx.storage.deleteAlarm();
-      }
+      if (quarantined) await this.ctx.storage.deleteAlarm();
       return;
     }
     if (
