@@ -1,0 +1,38 @@
+name: Runner shell script checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "services/execution-runner/scripts/**"
+      - ".github/workflows/runner-scripts-ci.yml"
+  push:
+    branches: [main, "test/**", "feat/**", "fix/**"]
+    paths:
+      - "services/execution-runner/scripts/**"
+      - ".github/workflows/runner-scripts-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runner-scripts-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: ShellCheck runner scripts
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Lint runner scripts
+        run: shellcheck --severity=style services/execution-runner/scripts/*.sh

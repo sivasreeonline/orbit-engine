@@ -1,0 +1,66 @@
+name: gVisor sandbox proof (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: "Reviewed immutable test image reference (IMAGE@sha256:<64 lowercase hex characters); image must contain /bin/sh, id and wget"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gvisor-proof-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sandbox-smoke:
+    name: Ubuntu 24.04 x86_64 gVisor smoke proof
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install gVisor from the official release apt repository
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor --yes -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y runsc
+          runsc --version
+
+      - name: Register runsc with Docker
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo runsc install
+          sudo systemctl restart docker
+          docker info
+          docker info --format '{{json .Runtimes}}'
+
+      - name: Validate immutable image reference
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+        shell: bash
+        run: |
+          if [[ ! "$IMAGE_REF" =~ @sha256:[a-f0-9]{64}$ ]]; then
+            echo "image_ref must end in @sha256:<64 lowercase hex characters>" >&2
+            exit 2
+          fi
+
+      - name: Run sandbox policy smoke checks
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+        shell: bash
+        run: |
+          chmod +x services/execution-runner/scripts/gvisor-smoke.sh
+          services/execution-runner/scripts/gvisor-smoke.sh "$IMAGE_REF"
