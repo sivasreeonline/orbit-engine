@@ -69,8 +69,8 @@ export default defineConfig({
               },
             },
             {
-              name: "sky-high-synthetic-witness-services",
-              scriptPath: ".test-dist/synthetic-witness-services/index.js",
+              name: "sky-high-synthetic-evidence-authority",
+              scriptPath: ".test-dist/synthetic-evidence-authority/index.js",
               modules: true,
               compatibilityDate: "2026-11-09",
               compatibilityFlags: ["nodejs_compat", "rpc"],
@@ -104,7 +104,7 @@ export default defineConfig({
                   entrypoint: "DynamoDBLocalWitnessProvider",
                 },
                 WITNESS_EVIDENCE_AUTHORITY: {
-                  name: "sky-high-synthetic-witness-services",
+                  name: "sky-high-synthetic-evidence-authority",
                   entrypoint: "SyntheticWitnessEvidenceAuthorityEntrypoint",
                 },
               },
