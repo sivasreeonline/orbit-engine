@@ -35,6 +35,7 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
       leaseExpiresAt: "2026-11-09T12:00:00.000Z",
     }]);
     expect(fake.calls[1]?.text).toContain("FOR UPDATE SKIP LOCKED");
+    expect(fake.calls[1]?.text).toContain("protocol_version = 'v1'");
     expect(fake.calls[1]?.text).toContain("delivery_attempts = dispatch.delivery_attempts + 1");
     expect(fake.ended()).toBe(true);
   });
@@ -57,6 +58,7 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     expect(claim?.text).toContain("FOR UPDATE OF lane SKIP LOCKED");
     expect(claim?.text).toContain("DISTINCT ON (owner_attempt.tenant_id, owner_attempt.actor_user_id)");
     expect(claim?.text).toContain("ORDER BY lane.last_served_ticket");
+    expect(claim?.text.match(/protocol_version = 'v1'/g)).toHaveLength(2);
     expect(claim?.text).toContain("nextval('runner_dispatch_scheduler_ticket_seq')");
     expect(claim?.values).toEqual([20, "fair-dispatcher-1", 45]);
     expect(fake.ended()).toBe(true);
@@ -98,6 +100,8 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     expect(calls[4]?.text).toContain("active_count");
     const claim = calls.find((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"));
     expect(claim?.text).toContain("FOR UPDATE OF pending, job SKIP LOCKED");
+    expect(claim?.text.match(/protocol_version = 'v1'/g)).toHaveLength(2);
+    expect(calls[3]?.text).toContain("protocol_version = 'v1'");
     expect(claim?.text).toContain("UPDATE execution_jobs AS job");
     expect(claim?.text).toContain("lease_token = claimed.lease_token");
     expect(claim?.text).toContain("'JOB_CLAIMED', 'RUNNER'");
