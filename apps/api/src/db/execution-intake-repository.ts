@@ -2,6 +2,8 @@ import { Client } from "pg";
 import type { Principal } from "../contracts";
 import { DatabaseUnavailableError } from "./database-errors";
 import { canonicalTestBundleIdentity, TestBundleEncodingError, type CanonicalTestBundleCase } from "./canonical-test-bundle";
+import type { ExecutionProtocolV2Policy } from "../security/execution-protocol-v2-policy";
+import { buildExecutionProtocolV2Request } from "../security/execution-protocol-v2-request";
 
 export type ExecutionAction = "RUN" | "SUBMIT";
 export type ExecutionLanguage = "java" | "python";
@@ -71,6 +73,9 @@ interface ExistingExecutionRow extends Record<string, unknown> {
   readonly execution_id: string;
   readonly request_sha256: string;
   readonly problem_version_id: string;
+  readonly protocol_version?: string;
+  readonly protocol_request_bytes?: Uint8Array | null;
+  readonly protocol_request_sha256?: string | null;
 }
 
 interface TestCaseRow extends Record<string, unknown> {
@@ -161,6 +166,30 @@ async function sha256(value: string): Promise<string> {
   return toHex(new Uint8Array(digest));
 }
 
+async function sha256Bytes(value: Uint8Array): Promise<string> {
+  const copy = new Uint8Array(value.byteLength);
+  copy.set(value);
+  const digest = await crypto.subtle.digest("SHA-256", copy.buffer);
+  return toHex(new Uint8Array(digest));
+}
+
+function persistedProtocolTestBundleId(row: ExistingExecutionRow): string {
+  if (!row.protocol_request_bytes || !row.protocol_request_sha256) {
+    throw new ExecutionTestBundleIntegrityError("persisted_protocol_request_missing");
+  }
+  const bytes = new Uint8Array(row.protocol_request_bytes);
+  const documentText = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  const document = JSON.parse(documentText) as Record<string, unknown>;
+  if (document.protocolVersion !== "v2" ||
+      document.executionId === undefined ||
+      document.attemptId !== row.attempt_id ||
+      typeof document.testBundleId !== "string" ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(document.testBundleId)) {
+    throw new ExecutionTestBundleIntegrityError("persisted_protocol_request_invalid");
+  }
+  return document.testBundleId;
+}
+
 function idempotencyScope(input: CreateExecutionInput, key: string): string {
   return JSON.stringify([
     input.principal.tenantId,
@@ -178,6 +207,7 @@ export class PostgresExecutionIntakeRepository {
   constructor(
     private readonly connectionString: string | undefined,
     private readonly clientFactory: PgClientFactory = defaultClientFactory,
+    private readonly protocolV2Policy: ExecutionProtocolV2Policy | null = null,
   ) {}
 
   async create(
@@ -226,10 +256,14 @@ export class PostgresExecutionIntakeRepository {
 
         const existing = await client.query<ExistingExecutionRow>(
           [
-            "SELECT ei.attempt_id, ej.id AS execution_id, ei.request_sha256, attempt.problem_version_id",
+            "SELECT ei.attempt_id, ej.id AS execution_id, ei.request_sha256, attempt.problem_version_id,",
+            "  eo.protocol_version, v2.request_bytes AS protocol_request_bytes,",
+            "  v2.request_sha256 AS protocol_request_sha256",
             "FROM execution_idempotency AS ei",
             "INNER JOIN execution_jobs AS ej ON ej.attempt_id = ei.attempt_id",
             "INNER JOIN execution_attempts AS attempt ON attempt.id = ei.attempt_id",
+            "LEFT JOIN execution_outbox AS eo ON eo.execution_id = ej.id",
+            "LEFT JOIN execution_protocol_requests AS v2 ON v2.execution_id = ej.id",
             "WHERE ei.tenant_id = $1::uuid AND ei.actor_user_id = $2::uuid",
             "  AND ei.endpoint = $3 AND ei.idempotency_key = $4",
             "FOR UPDATE OF ei",
@@ -242,11 +276,20 @@ export class PostgresExecutionIntakeRepository {
           if (prior.request_sha256.trim() !== requestHash) {
             throw new IdempotencyConflictError();
           }
-          const testBundleId = await loadTestBundleIdentity(
-            client,
-            prior.problem_version_id,
-            input.action,
-          );
+          let testBundleId: string;
+          if (prior.protocol_version === "v2") {
+            if (await sha256Bytes(new Uint8Array(prior.protocol_request_bytes ?? [])) !==
+                (prior.protocol_request_sha256 ?? "").trim()) {
+              throw new ExecutionTestBundleIntegrityError("persisted_protocol_request_digest_invalid");
+            }
+            testBundleId = persistedProtocolTestBundleId(prior);
+          } else {
+            testBundleId = await loadTestBundleIdentity(
+              client,
+              prior.problem_version_id,
+              input.action,
+            );
+          }
           await client.query("COMMIT");
           return {
             executionId: prior.execution_id,
@@ -318,18 +361,51 @@ export class PostgresExecutionIntakeRepository {
         const executionId = job.rows[0]?.id;
         if (!executionId) throw new Error("execution_job_insert_returned_no_id");
 
+        let protocolVersion: "v1" | "v2" = "v1";
+        let outboxCorrelationId = input.correlationId;
+        if (this.protocolV2Policy) {
+          const built = await buildExecutionProtocolV2Request({
+            executionId,
+            attemptId,
+            problemVersionId: selectedProblem.problem_version_id,
+            action: input.action,
+            language: input.language,
+            runtimeVersion: input.runtimeVersion,
+            sourceArtifactId: snapshotId,
+            sourceSha256: sourceHash,
+            testBundleId,
+            intakeAt: new Date(),
+          }, this.protocolV2Policy);
+          await client.query(
+            [
+              "INSERT INTO execution_protocol_requests",
+              "  (execution_id, attempt_id, protocol_version, correlation_id, intake_at,",
+              "   deadline_at, policy_revision, request_sha256, request_bytes)",
+              "VALUES ($1::uuid, $2::uuid, 'v2', $3::uuid, $4::timestamptz,",
+              "   $5::timestamptz, $6, $7, $8)",
+            ].join("\n"),
+            [
+              executionId, attemptId, built.request.correlationId,
+              built.intakeAt.toISOString(), built.request.deadlineAt,
+              this.protocolV2Policy.policyRevision, built.requestSha256, built.requestBytes,
+            ],
+          );
+          protocolVersion = "v2";
+          outboxCorrelationId = built.request.correlationId;
+        }
+
         const payload = JSON.stringify({
           executionId,
           attemptId,
-          protocolVersion: "v1",
+          protocolVersion,
         });
         await client.query(
           [
             "INSERT INTO execution_outbox",
             "  (execution_id, event_type, protocol_version, correlation_id, payload)",
-            "VALUES ($1::uuid, 'EXECUTION_REQUESTED', 'v1', $2, $3::jsonb)",
+            "VALUES ($1::uuid, 'EXECUTION_REQUESTED', $2, $3, $4::jsonb)",
           ].join("\n"),
-          [executionId, input.correlationId, payload],
+          [executionId, protocolVersion, outboxCorrelationId, payload],
         );
 
         await client.query(
