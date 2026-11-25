@@ -67,12 +67,12 @@ describe.skipIf(!databaseUrl)("runner dispatch handoff PostgreSQL integration", 
       attempt_id: string;
       protocol_version: string;
       delivery_state: string;
-      lease_owner: string | null;
+      has_lease: boolean;
     }>(
       [
         "SELECT count(*)::text AS count, (array_agg(attempt_id::text))[1] AS attempt_id,",
         "  min(protocol_version) AS protocol_version, min(delivery_state) AS delivery_state,",
-        "  min(lease_owner) AS lease_owner",
+        "  bool_or(lease_owner IS NOT NULL) AS has_lease"
         "FROM runner_dispatch_outbox WHERE execution_id = $1::uuid",
       ].join("\n"),
       [created.executionId],
@@ -82,7 +82,7 @@ describe.skipIf(!databaseUrl)("runner dispatch handoff PostgreSQL integration", 
       attempt_id: created.attemptId,
       protocol_version: "v2",
       delivery_state: "PENDING",
-      lease_owner: null,
+      has_lease: false,
     });
   }, 20_000);
 
