@@ -1,3 +1,4 @@
+import canonicalize from "canonicalize";
 import {
   WitnessAppendConflict,
   WitnessAmbiguousCommit,
@@ -12,9 +13,9 @@ import {
 const ZERO_DIGEST = "0".repeat(64);
 
 /**
- * Test-only in-memory atomic provider. It models compare-and-append,
- * immutable operation lookup, idempotency binding and ambiguous acknowledgements.
- * It is not a production durability implementation.
+ * Test-only in-memory atomic witness provider. State and idempotency are scoped
+ * by the complete witness identity, matching the provider contract. It is not
+ * a production durability implementation.
  */
 export class SyntheticWitnessProviderAdapter implements WitnessProviderAdapter {
   readonly records: StoredWitnessCheckpoint[] = [];
@@ -23,7 +24,19 @@ export class SyntheticWitnessProviderAdapter implements WitnessProviderAdapter {
   loseNextAck = false;
   forceStaleLatest = false;
   corruptCheckpointReadback = false;
-  private lastLatest: StoredWitnessCheckpoint | null = null;
+  private readonly lastLatestByScope = new Map<string, StoredWitnessCheckpoint | null>();
+
+  private scopeKey(scope: WitnessCheckpointScope): string {
+    return canonicalize(scope) ?? "";
+  }
+
+  private operationKey(scope: WitnessCheckpointScope, operationId: string): string {
+    return canonicalize({ scope, operationId }) ?? "";
+  }
+
+  private idempotencyIndexKey(scope: WitnessCheckpointScope, idempotencyKey: string): string {
+    return canonicalize({ scope, idempotencyKey }) ?? "";
+  }
 
   async appendIfCurrent(
     checkpoint: WitnessCheckpoint,
@@ -44,15 +57,19 @@ export class SyntheticWitnessProviderAdapter implements WitnessProviderAdapter {
       Array.from(checkpoint.canonicalSnapshotBytes).join(","),
       Array.from(checkpoint.canonicalCheckpointBodyBytes).join(","),
     ].join("|");
-    const priorKey = this.idempotency.get(idempotencyKey);
+    const operationKey = this.operationKey(checkpoint.scope, checkpoint.operationId);
+    const idempotencyIndexKey = this.idempotencyIndexKey(checkpoint.scope, idempotencyKey);
+    const priorKey = this.idempotency.get(idempotencyIndexKey);
     if (priorKey) {
       if (priorKey !== contentKey) throw new WitnessIdempotencyConflict();
-      const prior = this.operations.get(checkpoint.operationId);
+      const prior = this.operations.get(operationKey);
       if (!prior) throw new Error("idempotency index has no immutable operation");
       return prior.receipt;
     }
 
-    const latest = this.records.at(-1) ?? null;
+    const latest = [...this.records].reverse().find((record) =>
+      this.scopeKey(record.checkpoint.scope) === this.scopeKey(checkpoint.scope)
+    ) ?? null;
     const actualGeneration = latest?.checkpoint.generation ?? 0;
     const actualDigest = latest?.checkpoint.checkpointDigest ?? ZERO_DIGEST;
     if (actualGeneration !== expected.generation || actualDigest !== expected.digest) {
@@ -63,7 +80,7 @@ export class SyntheticWitnessProviderAdapter implements WitnessProviderAdapter {
       checkpoint.previousDigest !== expected.digest ||
       checkpoint.phase !== "MONITOR_GOSSIP_REPLAY_V1"
     ) throw new WitnessAppendConflict("invalid successor checkpoint");
-    if (this.operations.has(checkpoint.operationId)) throw new WitnessIdempotencyConflict();
+    if (this.operations.has(operationKey)) throw new WitnessIdempotencyConflict();
 
     const receipt: WitnessCheckpointReceipt = {
       scope: checkpoint.scope,
@@ -75,8 +92,8 @@ export class SyntheticWitnessProviderAdapter implements WitnessProviderAdapter {
     };
     const stored = { checkpoint, receipt };
     this.records.push(stored);
-    this.operations.set(checkpoint.operationId, stored);
-    this.idempotency.set(idempotencyKey, contentKey);
+    this.operations.set(operationKey, stored);
+    this.idempotency.set(idempotencyIndexKey, contentKey);
     if (this.loseNextAck) {
       this.loseNextAck = false;
       throw new WitnessAmbiguousCommit("simulated lost acknowledgement after commit");
@@ -85,10 +102,12 @@ export class SyntheticWitnessProviderAdapter implements WitnessProviderAdapter {
   }
 
   async readLatest(requestedScope: WitnessCheckpointScope): Promise<StoredWitnessCheckpoint | null> {
-    const latest = this.records.at(-1) ?? null;
-    if (this.forceStaleLatest) return this.lastLatest;
-    if (latest && JSON.stringify(latest.checkpoint.scope) !== JSON.stringify(requestedScope)) return null;
-    this.lastLatest = latest;
+    const scopeKey = this.scopeKey(requestedScope);
+    const latest = [...this.records].reverse().find((record) =>
+      this.scopeKey(record.checkpoint.scope) === scopeKey
+    ) ?? null;
+    if (this.forceStaleLatest) return this.lastLatestByScope.get(scopeKey) ?? null;
+    this.lastLatestByScope.set(scopeKey, latest);
     return latest;
   }
 
@@ -96,11 +115,7 @@ export class SyntheticWitnessProviderAdapter implements WitnessProviderAdapter {
     requestedScope: WitnessCheckpointScope,
     operationId: string,
   ): Promise<StoredWitnessCheckpoint | null> {
-    const record = this.operations.get(operationId) ?? null;
-    if (
-      record &&
-      JSON.stringify(record.checkpoint.scope) !== JSON.stringify(requestedScope)
-    ) return null;
+    const record = this.operations.get(this.operationKey(requestedScope, operationId)) ?? null;
     if (record && this.corruptCheckpointReadback) {
       return {
         ...record,
@@ -113,4 +128,3 @@ export class SyntheticWitnessProviderAdapter implements WitnessProviderAdapter {
     return record;
   }
 }
-
