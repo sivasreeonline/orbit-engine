@@ -144,6 +144,7 @@ describe("PostgresExecutionIntakeRepository", () => {
     const requestInsert = first.calls.find((call) => call.text.includes("INSERT INTO execution_protocol_requests"));
     const requestBytes = requestInsert?.values?.[7] as Uint8Array;
     const requestSha = String(requestInsert?.values?.[6]);
+    const requestDocument = JSON.parse(new TextDecoder().decode(requestBytes)) as Record<string, unknown>;
     const idempotencyInsert = first.calls.find((call) => call.text.includes("INSERT INTO execution_idempotency"));
     const replayFake = fakeClient({
       existing: [{
@@ -154,6 +155,8 @@ describe("PostgresExecutionIntakeRepository", () => {
         protocol_version: "v2",
         protocol_request_bytes: requestBytes,
         protocol_request_sha256: requestSha,
+        protocol_request_correlation_id: requestDocument.correlationId,
+        outbox_correlation_id: requestDocument.correlationId,
       }],
     });
     const replayRepository = new PostgresExecutionIntakeRepository(connection, () => replayFake.client, {
