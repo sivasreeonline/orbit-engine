@@ -48,7 +48,7 @@ function fakeClient(options: {
           input_data: new TextEncoder().encode("4 5"),
           expected_output: new TextEncoder().encode("9\\n"),
         };
-        return { rows: (action === "SUBMIT" ? [publicCase, hiddenCase] : [publicCase]) as unknown as T[] };
+        return { rows: (options.emptyTestCases ? [] : action === "SUBMIT" ? [publicCase, hiddenCase] : [publicCase]) as unknown as T[] };
       }
       if (text.includes("FROM problems AS p")) {
         return { rows: (options.problem ?? [{
@@ -163,7 +163,7 @@ describe("PostgresExecutionIntakeRepository", () => {
   });
 
   it("fails closed when a published problem has no valid test bundle", async () => {
-    const fake = fakeClient({ failAt: "FROM problem_test_cases" });
+    const fake = fakeClient({ emptyTestCases: true });
     const repository = new PostgresExecutionIntakeRepository(connection, () => fake.client);
     await expect(repository.create(input, key)).rejects.toBeInstanceOf(ExecutionTestBundleIntegrityError);
     expect(fake.calls.some((call) => call.text.includes("INSERT INTO source_snapshots"))).toBe(false);
