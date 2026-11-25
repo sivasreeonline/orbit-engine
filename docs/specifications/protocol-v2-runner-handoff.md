@@ -90,12 +90,14 @@ following capabilities must land as one coordinated, tested change:
 
 ## Current implementation boundary
 
-At the current PR head, the queue consumer and handoff repository explicitly accept
-v1 only, and migration `0005_runner_dispatch_outbox.sql` constrains dispatch rows to
-v1. Migration `0014_execution_protocol_v2_requests.sql` adds the proposal-stage
-immutable request table but is not yet connected to intake or dispatch. These are
-intentional fail-closed boundaries and must not be relaxed until the coordinated
-rollout and integration tests above are ready.
+At the current PR head, opt-in intake can persist the exact v2 request bytes, digest,
+policy revision and UUID correlation identity in the same transaction as the
+execution records and metadata-only v2 outbox row. The opt-in flag defaults off.
+The outbox publisher explicitly claims v1 rows only; v2 rows remain pending and
+cannot reach the v1-only queue consumer. The queue consumer and handoff repository
+still accept v1 only, and migration `0005_runner_dispatch_outbox.sql` constrains
+dispatch rows to v1. These are intentional fail-closed boundaries and must not be
+relaxed until the coordinated rollout and integration tests above are ready.
 
 Required integration tests include v1 regression, v2 valid handoff, missing request,
 wrong attempt, wrong correlation, expired deadline, duplicate delivery, concurrent
