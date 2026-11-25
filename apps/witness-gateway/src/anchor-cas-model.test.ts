@@ -8,6 +8,10 @@ import {
 
 const d = (character: string) => character.repeat(64);
 
+function rejectedReason(decision: ReturnType<typeof evaluateAnchorCompareAndSet>): string | undefined {
+  return decision.action === "REJECTED" ? decision.reason : undefined;
+}
+
 function record(overrides: Partial<ExternalAnchorRecord> = {}): ExternalAnchorRecord {
   return {
     sequence: 1,
@@ -57,10 +61,10 @@ describe("evaluateAnchorCompareAndSet", () => {
 
   it("rejects reuse of an operation ID with changed request bytes", () => {
     const committed = record();
-    expect(evaluateAnchorCompareAndSet(input({
+    expect(rejectedReason(evaluateAnchorCompareAndSet(input({
       current: committed,
       proposed: record({ requestDigest: d("f"), recordDigest: d("1") }),
-    })).reason).toBe("operation_id_conflict");
+    })))).toBe("operation_id_conflict");
   });
 
   it("allows only one writer from a shared predecessor", () => {
@@ -103,18 +107,18 @@ describe("evaluateAnchorCompareAndSet", () => {
       operationId: "operation-2",
       requestDigest: d("3"),
     });
-    expect(evaluateAnchorCompareAndSet(input({
+    expect(rejectedReason(evaluateAnchorCompareAndSet(input({
       current,
       expectedSequence: 1,
       expectedRecordDigest: current.recordDigest,
       proposed: next,
-    })).reason).toBe("predecessor_mismatch");
-    expect(evaluateAnchorCompareAndSet(input({
+    })))).toBe("predecessor_mismatch");
+    expect(rejectedReason(evaluateAnchorCompareAndSet(input({
       current,
       expectedSequence: 1,
       expectedRecordDigest: current.recordDigest,
       proposed: { ...next, sequence: 1, previousRecordDigest: current.recordDigest },
-    })).reason).toBe("sequence_mismatch");
+    })))).toBe("sequence_mismatch");
   });
 
   it("requires verified evidence before advancing a tree head or trust bundle", () => {
@@ -140,12 +144,12 @@ describe("evaluateAnchorCompareAndSet", () => {
       expectedRecordDigest: current.recordDigest,
       proposed,
     };
-    expect(evaluateAnchorCompareAndSet(input(base)).reason)
+    expect(rejectedReason(evaluateAnchorCompareAndSet(input(base))))
       .toBe("trust_bundle_chain_unverified");
-    expect(evaluateAnchorCompareAndSet(input({
+    expect(rejectedReason(evaluateAnchorCompareAndSet(input({
       ...base,
       trustBundleChainVerified: true,
-    })).reason).toBe("tree_consistency_unverified");
+    })))).toBe("tree_consistency_unverified");
     expect(evaluateAnchorCompareAndSet(input({
       ...base,
       trustBundleChainVerified: true,
@@ -168,21 +172,21 @@ describe("evaluateAnchorCompareAndSet", () => {
       requestDigest: d("3"),
       checkpoint,
     });
-    expect(evaluateAnchorCompareAndSet(input({
+    expect(rejectedReason(evaluateAnchorCompareAndSet(input({
       ...base,
       proposed: next({ ...current.checkpoint, treeSize: 9 }),
-    })).reason).toBe("tree_rollback");
-    expect(evaluateAnchorCompareAndSet(input({
+    })))).toBe("tree_rollback");
+    expect(rejectedReason(evaluateAnchorCompareAndSet(input({
       ...base,
       proposed: next({ ...current.checkpoint, treeRootHash: d("f") }),
-    })).reason).toBe("tree_fork");
-    expect(evaluateAnchorCompareAndSet(input({
+    })))).toBe("tree_fork");
+    expect(rejectedReason(evaluateAnchorCompareAndSet(input({
       ...base,
       proposed: next({ ...current.checkpoint, logId: "other-log" }),
-    })).reason).toBe("log_identity_mismatch");
-    expect(evaluateAnchorCompareAndSet(input({
+    })))).toBe("log_identity_mismatch");
+    expect(rejectedReason(evaluateAnchorCompareAndSet(input({
       ...base,
       proposed: next({ ...current.checkpoint, trustBundleDigest: d("f") }),
-    })).reason).toBe("trust_bundle_conflict");
+    })))).toBe("trust_bundle_conflict");
   });
 });
