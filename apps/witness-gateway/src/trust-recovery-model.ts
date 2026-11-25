@@ -177,8 +177,9 @@ export function decideTrustRecovery(input: TrustRecoveryInput): TrustRecoveryDec
     return { action: "QUARANTINE", reason: "monitor_disagreement" };
   }
 
-  if (!sameHead(local, anchor)) {
-    if (anchor.treeSize > local.treeSize) {
+  if (local.anchorSequence < anchor.anchorSequence || !sameHead(local, anchor) ||
+      local.trustBundleGeneration < anchor.trustBundleGeneration) {
+    if (anchor.treeSize >= local.treeSize) {
       return { action: "REPAIR_LOCAL_FORWARD", reason: "anchor_ahead", requiredCheckpoint: anchor };
     }
     return { action: "QUARANTINE", reason: "local_ahead" };
