@@ -1,8 +1,8 @@
 # FENCE-001 monitor replay bridge readiness gates
 
-**Decision (updated 2026-11-23):** The local cryptographic verifier, authenticated Worker-to-Worker RPC, durable trust/head pinning, provider-neutral append coordinator, and monitor replay Durable Object pending-intent/finalize/recovery lifecycle now have implementation slices and exact-head CI evidence (PRs #188–#201). The remaining blockers are the dedicated monitor-replay checkpoint-body profile, concrete provider service adapter, independent evidence-authority integration, and production qualification.
+**Current decision (updated 2026-11-25):** The dedicated monitor-replay checkpoint profile, dual-digest provider contract, authenticated gateway composition, durable API pending-intent recovery/finalization, synthetic positive recovery path, and gateway-to-DynamoDB Local workerd integration are implemented and covered by exact-head CI in PR #201. A production gateway service binding to the isolated provider Worker exists, but the production provider Worker write switch remains explicitly `false`; the production gateway has no `WITNESS_EVIDENCE_AUTHORITY` binding. The gateway therefore fails closed with `provider_unavailable` before a provider append. A configuration regression test now locks these deployment invariants.
 
-This remains a readiness audit, not a claim that monitor replay rollback protection is implemented. PR #185 remains the governing bridge protocol contract. Production rollback protection remains **NOT QUALIFIED**.
+This remains a readiness audit, not a claim that monitor replay rollback protection is production-qualified. PR #185 remains the governing bridge protocol contract. Production rollback protection remains **NOT QUALIFIED**.
 
 ## 1. Evidence inspected
 
@@ -157,3 +157,18 @@ The two environment bindings are optional and intentionally absent from Wrangler
 A TypeScript DynamoDB provider adapter now implements the dual-digest provider contract using conditional transactional writes, immutable operation/idempotency records, chunked exact-byte storage and strongly consistent readback. CI's DynamoDB Local step successfully exercised exact bytes/digests, retries, conflicts, stale predecessor and independent-client concurrency.
 
 The factory is loopback-only. No live AWS credentials, table, provider service binding or deployment are configured. The adapter has not yet passed Cloudflare workerd transport qualification or real AWS provider qualification. It must not be described as production-qualified.
+
+
+## 15. Production deployment boundary and current fail-closed posture — 2026-11-25
+
+The production configuration has a deliberate two-part boundary:
+
+- `apps/witness-gateway/wrangler.jsonc` binds the production gateway to the isolated `sky-high-witness-provider` Worker through the private `WITNESS_PROVIDER` service binding.
+- The production gateway does **not** bind `WITNESS_EVIDENCE_AUTHORITY`. `WitnessGateway.checkpointReplay` requires both provider and evidence-authority RPCs and returns `provider_unavailable` if either is absent. The provider-only workerd integration test proves that this path creates neither a latest-head record nor an immutable operation record.
+- `apps/witness-gateway/provider.wrangler.jsonc` explicitly sets `WITNESS_DDB_WRITES_ENABLED=false`. The provider Worker additionally requires this switch and all provider configuration/secrets before constructing its AWS adapter.
+- Both gateway and provider Worker configurations set `workers_dev=false`; their normal HTTP surfaces return 404. The intended entrypoint is private service-binding RPC, not public ingress.
+- `apps/witness-gateway/src/production-deployment-guard.test.ts` reads the actual Wrangler JSONC files and asserts the absent production authority binding, explicit provider write-disable setting, and disabled public Worker surfaces.
+
+The provider service binding is therefore an intentionally inert integration boundary, not a live append capability. The gateway-level missing-authority guard is the primary pre-append control; the provider write switch is an independent second control. Neither synthetic tests nor the configuration guard establish production provider qualification.
+
+**Still not qualified / not approved:** independently administered evidence authority; out-of-band production root provisioning and rotation/revocation governance; durable anti-rollback state across restore and operator failure domains; real AWS provider durability and IAM/account isolation; backup/restore and partition/fork/split-view exercises; independent monitors with distinct operators/accounts/failure domains; independent security review; and formal architecture/security approval. Production approval remains false. No live credentials, live writes, or deployment are authorized by this PR.
