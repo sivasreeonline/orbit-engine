@@ -66,7 +66,7 @@ export default defineConfig({
           workers: [
             {
               name: "sky-high-synthetic-witness-services",
-              scriptPath: ".test-dist/synthetic-witness-services/index.js",
+              scriptPath: ".test-dist/synthetic-witness-services/synthetic-witness-services-worker.js",
               modules: true,
               compatibilityDate: "2026-11-09",
               compatibilityFlags: ["nodejs_compat", "rpc"],
