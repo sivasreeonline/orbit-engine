@@ -242,6 +242,18 @@ jobs:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0005_runner_dispatch_outbox.sql
 
+      - name: Apply and re-apply protocol v2 runner dispatch constraint
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0015_runner_dispatch_protocol_v2.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0015_runner_dispatch_protocol_v2.sql
+
+      - name: Verify protocol v2 runner dispatch constraint
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0015_runner_dispatch_protocol_v2.sql
+
       # The handoff repository creates a student scheduler lane in the same
       # transaction as the dispatch intent, so migration 0006 must precede it.
       - name: Apply and re-apply fair runner dispatch scheduler migration
