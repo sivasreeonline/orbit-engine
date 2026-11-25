@@ -42,6 +42,8 @@ DECLARE
   expected_attempt_id uuid;
   request_document jsonb;
   limits_document jsonb;
+  request_key_count integer;
+  limits_key_count integer;
 BEGIN
   SELECT attempt_id
     INTO expected_attempt_id
@@ -60,8 +62,15 @@ BEGIN
       USING ERRCODE = '23514';
   END;
 
-  IF jsonb_typeof(request_document) IS DISTINCT FROM 'object'
-    OR jsonb_object_length(request_document) <> 16
+  IF jsonb_typeof(request_document) IS DISTINCT FROM 'object' THEN
+    RAISE EXCEPTION 'protocol v2 request must be a JSON object'
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT count(*) INTO request_key_count
+  FROM jsonb_object_keys(request_document);
+
+  IF request_key_count <> 16
     OR request_document->>'protocolVersion' IS DISTINCT FROM 'v2'
     OR request_document->>'executionId' IS DISTINCT FROM NEW.execution_id::text
     OR request_document->>'attemptId' IS DISTINCT FROM NEW.attempt_id::text
@@ -83,8 +92,15 @@ BEGIN
   END IF;
 
   limits_document := request_document->'limits';
-  IF jsonb_typeof(limits_document) IS DISTINCT FROM 'object'
-    OR jsonb_object_length(limits_document) <> 7
+  IF jsonb_typeof(limits_document) IS DISTINCT FROM 'object' THEN
+    RAISE EXCEPTION 'protocol v2 resource limits must be a JSON object'
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT count(*) INTO limits_key_count
+  FROM jsonb_object_keys(limits_document);
+
+  IF limits_key_count <> 7
     OR NOT (limits_document ?& ARRAY[
       'cpuQuotaMillis', 'memoryBytes', 'wallTimeMillis', 'processLimit',
       'outputBytes', 'scratchBytes', 'scratchInodes'
