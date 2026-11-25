@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalTestBundleBytes } from "./canonical-test-bundle";
+import { canonicalTestBundleBytes, canonicalTestBundleIdentity } from "./canonical-test-bundle";
 
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -33,6 +33,21 @@ describe("canonicalTestBundleBytes", () => {
     const changedOutput = [{ ...cases[0]!, expectedOutput: "3" }];
     expect(canonicalTestBundleBytes(hidden)).not.toEqual(canonicalTestBundleBytes(cases));
     expect(canonicalTestBundleBytes(changedOutput)).not.toEqual(canonicalTestBundleBytes(cases));
+  });
+
+  it("derives one stable digest and action-scoped bundle identity", async () => {
+    const problemVersionId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
+    const run = await canonicalTestBundleIdentity(problemVersionId, "RUN", cases);
+    const repeated = await canonicalTestBundleIdentity(problemVersionId, "RUN", cases);
+    const submit = await canonicalTestBundleIdentity(problemVersionId, "SUBMIT", cases);
+
+    expect(repeated).toEqual(run);
+    expect(run.testBundleSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(run.testBundleId).toBe(
+      `${problemVersionId}-run-${run.testBundleSha256.slice(0, 16)}`,
+    );
+    expect(submit.testBundleSha256).toBe(run.testBundleSha256);
+    expect(submit.testBundleId).not.toBe(run.testBundleId);
   });
 
   it("rejects invalid sequence numbers", () => {
