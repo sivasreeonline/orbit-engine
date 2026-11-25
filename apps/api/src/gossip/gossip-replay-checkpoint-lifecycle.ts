@@ -5,6 +5,7 @@ import {
 
 export const REPLAY_STATE_ENVELOPE_KEY = "replay-state-envelope-v2";
 export const REPLAY_PENDING_INTENT_KEY = "replay-checkpoint-pending-v1";
+export const REPLAY_CHECKPOINT_QUARANTINE_KEY = "replay-checkpoint-quarantine-v1";
 export const LEGACY_REPLAY_STATE_KEY = "replay-state-v1";
 
 export interface ReplayWitnessHead {
@@ -121,6 +122,10 @@ export async function stagePendingReplayIntent(
       current.witnessHead.digest !== pending.intent.expectedPredecessor.digest
     ) return { staged: false, reason: "witness_predecessor_mismatch" } as const;
     await txn.put(REPLAY_PENDING_INTENT_KEY, pending);
+    // A new accepted transition supersedes prior quarantine. Clear the marker
+    // in the same transaction so restart can never observe a staged intent
+    // still blocked by a stale marker from the previous transition.
+    await txn.delete(REPLAY_CHECKPOINT_QUARANTINE_KEY);
     return { staged: true, stateVersion: current.stateVersion } as const;
   });
 }
