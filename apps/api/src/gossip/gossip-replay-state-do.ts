@@ -532,6 +532,7 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     )) {
       // Persist quarantine so constructor recovery cannot re-arm this intent
       // after eviction/restart. The pending bytes and accepted state are kept.
+      const quarantineReason = result.reason;
       const quarantined = await this.ctx.storage.transaction(async (txn) => {
         // A concurrent direct recovery may have finalized the intent after
         // this alarm observed its integrity failure. Quarantine only if the
@@ -547,7 +548,7 @@ export class GossipReplayStateDO extends DurableObject<Env> {
         await txn.put({
           [REPLAY_CHECKPOINT_QUARANTINE_KEY]: {
             version: 1,
-            reason: result.reason,
+            reason: quarantineReason,
             quarantinedAt: Date.now(),
           } satisfies ReplayCheckpointQuarantine,
         });
