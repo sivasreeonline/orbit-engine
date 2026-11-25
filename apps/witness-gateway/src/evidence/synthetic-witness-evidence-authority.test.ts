@@ -137,11 +137,6 @@ describe("synthetic independent evidence authority", () => {
       request.scope,
       request.checkpointBody.operationId,
     ))).toBe(first);
-
-    expect((await authority.readEvidenceByOperation(
-      request.scope,
-      request.checkpointBody.operationId,
-    ))).toBe(first);
   });
 
   it("recovers a committed evidence bundle after a lost acknowledgement", async () => {
