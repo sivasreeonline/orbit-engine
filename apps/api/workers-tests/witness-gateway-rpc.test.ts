@@ -397,11 +397,27 @@ describe("API-to-private-witness-gateway RPC integration", () => {
       new TextEncoder().encode(serialized),
     );
 
-    // The authenticated gateway accepts the request shape and exact scope, but
-    // production remains inert until both independent private services exist.
-    expect(result).toEqual({
-      checkpointed: false,
-      reason: "provider_unavailable",
+    expect(result.checkpointed).toBe(true);
+    if (!result.checkpointed) return;
+
+    // The gateway returns canonical evidence from the synthetic authority;
+    // the same gateway then independently verifies the signatures, proofs,
+    // pinned root and durable transparency state before API finalization.
+    const verification = await verifyEvidenceViaWitnessGateway(
+      apiCallerEnv(),
+      result.canonicalEvidenceBody,
+    );
+    expect(verification).toMatchObject({
+      verified: true,
+      trustDomainId: scope.trustDomainId,
+      witnessId: scope.witnessId,
+      authorityId: scope.authorityId,
+      hostId: scope.hostId,
+      operationId,
+      generation: 1,
+      predecessorGeneration: 0,
+      predecessorDigest: expectedPredecessor.digest,
+      snapshotDigest,
     });
   });
 
