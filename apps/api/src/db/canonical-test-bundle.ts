@@ -82,7 +82,9 @@ export async function canonicalTestBundleIdentity(
     throw new TestBundleEncodingError("runner_artifact_problem_version_id_invalid");
   }
   const bytes = canonicalTestBundleBytes(testCases);
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", buffer));
   const testBundleSha256 = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return {
     testBundleId: `${problemVersionId}-${action.toLowerCase()}-${testBundleSha256.slice(0, 16)}`,
