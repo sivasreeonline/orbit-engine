@@ -1,6 +1,6 @@
 import { Client } from "pg";
 import { DatabaseUnavailableError } from "./database-errors";
-import { canonicalTestBundleBytes, type CanonicalTestBundleCase } from "./canonical-test-bundle";
+import { canonicalTestBundleBytes, TestBundleEncodingError, type CanonicalTestBundleCase } from "./canonical-test-bundle";
 
 const MAX_SOURCE_BYTES = 256 * 1024;
 const MAX_TEST_CASES = 200;
@@ -15,13 +15,7 @@ export interface FetchRunnerArtifactInput {
   readonly keyId: string;
 }
 
-export interface RunnerArtifactTestCase extends CanonicalTestBundleCase {
-  readonly testCaseId: string;
-  readonly sequence: number;
-  readonly visibility: "PUBLIC" | "HIDDEN";
-  readonly input: string;
-  readonly expectedOutput: string;
-}
+export interface RunnerArtifactTestCase extends CanonicalTestBundleCase {}
 
 export interface RunnerExecutionArtifact {
   readonly executionId: string;
@@ -384,7 +378,15 @@ export class PostgresRunnerArtifactRepository {
           };
         });
 
-        const canonicalTestBundle = canonicalTestBundleBytes(testCases);
+        let canonicalTestBundle: Uint8Array;
+        try {
+          canonicalTestBundle = canonicalTestBundleBytes(testCases);
+        } catch (error) {
+          if (error instanceof TestBundleEncodingError) {
+            throw new RunnerArtifactIntegrityError(error.message);
+          }
+          throw error;
+        }
         const testBundleSha256 = await sha256(canonicalTestBundle);
 
         const finalLeaseCheck = await client.query<{ execution_id: string }>(
