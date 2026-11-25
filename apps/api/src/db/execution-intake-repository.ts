@@ -76,6 +76,8 @@ interface ExistingExecutionRow extends Record<string, unknown> {
   readonly protocol_version?: string;
   readonly protocol_request_bytes?: Uint8Array | null;
   readonly protocol_request_sha256?: string | null;
+  readonly protocol_request_correlation_id?: string | null;
+  readonly outbox_correlation_id?: string | null;
 }
 
 interface TestCaseRow extends Record<string, unknown> {
@@ -183,6 +185,8 @@ function persistedProtocolTestBundleId(row: ExistingExecutionRow): string {
   if (document.protocolVersion !== "v2" ||
       document.executionId !== row.execution_id ||
       document.attemptId !== row.attempt_id ||
+      document.correlationId !== row.protocol_request_correlation_id ||
+      document.correlationId !== row.outbox_correlation_id ||
       typeof document.testBundleId !== "string" ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(document.testBundleId)) {
     throw new ExecutionTestBundleIntegrityError("persisted_protocol_request_invalid");
@@ -257,8 +261,10 @@ export class PostgresExecutionIntakeRepository {
         const existing = await client.query<ExistingExecutionRow>(
           [
             "SELECT ei.attempt_id, ej.id AS execution_id, ei.request_sha256, attempt.problem_version_id,",
-            "  eo.protocol_version, v2.request_bytes AS protocol_request_bytes,",
-            "  v2.request_sha256 AS protocol_request_sha256",
+            "  eo.protocol_version, eo.correlation_id AS outbox_correlation_id,",
+            "  v2.request_bytes AS protocol_request_bytes,",
+            "  v2.request_sha256 AS protocol_request_sha256,",
+            "  v2.correlation_id::text AS protocol_request_correlation_id",
             "FROM execution_idempotency AS ei",
             "INNER JOIN execution_jobs AS ej ON ej.attempt_id = ei.attempt_id",
             "INNER JOIN execution_attempts AS attempt ON attempt.id = ei.attempt_id",
