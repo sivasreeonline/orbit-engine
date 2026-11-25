@@ -67,9 +67,6 @@ function validateV2Request(row: AuthoritativeExecutionRow, envelope: ExecutionRe
       row.request_deadline_valid !== true) {
     throw new InvalidRunnerDispatchEnvelopeError();
   }
-  const bytes = new Uint8Array(row.request_bytes);
-  // The digest is checked asynchronously by the caller before parsing the document.
-  void bytes;
 }
 
 async function verifyV2Request(row: AuthoritativeExecutionRow, envelope: ExecutionRequestedEnvelope): Promise<void> {
@@ -91,6 +88,7 @@ async function verifyV2Request(row: AuthoritativeExecutionRow, envelope: Executi
       document.attemptId !== envelope.attemptId ||
       document.correlationId !== row.correlation_id ||
       document.deadlineAt === undefined ||
+      Date.parse(String(document.deadlineAt)) !== Date.parse(String(row.request_deadline_at)) ||
       Date.parse(String(document.deadlineAt)) <= Date.now() ||
       document.comparisonPolicy !== "EXACT_BYTES" ||
       typeof document.limits !== "object" || document.limits === null || Array.isArray(document.limits) ||
@@ -145,7 +143,7 @@ export class PostgresRunnerDispatchHandoffRepository {
         }
         if (envelope.protocolVersion === "v2") {
           await verifyV2Request(current, envelope);
-        } else if (current.request_protocol_version !== null) {
+        } else if (current.request_protocol_version != null) {
           throw new InvalidRunnerDispatchEnvelopeError();
         }
 
