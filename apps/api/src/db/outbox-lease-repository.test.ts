@@ -56,6 +56,7 @@ describe("PostgresOutboxLeaseRepository", () => {
     expect(claimQuery?.text).toContain("FOR UPDATE SKIP LOCKED");
     expect(claimQuery?.text).toContain("delivery_attempts = outbox.delivery_attempts + 1");
     expect(claimQuery?.text).toContain("lease_expires_at <= now()");
+    expect(claimQuery?.text).toContain("protocol_version = 'v1'");
     expect(claimQuery?.values).toEqual([10, "publisher-1", 60]);
     expect(fake.ended()).toBe(true);
   });
