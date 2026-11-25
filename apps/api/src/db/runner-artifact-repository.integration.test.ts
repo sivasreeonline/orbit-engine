@@ -124,6 +124,7 @@ async function createV2Dispatch(
       request_protocol_version: string;
       request_correlation_id: string;
       request_deadline_valid: boolean;
+      request_deadline_at: Date;
       request_sha256: string;
       request_bytes: Buffer;
     }>(
@@ -137,7 +138,7 @@ async function createV2Dispatch(
         "  v2.protocol_version AS request_protocol_version,",
         "  v2.correlation_id::text AS request_correlation_id,",
         "  (v2.deadline_at > now()) AS request_deadline_valid,",
-        "  v2.request_sha256, v2.request_bytes",
+        "  v2.deadline_at AS request_deadline_at, v2.request_sha256, v2.request_bytes",
         "FROM execution_jobs AS ej",
         "INNER JOIN execution_outbox AS eo ON eo.execution_id = ej.id",
         "INNER JOIN execution_protocol_requests AS v2 ON v2.execution_id = ej.id",
@@ -162,6 +163,19 @@ async function createV2Dispatch(
     expect(document.executionId).toBe(created.executionId);
     expect(document.attemptId).toBe(created.attemptId);
     expect(document.correlationId).toBe(row.request_correlation_id);
+    const expectedRequestKeys = [
+      "protocolVersion", "correlationId", "executionId", "attemptId", "problemVersionId",
+      "action", "language", "runtimeVersion", "runtimeImageDigest", "sourceArtifactId",
+      "sourceSha256", "testBundleId", "comparisonPolicy", "deadlineAt", "cancellationRef", "limits",
+    ].sort();
+    expect(Object.keys(document).sort()).toEqual(expectedRequestKeys);
+    expect(Date.parse(String(document.deadlineAt))).toBe(Date.parse(String(row.request_deadline_at)));
+    expect(Date.parse(String(document.deadlineAt))).toBeGreaterThan(Date.now());
+    expect(document.comparisonPolicy).toBe("EXACT_BYTES");
+    expect(Object.keys(document.limits as Record<string, unknown>).sort()).toEqual([
+      "cpuQuotaMillis", "memoryBytes", "wallTimeMillis", "processLimit",
+      "outputBytes", "scratchBytes", "scratchInodes",
+    ].sort());
   } finally {
     await diagnostic.end();
   }
