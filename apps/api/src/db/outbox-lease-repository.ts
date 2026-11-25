@@ -86,7 +86,7 @@ export class PostgresOutboxLeaseRepository {
           "WITH candidates AS (",
           "  SELECT id",
           "  FROM execution_outbox",
-          "  WHERE delivery_state = 'PENDING'",
+          "  WHERE delivery_state = 'PENDING' AND protocol_version = 'v1'",
           "    AND available_at <= now()",
           "    AND (lease_expires_at IS NULL OR lease_expires_at <= now())",
           "  ORDER BY available_at, created_at, id",

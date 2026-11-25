@@ -35,10 +35,10 @@ function parseEnvelope(value: unknown): ExecutionRequestedEnvelope {
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (typeof executionId !== "string" || !uuid.test(executionId) ||
       typeof attemptId !== "string" || !uuid.test(attemptId) ||
-      protocolVersion !== "v1") {
+      protocolVersion !== "v1" && protocolVersion !== "v2") {
     throw new Error("invalid_runner_dispatch_queue_envelope");
   }
-  return { executionId, attemptId, protocolVersion: "v1" };
+  return { executionId, attemptId, protocolVersion };
 }
 
 /**

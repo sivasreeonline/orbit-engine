@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS execution_outbox (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   execution_id uuid NOT NULL REFERENCES execution_jobs(id) ON DELETE RESTRICT,
   event_type varchar(32) NOT NULL CHECK (event_type = 'EXECUTION_REQUESTED'),
-  protocol_version varchar(16) NOT NULL CHECK (protocol_version = 'v1'),
+  protocol_version varchar(16) NOT NULL CHECK (protocol_version IN ('v1', 'v2')),
   correlation_id varchar(96) NOT NULL
     CHECK (correlation_id ~ '^[A-Za-z0-9._:-]{1,96}$'),
   payload jsonb NOT NULL,

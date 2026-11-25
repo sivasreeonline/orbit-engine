@@ -189,6 +189,20 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0003_execution_intake_foundation.sql
 
+      # Intake now reads the immutable v2 request table even when v2 is disabled;
+      # install its proposal schema before the intake PostgreSQL integration test.
+      - name: Apply and re-apply immutable protocol v2 request migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0014_execution_protocol_v2_requests.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0014_execution_protocol_v2_requests.sql
+
+      - name: Verify protocol v2 request persistence SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0014_execution_protocol_v2_requests.sql
+
       - name: Verify concurrent execution intake against PostgreSQL
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
@@ -227,6 +241,18 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0005_runner_dispatch_outbox.sql
+
+      - name: Apply and re-apply protocol v2 runner dispatch constraint
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0015_runner_dispatch_protocol_v2.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0015_runner_dispatch_protocol_v2.sql
+
+      - name: Verify protocol v2 runner dispatch constraint
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0015_runner_dispatch_protocol_v2.sql
 
       # The handoff repository creates a student scheduler lane in the same
       # transaction as the dispatch intent, so migration 0006 must precede it.
@@ -342,10 +368,13 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/runner-heartbeat-repository.integration.test.ts
 
-      - name: Verify lease-fenced runner artifact retrieval against PostgreSQL
+      - name: Verify PostgreSQL-backed artifact with the Go runner client
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
-        run: npx vitest run src/db/runner-artifact-repository.integration.test.ts
+          SKYHIGH_V2_ARTIFACT_FIXTURE_PATH: /tmp/skyhigh-v2-artifact-fixture.json
+        run: |
+          npx vitest run src/db/runner-artifact-repository.integration.test.ts
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -v /tmp:/tmp -w /workspace/services/execution-runner golang:1.27.3 go test ./internal/runnerclient -run TestFetchArtifactAcceptsPostgresBackedV2Artifact
 
       - name: Apply and re-apply authenticated runner completion migration
         env:

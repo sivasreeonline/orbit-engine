@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   InvalidRunnerDispatchEnvelopeError,
@@ -26,8 +27,11 @@ function fakeClient(options: {
           attempt_id: attemptId,
           job_state: "QUEUED",
           outbox_attempt_id: attemptId,
-          outbox_protocol_version: "v1",
+          outbox_protocol_version: "v1", outbox_payload_protocol_version: "v1",
           correlation_id: "corr-1",
+          request_attempt_id: null, request_protocol_version: null,
+          request_correlation_id: null, request_deadline_at: null,
+          request_deadline_valid: null, request_sha256: null, request_bytes: null,
         }]) as unknown as T[] };
       }
       if (text.includes("INSERT INTO runner_dispatch_outbox")) {
@@ -35,7 +39,7 @@ function fakeClient(options: {
         return { rows: (options.inserted ?? [{
           id: dispatchId,
           attempt_id: attemptId,
-          protocol_version: "v1",
+          protocol_version: String(values?.[2] ?? "v1"),
           correlation_id: "corr-1",
         }]) as unknown as T[] };
       }
@@ -61,6 +65,53 @@ const dispatchId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
 const envelope = { executionId, attemptId, protocolVersion: "v1" } as const;
 
 describe("PostgresRunnerDispatchHandoffRepository", () => {
+  it("validates persisted v2 request bytes and records a v2 intent", async () => {
+    const deadlineAt = new Date(Date.now() + 60_000).toISOString();
+    const correlationId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
+    const document = {
+      protocolVersion: "v2", correlationId, executionId, attemptId,
+      problemVersionId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      action: "RUN", language: "java", runtimeVersion: "25",
+      runtimeImageDigest: "sha256:" + "a".repeat(64),
+      sourceArtifactId: "source-snapshot-1", sourceSha256: "b".repeat(64),
+      testBundleId: "two-sum-run-" + "c".repeat(16), comparisonPolicy: "EXACT_BYTES",
+      deadlineAt, cancellationRef: "cxl_" + "d".repeat(32),
+      limits: { cpuQuotaMillis: 1000, memoryBytes: 134217728, wallTimeMillis: 5000,
+        processLimit: 16, outputBytes: 65536, scratchBytes: 1048576, scratchInodes: 128 },
+    };
+    const requestBytes = new TextEncoder().encode(JSON.stringify(document));
+    const requestSha = createHash("sha256").update(requestBytes).digest("hex");
+    const fake = fakeClient({ authoritative: [{
+      attempt_id: attemptId, job_state: "QUEUED", outbox_attempt_id: attemptId,
+      outbox_protocol_version: "v2", outbox_payload_protocol_version: "v2", correlation_id: correlationId,
+      request_attempt_id: attemptId, request_protocol_version: "v2",
+      request_correlation_id: correlationId, request_deadline_at: deadlineAt,
+      request_deadline_valid: true, request_sha256: requestSha, request_bytes: requestBytes,
+    }], existing: [] });
+    const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
+    await expect(repository.record({ executionId, attemptId, protocolVersion: "v2" }))
+      .resolves.toEqual({ status: "RECORDED", dispatchId });
+    expect(fake.calls.find((call) => call.text.includes("INSERT INTO runner_dispatch_outbox"))?.values)
+      .toEqual([executionId, attemptId, "v2", correlationId]);
+  });
+
+  it("rejects a v2 request whose persisted digest does not match its bytes", async () => {
+    const deadlineAt = new Date(Date.now() + 60_000).toISOString();
+    const correlationId = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
+    const bytes = new TextEncoder().encode(JSON.stringify({ protocolVersion: "v2" }));
+    const fake = fakeClient({ authoritative: [{
+      attempt_id: attemptId, job_state: "QUEUED", outbox_attempt_id: attemptId,
+      outbox_protocol_version: "v2", outbox_payload_protocol_version: "v2", correlation_id: correlationId,
+      request_attempt_id: attemptId, request_protocol_version: "v2",
+      request_correlation_id: correlationId, request_deadline_at: deadlineAt,
+      request_deadline_valid: true, request_sha256: "0".repeat(64), request_bytes: bytes,
+    }], existing: [] });
+    const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
+    await expect(repository.record({ executionId, attemptId, protocolVersion: "v3" } as never))
+      .rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
+    expect(fake.calls.some((call) => call.text.includes("INSERT INTO runner_dispatch_outbox"))).toBe(false);
+  });
+
   it("validates authoritative job/outbox identity and commits one durable intent", async () => {
     const fake = fakeClient({ existing: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
@@ -82,7 +133,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
   it("returns the existing intent for a duplicate delivery", async () => {
     const fake = fakeClient({ authoritative: [{
       attempt_id: attemptId, job_state: "RUNNING", outbox_attempt_id: attemptId,
-      outbox_protocol_version: "v1", correlation_id: "corr-1",
+      outbox_protocol_version: "v1", outbox_payload_protocol_version: "v1", correlation_id: "corr-1",
     }], inserted: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
@@ -98,7 +149,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
       attempt_id: attemptId,
       job_state: "RUNNING",
       outbox_attempt_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
-      outbox_protocol_version: "v1",
+      outbox_protocol_version: "v1", outbox_payload_protocol_version: "v1",
       correlation_id: "corr-1",
     }], existing: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
@@ -111,7 +162,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
   it("rejects a first-time handoff when the job is no longer queued", async () => {
     const fake = fakeClient({ authoritative: [{
       attempt_id: attemptId, job_state: "RUNNING", outbox_attempt_id: attemptId,
-      outbox_protocol_version: "v1", correlation_id: "corr-1",
+      outbox_protocol_version: "v1", outbox_payload_protocol_version: "v1", correlation_id: "corr-1",
     }], existing: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
     await expect(repository.record(envelope)).rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
@@ -126,11 +177,11 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
     expect(fake.calls.at(-1)?.text).toBe("ROLLBACK");
   });
 
-  it("rejects malformed, unknown-version and extended envelopes before connecting", async () => {
+  it("rejects malformed, unsupported-version and extended envelopes before connecting", async () => {
     const fake = fakeClient();
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
-    await expect(repository.record({ ...envelope, protocolVersion: "v2" }))
+    await expect(repository.record({ ...envelope, protocolVersion: "v3" } as never))
       .rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
     await expect(repository.record({ ...envelope, sourceCode: "must-not-cross" } as never))
       .rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);

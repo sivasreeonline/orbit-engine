@@ -43,7 +43,18 @@ The response contains:
 
 The source is independently hashed and checked against both the immutable source-snapshot digest and execution-attempt digest before returning.
 
-### Run versus Submit
+#### Protocol v2 request handoff
+
+For a v2 dispatch, the same authenticated endpoint additionally returns:
+
+- `protocolRequest.requestBytesBase64`: base64 of the exact immutable UTF-8 bytes stored in `execution_protocol_requests.request_bytes`;
+- `protocolRequest.requestSha256`: SHA-256 of those exact bytes.
+
+The repository does not reconstruct or reserialize the protocol request. Before returning it, the repository checks the stored digest, fatal UTF-8/JSON decoding, exact top-level field set, execution/attempt/correlation identity, problem/action/language/runtime/source identity, canonical test-bundle identity, and the trusted persisted deadline. A v1 dispatch must not have a v2 request row; a v2 dispatch without a valid request row fails closed.
+
+The request bytes are base64-wrapped only for transport inside the existing signed runner artifact response. The runner must base64-decode and verify the digest before interpreting the v2 JSON. This API addition does not make v2 dispatches claimable: all current dispatch lease queries remain v1-only, and the Go v2 consumer is not yet implemented.
+
+## Run versus Submit
 
 - **RUN** returns PUBLIC test cases only. Hidden cases and expected outputs are not included.
 - **SUBMIT** returns PUBLIC and HIDDEN cases to the authenticated runner so the trusted evaluator can calculate the final verdict.

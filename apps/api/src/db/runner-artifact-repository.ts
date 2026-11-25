@@ -1,5 +1,6 @@
 import { Client } from "pg";
 import { DatabaseUnavailableError } from "./database-errors";
+import { canonicalTestBundleIdentity, TestBundleEncodingError, type CanonicalTestBundleCase } from "./canonical-test-bundle";
 
 const MAX_SOURCE_BYTES = 256 * 1024;
 const MAX_TEST_CASES = 200;
@@ -14,13 +15,7 @@ export interface FetchRunnerArtifactInput {
   readonly keyId: string;
 }
 
-export interface RunnerArtifactTestCase {
-  readonly testCaseId: string;
-  readonly sequence: number;
-  readonly visibility: "PUBLIC" | "HIDDEN";
-  readonly input: string;
-  readonly expectedOutput: string;
-}
+export type RunnerArtifactTestCase = CanonicalTestBundleCase;
 
 export interface RunnerExecutionArtifact {
   readonly executionId: string;
@@ -37,6 +32,7 @@ export interface RunnerExecutionArtifact {
   readonly testBundleId: string;
   readonly testBundleSha256: string;
   readonly testCases: readonly RunnerArtifactTestCase[];
+  readonly protocolRequest?: { readonly requestBytesBase64: string; readonly requestSha256: string };
 }
 
 interface QueryResult<T extends Record<string, unknown>> {
@@ -63,6 +59,8 @@ const defaultClientFactory: PgClientFactory = (connectionString) =>
 
 interface ArtifactRow extends Record<string, unknown> {
   readonly dispatch_id: string;
+  readonly dispatch_protocol_version: string;
+  readonly dispatch_correlation_id: string;
   readonly execution_id: string;
   readonly attempt_id: string;
   readonly delivery_state: string;
@@ -93,6 +91,12 @@ interface ArtifactRow extends Record<string, unknown> {
   readonly start_event_id: string | null;
   readonly started_runner_id: string | null;
   readonly started_key_id: string | null;
+  readonly request_protocol_version: string | null;
+  readonly request_attempt_id: string | null;
+  readonly request_correlation_id: string | null;
+  readonly request_deadline_at: Date | string | null;
+  readonly request_sha256: string | null;
+  readonly request_bytes: Uint8Array | null;
 }
 
 interface TestCaseRow extends Record<string, unknown> {
@@ -127,64 +131,21 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", buffer)));
 }
 
+function encodeBase64(value: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < value.length; offset += chunkSize) {
+    binary += String.fromCharCode(...value.subarray(offset, Math.min(offset + chunkSize, value.length)));
+  }
+  return btoa(binary);
+}
+
 function decodeUtf8(value: Uint8Array, field: string): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(value);
   } catch {
     throw new RunnerArtifactIntegrityError(`${field}_invalid_utf8`);
   }
-}
-
-function appendLengthPrefixed(target: number[], value: Uint8Array): void {
-  const length = value.byteLength;
-  if (!Number.isSafeInteger(length) || length < 0 || length > 0xffffffff) {
-    throw new RunnerArtifactIntegrityError("runner_artifact_bundle_field_too_large");
-  }
-  target.push(
-    (length >>> 24) & 0xff,
-    (length >>> 16) & 0xff,
-    (length >>> 8) & 0xff,
-    length & 0xff,
-  );
-  for (const byte of value) target.push(byte);
-}
-
-/**
- * Cross-language canonical format:
- * magic "SKYHIGH-TEST-BUNDLE-V1\\0", u32 case count, then per case:
- * length-prefixed UTF-8 testCaseId, u32 sequence, one visibility byte
- * (1=PUBLIC, 2=HIDDEN), length-prefixed UTF-8 input and expected output.
- * All integers are unsigned big-endian.
- */
-function canonicalTestBundleBytes(testCases: readonly RunnerArtifactTestCase[]): Uint8Array {
-  if (testCases.length > 0xffffffff) {
-    throw new RunnerArtifactIntegrityError("runner_artifact_test_case_count_invalid");
-  }
-  const target: number[] = [];
-  appendLengthPrefixed(target, new TextEncoder().encode("SKYHIGH-TEST-BUNDLE-V1"));
-  target.push(
-    (testCases.length >>> 24) & 0xff,
-    (testCases.length >>> 16) & 0xff,
-    (testCases.length >>> 8) & 0xff,
-    testCases.length & 0xff,
-  );
-  for (const testCase of testCases) {
-    appendLengthPrefixed(target, new TextEncoder().encode(testCase.testCaseId));
-    const sequence = testCase.sequence;
-    if (!Number.isSafeInteger(sequence) || sequence < 1 || sequence > 0xffffffff) {
-      throw new RunnerArtifactIntegrityError("runner_artifact_test_sequence_invalid");
-    }
-    target.push(
-      (sequence >>> 24) & 0xff,
-      (sequence >>> 16) & 0xff,
-      (sequence >>> 8) & 0xff,
-      sequence & 0xff,
-    );
-    target.push(testCase.visibility === "PUBLIC" ? 1 : 2);
-    appendLengthPrefixed(target, new TextEncoder().encode(testCase.input));
-    appendLengthPrefixed(target, new TextEncoder().encode(testCase.expectedOutput));
-  }
-  return Uint8Array.from(target);
 }
 
 export class RunnerArtifactNotFoundError extends Error {
@@ -265,7 +226,8 @@ export class PostgresRunnerArtifactRepository {
 
         const result = await client.query<ArtifactRow>(
           [
-            "SELECT dispatch.id AS dispatch_id, dispatch.execution_id, dispatch.attempt_id,",
+            "SELECT dispatch.id AS dispatch_id, dispatch.protocol_version AS dispatch_protocol_version,",
+            "  dispatch.correlation_id AS dispatch_correlation_id, dispatch.execution_id, dispatch.attempt_id,",
             "  dispatch.delivery_state, dispatch.lease_owner AS dispatch_owner,",
             "  dispatch.lease_token::text AS dispatch_token, dispatch.lease_expires_at AS dispatch_expires_at,",
             "  job.state AS job_state, job.lease_owner AS job_owner,",
@@ -279,7 +241,12 @@ export class PostgresRunnerArtifactRepository {
             "  accepted.acceptance_id::text AS acceptance_id, accepted.runner_id::text AS accepted_runner_id,",
             "  accepted.key_id AS accepted_key_id,",
             "  started.event_id::text AS start_event_id, started.runner_id::text AS started_runner_id,",
-            "  started.key_id AS started_key_id",
+            "  started.key_id AS started_key_id,",
+            "  protocol_request.protocol_version AS request_protocol_version,",
+            "  protocol_request.attempt_id::text AS request_attempt_id,",
+            "  protocol_request.correlation_id::text AS request_correlation_id,",
+            "  protocol_request.deadline_at AS request_deadline_at,",
+            "  protocol_request.request_sha256, protocol_request.request_bytes",
             "FROM runner_dispatch_outbox AS dispatch",
             "INNER JOIN execution_jobs AS job ON job.id = dispatch.execution_id",
             "INNER JOIN execution_attempts AS attempt ON attempt.id = dispatch.attempt_id",
@@ -291,6 +258,8 @@ export class PostgresRunnerArtifactRepository {
             "  ON accepted.dispatch_id = dispatch.id AND accepted.lease_token = dispatch.lease_token",
             "LEFT JOIN runner_dispatch_starts AS started",
             "  ON started.dispatch_id = dispatch.id AND started.lease_token = dispatch.lease_token",
+            "LEFT JOIN execution_protocol_requests AS protocol_request",
+            "  ON protocol_request.execution_id = dispatch.execution_id",
             "WHERE dispatch.id = $1::uuid AND dispatch.execution_id = $2::uuid",
             "  AND dispatch.attempt_id = $3::uuid AND job.attempt_id = $3::uuid",
             "FOR UPDATE OF dispatch, job",
@@ -339,6 +308,12 @@ export class PostgresRunnerArtifactRepository {
           throw new RunnerArtifactIntegrityError("runner_artifact_source_hash_mismatch");
         }
         const sourceCode = decodeUtf8(sourceBytes, "source_code");
+        if (artifact.dispatch_protocol_version === "v1" && artifact.request_protocol_version !== null) {
+          throw new RunnerArtifactIntegrityError("runner_artifact_protocol_version_mismatch");
+        }
+        if (artifact.dispatch_protocol_version !== "v1" && artifact.dispatch_protocol_version !== "v2") {
+          throw new RunnerArtifactIntegrityError("runner_artifact_protocol_version_unsupported");
+        }
 
         const testResult = await client.query<TestCaseRow>(
           [
@@ -372,8 +347,77 @@ export class PostgresRunnerArtifactRepository {
           };
         });
 
-        const canonicalTestBundle = canonicalTestBundleBytes(testCases);
-        const testBundleSha256 = await sha256(canonicalTestBundle);
+        let testBundleIdentity: Awaited<ReturnType<typeof canonicalTestBundleIdentity>>;
+        try {
+          testBundleIdentity = await canonicalTestBundleIdentity(
+            artifact.problem_version_id,
+            artifact.action,
+            testCases,
+          );
+        } catch (error) {
+          if (error instanceof TestBundleEncodingError) {
+            throw new RunnerArtifactIntegrityError(error.message);
+          }
+          throw error;
+        }
+        const { testBundleId, testBundleSha256 } = testBundleIdentity;
+        let protocolRequest: RunnerExecutionArtifact["protocolRequest"];
+        if (artifact.dispatch_protocol_version === "v2") {
+          if (artifact.request_protocol_version !== "v2" ||
+              artifact.request_attempt_id !== input.attemptId ||
+              artifact.request_correlation_id !== artifact.dispatch_correlation_id ||
+              !artifact.request_bytes || !artifact.request_sha256 ||
+              !artifact.request_deadline_at ||
+              timestampMs(artifact.request_deadline_at) <= Date.now()) {
+            throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_missing_or_stale");
+          }
+          const requestBytes = new Uint8Array(artifact.request_bytes);
+          const requestSha256 = await sha256(requestBytes);
+          if (requestSha256 !== artifact.request_sha256.trim()) {
+            throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_hash_mismatch");
+          }
+          let requestDocument: Record<string, unknown>;
+          try {
+            requestDocument = JSON.parse(decodeUtf8(requestBytes, "protocol_request")) as Record<string, unknown>;
+          } catch {
+            throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_invalid_json");
+          }
+          const expectedKeys = [
+            "protocolVersion", "correlationId", "executionId", "attemptId", "problemVersionId",
+            "action", "language", "runtimeVersion", "runtimeImageDigest", "sourceArtifactId",
+            "sourceSha256", "testBundleId", "comparisonPolicy", "deadlineAt", "cancellationRef", "limits",
+          ].sort().join(",");
+          if (!requestDocument || typeof requestDocument !== "object" || Array.isArray(requestDocument) ||
+              Object.keys(requestDocument).sort().join(",") !== expectedKeys ||
+              requestDocument.protocolVersion !== "v2" ||
+              requestDocument.executionId !== input.executionId ||
+              requestDocument.attemptId !== input.attemptId ||
+              requestDocument.correlationId !== artifact.dispatch_correlation_id ||
+              requestDocument.problemVersionId !== artifact.problem_version_id ||
+              requestDocument.action !== artifact.action ||
+              requestDocument.language !== artifact.language ||
+              requestDocument.runtimeVersion !== artifact.runtime_version ||
+              requestDocument.sourceArtifactId !== artifact.source_snapshot_id ||
+              requestDocument.sourceSha256 !== computedSourceHash ||
+              requestDocument.testBundleId !== testBundleId ||
+              requestDocument.comparisonPolicy !== "EXACT_BYTES" ||
+              typeof requestDocument.limits !== "object" || requestDocument.limits === null ||
+              Array.isArray(requestDocument.limits) ||
+              Object.keys(requestDocument.limits as Record<string, unknown>).sort().join(",") !==
+                ["cpuQuotaMillis", "memoryBytes", "wallTimeMillis", "processLimit", "outputBytes", "scratchBytes", "scratchInodes"].sort().join(",") ||
+              Date.parse(String(requestDocument.deadlineAt)) !== timestampMs(artifact.request_deadline_at) ||
+              Date.parse(String(requestDocument.deadlineAt)) <= Date.now()) {
+            throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_mismatch");
+          }
+          let binary = "";
+          const chunkSize = 0x8000;
+          for (let offset = 0; offset < requestBytes.length; offset += chunkSize) {
+            binary += String.fromCharCode(...requestBytes.subarray(offset, Math.min(offset + chunkSize, requestBytes.length)));
+          }
+          protocolRequest = { requestBytesBase64: btoa(binary), requestSha256 };
+        } else if (artifact.request_protocol_version !== null) {
+          throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_unexpected");
+        }
 
         const finalLeaseCheck = await client.query<{ execution_id: string }>(
           [
@@ -404,9 +448,10 @@ export class PostgresRunnerArtifactRepository {
           sourceArtifactId: artifact.source_snapshot_id,
           sourceSha256: computedSourceHash,
           sourceCode,
-          testBundleId: `${artifact.problem_version_id}-${artifact.action.toLowerCase()}-${testBundleSha256.slice(0, 16)}`,
+          testBundleId,
           testBundleSha256,
           testCases,
+          ...(protocolRequest ? { protocolRequest } : {}),
         };
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);

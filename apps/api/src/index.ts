@@ -16,6 +16,7 @@ import { PostgresRunnerRecoveryRepository } from "./db/runner-recovery-repositor
 import { consumeRunnerDispatchBatch } from "./services/runner-dispatch-queue-consumer";
 import { PostgresExecutionIntakeRepository } from "./db/execution-intake-repository";
 import type { Env } from "./env";
+import { loadExecutionProtocolV2Policy } from "./security/execution-protocol-v2-policy";
 
 const authenticator = new UnconfiguredAuthenticator();
 const publisherWorkerId = "sky-high-api-outbox-publisher";
@@ -37,7 +38,21 @@ export default {
     const connectionString = env.HYPERDRIVE?.connectionString;
     const evidenceRepository = new PostgresExecutionEvidenceRepository(connectionString);
     const codingEvidenceRepository = new PostgresCodingEvidenceRepository(connectionString);
-    const executionIntakeRepository = new PostgresExecutionIntakeRepository(connectionString);
+    if (env.PROTOCOL_V2_INTAKE_ENABLED !== undefined &&
+        env.PROTOCOL_V2_INTAKE_ENABLED !== "true" &&
+        env.PROTOCOL_V2_INTAKE_ENABLED !== "false") {
+      throw new Error("invalid_protocol_v2_intake_gate");
+    }
+    const protocolV2Enabled = env.PROTOCOL_V2_INTAKE_ENABLED === "true";
+    const protocolV2Policy = protocolV2Enabled ? loadExecutionProtocolV2Policy(env) : null;
+    if (protocolV2Enabled && !protocolV2Policy) {
+      throw new Error("protocol_v2_intake_policy_not_configured");
+    }
+    const executionIntakeRepository = new PostgresExecutionIntakeRepository(
+      connectionString,
+      undefined,
+      protocolV2Policy,
+    );
     const runnerIdentityRepository = new PostgresRunnerIdentityRepository(connectionString);
     const runnerDispatchLeaseRepository = new PostgresRunnerDispatchLeaseRepository(connectionString);
     const runnerAcceptanceRepository = new PostgresRunnerAcceptanceRepository(connectionString);

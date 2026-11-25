@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -593,6 +595,149 @@ func TestRenewLeaseRejectsOutOfBoundsExpiry(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("unbounded heartbeat expiry was accepted")
+	}
+}
+
+func attachV2Request(t *testing.T, dispatch *Dispatch, artifact *ExecutionArtifact) {
+	t.Helper()
+	dispatch.ProtocolVersion = "v2"
+	dispatch.CorrelationID = "10000000-0000-4000-8000-000000000001"
+	deadline := fixedRunnerTime().Add(2 * time.Minute)
+	request := map[string]any{
+		"protocolVersion": "v2",
+		"correlationId": dispatch.CorrelationID,
+		"executionId": dispatch.ExecutionID,
+		"attemptId": dispatch.AttemptID,
+		"problemVersionId": artifact.ProblemVersionID,
+		"action": artifact.Action,
+		"language": artifact.Language,
+		"runtimeVersion": artifact.RuntimeVersion,
+		"runtimeImageDigest": "sha256:" + strings.Repeat("a", 64),
+		"sourceArtifactId": artifact.SourceArtifactID,
+		"sourceSha256": artifact.SourceSHA256,
+		"testBundleId": artifact.TestBundleID,
+		"comparisonPolicy": "EXACT_BYTES",
+		"deadlineAt": deadline.Format(time.RFC3339Nano),
+		"cancellationRef": "cxl_" + strings.Repeat("d", 32),
+		"limits": map[string]int64{
+			"cpuQuotaMillis": 1000, "memoryBytes": 134217728, "wallTimeMillis": 5000,
+			"processLimit": 16, "outputBytes": 65536, "scratchBytes": 1048576, "scratchInodes": 128,
+		},
+	}
+	raw, err := json.Marshal(request)
+	if err != nil { t.Fatal(err) }
+	digest := sha256.Sum256(raw)
+	artifact.ProtocolRequest = &ProtocolRequestArtifact{
+		RequestBytesBase64: base64.StdEncoding.EncodeToString(raw),
+		RequestSHA256: hex.EncodeToString(digest[:]),
+	}
+}
+
+
+type postgresV2ArtifactFixture struct {
+	ValidationTime time.Time       `json:"validationTime"`
+	Dispatch       Dispatch        `json:"dispatch"`
+	Artifact       ExecutionArtifact `json:"artifact"`
+}
+
+// This test consumes the artifact exported by the PostgreSQL-backed API
+// integration test in the same CI job. It deliberately exercises FetchArtifact,
+// not only DecodeV2Request, so the real Go client performs its signed request
+// and all dispatch/artifact cross-binding checks against the API-produced bytes.
+func TestFetchArtifactAcceptsPostgresBackedV2Artifact(t *testing.T) {
+	fixturePath := os.Getenv("SKYHIGH_V2_ARTIFACT_FIXTURE_PATH")
+	if fixturePath == "" {
+		t.Skip("PostgreSQL-backed v2 artifact fixture is provided by API integration CI")
+	}
+	fixtureBytes, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatalf("read PostgreSQL-backed v2 artifact fixture: %v", err)
+	}
+	var fixture postgresV2ArtifactFixture
+	if err := json.Unmarshal(fixtureBytes, &fixture); err != nil {
+		t.Fatalf("decode PostgreSQL-backed v2 artifact fixture: %v", err)
+	}
+	if fixture.ValidationTime.IsZero() {
+		t.Fatal("fixture validation time is missing")
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != artifactPath {
+			t.Fatalf("unexpected artifact request: %s %s", request.Method, request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatalf("read signed artifact request: %v", err)
+		}
+		verifyTestRequest(t, request, body)
+		writeJSON(t, writer, http.StatusOK, map[string]any{"data": fixture.Artifact})
+	}))
+	defer server.Close()
+
+	client, err := New(Config{
+		ControlPlaneURL: server.URL,
+		KeyID:           "runner-test-key",
+		PrivateKey:      testClientKey(),
+		HTTPClient:      server.Client(),
+		Now:             func() time.Time { return fixture.ValidationTime },
+	})
+	if err != nil {
+		t.Fatalf("create Go runner client: %v", err)
+	}
+
+	artifact, err := client.FetchArtifact(context.Background(), fixture.Dispatch)
+	if err != nil {
+		t.Fatalf("Go runner rejected PostgreSQL-backed v2 artifact: %v", err)
+	}
+	if artifact.ProtocolRequest == nil {
+		t.Fatal("Go runner returned v2 artifact without its immutable request")
+	}
+	rawRequest, err := base64.StdEncoding.DecodeString(artifact.ProtocolRequest.RequestBytesBase64)
+	if err != nil {
+		t.Fatalf("decode exact v2 request bytes: %v", err)
+	}
+	digest := sha256.Sum256(rawRequest)
+	if hex.EncodeToString(digest[:]) != artifact.ProtocolRequest.RequestSHA256 {
+		t.Fatal("Go runner artifact request digest does not match the exact request bytes")
+	}
+	if artifact.ExecutionID != fixture.Dispatch.ExecutionID ||
+		artifact.AttemptID != fixture.Dispatch.AttemptID ||
+		artifact.Action != "SUBMIT" ||
+		len(artifact.TestCases) != 4 {
+		t.Fatalf("Go runner returned an artifact with unexpected bound data: %#v", artifact)
+	}
+}
+
+func TestFetchArtifactValidatesExactProtocolV2Request(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	artifact := testArtifact("RUN")
+	attachV2Request(t, &dispatch, &artifact)
+	if err := validateArtifact(dispatch, artifact, fixedRunnerTime()); err != nil {
+		t.Fatalf("valid v2 artifact rejected: %v", err)
+	}
+}
+
+func TestFetchArtifactRejectsCorruptedOrMismatchedProtocolV2Request(t *testing.T) {
+	for name, mutate := range map[string]func(*Dispatch, *ExecutionArtifact){
+		"digest mismatch": func(_ *Dispatch, artifact *ExecutionArtifact) {
+			artifact.ProtocolRequest.RequestSHA256 = strings.Repeat("0", 64)
+		},
+		"correlation mismatch": func(dispatch *Dispatch, _ *ExecutionArtifact) {
+			dispatch.CorrelationID = "10000000-0000-4000-8000-000000000099"
+		},
+		"missing request": func(_ *Dispatch, artifact *ExecutionArtifact) {
+			artifact.ProtocolRequest = nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+			artifact := testArtifact("RUN")
+			attachV2Request(t, &dispatch, &artifact)
+			mutate(&dispatch, &artifact)
+			if err := validateArtifact(dispatch, artifact, fixedRunnerTime()); err == nil {
+				t.Fatal("invalid v2 request was accepted")
+			}
+		})
 	}
 }
 

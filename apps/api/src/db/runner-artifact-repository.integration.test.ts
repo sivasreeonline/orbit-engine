@@ -1,7 +1,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionIntakeRepository } from "./execution-intake-repository";
+import type { ExecutionProtocolV2Policy } from "../security/execution-protocol-v2-policy";
 import { PostgresRunnerDispatchHandoffRepository } from "./runner-dispatch-handoff-repository";
 import { PostgresRunnerDispatchLeaseRepository } from "./runner-dispatch-lease-repository";
 import { PostgresRunnerAcceptanceRepository } from "./runner-acceptance-repository";
@@ -75,11 +77,147 @@ async function createClaimedDispatch(
   return { created, dispatch, sourceCode };
 }
 
+
+async function createV2Dispatch(
+  runnerId: string,
+  actorId: string,
+  action: "RUN" | "SUBMIT",
+) {
+  const policy: ExecutionProtocolV2Policy = {
+    policyRevision: "postgres-artifact-v2-integration",
+    runtimeImageDigests: {
+      java: `sha256:${"a".repeat(64)}`,
+      python: `sha256:${"b".repeat(64)}`,
+    },
+    limits: {
+      cpuQuotaMillis: 1_000,
+      memoryBytes: 268_435_456,
+      wallTimeMillis: 60_000,
+      processLimit: 32,
+      outputBytes: 1_048_576,
+      scratchBytes: 16_777_216,
+      scratchInodes: 1_024,
+    },
+  };
+  const intake = new PostgresExecutionIntakeRepository(databaseUrl, undefined, policy);
+  const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
+  const sourceCode = `public class Main { public static void main(String[] args) { System.out.println("v2-${randomUUID()}"); } }\n`;
+  const created = await intake.create({
+    principal: { tenantId, userId: actorId, roles: ["STUDENT"] },
+    action,
+    problemSlug: "two-sum",
+    language: "java",
+    runtimeVersion: "25",
+    sourceCode,
+    correlationId: `runner-artifact-v2-${randomUUID()}`,
+  }, `runner-artifact-v2-${randomUUID()}`);
+  const diagnostic = new Client({ connectionString: databaseUrl });
+  await diagnostic.connect();
+  try {
+    const state = await diagnostic.query<{
+      job_attempt_id: string;
+      job_state: string;
+      outbox_attempt_id: string;
+      outbox_protocol_version: string;
+      outbox_payload_protocol_version: string;
+      outbox_correlation_id: string;
+      request_attempt_id: string;
+      request_protocol_version: string;
+      request_correlation_id: string;
+      request_deadline_valid: boolean;
+      request_deadline_at: Date;
+      request_sha256: string;
+      request_bytes: Buffer;
+    }>(
+      [
+        "SELECT ej.attempt_id::text AS job_attempt_id, ej.state AS job_state,",
+        "  eo.payload->>'attemptId' AS outbox_attempt_id,",
+        "  eo.protocol_version AS outbox_protocol_version,",
+        "  eo.payload->>'protocolVersion' AS outbox_payload_protocol_version,",
+        "  eo.correlation_id AS outbox_correlation_id,",
+        "  v2.attempt_id::text AS request_attempt_id,",
+        "  v2.protocol_version AS request_protocol_version,",
+        "  v2.correlation_id::text AS request_correlation_id,",
+        "  (v2.deadline_at > now()) AS request_deadline_valid,",
+        "  v2.deadline_at AS request_deadline_at, v2.request_sha256, v2.request_bytes",
+        "FROM execution_jobs AS ej",
+        "INNER JOIN execution_outbox AS eo ON eo.execution_id = ej.id",
+        "INNER JOIN execution_protocol_requests AS v2 ON v2.execution_id = ej.id",
+        "WHERE ej.id = $1::uuid",
+      ].join("\n"),
+      [created.executionId],
+    );
+    expect(state.rows).toHaveLength(1);
+    const row = state.rows[0]!;
+    expect(row.job_attempt_id).toBe(created.attemptId);
+    expect(row.job_state).toBe("QUEUED");
+    expect(row.outbox_attempt_id).toBe(created.attemptId);
+    expect(row.outbox_protocol_version).toBe("v2");
+    expect(row.outbox_payload_protocol_version).toBe("v2");
+    expect(row.outbox_correlation_id).toBe(row.request_correlation_id);
+    expect(row.request_attempt_id).toBe(created.attemptId);
+    expect(row.request_protocol_version).toBe("v2");
+    expect(row.request_deadline_valid).toBe(true);
+    expect(createHash("sha256").update(row.request_bytes).digest("hex")).toBe(row.request_sha256.trim());
+    const document = JSON.parse(row.request_bytes.toString("utf8")) as Record<string, unknown>;
+    expect(Object.keys(document)).toHaveLength(16);
+    expect(document.executionId).toBe(created.executionId);
+    expect(document.attemptId).toBe(created.attemptId);
+    expect(document.correlationId).toBe(row.request_correlation_id);
+    const expectedRequestKeys = [
+      "protocolVersion", "correlationId", "executionId", "attemptId", "problemVersionId",
+      "action", "language", "runtimeVersion", "runtimeImageDigest", "sourceArtifactId",
+      "sourceSha256", "testBundleId", "comparisonPolicy", "deadlineAt", "cancellationRef", "limits",
+    ].sort();
+    expect(Object.keys(document).sort()).toEqual(expectedRequestKeys);
+    expect(Date.parse(String(document.deadlineAt))).toBe(row.request_deadline_at instanceof Date ? row.request_deadline_at.getTime() : Date.parse(row.request_deadline_at));
+    expect(Date.parse(String(document.deadlineAt))).toBeGreaterThan(Date.now());
+    expect(document.comparisonPolicy).toBe("EXACT_BYTES");
+    expect(Object.keys(document.limits as Record<string, unknown>).sort()).toEqual([
+      "cpuQuotaMillis", "memoryBytes", "wallTimeMillis", "processLimit",
+      "outputBytes", "scratchBytes", "scratchInodes",
+    ].sort());
+  } finally {
+    await diagnostic.end();
+  }
+  const handoffResult = await handoff.record({
+    executionId: created.executionId,
+    attemptId: created.attemptId,
+    protocolVersion: "v2",
+  });
+  const leaseToken = randomUUID();
+  // Test-only lease fixture: production claim SQL intentionally remains v1-only.
+  const setup = new Client({ connectionString: databaseUrl });
+  await setup.connect();
+  try {
+    await setup.query(
+      "UPDATE runner_dispatch_outbox SET lease_owner = $2, lease_token = $3::uuid, lease_expires_at = now() + interval '2 minutes' WHERE id = $1::uuid",
+      [handoffResult.dispatchId, runnerId, leaseToken],
+    );
+    await setup.query(
+      "UPDATE execution_jobs SET state = 'CLAIMED', lease_owner = $2, lease_token = $3::uuid, lease_expires_at = now() + interval '2 minutes' WHERE id = $1::uuid",
+      [created.executionId, runnerId, leaseToken],
+    );
+  } finally {
+    await setup.end();
+  }
+  return {
+    created,
+    sourceCode,
+    dispatch: {
+      id: handoffResult.dispatchId,
+      executionId: created.executionId,
+      attemptId: created.attemptId,
+      leaseToken,
+    },
+  };
+}
+
 async function acceptAndStart(
   runnerId: string,
   keyId: string,
   created: Awaited<ReturnType<typeof createClaimedDispatch>>["created"],
-  dispatch: Awaited<ReturnType<typeof createClaimedDispatch>>["dispatch"],
+  dispatch: { readonly id: string; readonly executionId: string; readonly attemptId: string; readonly leaseToken: string },
 ) {
   const acceptance = new PostgresRunnerAcceptanceRepository(databaseUrl);
   const start = new PostgresRunnerStartRepository(databaseUrl);
@@ -165,6 +303,95 @@ describe.skipIf(!databaseUrl)("runner private artifact PostgreSQL integration", 
         canonicalTestBundleSha256(submitArtifact.testCases),
       );
       expect(submitArtifact.problemVersionId).toBe("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1");
+    } finally {
+      await setup.end();
+    }
+  }, 25_000);
+
+
+  it("delivers the exact persisted v2 request bytes from PostgreSQL after authenticated start", async () => {
+    const runnerId = randomUUID();
+    const actorId = randomUUID();
+    const keyId = `runner-artifact-v2-${runnerId}`;
+    const setup = new Client({ connectionString: databaseUrl });
+    const artifacts = new PostgresRunnerArtifactRepository(databaseUrl);
+
+    await setup.connect();
+    try {
+      await setup.query(
+        "INSERT INTO runner_machines (id, machine_name) VALUES ($1, $2)",
+        [runnerId, `artifact-v2-runner-${runnerId}`],
+      );
+      await setup.query(
+        "INSERT INTO runner_machine_keys (key_id, runner_id, public_key) VALUES ($1, $2, $3)",
+        [keyId, runnerId, randomBytes(32)],
+      );
+
+      const v2 = await createV2Dispatch(runnerId, actorId, "SUBMIT");
+      await acceptAndStart(runnerId, keyId, v2.created, v2.dispatch);
+      const artifact = await artifacts.fetch({
+        dispatchId: v2.dispatch.id,
+        executionId: v2.created.executionId,
+        attemptId: v2.created.attemptId,
+        leaseToken: v2.dispatch.leaseToken,
+        runnerId,
+        keyId,
+      });
+
+      expect(artifact.action).toBe("SUBMIT");
+      expect(artifact.testCases).toHaveLength(4);
+      expect(artifact.testCases.some((testCase) => testCase.visibility === "HIDDEN")).toBe(true);
+      expect(artifact.protocolRequest).toBeDefined();
+      expect(artifact.protocolRequest?.requestSha256).toMatch(/^[0-9a-f]{64}$/);
+
+      const persisted = await setup.query<{
+        request_bytes: Buffer;
+        request_sha256: string;
+        correlation_id: string;
+      }>(
+        "SELECT request_bytes, request_sha256, correlation_id::text AS correlation_id FROM execution_protocol_requests WHERE execution_id = $1::uuid",
+        [v2.created.executionId],
+      );
+      expect(persisted.rows).toHaveLength(1);
+      const exactBytes = persisted.rows[0]!.request_bytes;
+      const exactSha256 = createHash("sha256").update(exactBytes).digest("hex");
+      expect(exactSha256).toBe(persisted.rows[0]!.request_sha256.trim());
+      expect(artifact.protocolRequest?.requestSha256).toBe(exactSha256);
+      expect(Buffer.from(artifact.protocolRequest!.requestBytesBase64, "base64")).toEqual(exactBytes);
+
+      const requestDocument = JSON.parse(exactBytes.toString("utf8")) as Record<string, unknown>;
+      expect(requestDocument).toMatchObject({
+        protocolVersion: "v2",
+        executionId: v2.created.executionId,
+        attemptId: v2.created.attemptId,
+        correlationId: persisted.rows[0]!.correlation_id,
+        action: "SUBMIT",
+        language: "java",
+        sourceSha256: artifact.sourceSha256,
+        testBundleId: artifact.testBundleId,
+        comparisonPolicy: "EXACT_BYTES",
+      });
+      expect(artifact.sourceCode).toBe(v2.sourceCode);
+
+      const fixturePath = process.env.SKYHIGH_V2_ARTIFACT_FIXTURE_PATH;
+      if (fixturePath) {
+        const deadlineAt = Date.parse(String(requestDocument.deadlineAt));
+        if (!Number.isFinite(deadlineAt)) throw new Error("V2_ARTIFACT_FIXTURE_DEADLINE_INVALID");
+        await writeFile(fixturePath, JSON.stringify({
+          validationTime: new Date(deadlineAt - 30_000).toISOString(),
+          dispatch: {
+            dispatchId: v2.dispatch.id,
+            executionId: v2.created.executionId,
+            attemptId: v2.created.attemptId,
+            protocolVersion: "v2",
+            correlationId: persisted.rows[0]!.correlation_id,
+            deliveryAttempt: 1,
+            leaseToken: v2.dispatch.leaseToken,
+            leaseExpiresAt: new Date(deadlineAt + 60_000).toISOString(),
+          },
+          artifact,
+        }), { encoding: "utf8", mode: 0o600 });
+      }
     } finally {
       await setup.end();
     }
