@@ -159,6 +159,18 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
       staged: true,
       stateVersion: 0,
     });
+    const initialCheckpointedState = await stub.getCheckpointedState();
+    expect(initialCheckpointedState).toEqual({
+      version: 2,
+      stateVersion: 0,
+      snapshot: initialSnapshot,
+      witnessHead: {
+        generation: 0,
+        digest: predecessor.digest,
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    });
 
     // Separate stub acquisition exercises recovery against persisted DO
     // state, rather than relying on the staging call's in-memory objects.
@@ -175,6 +187,7 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     });
     expect(await restartedStub.hasPendingCheckpointIntent()).toBe(true);
     expect(await restartedStub.getPendingCheckpointIntent()).toEqual(pending);
+    expect(await restartedStub.getCheckpointedState()).toEqual(initialCheckpointedState);
 
     // The authority next returns a structurally plausible inclusion proof with
     // a corrupted hash. The gateway can transport it, but the API's independent
@@ -186,6 +199,7 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     });
     expect(await restartedStub.hasPendingCheckpointIntent()).toBe(true);
     expect(await restartedStub.getPendingCheckpointIntent()).toEqual(pending);
+    expect(await restartedStub.getCheckpointedState()).toEqual(initialCheckpointedState);
 
     // Two callers now resume the same durable intent. They must recover the
     // authority's original immutable evidence bundle for the already-committed
@@ -209,6 +223,11 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     )).toBe(true);
     expect(await restartedStub.hasPendingCheckpointIntent()).toBe(false);
     expect(await restartedStub.getPendingCheckpointIntent()).toBeUndefined();
+    const finalizedState = await restartedStub.getCheckpointedState();
+    expect(finalizedState?.stateVersion).toBe(1);
+    expect(finalizedState?.snapshot).toEqual(nextState);
+    expect(finalizedState?.witnessHead.generation).toBe(1);
+    expect(finalizedState?.witnessHead.treeSize).toBe(1);
 
     // A later retry after the atomic commit must be a no-op: the completed
     // transition is no longer eligible for provider or evidence RPCs.
