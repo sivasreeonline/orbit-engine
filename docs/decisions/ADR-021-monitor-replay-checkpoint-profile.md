@@ -203,7 +203,7 @@ This is a workerd transport smoke test with a mocked HTTP response; it does not 
 
 Exact-head CI run #2773 passed on `79149fe4ef44d3373edaa08941b3da012ffa3b9c`, including the workerd transport test, gateway runtime tests, DynamoDB Local integration, API tests and web build.
 
-The remaining gap is a single end-to-end workerd test that uses the gateway's optional provider binding against a real local DynamoDB service, plus a concrete separately administered evidence-authority service. No production provider or authority is configured.
+The gateway-to-local-DynamoDB workerd integration gap is closed by the 2026-11-25 test recorded below. A concrete separately administered production evidence-authority service remains unconfigured. No production provider or authority is configured.
 
 
 ## Synthetic positive end-to-end recovery checkpoint — 2026-11-25
@@ -219,3 +219,21 @@ PR #201 now exercises the positive recovery path in the local Cloudflare Workers
 Exact-head CI run #2956 passed on `d76bc7bf16bfb00e202483c088ee1112cf179e47` (API, private witness gateway and web jobs).
 
 **Qualification boundary:** this proves the synthetic positive and negative integration path, not production provider or authority independence. The synthetic provider and authority share a test Worker process boundary and in-memory state. The AWS DynamoDB adapter remains local-only and is not bound into this end-to-end workerd path. A separately administered production evidence authority, production provider qualification, durable anti-rollback trust state, restore/partition testing, independent operational failure domains, architecture/security approval and production root governance remain open. No live AWS credentials, production writes or deployments are enabled.
+
+
+## Gateway-to-DynamoDB Local workerd integration — 2026-11-25
+
+Added a test-only `DynamoDBLocalWitnessProvider` Worker that exposes the existing provider-neutral RPC contract while constructing its adapter exclusively through `createLocalDynamoDBWitnessProviderAdapter`. The factory continues to reject non-loopback, non-HTTP and credential-bearing endpoints. The Worker receives only the local endpoint, region and isolated test table name; it has no evidence-authority root-key binding.
+
+The new workerd integration harness runs three service Workers: the private witness gateway, the isolated DynamoDB Local provider and the synthetic evidence-authority service. It generates ephemeral caller and authority-root key pairs for the test. The gateway pins the authority public key; the authority Worker alone receives its private root key. The API-facing test client calls the gateway over the configured service binding and reads provider state through the provider RPC.
+
+The positive test:
+- creates a canonical message-bound replay checkpoint intent and signs the exact request with the ephemeral caller key;
+- invokes `WitnessGateway.checkpointReplay`, which reaches the DynamoDB Local provider over Worker RPC;
+- obtains the signed receipt/transparency evidence from the synthetic evidence authority;
+- invokes `WitnessGateway.verifyEvidence` and requires successful cryptographic verification;
+- reads the immutable operation and latest head back through the provider RPC, asserting exact snapshot bytes, exact checkpoint-body bytes, separate snapshot/checkpoint digests and receipt binding.
+
+The dedicated workerd test passed (1/1). In the same CI run, the TypeScript DynamoDB Local adapter tests passed (8/8), the provider adapter conformance harness passed (12/12), and the existing DynamoDB Local idempotency/concurrency checks passed. Push CI run #45612838989 and pull-request CI run #45612849874 both passed all three jobs on `314ad1800042e482f338cdf084424d50eed5cab9`.
+
+**Qualification boundary:** this closes the local workerd transport and gateway/provider integration gap only. DynamoDB Local is not AWS, the synthetic evidence authority is not separately administered, and the test environment does not prove independent operational control, production durability, disaster recovery or anti-rollback across independent failure domains. No live AWS credentials, production writes or deployments are enabled.
