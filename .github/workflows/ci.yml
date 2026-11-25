@@ -305,9 +305,9 @@ jobs:
         working-directory: apps/witness-gateway
         run: npx wrangler deploy --dry-run --config test-support/dynamodb-local-provider.wrangler.jsonc --outdir "$GITHUB_WORKSPACE/apps/witness-gateway/.test-dist/dynamodb-local-provider"
 
-      - name: Bundle synthetic evidence authority Worker
+      - name: Bundle isolated synthetic evidence authority Worker
         working-directory: apps/witness-gateway
-        run: npx wrangler deploy --dry-run --config test-support/synthetic-services.wrangler.jsonc --outdir "$GITHUB_WORKSPACE/apps/witness-gateway/.test-dist/synthetic-witness-services"
+        run: npx wrangler deploy --dry-run --config test-support/synthetic-evidence-authority.wrangler.jsonc --outdir "$GITHUB_WORKSPACE/apps/witness-gateway/.test-dist/synthetic-evidence-authority"
 
       - name: Verify gateway provider binding against DynamoDB Local in workerd
         working-directory: apps/witness-gateway
