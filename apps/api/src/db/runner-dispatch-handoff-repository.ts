@@ -52,6 +52,12 @@ function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function timestampMs(value: Date | string | null): number {
+  if (value === null) return Number.NaN;
+  return value instanceof Date ? value.getTime() : Date.parse(value);
+}
+
+
 async function sha256(bytes: Uint8Array): Promise<string> {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
@@ -89,7 +95,7 @@ async function verifyV2Request(row: AuthoritativeExecutionRow, envelope: Executi
       document.attemptId !== envelope.attemptId ||
       document.correlationId !== row.correlation_id ||
       document.deadlineAt === undefined ||
-      Date.parse(String(document.deadlineAt)) !== Date.parse(String(row.request_deadline_at)) ||
+      Date.parse(String(document.deadlineAt)) !== timestampMs(row.request_deadline_at) ||
       Date.parse(String(document.deadlineAt)) <= Date.now() ||
       document.comparisonPolicy !== "EXACT_BYTES" ||
       typeof document.limits !== "object" || document.limits === null || Array.isArray(document.limits) ||
