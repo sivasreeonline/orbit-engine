@@ -39,6 +39,7 @@ const sample = {
 async function checkpointBodyFor(
   snapshot: typeof sample,
   predecessor: { readonly generation: number; readonly digest: string },
+  requestedScope: WitnessCheckpointScope = scope,
 ): Promise<MonitorReplayCheckpointBody> {
   const serialized = canonicalize(snapshot);
   if (typeof serialized !== "string") throw new Error("sample snapshot is not canonicalizable");
@@ -46,17 +47,17 @@ async function checkpointBodyFor(
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   const snapshotDigest = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   const operationId = await deriveReplayCheckpointOperationId({
-    scope,
+    scope: requestedScope,
     expectedPredecessor: predecessor,
     snapshotDigest,
   });
   return {
     profile: "sky-high-fence-monitor-replay-v1",
     schemaVersion: 1,
-    trustDomainId: scope.trustDomainId,
-    witnessId: scope.witnessId,
-    authorityId: scope.authorityId,
-    hostId: scope.hostId,
+    trustDomainId: requestedScope.trustDomainId,
+    witnessId: requestedScope.witnessId,
+    authorityId: requestedScope.authorityId,
+    hostId: requestedScope.hostId,
     senderId: snapshot.senderId,
     recipientId: snapshot.recipientId,
     generation: predecessor.generation + 1,
@@ -99,6 +100,42 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
       operationId: first.operationId,
     });
     expect(adapter.records).toHaveLength(1);
+  });
+
+  it("keeps independent witness scopes on separate generation-zero heads", async () => {
+    const adapter = new SyntheticWitnessProviderAdapter();
+    const otherScope: WitnessCheckpointScope = {
+      trustDomainId: "other-trust-domain",
+      witnessId: "other-witness",
+      authorityId: "other-authority",
+      hostId: "other-host",
+    };
+    const otherSample = {
+      ...sample,
+      scope: "other-trust-domain|other-witness|other-authority|other-host",
+      senderId: "other-monitor-a",
+      recipientId: "other-monitor-b",
+    };
+    const genesis = { generation: 0, digest: ZERO_DIGEST };
+    const [firstBody, secondBody] = await Promise.all([
+      checkpointBodyFor(sample, genesis, scope),
+      checkpointBodyFor(otherSample, genesis, otherScope),
+    ]);
+
+    const [first, second] = await Promise.all([
+      checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis),
+      checkpointMonitorReplaySnapshot(adapter, otherScope, otherSample, secondBody, genesis),
+    ]);
+
+    expect(first.generation).toBe(1);
+    expect(second.generation).toBe(1);
+    expect(await adapter.readLatest(scope)).toMatchObject({
+      checkpoint: { scope, generation: 1, operationId: first.operationId },
+    });
+    expect(await adapter.readLatest(otherScope)).toMatchObject({
+      checkpoint: { scope: otherScope, generation: 1, operationId: second.operationId },
+    });
+    expect(adapter.records).toHaveLength(2);
   });
 
   it("uses persisted predecessor identity for stable operation ID and retry", async () => {
