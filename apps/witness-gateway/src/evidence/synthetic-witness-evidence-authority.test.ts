@@ -64,6 +64,21 @@ describe("synthetic independent evidence authority", () => {
     expect(bundle.consistencyProofHex).toEqual([]);
   });
 
+  it("exports only the matching ephemeral public root pin for gateway test configuration", async () => {
+    const request = await requestFixture();
+    const authority = new SyntheticWitnessEvidenceAuthority();
+    const pin = await authority.getPinnedRootKey();
+    const bundle = await authority.issueOrRecoverEvidence(request);
+
+    expect(pin.keyId).toBe(bundle.trustBundleEnvelope.rootKeyId);
+    expect(pin.publicKeyBase64Url).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(pin).not.toHaveProperty("privateKey");
+    expect(await authority.getPinnedRootKey()).toEqual(pin);
+
+    const independentAuthority = new SyntheticWitnessEvidenceAuthority();
+    expect((await independentAuthority.getPinnedRootKey()).keyId).not.toBe(pin.keyId);
+  });
+
   it("is idempotent by exact scope and operation, and rejects rebinding", async () => {
     const request = await requestFixture();
     const authority = new SyntheticWitnessEvidenceAuthority();
