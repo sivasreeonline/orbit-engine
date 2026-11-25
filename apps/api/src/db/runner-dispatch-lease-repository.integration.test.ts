@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionIntakeRepository } from "./execution-intake-repository";
+import type { ExecutionProtocolV2Policy } from "../security/execution-protocol-v2-policy";
 import { PostgresRunnerDispatchHandoffRepository } from "./runner-dispatch-handoff-repository";
 import { PostgresRunnerDispatchLeaseRepository } from "./runner-dispatch-lease-repository";
 
@@ -73,4 +74,78 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
       await verifier.end();
     }
   }, 15_000);
+
+  it("never leases a v2 dispatch intent to the current v1 runner", async () => {
+    const intake = new PostgresExecutionIntakeRepository(databaseUrl, undefined, {
+      policyRevision: "v2-v1-claim-gate-integration",
+      runtimeImageDigests: {
+        java: `sha256:${"c".repeat(64)}`,
+        python: `sha256:${"d".repeat(64)}`,
+      },
+      limits: {
+        cpuQuotaMillis: 1_000,
+        memoryBytes: 268_435_456,
+        wallTimeMillis: 60_000,
+        processLimit: 32,
+        outputBytes: 1_048_576,
+        scratchBytes: 16_777_216,
+        scratchInodes: 1_024,
+      },
+    } satisfies ExecutionProtocolV2Policy);
+    const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
+    const leases = new PostgresRunnerDispatchLeaseRepository(databaseUrl);
+    const runnerId = randomUUID();
+
+    // Clear unrelated v1 fixtures so the claim attempt below is deterministic.
+    const leftovers = await leases.claimBatch("v2-claim-gate-cleanup", 100, 60);
+    await Promise.all(leftovers.map((lease) =>
+      leases.markDeadLetter(lease.id, "v2-claim-gate-cleanup", lease.leaseToken),
+    ));
+
+    const created = await intake.create({
+      principal: { tenantId, userId: randomUUID(), roles: ["STUDENT"] },
+      action: "RUN",
+      problemSlug: "two-sum",
+      language: "java",
+      runtimeVersion: "25",
+      sourceCode: "public class Main { public static void main(String[] args) {} }",
+      correlationId: `v2-claim-gate-${randomUUID()}`,
+    }, `v2-claim-gate-${randomUUID()}`);
+    const intent = await handoff.record({
+      executionId: created.executionId,
+      attemptId: created.attemptId,
+      protocolVersion: "v2",
+    });
+    expect(intent.status).toBe("RECORDED");
+
+    const claimed = await leases.claimFairBatchForRunner(runnerId, 10, 2, 120);
+    expect(claimed.some((lease) => lease.id === intent.dispatchId)).toBe(false);
+
+    const verifier = new Client({
+      connectionString: databaseUrl,
+      connectionTimeoutMillis: 5_000,
+      application_name: "sky-high-v2-v1-claim-gate-integration-test",
+    });
+    try {
+      await verifier.connect();
+      const persisted = await verifier.query<{
+        protocol_version: string;
+        delivery_state: string;
+        lease_owner: string | null;
+        lease_token: string | null;
+      }>(
+        "SELECT protocol_version, delivery_state, lease_owner, lease_token::text AS lease_token FROM runner_dispatch_outbox WHERE id = $1::uuid",
+        [intent.dispatchId],
+      );
+      expect(persisted.rows[0]).toEqual({
+        protocol_version: "v2",
+        delivery_state: "PENDING",
+        lease_owner: null,
+        lease_token: null,
+      });
+    } finally {
+      await verifier.end();
+    }
+  }, 15_000);
+
 });
