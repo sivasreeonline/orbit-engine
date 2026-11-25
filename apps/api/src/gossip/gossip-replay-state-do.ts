@@ -408,11 +408,18 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     pending: PendingReplayIntent,
     evidence: VerifiedReplayCheckpointEvidence,
   ): Promise<Awaited<ReturnType<typeof finalizePendingReplayIntent>>> {
-    return finalizePendingReplayIntent(
+    const finalized = await finalizePendingReplayIntent(
       this.ctx.storage as unknown as ReplayCheckpointStorage,
       pending,
       evidence,
     );
+    if (finalized.finalized) {
+      // A racing alarm may have quarantined this intent immediately before
+      // finalization committed. Clear that marker after the pending record
+      // has been atomically removed.
+      await this.ctx.storage.delete(REPLAY_CHECKPOINT_QUARANTINE_KEY);
+    }
+    return finalized;
   }
 
   /** Read the exact persisted request for restart recovery; never reconstruct it from current state. */
@@ -521,11 +528,22 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     )) {
       // Persist quarantine so constructor recovery cannot re-arm this intent
       // after eviction/restart. The pending bytes and accepted state are kept.
-      await this.ctx.storage.put<ReplayCheckpointQuarantine>(
-        REPLAY_CHECKPOINT_QUARANTINE_KEY,
-        { version: 1, reason: result.reason, quarantinedAt: Date.now() },
-      );
-      await this.ctx.storage.deleteAlarm();
+      const quarantined = await this.ctx.storage.transaction(async (txn) => {
+        // A concurrent direct recovery may have finalized the intent after
+        // this alarm observed its integrity failure. Quarantine only if the
+        // exact pending slot still exists at this atomic boundary.
+        if (await txn.get<PendingReplayIntent>("replay-checkpoint-pending-v1") === undefined) {
+          return false;
+        }
+        await txn.put<ReplayCheckpointQuarantine>(
+          REPLAY_CHECKPOINT_QUARANTINE_KEY,
+          { version: 1, reason: result.reason, quarantinedAt: Date.now() },
+        );
+        return true;
+      });
+      if (quarantined || await this.ctx.storage.get("replay-checkpoint-pending-v1") === undefined) {
+        await this.ctx.storage.deleteAlarm();
+      }
       return;
     }
     if (
