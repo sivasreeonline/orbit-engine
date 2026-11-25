@@ -190,6 +190,22 @@ BEGIN
     )
   );
 
+  -- V2 can be durably recorded while publication remains separately gated.
+  INSERT INTO execution_jobs (id, attempt_id)
+  VALUES ('ffffffff-ffff-4fff-8fff-fffffffffff2', second_attempt_id);
+
+  INSERT INTO execution_outbox (
+    execution_id, event_type, protocol_version, correlation_id, payload
+  ) VALUES (
+    'ffffffff-ffff-4fff-8fff-fffffffffff2',
+    'EXECUTION_REQUESTED', 'v2', '55555555-5555-4555-a555-555555555555',
+    jsonb_build_object(
+      'executionId', 'ffffffff-ffff-4fff-8fff-fffffffffff2',
+      'attemptId', second_attempt_id::text,
+      'protocolVersion', 'v2'
+    )
+  );
+
   blocked := false;
   BEGIN
     INSERT INTO execution_outbox (
