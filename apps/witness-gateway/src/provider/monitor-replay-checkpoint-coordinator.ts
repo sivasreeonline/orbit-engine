@@ -327,13 +327,28 @@ export async function checkpointMonitorReplaySnapshot(
     if (error instanceof WitnessAppendConflict || error instanceof WitnessIdempotencyConflict) {
       throw error;
     }
-    if (!(error instanceof WitnessAmbiguousCommit)) throw error;
-    const recovered = await adapter.readByOperation(scope, operationId);
-    if (!recovered) {
+
+    // Service-binding RPCs may reconstruct a thrown provider error without
+    // preserving its prototype. After every non-conflict append failure,
+    // perform an exact immutable operation lookup before deciding whether the
+    // append committed. Never infer success from the error type or message.
+    let recovered: StoredWitnessCheckpoint | null;
+    try {
+      recovered = await adapter.readByOperation(scope, operationId);
+    } catch {
       throw new MonitorReplayCheckpointError(
         "operation_not_recoverable",
-        "ambiguous append acknowledgement has no immutable operation record",
+        "append acknowledgement failed and exact operation readback is unavailable",
       );
+    }
+    if (!recovered) {
+      if (error instanceof WitnessAmbiguousCommit) {
+        throw new MonitorReplayCheckpointError(
+          "operation_not_recoverable",
+          "ambiguous append acknowledgement has no immutable operation record",
+        );
+      }
+      throw error;
     }
     assertRecord(recovered, expectedCheckpoint);
     appendReceipt = recovered.receipt;
