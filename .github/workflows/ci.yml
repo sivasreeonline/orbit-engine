@@ -88,13 +88,6 @@ jobs:
         with:
           node-version: 24
 
-      - name: Set up Go for cross-language runner contract test
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.27.3"
-          cache: true
-          cache-dependency-path: services/execution-runner/go.mod
-
       # apps/api is still using exact direct dependency versions but does not
       # yet have its generated lockfile. Replace npm install with npm ci once
       # package-lock.json is generated and committed.
@@ -382,7 +375,7 @@ jobs:
         run: |
           npx vitest run src/db/runner-artifact-repository.integration.test.ts
           cd ../../services/execution-runner
-          go test ./internal/runnerclient -run TestFetchArtifactAcceptsPostgresBackedV2Artifact -count=1
+          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -v /tmp:/tmp -w /workspace/services/execution-runner golang:1.27.3 go test ./internal/runnerclient -run TestFetchArtifactAcceptsPostgresBackedV2Artifact -count=1
       - name: Apply and re-apply authenticated runner completion migration
         env:
           PGPASSWORD: postgres
