@@ -24,6 +24,7 @@ interface AuthoritativeExecutionRow extends Record<string, unknown> {
   readonly job_state: string;
   readonly outbox_attempt_id: string;
   readonly outbox_protocol_version: string;
+  readonly outbox_payload_protocol_version: string;
   readonly correlation_id: string;
   readonly request_attempt_id: string | null;
   readonly request_protocol_version: string | null;
@@ -121,7 +122,8 @@ export class PostgresRunnerDispatchHandoffRepository {
           [
             "SELECT ej.attempt_id, ej.state AS job_state,",
             "  eo.payload->>'attemptId' AS outbox_attempt_id,",
-            "  eo.protocol_version AS outbox_protocol_version, eo.correlation_id,",
+            "  eo.protocol_version AS outbox_protocol_version,",
+            "  eo.payload->>$2 AS outbox_payload_protocol_version, eo.correlation_id,",
             "  v2.attempt_id::text AS request_attempt_id, v2.protocol_version AS request_protocol_version,",
             "  v2.correlation_id::text AS request_correlation_id, v2.deadline_at AS request_deadline_at,",
             "  (v2.deadline_at > now()) AS request_deadline_valid,",
@@ -133,12 +135,13 @@ export class PostgresRunnerDispatchHandoffRepository {
             "  AND eo.payload->>'executionId' = ej.id::text",
             "FOR UPDATE OF ej",
           ].join("\n"),
-          [envelope.executionId],
+          [envelope.executionId, "protocolVersion"],
         );
         const current = authoritative.rows[0];
         if (!current || current.attempt_id !== envelope.attemptId ||
             current.outbox_attempt_id !== envelope.attemptId ||
-            current.outbox_protocol_version !== envelope.protocolVersion) {
+            current.outbox_protocol_version !== envelope.protocolVersion ||
+            current.outbox_payload_protocol_version !== envelope.protocolVersion) {
           throw new InvalidRunnerDispatchEnvelopeError();
         }
         if (envelope.protocolVersion === "v2") {
