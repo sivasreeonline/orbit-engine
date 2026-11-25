@@ -150,6 +150,7 @@ export class PostgresRunnerDispatchLeaseRepository {
           "  INNER JOIN runner_dispatch_outbox AS pending",
           "    ON pending.attempt_id = owner_attempt.id",
           "  WHERE pending.delivery_state = 'PENDING'",
+          "    AND pending.protocol_version = 'v1'",
           "    AND pending.available_at <= now()",
           "    AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= now())",
           "  ORDER BY owner_attempt.tenant_id, owner_attempt.actor_user_id,",
