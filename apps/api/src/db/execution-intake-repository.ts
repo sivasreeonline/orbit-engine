@@ -22,6 +22,7 @@ export interface CreateExecutionInput {
 export interface CreatedExecution {
   readonly executionId: string;
   readonly attemptId: string;
+  readonly testBundleId: string;
   readonly replayed: boolean;
 }
 
@@ -69,6 +70,77 @@ interface ExistingExecutionRow extends Record<string, unknown> {
   readonly attempt_id: string;
   readonly execution_id: string;
   readonly request_sha256: string;
+  readonly problem_version_id: string;
+}
+
+interface TestCaseRow extends Record<string, unknown> {
+  readonly id: string;
+  readonly sequence: number;
+  readonly visibility: "PUBLIC" | "HIDDEN";
+  readonly input_data: Uint8Array;
+  readonly expected_output: Uint8Array;
+}
+
+const MAX_TEST_CASES = 200;
+const MAX_TEST_BUNDLE_BYTES = 1024 * 1024;
+
+function decodeTestBytes(value: Uint8Array, field: string): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(value);
+  } catch {
+    throw new ExecutionTestBundleIntegrityError(`${field}_invalid_utf8`);
+  }
+}
+
+async function loadTestBundleIdentity(
+  client: PgTransactionClient,
+  problemVersionId: string,
+  action: ExecutionAction,
+): Promise<string> {
+  const result = await client.query<TestCaseRow>(
+    [
+      "SELECT id, sequence, visibility, input_data, expected_output",
+      "FROM problem_test_cases",
+      "WHERE problem_version_id = $1::uuid",
+      "  AND ($2::varchar = 'SUBMIT' OR visibility = 'PUBLIC')",
+      "ORDER BY sequence",
+      "LIMIT $3",
+    ].join("\\n"),
+    [problemVersionId, action, MAX_TEST_CASES + 1],
+  );
+  if (result.rows.length < 1 || result.rows.length > MAX_TEST_CASES) {
+    throw new ExecutionTestBundleIntegrityError("execution_test_case_count_invalid");
+  }
+
+  let totalBytes = 0;
+  const testCases: CanonicalTestBundleCase[] = result.rows.map((row) => {
+    const inputBytes = new Uint8Array(row.input_data);
+    const outputBytes = new Uint8Array(row.expected_output);
+    totalBytes += inputBytes.byteLength + outputBytes.byteLength;
+    if (totalBytes > MAX_TEST_BUNDLE_BYTES) {
+      throw new ExecutionTestBundleIntegrityError("execution_test_bundle_too_large");
+    }
+    if (row.visibility !== "PUBLIC" && row.visibility !== "HIDDEN") {
+      throw new ExecutionTestBundleIntegrityError("execution_test_case_visibility_invalid");
+    }
+    return {
+      testCaseId: row.id,
+      sequence: row.sequence,
+      visibility: row.visibility,
+      input: decodeTestBytes(inputBytes, "test_input"),
+      expectedOutput: decodeTestBytes(outputBytes, "test_expected_output"),
+    };
+  });
+
+  try {
+    const identity = await canonicalTestBundleIdentity(problemVersionId, action, testCases);
+    return identity.testBundleId;
+  } catch (error) {
+    if (error instanceof TestBundleEncodingError) {
+      throw new ExecutionTestBundleIntegrityError(error.message);
+    }
+    throw error;
+  }
 }
 
 interface IdRow extends Record<string, unknown> {
@@ -280,7 +352,8 @@ export class PostgresExecutionIntakeRepository {
       }
     } catch (error) {
       if (error instanceof IdempotencyConflictError ||
-          error instanceof ExecutionProblemNotFoundError) {
+          error instanceof ExecutionProblemNotFoundError ||
+          error instanceof ExecutionTestBundleIntegrityError) {
         throw error;
       }
       throw new DatabaseUnavailableError();
