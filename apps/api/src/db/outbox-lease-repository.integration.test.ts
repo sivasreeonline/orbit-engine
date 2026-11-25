@@ -30,6 +30,8 @@ describe.skipIf(!databaseUrl)("PostgresOutboxLeaseRepository PostgreSQL integrat
     expect(firstBatch).toHaveLength(1);
     expect(secondBatch).toHaveLength(1);
     expect(firstBatch[0]?.id).not.toBe(secondBatch[0]?.id);
+    expect(firstBatch.every((lease) => lease.protocolVersion === "v1")).toBe(true);
+    expect(secondBatch.every((lease) => lease.protocolVersion === "v1")).toBe(true);
 
     await expect(outbox.markPublished(
       firstBatch[0]!.id, "publisher-a", firstBatch[0]!.leaseToken,
