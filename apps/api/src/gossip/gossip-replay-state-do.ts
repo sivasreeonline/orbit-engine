@@ -407,6 +407,11 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     );
   }
 
+  /** Read-only snapshot for internal integration assertions and diagnostics. */
+  async getCheckpointedState(): Promise<VersionedReplayState | undefined> {
+    return this.ctx.storage.get<VersionedReplayState>("replay-state-envelope-v2");
+  }
+
   /**
    * Resume the exact persisted checkpoint after object reconstruction.
    * Every RPC is outside a storage transaction. Any unavailable, ambiguous,
