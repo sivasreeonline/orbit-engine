@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -629,6 +630,81 @@ func attachV2Request(t *testing.T, dispatch *Dispatch, artifact *ExecutionArtifa
 	artifact.ProtocolRequest = &ProtocolRequestArtifact{
 		RequestBytesBase64: base64.StdEncoding.EncodeToString(raw),
 		RequestSHA256: hex.EncodeToString(digest[:]),
+	}
+}
+
+
+type postgresV2ArtifactFixture struct {
+	ValidationTime time.Time       `json:"validationTime"`
+	Dispatch       Dispatch        `json:"dispatch"`
+	Artifact       ExecutionArtifact `json:"artifact"`
+}
+
+// This test consumes the artifact exported by the PostgreSQL-backed API
+// integration test in the same CI job. It deliberately exercises FetchArtifact,
+// not only DecodeV2Request, so the real Go client performs its signed request
+// and all dispatch/artifact cross-binding checks against the API-produced bytes.
+func TestFetchArtifactAcceptsPostgresBackedV2Artifact(t *testing.T) {
+	fixturePath := os.Getenv("SKYHIGH_V2_ARTIFACT_FIXTURE_PATH")
+	if fixturePath == "" {
+		t.Skip("PostgreSQL-backed v2 artifact fixture is provided by API integration CI")
+	}
+	fixtureBytes, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatalf("read PostgreSQL-backed v2 artifact fixture: %v", err)
+	}
+	var fixture postgresV2ArtifactFixture
+	if err := json.Unmarshal(fixtureBytes, &fixture); err != nil {
+		t.Fatalf("decode PostgreSQL-backed v2 artifact fixture: %v", err)
+	}
+	if fixture.ValidationTime.IsZero() {
+		t.Fatal("fixture validation time is missing")
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != artifactPath {
+			t.Fatalf("unexpected artifact request: %s %s", request.Method, request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatalf("read signed artifact request: %v", err)
+		}
+		verifyTestRequest(t, request, body)
+		writeJSON(t, writer, http.StatusOK, map[string]any{"data": fixture.Artifact})
+	}))
+	defer server.Close()
+
+	client, err := New(Config{
+		ControlPlaneURL: server.URL,
+		KeyID:           "runner-test-key",
+		PrivateKey:      testClientKey(),
+		HTTPClient:      server.Client(),
+		Now:             func() time.Time { return fixture.ValidationTime },
+	})
+	if err != nil {
+		t.Fatalf("create Go runner client: %v", err)
+	}
+
+	artifact, err := client.FetchArtifact(context.Background(), fixture.Dispatch)
+	if err != nil {
+		t.Fatalf("Go runner rejected PostgreSQL-backed v2 artifact: %v", err)
+	}
+	if artifact.ProtocolRequest == nil {
+		t.Fatal("Go runner returned v2 artifact without its immutable request")
+	}
+	rawRequest, err := base64.StdEncoding.DecodeString(artifact.ProtocolRequest.RequestBytesBase64)
+	if err != nil {
+		t.Fatalf("decode exact v2 request bytes: %v", err)
+	}
+	digest := sha256.Sum256(rawRequest)
+	if hex.EncodeToString(digest[:]) != artifact.ProtocolRequest.RequestSHA256 {
+		t.Fatal("Go runner artifact request digest does not match the exact request bytes")
+	}
+	if artifact.ExecutionID != fixture.Dispatch.ExecutionID ||
+		artifact.AttemptID != fixture.Dispatch.AttemptID ||
+		artifact.Action != "SUBMIT" ||
+		len(artifact.TestCases) != 4 {
+		t.Fatalf("Go runner returned an artifact with unexpected bound data: %#v", artifact)
 	}
 }
 
