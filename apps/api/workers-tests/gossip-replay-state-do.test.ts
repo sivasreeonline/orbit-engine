@@ -164,13 +164,21 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     // state, rather than relying on the staging call's in-memory objects.
     const restartedStub = env.GOSSIP_REPLAY.get(id);
 
-    // The synthetic provider Worker is armed to commit this append and then
-    // lose its acknowledgement. The gateway coordinator must recover the
-    // immutable operation by ID and verify exact readback rather than append
-    // a second checkpoint.
-    //
-    // Two callers may resume the same durable intent after a restart or alarm.
-    // The storage transaction must allow only one of them to advance state.
+    // The synthetic provider commits this operation and loses its acknowledgement.
+    // The coordinator must recover the exact immutable operation by ID. The
+    // independent evidence authority then fails once, after that provider commit.
+    // The API must keep the exact pending intent and must not advance replay state.
+    const authorityOutage = await restartedStub.recoverPendingCheckpointIntent();
+    expect(authorityOutage).toEqual({
+      recovered: false,
+      reason: "checkpoint_not_committed",
+    });
+    expect(await restartedStub.hasPendingCheckpointIntent()).toBe(true);
+    expect(await restartedStub.getPendingCheckpointIntent()).toEqual(pending);
+
+    // Two callers now resume the same durable intent. They must recover evidence
+    // for the already-committed operation, without appending a second generation,
+    // and the storage transaction must allow only one finalization.
     const concurrentRecoveries = await Promise.all([
       restartedStub.recoverPendingCheckpointIntent(),
       restartedStub.recoverPendingCheckpointIntent(),
