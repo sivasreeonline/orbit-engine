@@ -163,6 +163,25 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
     expect(first.generation).toBe(1);
   });
 
+  it("recovers a committed append when a Worker RPC error loses its custom prototype", async () => {
+    const provider = new SyntheticWitnessProviderAdapter();
+    const adapter = {
+      appendIfCurrent: async (...args: Parameters<SyntheticWitnessProviderAdapter["appendIfCurrent"]>) => {
+        await provider.appendIfCurrent(...args);
+        // Cloudflare service-binding RPC may reconstruct this as a plain Error.
+        throw new Error("simulated RPC error after provider commit");
+      },
+      readLatest: provider.readLatest.bind(provider),
+      readByOperation: provider.readByOperation.bind(provider),
+    };
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    const result = await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
+
+    expect(result).toMatchObject({ status: "CHECKPOINTED", generation: 1 });
+    expect(provider.records).toHaveLength(1);
+  });
+
   it("recovers a lost acknowledgement by immutable operation lookup", async () => {
     const adapter = new SyntheticWitnessProviderAdapter();
     adapter.loseNextAck = true;
