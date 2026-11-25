@@ -17,10 +17,13 @@ import type {
 interface Env {
   readonly FENCE_TEST_AUTHORITY_ROOT_PRIVATE_KEY_PKCS8: string;
   readonly FENCE_TEST_AUTHORITY_ROOT_PUBLIC_KEY_BASE64URL: string;
+  /** One-shot fault injection; available only in the synthetic test Worker. */
+  readonly FENCE_TEST_PROVIDER_LOSE_NEXT_ACK?: string;
 }
 
 const provider = new SyntheticWitnessProviderAdapter();
 let authority: SyntheticWitnessEvidenceAuthority | undefined;
+let lostAckFaultConsumed = false;
 
 function getAuthority(env: Env): SyntheticWitnessEvidenceAuthority {
   if (!authority) {
@@ -43,6 +46,12 @@ export class SyntheticWitnessProvider extends WorkerEntrypoint<Env> implements W
     expected: { readonly generation: number; readonly digest: string },
     idempotencyKey: string,
   ): Promise<WitnessCheckpointReceipt> {
+    if (this.env.FENCE_TEST_PROVIDER_LOSE_NEXT_ACK === "true" && !lostAckFaultConsumed) {
+      // Simulate a provider commit whose acknowledgement is lost in transit.
+      // The coordinator must recover the immutable operation by its exact ID.
+      provider.loseNextAck = true;
+      lostAckFaultConsumed = true;
+    }
     return provider.appendIfCurrent(checkpoint, expected, idempotencyKey);
   }
 
