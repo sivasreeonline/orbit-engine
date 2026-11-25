@@ -414,10 +414,13 @@ export class GossipReplayStateDO extends DurableObject<Env> {
       evidence,
     );
     if (finalized.finalized) {
-      // A racing alarm may have quarantined this intent immediately before
-      // finalization committed. Clear that marker after the pending record
-      // has been atomically removed.
-      await this.ctx.storage.delete(REPLAY_CHECKPOINT_QUARANTINE_KEY);
+      // Clear a marker left by a racing alarm only while no newer pending
+      // transition has been staged in the meantime.
+      await this.ctx.storage.transaction(async (txn) => {
+        if (await txn.get<PendingReplayIntent>("replay-checkpoint-pending-v1") === undefined) {
+          await txn.delete(REPLAY_CHECKPOINT_QUARANTINE_KEY);
+        }
+      });
     }
     return finalized;
   }
@@ -520,6 +523,7 @@ export class GossipReplayStateDO extends DurableObject<Env> {
 
   /** Durable retry trigger. Failed recovery keeps the relationship blocked. */
   override async alarm(): Promise<void> {
+    const attemptedPending = await this.getPendingCheckpointIntent();
     const result = await this.recoverPendingCheckpointIntent();
     if (!result.recovered && (
       result.reason === "invalid_pending_intent" ||
@@ -532,7 +536,12 @@ export class GossipReplayStateDO extends DurableObject<Env> {
         // A concurrent direct recovery may have finalized the intent after
         // this alarm observed its integrity failure. Quarantine only if the
         // exact pending slot still exists at this atomic boundary.
-        if (await txn.get<PendingReplayIntent>("replay-checkpoint-pending-v1") === undefined) {
+        const currentPending = await txn.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
+        if (
+          !attemptedPending ||
+          currentPending === undefined ||
+          currentPending.transitionDigest !== attemptedPending.transitionDigest
+        ) {
           return false;
         }
         await txn.put<ReplayCheckpointQuarantine>(
