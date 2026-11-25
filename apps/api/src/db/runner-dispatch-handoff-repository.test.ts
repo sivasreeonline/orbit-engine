@@ -107,7 +107,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
       request_deadline_valid: true, request_sha256: "0".repeat(64), request_bytes: bytes,
     }], existing: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
-    await expect(repository.record({ executionId, attemptId, protocolVersion: "v2" }))
+    await expect(repository.record({ executionId, attemptId, protocolVersion: "v3" }))
       .rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
     expect(fake.calls.some((call) => call.text.includes("INSERT INTO runner_dispatch_outbox"))).toBe(false);
   });
@@ -177,7 +177,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
     expect(fake.calls.at(-1)?.text).toBe("ROLLBACK");
   });
 
-  it("rejects malformed, unknown-version and extended envelopes before connecting", async () => {
+  it("rejects malformed, unsupported-version and extended envelopes before connecting", async () => {
     const fake = fakeClient();
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
