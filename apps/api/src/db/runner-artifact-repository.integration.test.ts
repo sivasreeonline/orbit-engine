@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionIntakeRepository } from "./execution-intake-repository";
@@ -371,6 +372,26 @@ describe.skipIf(!databaseUrl)("runner private artifact PostgreSQL integration", 
         comparisonPolicy: "EXACT_BYTES",
       });
       expect(artifact.sourceCode).toBe(v2.sourceCode);
+
+      const fixturePath = process.env.SKYHIGH_V2_ARTIFACT_FIXTURE_PATH;
+      if (fixturePath) {
+        const deadlineAt = Date.parse(String(requestDocument.deadlineAt));
+        if (!Number.isFinite(deadlineAt)) throw new Error("V2_ARTIFACT_FIXTURE_DEADLINE_INVALID");
+        await writeFile(fixturePath, JSON.stringify({
+          validationTime: new Date(deadlineAt - 30_000).toISOString(),
+          dispatch: {
+            dispatchId: v2.dispatch.id,
+            executionId: v2.created.executionId,
+            attemptId: v2.created.attemptId,
+            protocolVersion: "v2",
+            correlationId: persisted.rows[0]!.correlation_id,
+            deliveryAttempt: 1,
+            leaseToken: v2.dispatch.leaseToken,
+            leaseExpiresAt: new Date(deadlineAt + 60_000).toISOString(),
+          },
+          artifact,
+        }), { encoding: "utf8", mode: 0o600 });
+      }
     } finally {
       await setup.end();
     }
