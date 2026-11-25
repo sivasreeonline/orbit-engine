@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionIntakeRepository } from "./execution-intake-repository";
+import type { ExecutionProtocolV2Policy } from "../security/execution-protocol-v2-policy";
+import { Client } from "pg";
 import { PostgresOutboxLeaseRepository } from "./outbox-lease-repository";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -8,6 +10,66 @@ const tenantId = "30000000-0000-4000-8000-000000000001";
 const actorId = "20000000-0000-4000-8000-000000000001";
 
 describe.skipIf(!databaseUrl)("PostgresOutboxLeaseRepository PostgreSQL integration", () => {
+
+  it("keeps v2 execution outbox rows pending and unleased by the v1 publisher", async () => {
+    const policy: ExecutionProtocolV2Policy = {
+      policyRevision: "v2-outbox-publication-gate-integration",
+      runtimeImageDigests: {
+        java: `sha256:${"1".repeat(64)}`,
+        python: `sha256:${"2".repeat(64)}`,
+      },
+      limits: {
+        cpuQuotaMillis: 1_000,
+        memoryBytes: 268_435_456,
+        wallTimeMillis: 60_000,
+        processLimit: 32,
+        outputBytes: 1_048_576,
+        scratchBytes: 16_777_216,
+        scratchInodes: 1_024,
+      },
+    };
+    const intake = new PostgresExecutionIntakeRepository(databaseUrl, undefined, policy);
+    const outbox = new PostgresOutboxLeaseRepository(databaseUrl);
+    const created = await intake.create({
+      principal: { tenantId, userId: randomUUID(), roles: ["STUDENT"] },
+      action: "RUN",
+      problemSlug: "two-sum",
+      language: "java",
+      runtimeVersion: "25",
+      sourceCode: "public class Main { public static void main(String[] args) {} }",
+      correlationId: `v2-outbox-gate-${randomUUID()}`,
+    }, `v2-outbox-gate-${randomUUID()}`);
+
+    const claimed = await outbox.claimBatch("v2-publication-gate", 100, 60);
+    expect(claimed.some((lease) => lease.executionId === created.executionId)).toBe(false);
+    expect(claimed.every((lease) => lease.protocolVersion === "v1")).toBe(true);
+    await Promise.all(claimed.map((lease) =>
+      outbox.markPublished(lease.id, "v2-publication-gate", lease.leaseToken),
+    ));
+
+    const verifier = new Client({ connectionString: databaseUrl });
+    await verifier.connect();
+    try {
+      const persisted = await verifier.query<{
+        protocol_version: string;
+        delivery_state: string;
+        lease_owner: string | null;
+        lease_token: string | null;
+      }>(
+        "SELECT protocol_version, delivery_state, lease_owner, lease_token::text AS lease_token FROM execution_outbox WHERE execution_id = $1::uuid",
+        [created.executionId],
+      );
+      expect(persisted.rows).toEqual([{
+        protocol_version: "v2",
+        delivery_state: "PENDING",
+        lease_owner: null,
+        lease_token: null,
+      }]);
+    } finally {
+      await verifier.end();
+    }
+  }, 15_000);
+
   it("coordinates concurrent publishers and fences a worker after lease expiry", async () => {
     const intake = new PostgresExecutionIntakeRepository(databaseUrl);
     const outbox = new PostgresOutboxLeaseRepository(databaseUrl);
