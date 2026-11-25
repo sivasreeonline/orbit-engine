@@ -124,73 +124,10 @@ async function sha256(bytes: Uint8Array): Promise<string> {
 
 function decodeUtf8(value: Uint8Array, field: string): string {
   try {
-    return new TextDecoderexport interface CanonicalTestBundleCase {
-  readonly testCaseId: string;
-  readonly sequence: number;
-  readonly visibility: "PUBLIC" | "HIDDEN";
-  readonly input: string;
-  readonly expectedOutput: string;
-}
-
-export class TestBundleEncodingError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TestBundleEncodingError";
+    return new TextDecoder("utf-8", { fatal: true }).decode(value);
+  } catch {
+    throw new RunnerArtifactIntegrityError(`${field}_invalid_utf8`);
   }
-}
-
-function appendLengthPrefixed(target: number[], value: Uint8Array): void {
-  const length = value.byteLength;
-  if (!Number.isSafeInteger(length) || length < 0 || length > 0xffffffff) {
-    throw new TestBundleEncodingError("runner_artifact_bundle_field_too_large");
-  }
-  target.push(
-    (length >>> 24) & 0xff,
-    (length >>> 16) & 0xff,
-    (length >>> 8) & 0xff,
-    length & 0xff,
-  );
-  for (const byte of value) target.push(byte);
-}
-
-/**
- * Cross-language canonical format:
- * magic "SKYHIGH-TEST-BUNDLE-V1", u32 case count, then per case:
- * length-prefixed UTF-8 testCaseId, u32 sequence, one visibility byte
- * (1=PUBLIC, 2=HIDDEN), length-prefixed UTF-8 input and expected output.
- * All integers are unsigned big-endian.
- */
-export function canonicalTestBundleBytes(
-  testCases: readonly CanonicalTestBundleCase[],
-): Uint8Array {
-  if (testCases.length > 0xffffffff) {
-    throw new TestBundleEncodingError("runner_artifact_test_case_count_invalid");
-  }
-  const target: number[] = [];
-  appendLengthPrefixed(target, new TextEncoder().encode("SKYHIGH-TEST-BUNDLE-V1"));
-  target.push(
-    (testCases.length >>> 24) & 0xff,
-    (testCases.length >>> 16) & 0xff,
-    (testCases.length >>> 8) & 0xff,
-    testCases.length & 0xff,
-  );
-  for (const testCase of testCases) {
-    appendLengthPrefixed(target, new TextEncoder().encode(testCase.testCaseId));
-    const sequence = testCase.sequence;
-    if (!Number.isSafeInteger(sequence) || sequence < 1 || sequence > 0xffffffff) {
-      throw new TestBundleEncodingError("runner_artifact_test_sequence_invalid");
-    }
-    target.push(
-      (sequence >>> 24) & 0xff,
-      (sequence >>> 16) & 0xff,
-      (sequence >>> 8) & 0xff,
-      sequence & 0xff,
-    );
-    target.push(testCase.visibility === "PUBLIC" ? 1 : 2);
-    appendLengthPrefixed(target, new TextEncoder().encode(testCase.input));
-    appendLengthPrefixed(target, new TextEncoder().encode(testCase.expectedOutput));
-  }
-  return Uint8Array.from(target);
 }
 
 export class RunnerArtifactNotFoundError extends Error {
