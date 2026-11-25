@@ -49,7 +49,8 @@ BEGIN
     AND conname = 'execution_protocol_request_deadline_ck';
 
   IF deadline_constraint IS NULL
-    OR position('10 minutes' IN deadline_constraint) = 0 THEN
+    OR (position('00:10:00' IN deadline_constraint) = 0
+      AND position('10 minutes' IN deadline_constraint) = 0) THEN
     RAISE EXCEPTION 'protocol request deadline must be bounded by trusted intake plus ten minutes';
   END IF;
 
