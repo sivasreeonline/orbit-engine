@@ -73,6 +73,9 @@ export default defineConfig({
               bindings: {
                 FENCE_TEST_AUTHORITY_ROOT_PRIVATE_KEY_PKCS8: base64Url(authorityRootPrivateKeyPkcs8),
                 FENCE_TEST_AUTHORITY_ROOT_PUBLIC_KEY_BASE64URL: base64Url(authorityRootPublicKey),
+                // Exercise the gateway coordinator's commit-before-ack recovery
+                // path through the actual synthetic provider Worker RPC.
+                FENCE_TEST_PROVIDER_LOSE_NEXT_ACK: "true",
               },
             },
             {
