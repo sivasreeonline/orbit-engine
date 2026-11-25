@@ -82,7 +82,16 @@ BEGIN
     OR NOT (limits_document ?& ARRAY[
       'cpuQuotaMillis', 'memoryBytes', 'wallTimeMillis', 'processLimit',
       'outputBytes', 'scratchBytes', 'scratchInodes'
-    ]) THEN
+    ])
+    OR COALESCE((limits_document->>'cpuQuotaMillis')::bigint, 0) <= 0
+    OR COALESCE((limits_document->>'memoryBytes')::bigint, 0) <= 0
+    OR COALESCE((limits_document->>'wallTimeMillis')::bigint, 0) <= 0
+    OR COALESCE((limits_document->>'processLimit')::bigint, 0) <= 0
+    OR COALESCE((limits_document->>'outputBytes')::bigint, 0) <= 0
+    OR COALESCE((limits_document->>'scratchBytes')::bigint, 0) <= 0
+    OR COALESCE((limits_document->>'scratchBytes')::bigint, 0) > 536870912
+    OR COALESCE((limits_document->>'scratchInodes')::bigint, 0) <= 0
+    OR COALESCE((limits_document->>'scratchInodes')::bigint, 0) > 8192 THEN
     RAISE EXCEPTION 'protocol v2 resource limits are incomplete'
       USING ERRCODE = '23514';
   END IF;
