@@ -142,7 +142,7 @@ async function createV2Dispatch(
         "INNER JOIN execution_outbox AS eo ON eo.execution_id = ej.id",
         "INNER JOIN execution_protocol_requests AS v2 ON v2.execution_id = ej.id",
         "WHERE ej.id = $1::uuid",
-      ].join("\\n"),
+      ].join("\n"),
       [created.executionId],
     );
     expect(state.rows).toHaveLength(1);
