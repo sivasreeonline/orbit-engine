@@ -1,12 +1,12 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
-import { SyntheticWitnessProviderAdapter } from "../synthetic-witness-provider-adapter";
+import { SyntheticWitnessProviderAdapter } from "./synthetic-witness-provider-adapter";
 import type {
   StoredWitnessCheckpoint,
   WitnessCheckpoint,
   WitnessCheckpointReceipt,
   WitnessCheckpointScope,
   WitnessProviderAdapter,
-} from "../../src/provider/witness-provider-adapter";
+} from "../src/provider/witness-provider-adapter";
 
 interface Env {
   /** One-shot provider fault injection for API recovery tests only. */
