@@ -2,114 +2,318 @@ openapi: 3.1.0
 info:
   title: Sky High Coding Judge API
   version: 1.0.0
-  description: Asynchronous coding assessment API. Hidden test data is never exposed.
+  description: >-
+    Target asynchronous coding assessment API. Execution routes are planned
+    contract operations and are not all implemented yet. Hidden test data is
+    never exposed to student-facing clients.
 servers:
   - url: https://api.example.invalid/api/v1
+security:
+  - bearerAuth: []
 paths:
   /problems:
     get:
+      operationId: listPublishedProblems
       summary: List published problems
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
       responses:
         "200":
           description: Problem list
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /problems/{problemId}:
     get:
+      operationId: getPublishedProblem
       summary: Get sanitized problem details
       parameters:
+        - $ref: "#/components/parameters/CorrelationId"
         - in: path
           name: problemId
           required: true
-          schema: { type: string }
+          schema:
+            type: string
+            pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            maxLength: 64
       responses:
-        "200": { description: Problem details }
-        "404": { description: Not found }
+        "200":
+          description: Problem details
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Not found
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /problems/{problemId}/runs:
     post:
+      operationId: createRun
       summary: Create a Run attempt using public tests
+      description: >-
+        Queues an attempt; it does not execute source code synchronously in the
+        API request. The server chooses the authorized public test bundle and
+        trusted runtime/resource policy.
       parameters:
-        - in: path
-          name: problemId
-          required: true
-          schema: { type: string }
-        - in: header
-          name: Idempotency-Key
-          required: true
-          schema: { type: string }
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ProblemId"
       requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ExecutionRequest" }
+        $ref: "#/components/requestBodies/ExecutionRequest"
       responses:
-        "202": { description: Queued }
-        "400": { description: Invalid request }
-        "409": { description: Idempotency conflict }
+        "202":
+          $ref: "#/components/responses/ExecutionAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Idempotency key was previously used with a different request
+        "429":
+          description: Tenant or user quota exceeded
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /problems/{problemId}/submissions:
     post:
+      operationId: createSubmission
       summary: Create an official Submit attempt using server-selected tests
+      description: >-
+        Queues an official submission. The client cannot select hidden tests,
+        test bundle, runtime image digest, tenant identity, or resource limits.
       parameters:
-        - in: path
-          name: problemId
-          required: true
-          schema: { type: string }
-        - in: header
-          name: Idempotency-Key
-          required: true
-          schema: { type: string }
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ProblemId"
       requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ExecutionRequest" }
+        $ref: "#/components/requestBodies/ExecutionRequest"
       responses:
-        "202": { description: Queued }
-        "400": { description: Invalid request }
-        "409": { description: Idempotency conflict }
+        "202":
+          $ref: "#/components/responses/ExecutionAccepted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Idempotency key was previously used with a different request
+        "429":
+          description: Tenant or user quota exceeded
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /submissions/{submissionId}:
     get:
+      operationId: getSubmission
       summary: Get status and sanitized evaluation result
       parameters:
+        - $ref: "#/components/parameters/CorrelationId"
         - in: path
           name: submissionId
           required: true
           schema: { type: string }
       responses:
-        "200": { description: Status or final result }
-        "404": { description: Not found }
+        "200":
+          description: Status or final result
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Not found
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /submissions/{submissionId}/timeline:
     get:
+      operationId: getSubmissionTimeline
       summary: Get immutable attempt timeline
       parameters:
+        - $ref: "#/components/parameters/CorrelationId"
         - in: path
           name: submissionId
           required: true
           schema: { type: string }
       responses:
-        "200": { description: Attempt timeline }
+        "200":
+          description: Attempt timeline
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Not found
   /submissions/{submissionId}/feedback:
     get:
+      operationId: getSubmissionFeedback
       summary: Get advisory analysis
       parameters:
+        - $ref: "#/components/parameters/CorrelationId"
         - in: path
           name: submissionId
           required: true
           schema: { type: string }
       responses:
-        "200": { description: Advisory feedback, if available }
+        "200":
+          description: Advisory feedback, if available
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Not found
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      in: header
+      name: X-Correlation-ID
+      required: false
+      description: >-
+        Optional bounded tracing identifier. The server replaces malformed
+        values and never treats this value as authentication or tenant identity.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 96
+        pattern: "^[A-Za-z0-9._:-]+$"
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      description: >-
+        Client-generated key scoped by authenticated tenant, student, and
+        operation. Reuse with a different request body returns 409.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    ProblemId:
+      in: path
+      name: problemId
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        maxLength: 64
+  requestBodies:
+    ExecutionRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ExecutionRequest"
+  responses:
+    ExecutionAccepted:
+      description: Attempt accepted for asynchronous processing
+      headers:
+        X-Correlation-ID:
+          schema: { type: string, maxLength: 96 }
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ExecutionAccepted"
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    Forbidden:
+      description: Authenticated principal is not authorized
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
+    ServiceUnavailable:
+      description: A required trusted service is unavailable
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ApiError" }
   schemas:
     ExecutionRequest:
       type: object
       additionalProperties: false
       required: [problemVersionId, language, runtimeVersion, sourceCode]
       properties:
-        problemVersionId: { type: string }
-        language: { type: string, enum: [java, python] }
-        runtimeVersion: { type: string }
-        sourceCode: { type: string, maxLength: 200000 }
+        problemVersionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        language:
+          type: string
+          enum: [java, python]
+        runtimeVersion:
+          type: string
+          minLength: 1
+          maxLength: 32
+        sourceCode:
+          type: string
+          maxLength: 200000
+          description: Student source only; never include test data or trusted execution policy.
+    ExecutionAccepted:
+      type: object
+      additionalProperties: false
+      required: [submissionId, executionId, state, statusUrl, correlationId]
+      properties:
+        submissionId: { type: string }
+        executionId: { type: string }
+        state:
+          type: string
+          const: QUEUED
+        statusUrl:
+          type: string
+          format: uri-reference
+        correlationId: { type: string, maxLength: 96 }
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [error, correlationId]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, retryable]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            retryable: { type: boolean }
+        correlationId: { type: string, maxLength: 96 }
     Verdict:
       type: string
-      enum: [ACCEPTED, WRONG_ANSWER, COMPILATION_ERROR, RUNTIME_ERROR, TIME_LIMIT_EXCEEDED, MEMORY_LIMIT_EXCEEDED, OUTPUT_LIMIT_EXCEEDED, INTERNAL_ERROR]
+      enum:
+        - ACCEPTED
+        - WRONG_ANSWER
+        - COMPILATION_ERROR
+        - RUNTIME_ERROR
+        - TIME_LIMIT_EXCEEDED
+        - MEMORY_LIMIT_EXCEEDED
+        - OUTPUT_LIMIT_EXCEEDED
+        - INTERNAL_ERROR
     ExecutionState:
       type: string
-      enum: [CREATED, QUEUED, CLAIMED, RUNNING, EVALUATING, COMPLETED, FAILED_INFRASTRUCTURE, CANCELLED, EXPIRED]
+      enum:
+        - CREATED
+        - QUEUED
+        - CLAIMED
+        - RUNNING
+        - EVALUATING
+        - COMPLETED
+        - FAILED_INFRASTRUCTURE
+        - CANCELLED
+        - EXPIRED
