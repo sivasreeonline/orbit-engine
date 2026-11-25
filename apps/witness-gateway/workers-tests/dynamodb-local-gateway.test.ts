@@ -35,13 +35,14 @@ let admin: DynamoDBClient | undefined;
 
 describe.skipIf(!bindings.FENCE_DDB_LOCAL_ENDPOINT)("gateway provider binding against DynamoDB Local in workerd", () => {
   beforeAll(async () => {
-    admin = new DynamoDBClient({
+    const client = new DynamoDBClient({
       endpoint: bindings.FENCE_DDB_LOCAL_ENDPOINT,
       region: bindings.FENCE_DDB_LOCAL_REGION,
       credentials: { accessKeyId: "local", secretAccessKey: "local" },
       requestHandler: createFetchDynamoDBRequestHandler(),
     });
-    await admin.send(new CreateTableCommand({
+    admin = client;
+    await client.send(new CreateTableCommand({
       TableName: bindings.FENCE_DDB_LOCAL_TABLE_NAME,
       AttributeDefinitions: [
         { AttributeName: "PK", AttributeType: "S" },
@@ -55,7 +56,7 @@ describe.skipIf(!bindings.FENCE_DDB_LOCAL_ENDPOINT)("gateway provider binding ag
     }));
     let active = false;
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      const result = await admin.send(new DescribeTableCommand({
+      const result = await client.send(new DescribeTableCommand({
         TableName: bindings.FENCE_DDB_LOCAL_TABLE_NAME,
       }));
       if (result.Table?.TableStatus === "ACTIVE") {
