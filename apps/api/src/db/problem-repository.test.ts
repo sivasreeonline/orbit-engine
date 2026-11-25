@@ -20,10 +20,14 @@ function makeFakeClient(resultSets: Record<string, unknown>[][] = []) {
   const calls: QueryCall[] = [];
   let connected = false;
   let ended = false;
+  let failOnConnect = false;
   let failOnQuery = false;
 
   const client: FakeClient = {
     async connect() {
+      if (failOnConnect) {
+        throw new Error("sensitive PostgreSQL connection detail");
+      }
       connected = true;
     },
     async query<T extends Record<string, unknown>>(text: string, values?: unknown[]) {
@@ -44,6 +48,9 @@ function makeFakeClient(resultSets: Record<string, unknown>[][] = []) {
     calls,
     isConnected: () => connected,
     isEnded: () => ended,
+    failConnection() {
+      failOnConnect = true;
+    },
     failQueries() {
       failOnQuery = true;
     },
@@ -133,6 +140,20 @@ describe("PostgresProblemRepository", () => {
     const repository = new PostgresProblemRepository({});
 
     await expect(repository.ping()).rejects.toBeInstanceOf(DatabaseUnavailableError);
+  });
+
+  it("maps connection failures to a generic database error and still closes the client", async () => {
+    const fake = makeFakeClient();
+    fake.failConnection();
+    const repository = new PostgresProblemRepository(
+      { HYPERDRIVE: { connectionString: connection } },
+      () => fake.client,
+    );
+
+    await expect(repository.ping()).rejects.toBeInstanceOf(DatabaseUnavailableError);
+    expect(fake.isConnected()).toBe(false);
+    expect(fake.isEnded()).toBe(true);
+    expect(fake.calls).toEqual([]);
   });
 
   it("maps query failures to a generic database error and always closes the client", async () => {
