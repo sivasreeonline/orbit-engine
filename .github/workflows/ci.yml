@@ -156,6 +156,10 @@ jobs:
         working-directory: apps/witness-gateway
         run: npx wrangler deploy --dry-run --outdir ../api/.test-dist/witness-gateway
 
+      - name: Bundle synthetic provider and evidence authority for workerd RPC integration tests
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --config test-support/synthetic-services.wrangler.jsonc --outdir ../api/.test-dist/synthetic-witness-services
+
       - name: Durable Object Workers runtime integration tests
         env:
           CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE: postgresql://postgres:postgres@127.0.0.1:5432/sky_high_test
