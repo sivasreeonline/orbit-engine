@@ -110,6 +110,61 @@ async function createV2Dispatch(
     sourceCode,
     correlationId: `runner-artifact-v2-${randomUUID()}`,
   }, `runner-artifact-v2-${randomUUID()}`);
+  const diagnostic = new Client({ connectionString: databaseUrl });
+  await diagnostic.connect();
+  try {
+    const state = await diagnostic.query<{
+      job_attempt_id: string;
+      job_state: string;
+      outbox_attempt_id: string;
+      outbox_protocol_version: string;
+      outbox_payload_protocol_version: string;
+      outbox_correlation_id: string;
+      request_attempt_id: string;
+      request_protocol_version: string;
+      request_correlation_id: string;
+      request_deadline_valid: boolean;
+      request_sha256: string;
+      request_bytes: Buffer;
+    }>(
+      [
+        "SELECT ej.attempt_id::text AS job_attempt_id, ej.state AS job_state,",
+        "  eo.payload->>'attemptId' AS outbox_attempt_id,",
+        "  eo.protocol_version AS outbox_protocol_version,",
+        "  eo.payload->>'protocolVersion' AS outbox_payload_protocol_version,",
+        "  eo.correlation_id AS outbox_correlation_id,",
+        "  v2.attempt_id::text AS request_attempt_id,",
+        "  v2.protocol_version AS request_protocol_version,",
+        "  v2.correlation_id::text AS request_correlation_id,",
+        "  (v2.deadline_at > now()) AS request_deadline_valid,",
+        "  v2.request_sha256, v2.request_bytes",
+        "FROM execution_jobs AS ej",
+        "INNER JOIN execution_outbox AS eo ON eo.execution_id = ej.id",
+        "INNER JOIN execution_protocol_requests AS v2 ON v2.execution_id = ej.id",
+        "WHERE ej.id = $1::uuid",
+      ].join("\\n"),
+      [created.executionId],
+    );
+    expect(state.rows).toHaveLength(1);
+    const row = state.rows[0]!;
+    expect(row.job_attempt_id).toBe(created.attemptId);
+    expect(row.job_state).toBe("QUEUED");
+    expect(row.outbox_attempt_id).toBe(created.attemptId);
+    expect(row.outbox_protocol_version).toBe("v2");
+    expect(row.outbox_payload_protocol_version).toBe("v2");
+    expect(row.outbox_correlation_id).toBe(row.request_correlation_id);
+    expect(row.request_attempt_id).toBe(created.attemptId);
+    expect(row.request_protocol_version).toBe("v2");
+    expect(row.request_deadline_valid).toBe(true);
+    expect(createHash("sha256").update(row.request_bytes).digest("hex")).toBe(row.request_sha256.trim());
+    const document = JSON.parse(row.request_bytes.toString("utf8")) as Record<string, unknown>;
+    expect(Object.keys(document)).toHaveLength(16);
+    expect(document.executionId).toBe(created.executionId);
+    expect(document.attemptId).toBe(created.attemptId);
+    expect(document.correlationId).toBe(row.request_correlation_id);
+  } finally {
+    await diagnostic.end();
+  }
   const handoffResult = await handoff.record({
     executionId: created.executionId,
     attemptId: created.attemptId,
