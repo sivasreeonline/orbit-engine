@@ -46,6 +46,7 @@ import type {
   RecordedExecutionResult,
 } from "./db/execution-evidence-repository";
 
+import { ExecutionTestBundleIntegrityError } from "./db/execution-intake-repository";
 import type { CreateExecutionInput } from "./db/execution-intake-repository";
 import type {
   CreateCodingEvidenceSessionInput,
@@ -437,6 +438,40 @@ describe("M1 API control plane", () => {
       sourceCode: "public class Main {}",
       correlationId: "run-request-001",
     }, "student-run-001");
+  });
+
+  it("fails safely when the published problem test bundle is invalid", async () => {
+    const create = vi.fn(async (_input: CreateExecutionInput, _key: string) => {
+      throw new ExecutionTestBundleIntegrityError("private_test_bundle_integrity_detail");
+    });
+    const { handler } = makeHarness({
+      executionIntakeRepository: { create },
+      runtimeVersions: { java: "25", python: "3.14" },
+    });
+
+    const response = await handler(makeRequest("/api/v1/executions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": "student-run-invalid-bundle",
+      },
+      body: JSON.stringify({
+        action: "RUN",
+        problemSlug: "two-sum",
+        language: "java",
+        sourceCode: "public class Main {}",
+      }),
+    }));
+
+    const body = await readJson(response);
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({
+      error: {
+        code: "PROBLEM_TEST_BUNDLE_INVALID",
+        retryable: false,
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain("private_test_bundle_integrity_detail");
   });
 
   it("rejects client-supplied identity or runtime fields instead of trusting them", async () => {
