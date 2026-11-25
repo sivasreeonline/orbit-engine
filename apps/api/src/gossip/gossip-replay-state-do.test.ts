@@ -621,7 +621,7 @@ describe("GossipReplayStateDO", () => {
     vi.mocked(verifyEvidenceViaWitnessGateway).mockReset();
   });
 
-  it("does not quarantine an intent finalized while the alarm was recovering", async () => {
+  it("does not quarantine a replacement intent after an older alarm attempt", async () => {
     const harness = makeHarness();
     const initial: VersionedReplayState = {
       version: 2,
@@ -650,16 +650,23 @@ describe("GossipReplayStateDO", () => {
     harness.clearAlarm();
 
     vi.spyOn(harness.object, "recoverPendingCheckpointIntent").mockImplementation(async () => {
-      // Model a concurrent successful finalization winning the storage race.
+      // Model the original intent being finalized and a newer transition
+      // being staged before the alarm's quarantine transaction runs.
       await harness.storage.transaction(async (txn) => {
-        await txn.delete("replay-checkpoint-pending-v1");
+        const current = await txn.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
+        if (current) {
+          await txn.put("replay-checkpoint-pending-v1", {
+            ...current,
+            transitionDigest: "f".repeat(64),
+          });
+        }
       });
       return { recovered: false, reason: "evidence_not_verified" };
     });
 
     await harness.object.alarm();
 
-    expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(false);
+    expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(true);
     expect(harness.values.has(REPLAY_CHECKPOINT_QUARANTINE_KEY)).toBe(false);
   });
 
