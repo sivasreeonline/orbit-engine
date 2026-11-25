@@ -32,6 +32,7 @@ export interface RunnerExecutionArtifact {
   readonly testBundleId: string;
   readonly testBundleSha256: string;
   readonly testCases: readonly RunnerArtifactTestCase[];
+  readonly protocolRequest?: { readonly requestBytesBase64: string; readonly requestSha256: string };
 }
 
 interface QueryResult<T extends Record<string, unknown>> {
@@ -58,6 +59,8 @@ const defaultClientFactory: PgClientFactory = (connectionString) =>
 
 interface ArtifactRow extends Record<string, unknown> {
   readonly dispatch_id: string;
+  readonly dispatch_protocol_version: string;
+  readonly dispatch_correlation_id: string;
   readonly execution_id: string;
   readonly attempt_id: string;
   readonly delivery_state: string;
@@ -88,6 +91,12 @@ interface ArtifactRow extends Record<string, unknown> {
   readonly start_event_id: string | null;
   readonly started_runner_id: string | null;
   readonly started_key_id: string | null;
+  readonly request_protocol_version: string | null;
+  readonly request_attempt_id: string | null;
+  readonly request_correlation_id: string | null;
+  readonly request_deadline_at: Date | string | null;
+  readonly request_sha256: string | null;
+  readonly request_bytes: Uint8Array | null;
 }
 
 interface TestCaseRow extends Record<string, unknown> {
@@ -120,6 +129,15 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
   return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", buffer)));
+}
+
+function encodeBase64(value: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < value.length; offset += chunkSize) {
+    binary += String.fromCharCode(...value.subarray(offset, Math.min(offset + chunkSize, value.length)));
+  }
+  return btoa(binary);
 }
 
 function decodeUtf8(value: Uint8Array, field: string): string {
@@ -208,7 +226,8 @@ export class PostgresRunnerArtifactRepository {
 
         const result = await client.query<ArtifactRow>(
           [
-            "SELECT dispatch.id AS dispatch_id, dispatch.execution_id, dispatch.attempt_id,",
+            "SELECT dispatch.id AS dispatch_id, dispatch.protocol_version AS dispatch_protocol_version,",
+            "  dispatch.correlation_id AS dispatch_correlation_id, dispatch.execution_id, dispatch.attempt_id,",
             "  dispatch.delivery_state, dispatch.lease_owner AS dispatch_owner,",
             "  dispatch.lease_token::text AS dispatch_token, dispatch.lease_expires_at AS dispatch_expires_at,",
             "  job.state AS job_state, job.lease_owner AS job_owner,",
@@ -222,7 +241,12 @@ export class PostgresRunnerArtifactRepository {
             "  accepted.acceptance_id::text AS acceptance_id, accepted.runner_id::text AS accepted_runner_id,",
             "  accepted.key_id AS accepted_key_id,",
             "  started.event_id::text AS start_event_id, started.runner_id::text AS started_runner_id,",
-            "  started.key_id AS started_key_id",
+            "  started.key_id AS started_key_id,",
+            "  protocol_request.protocol_version AS request_protocol_version,",
+            "  protocol_request.attempt_id::text AS request_attempt_id,",
+            "  protocol_request.correlation_id::text AS request_correlation_id,",
+            "  protocol_request.deadline_at AS request_deadline_at,",
+            "  protocol_request.request_sha256, protocol_request.request_bytes",
             "FROM runner_dispatch_outbox AS dispatch",
             "INNER JOIN execution_jobs AS job ON job.id = dispatch.execution_id",
             "INNER JOIN execution_attempts AS attempt ON attempt.id = dispatch.attempt_id",
@@ -234,6 +258,8 @@ export class PostgresRunnerArtifactRepository {
             "  ON accepted.dispatch_id = dispatch.id AND accepted.lease_token = dispatch.lease_token",
             "LEFT JOIN runner_dispatch_starts AS started",
             "  ON started.dispatch_id = dispatch.id AND started.lease_token = dispatch.lease_token",
+            "LEFT JOIN execution_protocol_requests AS protocol_request",
+            "  ON protocol_request.execution_id = dispatch.execution_id",
             "WHERE dispatch.id = $1::uuid AND dispatch.execution_id = $2::uuid",
             "  AND dispatch.attempt_id = $3::uuid AND job.attempt_id = $3::uuid",
             "FOR UPDATE OF dispatch, job",
