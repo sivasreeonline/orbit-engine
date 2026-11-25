@@ -14,6 +14,7 @@ import {
 
 import {
   ExecutionProblemNotFoundError,
+  ExecutionTestBundleIntegrityError,
   IdempotencyConflictError,
   type CreateExecutionInput,
 } from "./db/execution-intake-repository";
@@ -1454,6 +1455,11 @@ export function createApiHandler(dependencies: ApiDependencies) {
         if (error instanceof IdempotencyConflictError) {
           return errorResponse("IDEMPOTENCY_CONFLICT",
             "This Idempotency-Key was already used for a different request.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof ExecutionTestBundleIntegrityError) {
+          return errorResponse("PROBLEM_TEST_BUNDLE_INVALID",
+            "The published problem cannot be executed safely right now.", 503, false,
             requestId, origin, allowedOrigins);
         }
         if (error instanceof DatabaseUnavailableError) {
