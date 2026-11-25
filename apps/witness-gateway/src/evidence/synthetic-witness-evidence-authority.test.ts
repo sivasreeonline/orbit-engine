@@ -117,6 +117,32 @@ describe("synthetic independent evidence authority", () => {
     })).rejects.toThrow("different checkpoint bytes");
   });
 
+  it("serializes concurrent issuance for one operation and rejects concurrent rebinding", async () => {
+    const request = await requestFixture();
+    const authority = new SyntheticWitnessEvidenceAuthority();
+    const [first, concurrentRetry] = await Promise.all([
+      authority.issueOrRecoverEvidence(request),
+      authority.issueOrRecoverEvidence(request),
+    ]);
+
+    expect(concurrentRetry).toBe(first);
+    expect(first.treeHeadEnvelope.body.treeSize).toBe(1);
+    expect(first.leafIndex).toBe(0);
+    expect((await authority.readEvidenceByOperation(
+      request.scope,
+      request.checkpointBody.operationId,
+    ))).toBe(first);
+
+    await expect(authority.issueOrRecoverEvidence({
+      ...request,
+      checkpointDigest: "f".repeat(64),
+    })).rejects.toThrow("different checkpoint bytes");
+    expect((await authority.readEvidenceByOperation(
+      request.scope,
+      request.checkpointBody.operationId,
+    ))).toBe(first);
+  });
+
   it("recovers a committed evidence bundle after a lost acknowledgement", async () => {
     const request = await requestFixture();
     const authority = new SyntheticWitnessEvidenceAuthority();
