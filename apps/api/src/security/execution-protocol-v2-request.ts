@@ -93,6 +93,23 @@ export async function buildExecutionProtocolV2Request(
   if (!Number.isSafeInteger(wallTimeMillis) || wallTimeMillis <= 0 || wallTimeMillis > 600000) {
     throw new Error("protocol_v2_request_wall_time_out_of_range");
   }
+  const limitValues = [
+    policy.limits.cpuQuotaMillis,
+    policy.limits.memoryBytes,
+    policy.limits.wallTimeMillis,
+    policy.limits.processLimit,
+    policy.limits.outputBytes,
+    policy.limits.scratchBytes,
+    policy.limits.scratchInodes,
+  ];
+  if (limitValues.some((value) => !Number.isSafeInteger(value) || value <= 0) ||
+      policy.limits.scratchBytes > 536870912 || policy.limits.scratchInodes > 8192) {
+    throw new Error("protocol_v2_request_resource_limits_invalid");
+  }
+  const runtimeImageDigest = policy.runtimeImageDigests[input.language];
+  if (!/^sha256:[0-9a-f]{64}$/.test(runtimeImageDigest)) {
+    throw new Error("protocol_v2_request_runtime_image_digest_invalid");
+  }
 
   const correlationId = entropy.randomUUID();
   requireUuid(correlationId, "correlation_id");
@@ -101,7 +118,9 @@ export async function buildExecutionProtocolV2Request(
     throw new Error("protocol_v2_request_cancellation_entropy_invalid");
   }
   const cancellationRef = `cxl_${toHex(cancellationBytes)}`;
-  const deadlineAt = new Date(intakeTime + wallTimeMillis).toISOString();
+  const deadlineTime = intakeTime + wallTimeMillis;
+  if (!Number.isFinite(deadlineTime)) throw new Error("protocol_v2_request_deadline_invalid");
+  const deadlineAt = new Date(deadlineTime).toISOString();
   const request: ExecutionProtocolV2Request = {
     protocolVersion: "v2",
     correlationId,
@@ -111,7 +130,7 @@ export async function buildExecutionProtocolV2Request(
     action: input.action,
     language: input.language,
     runtimeVersion: input.runtimeVersion,
-    runtimeImageDigest: policy.runtimeImageDigests[input.language],
+    runtimeImageDigest,
     sourceArtifactId: input.sourceArtifactId,
     sourceSha256: input.sourceSha256,
     testBundleId: input.testBundleId,
@@ -121,6 +140,9 @@ export async function buildExecutionProtocolV2Request(
     limits: { ...policy.limits },
   };
   const requestBytes = new TextEncoder().encode(JSON.stringify(request));
+  if (requestBytes.byteLength < 1 || requestBytes.byteLength > 16384) {
+    throw new Error("protocol_v2_request_size_invalid");
+  }
   const digestBuffer = new ArrayBuffer(requestBytes.byteLength);
   new Uint8Array(digestBuffer).set(requestBytes);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", digestBuffer));
