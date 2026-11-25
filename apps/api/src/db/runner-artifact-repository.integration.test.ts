@@ -169,7 +169,7 @@ async function createV2Dispatch(
       "sourceSha256", "testBundleId", "comparisonPolicy", "deadlineAt", "cancellationRef", "limits",
     ].sort();
     expect(Object.keys(document).sort()).toEqual(expectedRequestKeys);
-    expect(Date.parse(String(document.deadlineAt))).toBe(Date.parse(String(row.request_deadline_at)));
+    expect(Date.parse(String(document.deadlineAt))).toBe(row.request_deadline_at instanceof Date ? row.request_deadline_at.getTime() : Date.parse(row.request_deadline_at));
     expect(Date.parse(String(document.deadlineAt))).toBeGreaterThan(Date.now());
     expect(document.comparisonPolicy).toBe("EXACT_BYTES");
     expect(Object.keys(document.limits as Record<string, unknown>).sort()).toEqual([
