@@ -118,7 +118,7 @@ export async function buildExecutionProtocolV2Request(
     comparisonPolicy: "EXACT_BYTES",
     deadlineAt,
     cancellationRef,
-    limits: policy.limits,
+    limits: { ...policy.limits },
   };
   const requestBytes = new TextEncoder().encode(JSON.stringify(request));
   const digestBuffer = new ArrayBuffer(requestBytes.byteLength);
