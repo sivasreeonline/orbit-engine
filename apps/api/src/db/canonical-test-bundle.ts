@@ -29,7 +29,7 @@ function appendLengthPrefixed(target: number[], value: Uint8Array): void {
 
 /**
  * Cross-language canonical format:
- * magic "SKYHIGH-TEST-BUNDLE-V1", u32 case count, then per case:
+ * length-prefixed magic "SKYHIGH-TEST-BUNDLE-V1" (no NUL terminator),\n * u32 case count, then per case:
  * length-prefixed UTF-8 testCaseId, u32 sequence, one visibility byte
  * (1=PUBLIC, 2=HIDDEN), length-prefixed UTF-8 input and expected output.
  * All integers are unsigned big-endian.
