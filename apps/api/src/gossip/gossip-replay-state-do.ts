@@ -544,10 +544,13 @@ export class GossipReplayStateDO extends DurableObject<Env> {
         ) {
           return false;
         }
-        await txn.put<ReplayCheckpointQuarantine>(
-          REPLAY_CHECKPOINT_QUARANTINE_KEY,
-          { version: 1, reason: result.reason, quarantinedAt: Date.now() },
-        );
+        await txn.put({
+          [REPLAY_CHECKPOINT_QUARANTINE_KEY]: {
+            version: 1,
+            reason: result.reason,
+            quarantinedAt: Date.now(),
+          } satisfies ReplayCheckpointQuarantine,
+        });
         return true;
       });
       if (quarantined) await this.ctx.storage.deleteAlarm();
