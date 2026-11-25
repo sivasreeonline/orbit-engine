@@ -477,6 +477,12 @@ describe("GossipReplayStateDO", () => {
     });
     const pending = await createPendingReplayIntent(intent, message(1), proposedState);
     await harness.object.stageCheckpointIntent(pending);
+    // A stale marker from a prior attempt must not survive successful commit.
+    await harness.storage.put(REPLAY_CHECKPOINT_QUARANTINE_KEY, {
+      version: 1,
+      reason: "evidence_not_verified",
+      quarantinedAt: 10_000,
+    });
     vi.mocked(verifyEvidenceViaWitnessGateway).mockResolvedValue({
       verified: true,
       trustBundleGeneration: 1,
@@ -505,6 +511,7 @@ describe("GossipReplayStateDO", () => {
     );
     expect(verifyEvidenceViaWitnessGateway).toHaveBeenCalledWith(expect.anything(), evidenceBytes);
     expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(false);
+    expect(harness.values.has(REPLAY_CHECKPOINT_QUARANTINE_KEY)).toBe(false);
     expect((harness.values.get(REPLAY_STATE_ENVELOPE_KEY) as VersionedReplayState).snapshot)
       .toEqual(proposedState);
     vi.mocked(checkpointReplayViaWitnessGateway).mockReset();
@@ -612,6 +619,48 @@ describe("GossipReplayStateDO", () => {
       .toBe(0);
     vi.mocked(checkpointReplayViaWitnessGateway).mockReset();
     vi.mocked(verifyEvidenceViaWitnessGateway).mockReset();
+  });
+
+  it("does not quarantine an intent finalized while the alarm was recovering", async () => {
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    const proposedState = { highestSequence: 1 };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    const pending = await createPendingReplayIntent(intent, message(1), proposedState);
+    await harness.object.stageCheckpointIntent(pending);
+    harness.clearAlarm();
+
+    vi.spyOn(harness.object, "recoverPendingCheckpointIntent").mockImplementation(async () => {
+      // Model a concurrent successful finalization winning the storage race.
+      await harness.storage.transaction(async (txn) => {
+        await txn.delete("replay-checkpoint-pending-v1");
+      });
+      return { recovered: false, reason: "evidence_not_verified" };
+    });
+
+    await harness.object.alarm();
+
+    expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(false);
+    expect(harness.values.has(REPLAY_CHECKPOINT_QUARANTINE_KEY)).toBe(false);
   });
 
   it("keeps the HTTP surface closed", async () => {
