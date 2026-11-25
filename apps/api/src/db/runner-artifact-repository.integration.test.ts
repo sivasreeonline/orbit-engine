@@ -100,7 +100,7 @@ async function createV2Dispatch(
   };
   const intake = new PostgresExecutionIntakeRepository(databaseUrl, undefined, policy);
   const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
-  const sourceCode = `public class Main { public static void main(String[] args) { System.out.println("v2-${randomUUID()}"); } }\\n`;
+  const sourceCode = `public class Main { public static void main(String[] args) { System.out.println("v2-${randomUUID()}"); } }\n`;
   const created = await intake.create({
     principal: { tenantId, userId: actorId, roles: ["STUDENT"] },
     action,
