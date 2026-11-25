@@ -10,7 +10,7 @@ import {
   verifyEvidenceViaWitnessGateway,
 } from "../witness/witness-gateway-client";
 import { createReplayCheckpointIntent } from "./gossip-replay-checkpoint-intent";
-import { createPendingReplayIntent } from "./gossip-replay-pending-intent";
+import { createPendingReplayIntent, type PendingReplayIntent } from "./gossip-replay-pending-intent";
 import { REPLAY_STATE_ENVELOPE_KEY, type VersionedReplayState } from "./gossip-replay-checkpoint-lifecycle";
 
 beforeEach(() => {
@@ -20,6 +20,7 @@ beforeEach(() => {
 interface FakeStorage {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
+  put<T>(entries: Record<string, T>): Promise<void>;
   delete(key: string): Promise<boolean>;
   getAlarm(): Promise<number | null>;
   setAlarm(scheduledTime: number | Date): Promise<void>;
