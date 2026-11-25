@@ -147,7 +147,7 @@ async function acceptAndStart(
   runnerId: string,
   keyId: string,
   created: Awaited<ReturnType<typeof createClaimedDispatch>>["created"],
-  dispatch: Awaited<ReturnType<typeof createClaimedDispatch>>["dispatch"],
+  dispatch: { readonly id: string; readonly executionId: string; readonly attemptId: string; readonly leaseToken: string },
 ) {
   const acceptance = new PostgresRunnerAcceptanceRepository(databaseUrl);
   const start = new PostgresRunnerStartRepository(databaseUrl);
