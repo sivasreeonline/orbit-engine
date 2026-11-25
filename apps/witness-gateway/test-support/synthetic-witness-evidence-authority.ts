@@ -207,6 +207,22 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
     return this.records.get(this.operationKey(scope, operationId)) ?? null;
   }
 
+
+  /**
+   * Expose only the ephemeral public trust anchor to test harnesses. The
+   * private root key remains confined to this synthetic authority instance.
+   * Production gateway configuration must continue to use independently
+   * pinned roots and must never discover trust from an authority RPC.
+   */
+  async getPinnedRootKey(): Promise<PinnedRootKey> {
+    const root = await this.rootKeyPromise;
+    return {
+      keyId: root.keyId,
+      publicKeyBase64Url: base64url(root.publicKey),
+    };
+  }
+
+
   async verifyIssuedBundleExtension(
     priorBundle: WitnessEvidenceAuthorityBundle,
     currentBundle: WitnessEvidenceAuthorityBundle,
