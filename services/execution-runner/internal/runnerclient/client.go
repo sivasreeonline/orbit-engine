@@ -797,6 +797,7 @@ func validateArtifact(dispatch Dispatch, artifact ExecutionArtifact, now time.Ti
 		}
 		if request.ExecutionID != dispatch.ExecutionID ||
 			request.AttemptID != dispatch.AttemptID ||
+			request.CorrelationID != dispatch.CorrelationID ||
 			request.ProblemVersionID != artifact.ProblemVersionID ||
 			string(request.Action) != artifact.Action ||
 			string(request.Language) != artifact.Language ||
