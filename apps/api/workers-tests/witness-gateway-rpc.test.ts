@@ -343,4 +343,5 @@ describe("API-to-private-witness-gateway RPC integration", () => {
     });
   });
 
+
 });

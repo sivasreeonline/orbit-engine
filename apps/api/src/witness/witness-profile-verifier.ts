@@ -61,6 +61,25 @@ export interface WitnessCheckpointBody {
   readonly recordVersion: number;
 }
 
+export interface MonitorReplayCheckpointBody {
+  readonly profile: "sky-high-fence-monitor-replay-v1";
+  readonly schemaVersion: 1;
+  readonly trustDomainId: string;
+  readonly witnessId: string;
+  readonly authorityId: string;
+  readonly hostId: string;
+  readonly senderId: string;
+  readonly recipientId: string;
+  readonly generation: number;
+  readonly operationId: string;
+  readonly phase: "MONITOR_GOSSIP_REPLAY_V1";
+  readonly previousCheckpointDigest: string;
+  readonly snapshotDigest: string;
+  readonly snapshotByteLength: number;
+  readonly baseStateVersion: number;
+  readonly messageDigest: string;
+}
+
 export interface WitnessReceiptBody {
   readonly profile: typeof PROFILE;
   readonly schemaVersion: 1;
@@ -383,6 +402,37 @@ function validateCheckpointBody(value: unknown): asserts value is WitnessCheckpo
   ) throw new TypeError("checkpoint body fields are invalid");
 }
 
+export function validateMonitorReplayCheckpointBody(
+  value: unknown,
+): asserts value is MonitorReplayCheckpointBody {
+  if (!isRecord(value) || !exactKeys(value, [
+    "profile", "schemaVersion", "trustDomainId", "witnessId", "authorityId",
+    "hostId", "senderId", "recipientId", "generation", "operationId", "phase",
+    "previousCheckpointDigest", "snapshotDigest", "snapshotByteLength",
+    "baseStateVersion", "messageDigest",
+  ])) throw new TypeError("monitor replay checkpoint body shape is invalid");
+  if (
+    value.profile !== "sky-high-fence-monitor-replay-v1" ||
+    value.schemaVersion !== 1 ||
+    !isIdentifier(value.trustDomainId) ||
+    !isIdentifier(value.witnessId) ||
+    !isIdentifier(value.authorityId) ||
+    !isIdentifier(value.hostId) ||
+    !isIdentifier(value.senderId) ||
+    !isIdentifier(value.recipientId) ||
+    value.senderId === value.recipientId ||
+    !isSafeInteger(value.generation, 1) ||
+    !isIdentifier(value.operationId) ||
+    value.phase !== "MONITOR_GOSSIP_REPLAY_V1" ||
+    !isDigest(value.previousCheckpointDigest) ||
+    !isDigest(value.snapshotDigest) ||
+    !isSafeInteger(value.snapshotByteLength, 1) ||
+    value.snapshotByteLength > 512 * 1024 ||
+    !isSafeInteger(value.baseStateVersion) ||
+    !isDigest(value.messageDigest)
+  ) throw new TypeError("monitor replay checkpoint body fields are invalid");
+}
+
 function validateReceiptEnvelope(value: unknown): asserts value is WitnessReceiptEnvelope {
   if (!isRecord(value) || !exactKeys(value, ["body", "signature"]) || !isRecord(value.body)) {
     throw new TypeError("receipt envelope shape is invalid");
@@ -421,21 +471,27 @@ export async function verifyReceiptAgainstTrustedBundle(
   verifiedTrustBundle: VerifiedTrustBundle,
   trustedNow: number,
 ): Promise<WitnessReceiptEnvelope> {
-  validateCheckpointBody(checkpointBody);
+  let checkpoint: WitnessCheckpointBody | MonitorReplayCheckpointBody;
+  if (isRecord(checkpointBody) && checkpointBody.profile === "sky-high-fence-monitor-replay-v1") {
+    validateMonitorReplayCheckpointBody(checkpointBody);
+    checkpoint = checkpointBody;
+  } else {
+    validateCheckpointBody(checkpointBody);
+    checkpoint = checkpointBody;
+  }
   validateReceiptEnvelope(receiptEnvelope);
   if (!isDigest(checkpointDigest)) throw new TypeError("checkpoint digest is malformed");
   if (!isSafeInteger(trustedNow)) throw new TypeError("trusted time is malformed");
 
-  const actualCheckpointDigest = hex(await sha256(canonicalBytes(checkpointBody)));
+  const actualCheckpointDigest = hex(await sha256(canonicalBytes(checkpoint)));
   if (actualCheckpointDigest !== checkpointDigest) throw new TypeError("checkpoint digest mismatch");
   const trustBundle = verifiedTrustBundle.body;
   const receipt = receiptEnvelope.body;
   if (parseUtc(receipt.committedAt) > trustedNow) {
     throw new TypeError("receipt committedAt is in the future relative to trusted time");
   }
-  const checkpoint = checkpointBody;
   if (
-    receipt.profile !== checkpoint.profile ||
+    receipt.profile !== PROFILE ||
     receipt.schemaVersion !== checkpoint.schemaVersion ||
     receipt.authorityId !== checkpoint.authorityId ||
     receipt.hostId !== checkpoint.hostId ||
@@ -444,7 +500,9 @@ export async function verifyReceiptAgainstTrustedBundle(
     receipt.previousCheckpointDigest !== checkpoint.previousCheckpointDigest ||
     receipt.checkpointDigest !== checkpointDigest ||
     trustBundle.profile !== receipt.profile ||
-    trustBundle.witnessId !== receipt.witnessId
+    trustBundle.witnessId !== receipt.witnessId ||
+    (checkpoint.profile === "sky-high-fence-monitor-replay-v1" &&
+      trustBundle.trustDomainId !== checkpoint.trustDomainId)
   ) throw new TypeError("receipt/checkpoint/trust scope binding mismatch");
 
   const matches = trustBundle.keys.filter((key) => key.keyId === receipt.keyId);

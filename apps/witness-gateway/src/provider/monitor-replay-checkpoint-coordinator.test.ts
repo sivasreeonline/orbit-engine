@@ -1,20 +1,16 @@
+import canonicalize from "canonicalize";
 import { describe, expect, it } from "vitest";
+import { SyntheticWitnessProviderAdapter } from "../../test-support/synthetic-witness-provider-adapter";
+import { deriveReplayCheckpointOperationId } from "../../../api/src/gossip/gossip-replay-checkpoint-intent";
 import {
   checkpointMonitorReplaySnapshot,
   MonitorReplayCheckpointError,
 } from "./monitor-replay-checkpoint-coordinator";
-import {
-  WitnessAmbiguousCommit,
-  WitnessAppendConflict,
-  WitnessIdempotencyConflict,
-  type StoredWitnessCheckpoint,
-  type WitnessCheckpoint,
-  type WitnessCheckpointReceipt,
-  type WitnessCheckpointScope,
-  type WitnessProviderAdapter,
-} from "./witness-provider-adapter";
+import type { WitnessCheckpointScope } from "./witness-provider-adapter";
+import type { MonitorReplayCheckpointBody } from "../../../api/src/witness/witness-profile-verifier";
 
 const ZERO_DIGEST = "0".repeat(64);
+
 const scope: WitnessCheckpointScope = {
   trustDomainId: "monitor-trust-domain",
   witnessId: "monitor-witness",
@@ -22,91 +18,6 @@ const scope: WitnessCheckpointScope = {
   hostId: "monitor-b",
 };
 
-class InMemoryAdapter implements WitnessProviderAdapter {
-  readonly records: StoredWitnessCheckpoint[] = [];
-  readonly operations = new Map<string, StoredWitnessCheckpoint>();
-  readonly idempotency = new Map<string, string>();
-  loseNextAck = false;
-  forceStaleLatest = false;
-  private lastLatest: StoredWitnessCheckpoint | null = null;
-
-  async appendIfCurrent(
-    checkpoint: WitnessCheckpoint,
-    expected: { generation: number; digest: string },
-    idempotencyKey: string,
-  ): Promise<WitnessCheckpointReceipt> {
-    const contentKey = [
-      checkpoint.scope.trustDomainId,
-      checkpoint.scope.witnessId,
-      checkpoint.scope.authorityId,
-      checkpoint.scope.hostId,
-      checkpoint.generation,
-      checkpoint.operationId,
-      checkpoint.phase,
-      checkpoint.checkpointDigest,
-      checkpoint.previousDigest,
-      Array.from(checkpoint.canonicalSnapshotBytes).join(","),
-    ].join("|");
-    const priorKey = this.idempotency.get(idempotencyKey);
-    if (priorKey) {
-      if (priorKey !== contentKey) throw new WitnessIdempotencyConflict();
-      const prior = this.operations.get(checkpoint.operationId);
-      if (!prior) throw new Error("idempotency index has no immutable operation");
-      return prior.receipt;
-    }
-
-    const latest = this.records.at(-1) ?? null;
-    const actualGeneration = latest?.checkpoint.generation ?? 0;
-    const actualDigest = latest?.checkpoint.checkpointDigest ?? ZERO_DIGEST;
-    if (actualGeneration !== expected.generation || actualDigest !== expected.digest) {
-      throw new WitnessAppendConflict();
-    }
-    if (
-      checkpoint.generation !== expected.generation + 1 ||
-      checkpoint.previousDigest !== expected.digest ||
-      checkpoint.phase !== "MONITOR_GOSSIP_REPLAY_V1"
-    ) throw new WitnessAppendConflict("invalid successor checkpoint");
-    if (this.operations.has(checkpoint.operationId)) throw new WitnessIdempotencyConflict();
-
-    const receipt: WitnessCheckpointReceipt = {
-      scope: checkpoint.scope,
-      generation: checkpoint.generation,
-      operationId: checkpoint.operationId,
-      checkpointDigest: checkpoint.checkpointDigest,
-      previousDigest: checkpoint.previousDigest,
-      consistencyToken: `fixture-token-${checkpoint.generation}`,
-    };
-    const stored = { checkpoint, receipt };
-    this.records.push(stored);
-    this.operations.set(checkpoint.operationId, stored);
-    this.idempotency.set(idempotencyKey, contentKey);
-    if (this.loseNextAck) {
-      this.loseNextAck = false;
-      throw new WitnessAmbiguousCommit("simulated lost acknowledgement after commit");
-    }
-    return receipt;
-  }
-
-  async readLatest(requestedScope: WitnessCheckpointScope): Promise<StoredWitnessCheckpoint | null> {
-    const latest = this.records.at(-1) ?? null;
-    if (this.forceStaleLatest) return this.lastLatest;
-    if (latest && JSON.stringify(latest.checkpoint.scope) !== JSON.stringify(requestedScope)) return null;
-    this.lastLatest = latest;
-    return latest;
-  }
-
-  async readByOperation(
-    requestedScope: WitnessCheckpointScope,
-    operationId: string,
-  ): Promise<StoredWitnessCheckpoint | null> {
-    const record = this.operations.get(operationId) ?? null;
-    if (
-      record &&
-      JSON.stringify(record.checkpoint.scope) !== JSON.stringify(requestedScope)
-    ) return null;
-    return record;
-  }
-}
 
 const sample = {
   version: 1,
@@ -125,50 +36,188 @@ const sample = {
   missingSequences: [],
 };
 
+async function checkpointBodyFor(
+  snapshot: typeof sample,
+  predecessor: { readonly generation: number; readonly digest: string },
+  requestedScope: WitnessCheckpointScope = scope,
+): Promise<MonitorReplayCheckpointBody> {
+  const serialized = canonicalize(snapshot);
+  if (typeof serialized !== "string") throw new Error("sample snapshot is not canonicalizable");
+  const bytes = new TextEncoder().encode(serialized);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  const snapshotDigest = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const operationId = await deriveReplayCheckpointOperationId({
+    scope: requestedScope,
+    expectedPredecessor: predecessor,
+    snapshotDigest,
+  });
+  return {
+    profile: "sky-high-fence-monitor-replay-v1",
+    schemaVersion: 1,
+    trustDomainId: requestedScope.trustDomainId,
+    witnessId: requestedScope.witnessId,
+    authorityId: requestedScope.authorityId,
+    hostId: requestedScope.hostId,
+    senderId: snapshot.senderId,
+    recipientId: snapshot.recipientId,
+    generation: predecessor.generation + 1,
+    operationId,
+    phase: "MONITOR_GOSSIP_REPLAY_V1",
+    previousCheckpointDigest: predecessor.digest,
+    snapshotDigest,
+    snapshotByteLength: bytes.length,
+    baseStateVersion: predecessor.generation,
+    messageDigest: "1".repeat(64),
+  };
+}
+
 describe("provider-neutral monitor replay checkpoint coordinator", () => {
-  it("canonicalizes snapshot bytes and appends exactly one immutable generation", async () => {
-    const adapter = new InMemoryAdapter();
-    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample);
-    expect(first).toMatchObject({ status: "CHECKPOINTED", generation: 1 });
-    const reordered = Object.fromEntries(Object.entries(sample).reverse());
-    const retry = await checkpointMonitorReplaySnapshot(adapter, scope, reordered);
+  it("stores and reads back distinct canonical snapshot and checkpoint-body digests", async () => {
+    const adapter = new SyntheticWitnessProviderAdapter();
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
+    expect(first).toMatchObject({
+      status: "CHECKPOINTED",
+      generation: 1,
+      snapshotDigest: body.snapshotDigest,
+    });
+    expect(first.checkpointDigest).not.toBe(first.snapshotDigest);
+    const stored = adapter.records[0]?.checkpoint;
+    expect(stored?.snapshotDigest).toBe(first.snapshotDigest);
+    expect(stored?.checkpointDigest).toBe(first.checkpointDigest);
+    expect(new TextDecoder().decode(stored?.canonicalSnapshotBytes)).toBe(canonicalize(sample));
+    expect(new TextDecoder().decode(stored?.canonicalCheckpointBodyBytes)).toBe(canonicalize(body));
+
+    const reordered = Object.fromEntries(Object.entries(sample).reverse()) as typeof sample;
+    const retryBody = await checkpointBodyFor(reordered, predecessor);
+    const retry = await checkpointMonitorReplaySnapshot(adapter, scope, reordered, retryBody, predecessor);
     expect(retry).toMatchObject({
       status: "ALREADY_CHECKPOINTED",
       generation: 1,
-      digest: first.digest,
+      snapshotDigest: first.snapshotDigest,
+      checkpointDigest: first.checkpointDigest,
       operationId: first.operationId,
     });
     expect(adapter.records).toHaveLength(1);
   });
 
+  it("keeps independent witness scopes on separate generation-zero heads", async () => {
+    const adapter = new SyntheticWitnessProviderAdapter();
+    const otherScope: WitnessCheckpointScope = {
+      trustDomainId: "other-trust-domain",
+      witnessId: "other-witness",
+      authorityId: "other-authority",
+      hostId: "other-host",
+    };
+    const otherSample = {
+      ...sample,
+      scope: "other-trust-domain|other-witness|other-authority|other-host",
+      senderId: "other-monitor-a",
+      recipientId: "other-monitor-b",
+    };
+    const genesis = { generation: 0, digest: ZERO_DIGEST };
+    const [firstBody, secondBody] = await Promise.all([
+      checkpointBodyFor(sample, genesis, scope),
+      checkpointBodyFor(otherSample, genesis, otherScope),
+    ]);
+
+    const [first, second] = await Promise.all([
+      checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis),
+      checkpointMonitorReplaySnapshot(adapter, otherScope, otherSample, secondBody, genesis),
+    ]);
+
+    expect(first.generation).toBe(1);
+    expect(second.generation).toBe(1);
+    expect(await adapter.readLatest(scope)).toMatchObject({
+      checkpoint: { scope, generation: 1, operationId: first.operationId },
+    });
+    expect(await adapter.readLatest(otherScope)).toMatchObject({
+      checkpoint: { scope: otherScope, generation: 1, operationId: second.operationId },
+    });
+    expect(adapter.records).toHaveLength(2);
+  });
+
+  it("uses persisted predecessor identity for stable operation ID and retry", async () => {
+    const adapter = new SyntheticWitnessProviderAdapter();
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
+    const retryBody = await checkpointBodyFor(sample, predecessor);
+    const retry = await checkpointMonitorReplaySnapshot(adapter, scope, sample, retryBody, predecessor);
+    expect(retry.operationId).toBe(first.operationId);
+    expect(first.operationId).not.toBe(`fence-monitor-replay-${first.snapshotDigest}`);
+    expect(adapter.records).toHaveLength(1);
+  });
+
+  it("does not rebase a persisted predecessor after the witness head advances", async () => {
+    const adapter = new SyntheticWitnessProviderAdapter();
+    const genesis = { generation: 0, digest: ZERO_DIGEST };
+    const firstBody = await checkpointBodyFor(sample, genesis);
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis);
+    const candidate = { ...sample, highestSequence: 2 };
+    const staleBody = await checkpointBodyFor(candidate, genesis);
+    await expect(checkpointMonitorReplaySnapshot(adapter, scope, candidate, staleBody, genesis))
+      .rejects.toMatchObject({ name: "MonitorReplayCheckpointError", reason: "stale_operation" });
+    expect(adapter.records).toHaveLength(1);
+    expect(first.generation).toBe(1);
+  });
+
+  it("recovers a committed append when a Worker RPC error loses its custom prototype", async () => {
+    const provider = new SyntheticWitnessProviderAdapter();
+    const adapter = {
+      appendIfCurrent: async (...args: Parameters<SyntheticWitnessProviderAdapter["appendIfCurrent"]>) => {
+        await provider.appendIfCurrent(...args);
+        // Cloudflare service-binding RPC may reconstruct this as a plain Error.
+        throw new Error("simulated RPC error after provider commit");
+      },
+      readLatest: provider.readLatest.bind(provider),
+      readByOperation: provider.readByOperation.bind(provider),
+    };
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    const result = await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
+
+    expect(result).toMatchObject({ status: "CHECKPOINTED", generation: 1 });
+    expect(provider.records).toHaveLength(1);
+  });
+
   it("recovers a lost acknowledgement by immutable operation lookup", async () => {
-    const adapter = new InMemoryAdapter();
+    const adapter = new SyntheticWitnessProviderAdapter();
     adapter.loseNextAck = true;
-    const result = await checkpointMonitorReplaySnapshot(adapter, scope, sample);
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    const result = await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
     expect(result).toMatchObject({ status: "CHECKPOINTED", generation: 1 });
     expect(adapter.records).toHaveLength(1);
   });
 
   it("rejects a previously committed operation after a successor becomes current", async () => {
-    const adapter = new InMemoryAdapter();
-    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample);
-    await checkpointMonitorReplaySnapshot(adapter, scope, { ...sample, highestSequence: 2 });
-    await expect(checkpointMonitorReplaySnapshot(adapter, scope, sample))
-      .rejects.toMatchObject({
-        name: "MonitorReplayCheckpointError",
-        reason: "stale_operation",
-      });
+    const adapter = new SyntheticWitnessProviderAdapter();
+    const genesis = { generation: 0, digest: ZERO_DIGEST };
+    const firstBody = await checkpointBodyFor(sample, genesis);
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis);
+    const successor = { ...sample, highestSequence: 2 };
+    const nextPredecessor = { generation: first.generation, digest: first.checkpointDigest };
+    const secondBody = await checkpointBodyFor(successor, nextPredecessor);
+    await checkpointMonitorReplaySnapshot(adapter, scope, successor, secondBody, nextPredecessor);
+    const retryBody = await checkpointBodyFor(sample, genesis);
+    await expect(checkpointMonitorReplaySnapshot(adapter, scope, sample, retryBody, genesis))
+      .rejects.toMatchObject({ name: "MonitorReplayCheckpointError", reason: "stale_operation" });
     expect(first.generation).toBe(1);
   });
 
   it("rejects a stale competing predecessor instead of rebasing", async () => {
-    const adapter = new InMemoryAdapter();
-    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample);
+    const adapter = new SyntheticWitnessProviderAdapter();
+    const genesis = { generation: 0, digest: ZERO_DIGEST };
+    const firstBody = await checkpointBodyFor(sample, genesis);
+    const first = await checkpointMonitorReplaySnapshot(adapter, scope, sample, firstBody, genesis);
     const candidate = { ...sample, highestSequence: 2 };
     const other = { ...sample, highestSequence: 3 };
-    // Force both coordinator calls to observe the same predecessor. Without
-    // this barrier the second call may legitimately start after the first has
-    // committed and append a sequential successor, which is not a CAS race.
+    const [candidateBody, otherBody] = await Promise.all([
+      checkpointBodyFor(candidate, { generation: first.generation, digest: first.checkpointDigest }),
+      checkpointBodyFor(other, { generation: first.generation, digest: first.checkpointDigest }),
+    ]);
     const readLatest = adapter.readLatest.bind(adapter);
     let initialReads = 0;
     let releaseInitialReads!: () => void;
@@ -184,40 +233,58 @@ describe("provider-neutral monitor replay checkpoint coordinator", () => {
       return readLatest(requestedScope);
     };
     const outcomes = await Promise.allSettled([
-      checkpointMonitorReplaySnapshot(adapter, scope, candidate),
-      checkpointMonitorReplaySnapshot(adapter, scope, other),
+      checkpointMonitorReplaySnapshot(adapter, scope, candidate, candidateBody, {
+        generation: first.generation,
+        digest: first.checkpointDigest,
+      }),
+      checkpointMonitorReplaySnapshot(adapter, scope, other, otherBody, {
+        generation: first.generation,
+        digest: first.checkpointDigest,
+      }),
     ]);
     expect(outcomes.filter((item) => item.status === "fulfilled")).toHaveLength(1);
     expect(outcomes.filter((item) => item.status === "rejected")).toHaveLength(1);
     expect(adapter.records).toHaveLength(2);
-    expect(adapter.records[1]?.checkpoint.previousDigest).toBe(first.digest);
+    expect(adapter.records[1]?.checkpoint.previousDigest).toBe(first.checkpointDigest);
   });
 
-  it("rejects invalid scopes and non-JSON snapshots", async () => {
-    const adapter = new InMemoryAdapter();
-    await expect(checkpointMonitorReplaySnapshot(adapter, { ...scope, hostId: "" }, sample))
-      .rejects.toBeInstanceOf(MonitorReplayCheckpointError);
-    await expect(checkpointMonitorReplaySnapshot(adapter, scope, { value: Number.NaN }))
-      .rejects.toMatchObject({ reason: "invalid_snapshot" });
-    await expect(checkpointMonitorReplaySnapshot(adapter, scope, []))
-      .rejects.toMatchObject({ reason: "invalid_snapshot" });
+  it("rejects altered checkpoint-body readback even when the snapshot bytes are unchanged", async () => {
+    const adapter = new SyntheticWitnessProviderAdapter();
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    await checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor);
+    adapter.corruptCheckpointReadback = true;
+    await expect(checkpointMonitorReplaySnapshot(adapter, scope, sample, body, predecessor))
+      .rejects.toMatchObject({ name: "MonitorReplayCheckpointError", reason: "operation_conflict" });
   });
 
-  it("rejects malformed or empty receipt bindings on readback", async () => {
-    const adapter = new InMemoryAdapter();
-    const original = adapter.appendIfCurrent.bind(adapter);
-    adapter.appendIfCurrent = async (...args) => {
-      const receipt = await original(...args);
-      return { ...receipt, checkpointDigest: "f".repeat(64) };
-    };
-    await expect(checkpointMonitorReplaySnapshot(adapter, scope, sample))
-      .rejects.toMatchObject({ reason: "receipt_mismatch" });
+  it("rejects checkpoint bodies bound to another snapshot, scope, or sender relationship", async () => {
+    const adapter = new SyntheticWitnessProviderAdapter();
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, scope, sample, { ...body, snapshotDigest: "f".repeat(64) }, predecessor,
+    )).rejects.toMatchObject({ reason: "invalid_checkpoint_body" });
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, scope, sample, { ...body, trustDomainId: "other-domain" }, predecessor,
+    )).rejects.toMatchObject({ reason: "invalid_checkpoint_body" });
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, scope, sample, { ...body, senderId: "someone-else" }, predecessor,
+    )).rejects.toMatchObject({ reason: "invalid_checkpoint_body" });
   });
 
-  it("rejects a stale strong-read simulation after append", async () => {
-    const adapter = new InMemoryAdapter();
-    adapter.forceStaleLatest = true;
-    await expect(checkpointMonitorReplaySnapshot(adapter, scope, sample))
-      .rejects.toMatchObject({ reason: "latest_readback_mismatch" });
+  it("rejects invalid scopes, malformed predecessors, and non-JSON snapshots", async () => {
+    const adapter = new SyntheticWitnessProviderAdapter();
+    const predecessor = { generation: 0, digest: ZERO_DIGEST };
+    const body = await checkpointBodyFor(sample, predecessor);
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, { ...scope, hostId: "" }, sample, body, predecessor,
+    )).rejects.toMatchObject({ reason: "invalid_scope" });
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, scope, sample, body, { generation: -1, digest: ZERO_DIGEST },
+    )).rejects.toMatchObject({ reason: "invalid_predecessor" });
+    await expect(checkpointMonitorReplaySnapshot(
+      adapter, scope, { invalid: undefined }, body, predecessor,
+    )).rejects.toBeInstanceOf(MonitorReplayCheckpointError);
   });
 });

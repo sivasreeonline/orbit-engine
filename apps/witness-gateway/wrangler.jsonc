@@ -3,7 +3,9 @@
   "name": "sky-high-witness-gateway",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-09",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": false,
   "durable_objects": {
     "bindings": [
@@ -20,12 +22,30 @@
   "migrations": [
     {
       "tag": "v1-workload-nonce-replay",
-      "new_sqlite_classes": ["WorkloadNonceReplayDO"]
+      "new_sqlite_classes": [
+        "WorkloadNonceReplayDO"
+      ]
     },
     {
       "tag": "v2-witness-trust-state",
-      "new_sqlite_classes": ["WitnessTrustStateDO"]
+      "new_sqlite_classes": [
+        "WitnessTrustStateDO"
+      ]
     }
   ],
-  "observability": { "enabled": true }
+  "observability": {
+    "enabled": true
+  },
+  "env": {
+    "production": {
+      "name": "sky-high-witness-gateway",
+      "services": [
+        {
+          "binding": "WITNESS_PROVIDER",
+          "service": "sky-high-witness-provider",
+          "entrypoint": "WitnessProvider"
+        }
+      ]
+    }
+  }
 }

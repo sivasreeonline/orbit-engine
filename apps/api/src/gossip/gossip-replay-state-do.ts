@@ -1,5 +1,23 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env";
+import {
+  finalizePendingReplayIntent,
+  hasPendingReplayIntent,
+  initializeVersionedReplayState,
+  REPLAY_CHECKPOINT_QUARANTINE_KEY,
+  stagePendingReplayIntent,
+  type ReplayCheckpointStorage,
+  type VersionedReplayState,
+  type VerifiedReplayCheckpointEvidence,
+} from "./gossip-replay-checkpoint-lifecycle";
+import {
+  validatePendingReplayIntent,
+  type PendingReplayIntent,
+} from "./gossip-replay-pending-intent";
+import {
+  checkpointReplayViaWitnessGateway,
+  verifyEvidenceViaWitnessGateway,
+} from "../witness/witness-gateway-client";
 
 const MAX_TTL_SECONDS = 300;
 const MAX_CLOCK_SKEW_SECONDS = 30;
@@ -7,6 +25,14 @@ const MAX_SEQUENCE_GAP = 64;
 const REORDER_WINDOW = 64;
 const RETAINED_SEQUENCE_WINDOW = 128;
 const DIGEST = /^[0-9a-f]{64}$/;
+
+export { REPLAY_CHECKPOINT_QUARANTINE_KEY } from "./gossip-replay-checkpoint-lifecycle";
+
+interface ReplayCheckpointQuarantine {
+  readonly version: 1;
+  readonly reason: "invalid_pending_intent" | "evidence_not_verified" | "finalization_rejected";
+  readonly quarantinedAt: number;
+}
 
 export type GossipMessageType =
   | "HEAD_ADVERTISEMENT"
@@ -118,6 +144,30 @@ function prune(state: StoredState, trustedNow: number): void {
   }
 }
 
+interface PendingCheckpointAlarmStorage {
+  get<T>(key: string): Promise<T | undefined>;
+  getAlarm(): Promise<number | null>;
+  setAlarm(scheduledTime: number | Date): Promise<void>;
+  deleteAlarm(): Promise<void>;
+}
+
+/** Re-arm the durable retry trigger after reconstruction when a pending intent exists. */
+export async function rearmPendingCheckpointAlarm(
+  storage: PendingCheckpointAlarmStorage,
+): Promise<void> {
+  const pending = await storage.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
+  const quarantine = await storage.get<ReplayCheckpointQuarantine>(REPLAY_CHECKPOINT_QUARANTINE_KEY);
+  if (quarantine !== undefined) {
+    // Also repair a crash between persisting quarantine and deleting an
+    // already-scheduled alarm.
+    await storage.deleteAlarm();
+    return;
+  }
+  if (pending !== undefined && await storage.getAlarm() === null) {
+    await storage.setAlarm(Date.now() + 1_000);
+  }
+}
+
 /**
  * One Durable Object instance must be addressed per sender/recipient/scope
  * relationship. Its transaction is the serialization boundary for replay
@@ -126,6 +176,9 @@ function prune(state: StoredState, trustedNow: number): void {
 export class GossipReplayStateDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    // Re-arm recovery if the object was reconstructed after the intent commit
+    // but before the staging caller could schedule its first alarm.
+    this.ctx.blockConcurrencyWhile(() => rearmPendingCheckpointAlarm(this.ctx.storage));
   }
 
   async acceptVerifiedMessage(
@@ -135,6 +188,13 @@ export class GossipReplayStateDO extends DurableObject<Env> {
     return this.ctx.storage.transaction(async (txn) => {
       const state =
         (await txn.get<StoredState>("replay-state-v1")) ?? emptyState();
+
+      if (await txn.get("replay-checkpoint-pending-v1") !== undefined) {
+        return reject(state, "BLOCKED", "a durable witness checkpoint intent is pending recovery");
+      }
+      if (await txn.get("replay-state-envelope-v2") !== undefined) {
+        return reject(state, "BLOCKED", "versioned checkpoint state must advance through the witness finalization path");
+      }
 
       if (!message || typeof message !== "object") {
         return reject(state, "QUARANTINE", "message envelope is malformed");
@@ -310,6 +370,203 @@ export class GossipReplayStateDO extends DurableObject<Env> {
           : "message and replay state committed atomically",
       );
     });
+  }
+
+  /** Initialize a new versioned relationship only when no legacy local-only state exists. */
+  async initializeCheckpointedState(
+    initial: VersionedReplayState,
+  ): Promise<
+    | { readonly initialized: true }
+    | { readonly initialized: false; readonly reason: "legacy_state_requires_quarantine" | "state_already_exists" }
+  > {
+    return initializeVersionedReplayState(
+      this.ctx.storage as unknown as ReplayCheckpointStorage,
+      initial,
+    );
+  }
+
+  /** Persist one exact pending transition before making any gateway RPC. */
+  async stageCheckpointIntent(
+    pending: PendingReplayIntent,
+  ): Promise<Awaited<ReturnType<typeof stagePendingReplayIntent>>> {
+    const staged = await stagePendingReplayIntent(
+      this.ctx.storage as unknown as ReplayCheckpointStorage,
+      pending,
+    );
+    if (staged.staged) {
+      // The lifecycle transaction atomically clears stale quarantine with the
+      // pending-intent write. Alarm scheduling remains outside that transaction;
+      // constructor recovery repairs the commit-to-alarm crash window.
+      await this.ctx.storage.setAlarm(Date.now() + 1_000);
+    }
+    return staged;
+  }
+
+  /** Finalize only independently verified evidence bound to the pending operation. */
+  async finalizeCheckpointIntent(
+    pending: PendingReplayIntent,
+    evidence: VerifiedReplayCheckpointEvidence,
+  ): Promise<Awaited<ReturnType<typeof finalizePendingReplayIntent>>> {
+    const finalized = await finalizePendingReplayIntent(
+      this.ctx.storage as unknown as ReplayCheckpointStorage,
+      pending,
+      evidence,
+    );
+    if (finalized.finalized) {
+      // Clear a marker left by a racing alarm only while no newer pending
+      // transition has been staged in the meantime.
+      await this.ctx.storage.transaction(async (txn) => {
+        if (await txn.get<PendingReplayIntent>("replay-checkpoint-pending-v1") === undefined) {
+          await txn.delete(REPLAY_CHECKPOINT_QUARANTINE_KEY);
+        }
+      });
+    }
+    return finalized;
+  }
+
+  /** Read the exact persisted request for restart recovery; never reconstruct it from current state. */
+  async getPendingCheckpointIntent(): Promise<PendingReplayIntent | undefined> {
+    return this.ctx.storage.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
+  }
+
+  async hasPendingCheckpointIntent(): Promise<boolean> {
+    return hasPendingReplayIntent(
+      this.ctx.storage as unknown as ReplayCheckpointStorage,
+    );
+  }
+
+  /** Read-only snapshot for internal integration assertions and diagnostics. */
+  async getCheckpointedState(): Promise<VersionedReplayState | undefined> {
+    return this.ctx.storage.get<VersionedReplayState>("replay-state-envelope-v2");
+  }
+
+  /**
+   * Resume the exact persisted checkpoint after object reconstruction.
+   * Every RPC is outside a storage transaction. Any unavailable, ambiguous,
+   * or unverifiable result leaves the pending intent and accepted state intact.
+   */
+  async recoverPendingCheckpointIntent(): Promise<
+    | { readonly recovered: false; readonly reason:
+        | "no_pending_intent"
+        | "invalid_pending_intent"
+        | "gateway_unavailable"
+        | "checkpoint_not_committed"
+        | "evidence_not_verified"
+        | "finalization_rejected"
+        | "recovery_error" }
+    | { readonly recovered: true; readonly stateVersion: number }
+  > {
+    try {
+      const pending = await this.getPendingCheckpointIntent();
+      if (!pending) return { recovered: false, reason: "no_pending_intent" };
+      if (!(await validatePendingReplayIntent(pending))) {
+        return { recovered: false, reason: "invalid_pending_intent" };
+      }
+
+      const checkpoint = await checkpointReplayViaWitnessGateway(
+        this.env,
+        new TextEncoder().encode(pending.intent.canonicalCheckpointBody),
+      );
+      if (!checkpoint.checkpointed) {
+        if (
+          checkpoint.reason === "gateway_unavailable" ||
+          checkpoint.reason === "caller_identity_unconfigured" ||
+          checkpoint.reason === "caller_proof_signing_failed"
+        ) return { recovered: false, reason: "gateway_unavailable" };
+        if (
+          checkpoint.reason === "provider_unavailable" ||
+          checkpoint.reason === "ambiguous_commit"
+        ) return { recovered: false, reason: "checkpoint_not_committed" };
+        return { recovered: false, reason: "finalization_rejected" };
+      }
+
+      const verification = await verifyEvidenceViaWitnessGateway(
+        this.env,
+        checkpoint.canonicalEvidenceBody,
+      );
+      if (!verification.verified) {
+        if (
+          verification.reason === "gateway_unavailable" ||
+          verification.reason === "caller_identity_unconfigured" ||
+          verification.reason === "caller_proof_signing_failed" ||
+          verification.reason === "trust_configuration_unavailable" ||
+          verification.reason === "trust_state_unavailable"
+        ) return { recovered: false, reason: "gateway_unavailable" };
+        return { recovered: false, reason: "evidence_not_verified" };
+      }
+
+      const finalized = await this.finalizeCheckpointIntent(pending, {
+        verified: true,
+        operationId: verification.operationId,
+        checkpointDigest: verification.checkpointDigest,
+        snapshotDigest: verification.snapshotDigest,
+        trustDomainId: verification.trustDomainId,
+        witnessId: verification.witnessId,
+        authorityId: verification.authorityId,
+        hostId: verification.hostId,
+        predecessorGeneration: verification.predecessorGeneration,
+        predecessorDigest: verification.predecessorDigest,
+        generation: verification.generation,
+        treeSize: verification.treeSize,
+        treeHeadDigest: verification.treeHeadDigest,
+        receiptLeafHash: verification.receiptLeafHash,
+      });
+      if (!finalized.finalized) {
+        return { recovered: false, reason: "finalization_rejected" };
+      }
+      return { recovered: true, stateVersion: finalized.stateVersion };
+    } catch {
+      return { recovered: false, reason: "recovery_error" };
+    }
+  }
+
+  /** Durable retry trigger. Failed recovery keeps the relationship blocked. */
+  override async alarm(): Promise<void> {
+    const attemptedPending = await this.getPendingCheckpointIntent();
+    const result = await this.recoverPendingCheckpointIntent();
+    if (!result.recovered && (
+      result.reason === "invalid_pending_intent" ||
+      result.reason === "evidence_not_verified" ||
+      result.reason === "finalization_rejected"
+    )) {
+      // Persist quarantine so constructor recovery cannot re-arm this intent
+      // after eviction/restart. The pending bytes and accepted state are kept.
+      const quarantineReason = result.reason;
+      const quarantined = await this.ctx.storage.transaction(async (txn) => {
+        // A concurrent direct recovery may have finalized the intent after
+        // this alarm observed its integrity failure. Quarantine only if the
+        // exact pending slot still exists at this atomic boundary.
+        const currentPending = await txn.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
+        if (
+          !attemptedPending ||
+          currentPending === undefined ||
+          currentPending.transitionDigest !== attemptedPending.transitionDigest
+        ) {
+          return false;
+        }
+        await txn.put({
+          [REPLAY_CHECKPOINT_QUARANTINE_KEY]: {
+            version: 1,
+            reason: quarantineReason,
+            quarantinedAt: Date.now(),
+          } satisfies ReplayCheckpointQuarantine,
+        });
+        return true;
+      });
+      if (quarantined) await this.ctx.storage.deleteAlarm();
+      return;
+    }
+    if (
+      !result.recovered &&
+      (
+        result.reason === "gateway_unavailable" ||
+        result.reason === "checkpoint_not_committed" ||
+        result.reason === "recovery_error"
+      )
+    ) {
+      // Retry transient infrastructure/evidence-availability failures only.
+      await this.ctx.storage.setAlarm(Date.now() + 30_000);
+    }
   }
 
   override async fetch(): Promise<Response> {

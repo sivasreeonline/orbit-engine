@@ -68,8 +68,11 @@ jobs:
       - name: Workers runtime integration tests
         run: npm run test:workers
 
+      - name: Private provider Worker deployment dry run
+        run: npx wrangler deploy --dry-run --config provider.wrangler.jsonc
+
       - name: Worker deployment dry run
-        run: npx wrangler deploy --dry-run
+        run: npx wrangler deploy --dry-run --env production
 
       - name: Dependency audit
         run: npm audit --audit-level=high
@@ -152,6 +155,14 @@ jobs:
       - name: Bundle private gateway for workerd RPC integration tests
         working-directory: apps/witness-gateway
         run: npx wrangler deploy --dry-run --outdir ../api/.test-dist/witness-gateway
+
+      - name: Bundle isolated synthetic provider Worker for workerd RPC integration tests
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --config test-support/synthetic-provider.wrangler.jsonc --outdir "$GITHUB_WORKSPACE/apps/api/.test-dist/synthetic-witness-provider"
+
+      - name: Bundle isolated synthetic evidence authority Worker for workerd RPC integration tests
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --config test-support/synthetic-evidence-authority.wrangler.jsonc --outdir "$GITHUB_WORKSPACE/apps/api/.test-dist/synthetic-evidence-authority"
 
       - name: Durable Object Workers runtime integration tests
         env:
@@ -275,6 +286,35 @@ jobs:
         run: |
           docker run -d --name fence-dynamodb-local -p 8000:8000 amazon/dynamodb-local:3.3.2 -jar DynamoDBLocal.jar -inMemory -sharedDb
 
+      - name: Wait for DynamoDB Local HTTP endpoint
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --silent --show-error --max-time 2 -o /dev/null http://127.0.0.1:8000; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "DynamoDB Local did not become reachable"
+          exit 1
+
+      - name: Bundle gateway for DynamoDB Local workerd integration
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --config wrangler.jsonc --outdir .test-dist/witness-gateway
+
+      - name: Bundle isolated DynamoDB Local provider Worker
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --config test-support/dynamodb-local-provider.wrangler.jsonc --outdir "$GITHUB_WORKSPACE/apps/witness-gateway/.test-dist/dynamodb-local-provider"
+
+      - name: Bundle isolated synthetic evidence authority Worker
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --config test-support/synthetic-evidence-authority.wrangler.jsonc --outdir "$GITHUB_WORKSPACE/apps/witness-gateway/.test-dist/synthetic-evidence-authority"
+
+      - name: Verify gateway provider binding against DynamoDB Local in workerd
+        working-directory: apps/witness-gateway
+        env:
+          FENCE_DDB_LOCAL_ENDPOINT: http://127.0.0.1:8000
+        run: npm run test:workers:dynamodb-local
+
       - name: Verify AWS DynamoDB witness adapter against DynamoDB Local
         env:
           PYTHONPATH: ../../scripts
@@ -286,6 +326,15 @@ jobs:
           FENCE_AWS_WITNESS_LOCAL_TABLE_PREFIX: fence001-local-ci
           FENCE_WITNESS_ADAPTER_FACTORY: aws_dynamodb_witness_adapter:create_adapter
         run: python ../../scripts/validate_m0_witness_provider_adapter_conformance.py
+
+      - name: Verify TypeScript dual-digest DynamoDB adapter (synthetic local service only)
+        working-directory: apps/witness-gateway
+        env:
+          AWS_ACCESS_KEY_ID: local
+          AWS_SECRET_ACCESS_KEY: local
+          AWS_REGION: us-east-1
+          FENCE_DDB_LOCAL_ENDPOINT: http://127.0.0.1:8000
+        run: npx vitest run src/provider/aws-dynamodb-witness-provider-adapter.test.ts
 
       - name: Verify DynamoDB durable idempotency and independent-client concurrency
         env:

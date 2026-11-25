@@ -1,6 +1,8 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import type { VerifiedGossipMessage } from "../src/gossip/gossip-replay-state-do";
+import { createReplayCheckpointIntent } from "../src/gossip/gossip-replay-checkpoint-intent";
+import { createPendingReplayIntent } from "../src/gossip/gossip-replay-pending-intent";
 
 function message(
   sequence: number,
@@ -95,4 +97,153 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     const response = await stub.fetch("https://gossip-replay.invalid/");
     expect(response.status).toBe(404);
   });
+
+  it("recovers a staged replay transition through gateway, provider and evidence authority before atomic finalization", async () => {
+    const scope = "runtime-domain|runtime-witness|runtime-authority|runtime-host";
+    const predecessor = { generation: 0, digest: "0".repeat(64) };
+    const initialSnapshot = {
+      version: 1,
+      senderId: "monitor-rpc-a",
+      recipientId: "monitor-rpc-b",
+      highestSequence: 0,
+      seenByMessageId: {},
+    };
+    const nextState = {
+      ...initialSnapshot,
+      highestSequence: 1,
+      seenByMessageId: {
+        "runtime-checkpoint-message": {
+          sequence: 1,
+          digest: "a".repeat(64),
+        },
+      },
+    };
+    const id = env.GOSSIP_REPLAY.idFromName(
+      `workers-runtime:gateway-positive-recovery:${crypto.randomUUID()}`,
+    );
+    const stub = env.GOSSIP_REPLAY.get(id);
+    expect(await stub.initializeCheckpointedState({
+      version: 2,
+      stateVersion: 0,
+      snapshot: initialSnapshot,
+      witnessHead: {
+        generation: 0,
+        digest: predecessor.digest,
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    })).toEqual({ initialized: true });
+
+    const message = {
+      messageId: "runtime-checkpoint-message",
+      senderId: "monitor-rpc-a",
+      recipientId: "monitor-rpc-b",
+      scope,
+      sequence: 1,
+      canonicalDigest: "a".repeat(64),
+      messageType: "HEAD_ADVERTISEMENT" as const,
+      issuedAt: 9_990,
+      expiresAt: 10_100,
+    };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      senderId: message.senderId,
+      recipientId: message.recipientId,
+      messageDigest: message.canonicalDigest,
+      scope,
+      expectedPredecessor: predecessor,
+      nextState,
+    });
+    const pending = await createPendingReplayIntent(intent, message, nextState);
+    expect(await stub.stageCheckpointIntent(pending)).toEqual({
+      staged: true,
+      stateVersion: 0,
+    });
+    const initialCheckpointedState = await stub.getCheckpointedState();
+    expect(initialCheckpointedState).toEqual({
+      version: 2,
+      stateVersion: 0,
+      snapshot: initialSnapshot,
+      witnessHead: {
+        generation: 0,
+        digest: predecessor.digest,
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    });
+
+    // Separate stub acquisition exercises recovery against persisted DO
+    // state, rather than relying on the staging call's in-memory objects.
+    const restartedStub = env.GOSSIP_REPLAY.get(id);
+
+    // The synthetic provider commits this operation and loses its acknowledgement.
+    // The coordinator must recover the exact immutable operation by ID. The
+    // independent evidence authority then fails once, after that provider commit.
+    // The API must keep the exact pending intent and must not advance replay state.
+    const authorityOutage = await restartedStub.recoverPendingCheckpointIntent();
+    expect(authorityOutage).toEqual({
+      recovered: false,
+      reason: "checkpoint_not_committed",
+    });
+    expect(await restartedStub.hasPendingCheckpointIntent()).toBe(true);
+    expect(await restartedStub.getPendingCheckpointIntent()).toEqual(pending);
+    expect(await restartedStub.getCheckpointedState()).toEqual(initialCheckpointedState);
+
+    // The authority next returns a structurally plausible inclusion proof with
+    // a corrupted hash. The gateway can transport it, but the API's independent
+    // cryptographic verifier must reject it and preserve the exact pending intent.
+    const invalidEvidence = await restartedStub.recoverPendingCheckpointIntent();
+    expect(invalidEvidence).toEqual({
+      recovered: false,
+      reason: "evidence_not_verified",
+    });
+    expect(await restartedStub.hasPendingCheckpointIntent()).toBe(true);
+    expect(await restartedStub.getPendingCheckpointIntent()).toEqual(pending);
+    expect(await restartedStub.getCheckpointedState()).toEqual(initialCheckpointedState);
+
+    // Two callers now resume the same durable intent. They must recover the
+    // authority's original immutable evidence bundle for the already-committed
+    // operation, without appending a second generation, and only one may finalize.
+    // for the already-committed operation, without appending a second generation,
+    // and the storage transaction must allow only one finalization.
+    const concurrentRecoveries = await Promise.all([
+      restartedStub.recoverPendingCheckpointIntent(),
+      restartedStub.recoverPendingCheckpointIntent(),
+    ]);
+    expect(concurrentRecoveries.filter((result) => result.recovered)).toHaveLength(1);
+    expect(concurrentRecoveries.find((result) => result.recovered)).toEqual({
+      recovered: true,
+      stateVersion: 1,
+    });
+    expect(concurrentRecoveries.filter((result) => !result.recovered)).toHaveLength(1);
+    expect(concurrentRecoveries.every((result) =>
+      result.recovered ||
+      result.reason === "finalization_rejected" ||
+      result.reason === "no_pending_intent"
+    )).toBe(true);
+    expect(await restartedStub.hasPendingCheckpointIntent()).toBe(false);
+    expect(await restartedStub.getPendingCheckpointIntent()).toBeUndefined();
+    const finalizedState = await restartedStub.getCheckpointedState();
+    expect(finalizedState?.stateVersion).toBe(1);
+    expect(finalizedState?.snapshot).toEqual(nextState);
+    expect(finalizedState?.witnessHead.generation).toBe(1);
+    expect(finalizedState?.witnessHead.treeSize).toBe(1);
+
+    // A later retry after the atomic commit must be a no-op: the completed
+    // transition is no longer eligible for provider or evidence RPCs.
+    expect(await restartedStub.recoverPendingCheckpointIntent()).toEqual({
+      recovered: false,
+      reason: "no_pending_intent",
+    });
+
+    // Versioned state cannot be bypassed through the legacy acceptance API.
+    const blocked = await restartedStub.acceptVerifiedMessage({
+      ...message,
+      messageId: "runtime-checkpoint-message-after-finalization",
+      sequence: 2,
+      canonicalDigest: "b".repeat(64),
+    }, 10_000);
+    expect(blocked.outcome).toBe("BLOCKED");
+  });
+
 });

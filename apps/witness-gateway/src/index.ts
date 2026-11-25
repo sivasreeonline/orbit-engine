@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import canonicalize from "canonicalize";
+import { deriveReplayCheckpointOperationId } from "../../api/src/gossip/gossip-replay-checkpoint-intent";
 import {
   authenticateWorkloadCall,
   type TrustedWorkloadKey,
@@ -9,10 +10,27 @@ import {
 import { DurableWorkloadNonceStore } from "../../api/src/auth/durable-workload-nonce-store";
 import { DurableWitnessTrustStateStore } from "./durable-witness-trust-state-store";
 import {
+  checkpointMonitorReplaySnapshot,
+  MonitorReplayCheckpointError,
+} from "./provider/monitor-replay-checkpoint-coordinator";
+import {
+  WitnessAppendConflict,
+  WitnessIdempotencyConflict,
+  type WitnessCheckpointScope,
+  type WitnessProviderAdapter,
+} from "./provider/witness-provider-adapter";
+import {
+  issueOrRecoverWitnessEvidence,
+  WitnessEvidenceAuthorityOperationConflictError,
+  type WitnessEvidenceAuthority,
+} from "./evidence/witness-evidence-authority";
+import {
   verifyReceiptAgainstTrustedBundle,
   verifyReceiptInclusion,
   verifySignedTreeHead,
   verifyTreeHeadExtension,
+  validateMonitorReplayCheckpointBody,
+  type MonitorReplayCheckpointBody,
   verifyTrustBundleEnvelope,
   type ExpectedTrustBundleState,
   type ExpectedWitnessScope,
@@ -27,6 +45,7 @@ import {
 import type {
   WitnessEvidenceVerificationResult,
   WitnessGatewayRpc,
+  WitnessReplayCheckpointResult,
 } from "../../api/src/witness/witness-gateway-contract";
 
 const AUDIENCE = "sky-high-witness-gateway";
@@ -36,6 +55,10 @@ const AUTH_PATH = "/rpc/authenticate";
 const VERIFY_SCOPE = "witness:verify-evidence";
 const VERIFY_METHOD = "POST";
 const VERIFY_PATH = "/rpc/verify-evidence";
+const CHECKPOINT_SCOPE = "witness:checkpoint-replay";
+const CHECKPOINT_METHOD = "POST";
+const CHECKPOINT_PATH = "/rpc/checkpoint-replay";
+const MAX_CHECKPOINT_BYTES = 640 * 1024;
 const ZERO_DIGEST = "0".repeat(64);
 const MAX_EVIDENCE_BYTES = 256 * 1024;
 
@@ -45,7 +68,7 @@ interface AllowedWitnessScope extends ExpectedWitnessScope {
 
 interface EvidenceRequest {
   readonly trustBundle: WitnessTrustBundleEnvelope;
-  readonly checkpointBody: WitnessCheckpointBody;
+  readonly checkpointBody: WitnessCheckpointBody | MonitorReplayCheckpointBody;
   readonly checkpointDigest: string;
   readonly receiptEnvelope: WitnessReceiptEnvelope;
   readonly treeHeadEnvelope: WitnessTreeHeadEnvelope;
@@ -57,6 +80,10 @@ interface EvidenceRequest {
 export interface GatewayEnv {
   readonly WORKLOAD_NONCE_REPLAY: DurableObjectNamespace;
   readonly WITNESS_TRUST_STATE: DurableObjectNamespace;
+  /** Private RPC to an independently administered atomic checkpoint provider. */
+  readonly WITNESS_PROVIDER?: WitnessProviderAdapter;
+  /** Private RPC to the independently administered receipt/transparency authority. */
+  readonly WITNESS_EVIDENCE_AUTHORITY?: WitnessEvidenceAuthority;
   /** JSON array of pinned API Worker public-key records; never private keys. */
   readonly WORKLOAD_CALLER_KEYS?: string;
   /** JSON array of pinned root public keys. */
@@ -67,6 +94,18 @@ export interface GatewayEnv {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function ownedArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
+function encodeBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 function exactKeys(value: Record<string, unknown>, required: readonly string[]): boolean {
@@ -246,6 +285,89 @@ async function canonicalEnvelopeDigest(value: unknown): Promise<string> {
     new TextEncoder().encode(serialized),
   ));
   return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export interface BuiltMonitorReplayCheckpoint {
+  readonly snapshot: Record<string, unknown>;
+  readonly checkpointBody: MonitorReplayCheckpointBody;
+  readonly checkpointDigest: string;
+  readonly canonicalCheckpointBodyBytes: Uint8Array;
+}
+
+export async function buildMonitorReplayCheckpoint(input: {
+  readonly scope: WitnessCheckpointScope;
+  readonly senderId: string;
+  readonly recipientId: string;
+  readonly messageDigest: string;
+  readonly baseStateVersion: number;
+  readonly operationId: string;
+  readonly expectedPredecessor: { readonly generation: number; readonly digest: string };
+  readonly snapshotDigest: string;
+  readonly snapshotBytes: Uint8Array;
+}): Promise<BuiltMonitorReplayCheckpoint> {
+  if (
+    !/^[0-9a-f]{64}$/.test(input.snapshotDigest) ||
+    !/^[0-9a-f]{64}$/.test(input.messageDigest) ||
+    !Number.isSafeInteger(input.baseStateVersion) ||
+    input.baseStateVersion < 0 ||
+    !Number.isSafeInteger(input.expectedPredecessor.generation) ||
+    input.expectedPredecessor.generation < 0 ||
+    !/^[0-9a-f]{64}$/.test(input.expectedPredecessor.digest) ||
+    input.snapshotBytes.length === 0 ||
+    input.snapshotBytes.length > 512 * 1024
+  ) throw new TypeError("monitor replay checkpoint request metadata is malformed");
+
+  const snapshotText = new TextDecoder("utf-8", { fatal: true }).decode(input.snapshotBytes);
+  const snapshot: unknown = JSON.parse(snapshotText);
+  if (
+    !isRecord(snapshot) ||
+    canonicalize(snapshot) !== snapshotText ||
+    snapshot.senderId !== input.senderId ||
+    snapshot.recipientId !== input.recipientId ||
+    !isRecord(snapshot.seenByMessageId) ||
+    !Object.values(snapshot.seenByMessageId).some((entry) =>
+      isRecord(entry) && entry.digest === input.messageDigest
+    )
+  ) throw new TypeError("canonical replay snapshot does not bind the triggering message identity");
+
+  const snapshotHash = new Uint8Array(await crypto.subtle.digest("SHA-256", ownedArrayBuffer(input.snapshotBytes)));
+  const actualSnapshotDigest = [...snapshotHash]
+    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (actualSnapshotDigest !== input.snapshotDigest) {
+    throw new TypeError("canonical replay snapshot digest mismatch");
+  }
+
+  const checkpointBody: MonitorReplayCheckpointBody = {
+    profile: "sky-high-fence-monitor-replay-v1",
+    schemaVersion: 1,
+    trustDomainId: input.scope.trustDomainId,
+    witnessId: input.scope.witnessId,
+    authorityId: input.scope.authorityId,
+    hostId: input.scope.hostId,
+    senderId: input.senderId,
+    recipientId: input.recipientId,
+    generation: input.expectedPredecessor.generation + 1,
+    operationId: input.operationId,
+    phase: "MONITOR_GOSSIP_REPLAY_V1",
+    previousCheckpointDigest: input.expectedPredecessor.digest,
+    snapshotDigest: input.snapshotDigest,
+    snapshotByteLength: input.snapshotBytes.length,
+    baseStateVersion: input.baseStateVersion,
+    messageDigest: input.messageDigest,
+  };
+  validateMonitorReplayCheckpointBody(checkpointBody);
+  const serialized = canonicalize(checkpointBody);
+  if (typeof serialized !== "string") {
+    throw new TypeError("monitor replay checkpoint body is not canonical JSON");
+  }
+  const canonicalCheckpointBodyBytes = new TextEncoder().encode(serialized);
+  const checkpointHash = new Uint8Array(await crypto.subtle.digest(
+    "SHA-256",
+    canonicalCheckpointBodyBytes,
+  ));
+  const checkpointDigest = [...checkpointHash]
+    .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return { snapshot, checkpointBody, checkpointDigest, canonicalCheckpointBodyBytes };
 }
 
 /**
@@ -471,10 +593,244 @@ export class WitnessGateway extends WorkerEntrypoint<GatewayEnv> implements Witn
       verified: true,
       trustBundleGeneration: verifiedBundle.body.generation,
       trustBundleDigest: verifiedBundle.digest,
+      trustDomainId,
+      witnessId,
+      authorityId,
+      hostId,
+      operationId: receipt.body.operationId,
+      checkpointDigest: receipt.body.checkpointDigest,
+      predecessorGeneration: receipt.body.generation - 1,
+      predecessorDigest: receipt.body.previousCheckpointDigest,
+      generation: receipt.body.generation,
+      snapshotDigest: request.checkpointBody.profile === "sky-high-fence-monitor-replay-v1"
+        ? request.checkpointBody.snapshotDigest
+        : request.checkpointBody.authorityStateDigest,
       treeHeadDigest: headWrite.digest,
       treeSize: currentHead.body.treeSize,
       receiptLeafHash,
     };
+  }
+
+  /**
+   * Authenticated replay-checkpoint RPC. This deployment intentionally has no
+   * configured append provider yet: after validating caller and canonical
+   * request bindings it fails closed rather than fabricating a checkpoint.
+   */
+  async checkpointReplay(
+    proof: WorkloadProof,
+    canonicalCheckpointBody: Uint8Array,
+  ): Promise<WitnessReplayCheckpointResult> {
+    const trustedKeys = parseTrustedWorkloadKeys(this.env.WORKLOAD_CALLER_KEYS);
+    if (!trustedKeys || !(canonicalCheckpointBody instanceof Uint8Array) ||
+        canonicalCheckpointBody.length === 0 ||
+        canonicalCheckpointBody.length > MAX_CHECKPOINT_BYTES) {
+      return { checkpointed: false, reason: "malformed_request" };
+    }
+
+    const auth = await authenticateWorkloadCall(
+      proof,
+      {
+        audience: AUDIENCE,
+        scope: CHECKPOINT_SCOPE,
+        method: CHECKPOINT_METHOD,
+        path: CHECKPOINT_PATH,
+        body: canonicalCheckpointBody,
+      },
+      trustedKeys,
+      Math.floor(Date.now() / 1_000),
+      new DurableWorkloadNonceStore(this.env.WORKLOAD_NONCE_REPLAY),
+    );
+    if (!auth.authenticated) {
+      return { checkpointed: false, reason: "workload_authentication_failed" };
+    }
+
+    let validatedRequest: {
+      readonly scope: WitnessCheckpointScope;
+      readonly snapshot: Record<string, unknown>;
+      readonly checkpointBody: MonitorReplayCheckpointBody;
+      readonly checkpointDigest: string;
+      readonly canonicalCheckpointBodyBytes: Uint8Array;
+      readonly expectedPredecessor: { readonly generation: number; readonly digest: string };
+    } | undefined;
+
+    try {
+      const serialized = new TextDecoder("utf-8", { fatal: true }).decode(canonicalCheckpointBody);
+      const parsed: unknown = JSON.parse(serialized);
+      if (
+        !isRecord(parsed) ||
+        !exactKeys(parsed, [
+          "version",
+          "scope",
+          "senderId",
+          "recipientId",
+          "messageDigest",
+          "baseStateVersion",
+          "operationId",
+          "phase",
+          "expectedPredecessor",
+          "snapshotDigest",
+          "snapshotByteLength",
+          "canonicalSnapshotBase64Url",
+        ]) ||
+        canonicalize(parsed) !== serialized ||
+        parsed.version !== 1 ||
+        parsed.phase !== "MONITOR_GOSSIP_REPLAY_V1" ||
+        typeof parsed.senderId !== "string" ||
+        parsed.senderId.length === 0 ||
+        parsed.senderId.length > 256 ||
+        typeof parsed.recipientId !== "string" ||
+        parsed.recipientId.length === 0 ||
+        parsed.recipientId.length > 256 ||
+        parsed.senderId === parsed.recipientId ||
+        typeof parsed.messageDigest !== "string" ||
+        !/^[0-9a-f]{64}$/.test(parsed.messageDigest) ||
+        !Number.isSafeInteger(parsed.baseStateVersion) ||
+        (parsed.baseStateVersion as number) < 0 ||
+        typeof parsed.operationId !== "string" ||
+        !/^fence-monitor-replay-[0-9a-f]{64}$/.test(parsed.operationId) ||
+        typeof parsed.snapshotDigest !== "string" ||
+        !/^[0-9a-f]{64}$/.test(parsed.snapshotDigest) ||
+        !Number.isSafeInteger(parsed.snapshotByteLength) ||
+        (parsed.snapshotByteLength as number) < 1 ||
+        (parsed.snapshotByteLength as number) > 512 * 1024 ||
+        !isRecord(parsed.scope) ||
+        !exactKeys(parsed.scope, ["trustDomainId", "witnessId", "authorityId", "hostId"]) ||
+        !Object.values(parsed.scope).every((value) =>
+          typeof value === "string" && value.length > 0 && value.length <= 256 && value.trim() === value
+        ) ||
+        !isRecord(parsed.expectedPredecessor) ||
+        !exactKeys(parsed.expectedPredecessor, ["generation", "digest"]) ||
+        !Number.isSafeInteger(parsed.expectedPredecessor.generation) ||
+        (parsed.expectedPredecessor.generation as number) < 0 ||
+        typeof parsed.expectedPredecessor.digest !== "string" ||
+        !/^[0-9a-f]{64}$/.test(parsed.expectedPredecessor.digest) ||
+        typeof parsed.canonicalSnapshotBase64Url !== "string" ||
+        !/^[A-Za-z0-9_-]+$/.test(parsed.canonicalSnapshotBase64Url)
+      ) return { checkpointed: false, reason: "malformed_request" };
+
+      const requestedScope: WitnessCheckpointScope = {
+        trustDomainId: parsed.scope.trustDomainId as string,
+        witnessId: parsed.scope.witnessId as string,
+        authorityId: parsed.scope.authorityId as string,
+        hostId: parsed.scope.hostId as string,
+      };
+      const expectedPredecessor = parsed.expectedPredecessor as {
+        generation: number;
+        digest: string;
+      };
+      const expectedOperationId = await deriveReplayCheckpointOperationId({
+        scope: requestedScope,
+        expectedPredecessor,
+        snapshotDigest: parsed.snapshotDigest as string,
+      });
+      if (parsed.operationId !== expectedOperationId) {
+        return { checkpointed: false, reason: "malformed_request" };
+      }
+      const allowedScopes = parseAllowedWitnessScopes(this.env.WITNESS_TRUST_SCOPES);
+      if (!allowedScopes || !allowedScopes.some((scope) =>
+        scope.trustDomainId === requestedScope.trustDomainId &&
+        scope.witnessId === requestedScope.witnessId &&
+        scope.authorityId === requestedScope.authorityId &&
+        scope.hostId === requestedScope.hostId
+      )) return { checkpointed: false, reason: "trust_scope_denied" };
+
+      const encoded = parsed.canonicalSnapshotBase64Url;
+      const padded = encoded.replace(/-/g, "+").replace(/_/g, "/") +
+        "=".repeat((4 - (encoded.length % 4)) % 4);
+      const binary = atob(padded);
+      const snapshotBytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      if (
+        encodeBase64Url(snapshotBytes) !== encoded ||
+        snapshotBytes.length !== parsed.snapshotByteLength
+      ) return { checkpointed: false, reason: "malformed_request" };
+      const built = await buildMonitorReplayCheckpoint({
+        scope: requestedScope,
+        senderId: parsed.senderId as string,
+        recipientId: parsed.recipientId as string,
+        messageDigest: parsed.messageDigest as string,
+        baseStateVersion: parsed.baseStateVersion as number,
+        operationId: parsed.operationId as string,
+        expectedPredecessor,
+        snapshotDigest: parsed.snapshotDigest as string,
+        snapshotBytes,
+      });
+      validatedRequest = {
+        scope: requestedScope,
+        snapshot: built.snapshot,
+        checkpointBody: built.checkpointBody,
+        checkpointDigest: built.checkpointDigest,
+        canonicalCheckpointBodyBytes: built.canonicalCheckpointBodyBytes,
+        expectedPredecessor,
+      };
+    } catch {
+      return { checkpointed: false, reason: "malformed_request" };
+    }
+
+    if (!validatedRequest) return { checkpointed: false, reason: "malformed_request" };
+    const provider = this.env.WITNESS_PROVIDER;
+    const evidenceAuthority = this.env.WITNESS_EVIDENCE_AUTHORITY;
+    if (!provider || !evidenceAuthority) {
+      return { checkpointed: false, reason: "provider_unavailable" };
+    }
+
+    try {
+      const committed = await checkpointMonitorReplaySnapshot(
+        provider,
+        validatedRequest.scope,
+        validatedRequest.snapshot,
+        validatedRequest.checkpointBody,
+        validatedRequest.expectedPredecessor,
+      );
+      if (committed.checkpointDigest !== validatedRequest.checkpointDigest) {
+        return { checkpointed: false, reason: "readback_mismatch" };
+      }
+      const evidence = await issueOrRecoverWitnessEvidence(evidenceAuthority, {
+        scope: validatedRequest.scope,
+        checkpointBody: validatedRequest.checkpointBody,
+        canonicalCheckpointBodyBytes: validatedRequest.canonicalCheckpointBodyBytes,
+        checkpointDigest: committed.checkpointDigest,
+      });
+      const canonicalEvidence = canonicalize({
+        trustBundle: evidence.trustBundleEnvelope,
+        checkpointBody: validatedRequest.checkpointBody,
+        checkpointDigest: committed.checkpointDigest,
+        receiptEnvelope: evidence.receiptEnvelope,
+        treeHeadEnvelope: evidence.treeHeadEnvelope,
+        leafIndex: evidence.leafIndex,
+        inclusionProofHex: evidence.inclusionProofHex,
+        consistencyProofHex: evidence.consistencyProofHex,
+      });
+      if (typeof canonicalEvidence !== "string") {
+        return { checkpointed: false, reason: "readback_mismatch" };
+      }
+      const canonicalEvidenceBody = new TextEncoder().encode(canonicalEvidence);
+      if (canonicalEvidenceBody.length > MAX_EVIDENCE_BYTES) {
+        return { checkpointed: false, reason: "readback_mismatch" };
+      }
+      return { checkpointed: true, canonicalEvidenceBody };
+    } catch (error) {
+      if (error instanceof WitnessAppendConflict || error instanceof WitnessIdempotencyConflict) {
+        return { checkpointed: false, reason: "append_conflict" };
+      }
+      if (error instanceof WitnessEvidenceAuthorityOperationConflictError) {
+        return { checkpointed: false, reason: "readback_mismatch" };
+      }
+      if (error instanceof MonitorReplayCheckpointError) {
+        if (error.reason === "operation_not_recoverable") {
+          return { checkpointed: false, reason: "ambiguous_commit" };
+        }
+        if (error.reason === "stale_operation") {
+          return { checkpointed: false, reason: "append_conflict" };
+        }
+        if (
+          error.reason === "operation_conflict" ||
+          error.reason === "receipt_mismatch" ||
+          error.reason === "latest_readback_mismatch"
+        ) return { checkpointed: false, reason: "readback_mismatch" };
+        return { checkpointed: false, reason: "malformed_request" };
+      }
+      return { checkpointed: false, reason: "provider_unavailable" };
+    }
   }
 }
 

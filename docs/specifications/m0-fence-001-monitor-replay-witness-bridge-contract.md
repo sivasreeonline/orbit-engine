@@ -126,3 +126,92 @@ This contract does not:
 - claim that Cloudflare and the witness are independent merely because they are separate services.
 
 Production rollback protection remains **NOT QUALIFIED** until signed tree-head verification is integrated with the existing receipt and Merkle validators, the authenticated bridge and failure-injection suite pass, independent monitor gossip is validated, and WIT-001..WIT-014 provider evidence is independently reviewed and approved.
+
+
+## 10. Provider adapter output gap and integration boundary
+
+The current TypeScript `WitnessProviderAdapter` contract returns a storage receipt containing scope, generation, operation ID, checkpoint digest, predecessor digest and an opaque `consistencyToken`. That is sufficient for provider-neutral compare-and-append orchestration, but it is **not** the evidence response required by this bridge. The token is explicitly non-cryptographic and must never be promoted into a signed receipt, tree-head digest, inclusion proof or consistency proof.
+
+The current gateway checkpoint RPC therefore remains fail-closed with `provider_unavailable` after authenticating and validating the exact request. This is intentional until the following two responsibilities are connected without collapsing their trust boundaries:
+
+1. **Storage adapter:** atomic compare-and-append, immutable generation and operation lookup, durable idempotency, strongly consistent latest read, and exact canonical checkpoint-byte readback.
+2. **Independent witness evidence authority:** an independently administered signing/logging service that returns the signed receipt envelope, signed tree-head envelope, leaf index, inclusion proof and consistency proof for the exact committed checkpoint. Its receipt and log-signing keys must be authorized by the pinned root-signed trust bundle and must not be silently generated or held by the API Worker.
+
+A future gateway adapter composition may expose a result shaped conceptually as:
+
+- exact stored checkpoint bytes and scope;
+- signed receipt envelope whose body binds scope, generation, operation ID, checkpoint digest and predecessor digest;
+- signed tree-head envelope with witness, authority, host, log ID, tree size, root hash, timestamp and authorized log key ID;
+- leaf index and RFC 9162 inclusion proof for the checkpoint leaf;
+- consistency proof from the previously pinned tree size/root to the returned tree head;
+- provider request/transaction identifiers and readback provenance as audit metadata, never as cryptographic substitutes.
+
+The gateway must then verify the complete evidence bundle against the currently pinned trust bundle and tree head before constructing the canonical evidence-verification request for the API caller. The API must independently invoke the existing private `verifyEvidence` RPC and bind the verified operation, checkpoint digest, authority-state digest, predecessor, generation and tree-head data to its persisted pending intent before finalization.
+
+### Required integration tests
+
+- Exact provider readback bytes equal the pending canonical snapshot bytes and digest.
+- Receipt signature and receipt-purpose key authorization are valid; wrong-purpose, revoked, expired and unknown keys fail closed.
+- Tree-head signature and log-purpose key authorization are valid; receipt-purpose keys cannot sign tree heads.
+- Inclusion proof binds the exact canonical receipt leaf at the returned leaf index.
+- Consistency proof extends the previously pinned tree head; same-size conflicting roots, regression and invalid extensions quarantine or block.
+- Provider commit followed by lost acknowledgement recovers the same immutable operation and exact evidence bundle without creating another generation.
+- Operation record exists but latest head is incompatible: no automatic rebase or local finalization.
+- Evidence authority unavailable after storage commit: pending intent remains and exact operation/evidence recovery is retried.
+- The storage adapter's opaque consistency token is never consumed by cryptographic verification code.
+
+No production adapter or evidence authority is selected by this specification. A DynamoDB Local run validates only local SDK/conditional-write wiring; the existing Python AWS adapter is a qualification harness implementation, not a Cloudflare Worker RPC binding or independent evidence authority. Real-provider and independent-key qualification remain separate gates.
+
+
+## 11. Checkpoint profile mapping — blocking architecture decision
+
+The replay snapshot digest and the signed witness checkpoint-body digest are separate values. The current provider-neutral coordinator treats them as the same value, while the existing `sky-high-fence-witness-v1` checkpoint body is an authority lifecycle record with fields (`responseDigest`, `epoch`, `recordVersion`, and lifecycle `phase`) that have no approved monitor-replay mapping.
+
+Do not map sender sequence to authority epoch, local Durable Object state version to authority record version, or gossip message digest to authority response digest without a separately approved semantic contract. The API's current `authorityStateDigest === pending.snapshotDigest` check is specific to the existing authority-state profile and is not a generic replay checkpoint mapping.
+
+[ADR-021](../decisions/ADR-021-monitor-replay-checkpoint-profile.md) proposes a dedicated `sky-high-fence-monitor-replay-v1` checkpoint-body profile while reusing the existing witness receipt envelope, trust-bundle key lifecycle, signed tree-head format and RFC 9162 proof algorithms.
+
+ADR-021's initial schema and TypeScript receipt-verification slice is now implemented in PR #201. Provider integration remains blocked until architecture/security review is complete and the remaining dual-digest adapter/coordinator, evidence-authority and API-finalization changes are implemented. The future adapter/coordinator must persist and read back both exact canonical byte sequences and keep these digests distinct:
+
+1. `snapshotDigest`: SHA-256 of exact canonical replay snapshot bytes; used in deterministic operation identity.
+2. `checkpointDigest`: SHA-256 of exact canonical monitor-replay checkpoint-body JCS bytes; signed by the witness receipt.
+3. `receiptLeafHash`: RFC 9162 leaf hash of the complete canonical signed receipt envelope.
+4. `treeHeadDigest`: canonical identity of the signed tree-head envelope.
+
+The current coordinator's `checkpointDigest = snapshotDigest` assumption must not be carried into the monitor-replay receipt bridge. No live provider append should be enabled before the separate profile, types, verifier, vectors and lifecycle binding exist.
+
+
+## 12. Dual-digest coordinator and local finalization progress
+
+PR #201 now stores exact canonical replay snapshot bytes and exact canonical monitor-replay checkpoint-body bytes as separate immutable values. The coordinator derives the deterministic operation ID from scope, persisted predecessor and snapshot digest; computes the checkpoint digest from the checkpoint-body JCS bytes; and requires both digests and both byte sequences to match on operation lookup, ambiguous-ack recovery and latest-head readback.
+
+The API finalization evidence field is now `snapshotDigest`, not the authority-specific `authorityStateDigest`. The signed receipt's `checkpointDigest` remains independently bound to the canonical checkpoint body and is persisted as the witness-head digest.
+
+This is provider-neutral orchestration plus synthetic/in-memory tests. A concrete provider adapter and independent evidence authority are still absent. No live append is enabled.
+
+
+## 13. Message-bound durable checkpoint request
+
+The durable API request now persists the triggering sender ID, recipient ID, canonical message digest and base replay-state version in addition to the exact snapshot bytes/digest, scope, predecessor and operation ID. The private gateway validates the closed canonical request, recomputes operation identity and snapshot digest, checks the sender/recipient against the decoded snapshot, and requires the message digest to occur in the retained message-history map before constructing the dedicated replay checkpoint body.
+
+The final signed checkpoint body therefore binds both the resulting replay snapshot and the exact triggering message identity. This closes the gap where a snapshot could be paired with an unrelated triggering message.
+
+The gateway still fails closed with `provider_unavailable` after validation. No concrete storage provider or evidence authority is configured.
+
+
+## 14. Independent evidence-authority contract
+
+Added a separate TypeScript contract at `apps/witness-gateway/src/evidence/witness-evidence-authority.ts`. It is not an extension of `WitnessProviderAdapter` and does not share storage-provider responsibilities.
+
+The authority accepts the exact canonical monitor-replay checkpoint body and digest, and returns exact body-byte readback, trust bundle, signed receipt, signed tree head, leaf index, inclusion proof and consistency proof. It supports idempotent issuance/recovery and immutable operation lookup. A lost acknowledgement is recovered only through the same operation ID; changed bytes, scope, receipt identity or proof metadata are rejected.
+
+The contract's structural checks do not replace cryptographic verification. The gateway must still call the existing receipt/trust-bundle/tree-head/Merkle verifier path before evidence is accepted by the API Worker.
+
+**Not yet wired:** no concrete authority implementation, service binding, signing keys, or provider integration is configured. The gateway checkpoint RPC remains fail-closed with `provider_unavailable`.
+
+
+## 15. Gateway composition and fail-closed deployment state
+
+The private gateway now composes the two independent interfaces when both optional bindings are present: the provider-neutral checkpoint coordinator performs append/idempotent recovery/exact readback; the separate evidence authority issues or recovers the signed receipt and transparency proof bundle. The gateway checks that the coordinator's checkpoint digest equals the canonical replay checkpoint-body digest, structurally checks the authority bundle, and returns a canonical evidence-verification request. The API Worker must still run its private cryptographic verification RPC and locally finalize the pending intent.
+
+The gateway environment type exposes optional `WITNESS_PROVIDER` and `WITNESS_EVIDENCE_AUTHORITY` RPC bindings, but neither is configured in Wrangler or deployed. Missing bindings return `provider_unavailable` and leave the pending intent intact. This is composition readiness only, not a live provider or independent witness deployment.

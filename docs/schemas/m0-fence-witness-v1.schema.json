@@ -15,6 +15,9 @@
     },
     {
       "$ref": "#/$defs/treeHeadEnvelope"
+    },
+    {
+      "$ref": "#/$defs/monitorReplayCheckpointArtifact"
     }
   ],
   "$defs": {
@@ -408,6 +411,100 @@
           "minLength": 86,
           "maxLength": 86,
           "pattern": "^[A-Za-z0-9_-]{86}$"
+        }
+      }
+    },
+    "monitorReplayCheckpointBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "schemaVersion",
+        "trustDomainId",
+        "witnessId",
+        "authorityId",
+        "hostId",
+        "senderId",
+        "recipientId",
+        "generation",
+        "operationId",
+        "phase",
+        "previousCheckpointDigest",
+        "snapshotDigest",
+        "snapshotByteLength",
+        "baseStateVersion",
+        "messageDigest"
+      ],
+      "properties": {
+        "profile": {
+          "const": "sky-high-fence-monitor-replay-v1"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "trustDomainId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "witnessId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "authorityId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "hostId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "senderId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "recipientId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "operationId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "phase": {
+          "const": "MONITOR_GOSSIP_REPLAY_V1"
+        },
+        "previousCheckpointDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "snapshotDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "snapshotByteLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 524288
+        },
+        "baseStateVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "messageDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "monitorReplayCheckpointArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "body",
+        "checkpointDigest"
+      ],
+      "properties": {
+        "body": {
+          "$ref": "#/$defs/monitorReplayCheckpointBody"
+        },
+        "checkpointDigest": {
+          "$ref": "#/$defs/digest"
         }
       }
     }

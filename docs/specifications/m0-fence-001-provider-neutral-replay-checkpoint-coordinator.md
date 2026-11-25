@@ -30,14 +30,40 @@ The coordinator:
 1. Accepts only a plain JSON object and serializes it using RFC 8785.
 2. Bounds canonical snapshot size to 512 KiB.
 3. Computes SHA-256 over the exact canonical UTF-8 bytes.
-4. Derives the deterministic operation ID
-   `fence-monitor-replay-<snapshot-sha256>`.
-5. Uses the provider's current latest generation/digest as the exact expected
-   predecessor.
+4. For legacy callers without a persisted predecessor, retains the original
+   snapshot-digest operation ID for compatibility. For the durable-intent path,
+   derives the operation ID from canonical witness scope, the exact persisted
+   predecessor generation/digest, and snapshot digest.
+5. In the durable-intent path, requires the provider's latest generation/digest
+   to equal the persisted predecessor exactly; it never rebases a pending intent.
 6. Requests one immutable successor with phase
    `MONITOR_GOSSIP_REPLAY_V1`.
 
-Object key insertion order does not affect the digest or operation ID.
+Object key insertion order does not affect the snapshot digest. In the durable-intent
+path, the operation ID is stable across retries of the same scope, predecessor
+and snapshot, and differs when any of those bindings differ.
+
+## Verified checkpoint identity versus transparency tree head
+
+The API finalization record keeps two distinct digests:
+
+- `checkpointDigest` is the digest signed into the witness receipt for the
+  checkpoint body. The receipt also binds operation ID, generation and
+  previous checkpoint digest.
+- `treeHeadDigest` is the root hash of the signed transparency tree head that
+  contains the receipt leaf. It is not the checkpoint digest and must never be
+  copied into the checkpoint predecessor field.
+
+The private gateway returns these values only after verifying the trust bundle,
+receipt signature and checkpoint binding, signed tree head, receipt inclusion,
+and tree-head consistency. It also returns the verified scope, operation ID,
+generation and predecessor. The API finalizer compares those values with the
+persisted intent and requires the checkpoint body's `authorityStateDigest`
+to equal the exact pending snapshot digest.
+
+On finalization, `ReplayWitnessHead.digest` stores the checkpoint digest;
+`ReplayWitnessHead.treeHeadDigest` stores the transparency root. A receipt for
+another scope, operation, predecessor, generation or snapshot is rejected.
 
 ## Ambiguous acknowledgement and readback
 

@@ -1,8 +1,8 @@
 # FENCE-001 monitor replay bridge readiness gates
 
-**Decision (updated 2026-11-23):** The local cryptographic verifier and authenticated Worker-to-Worker RPC gates now have implementation slices and exact-head CI evidence (PRs #188–#194, with the TypeScript runtime verifier in this branch). The remaining implementation blockers are the provider-neutral gateway append adapter, durable trust/head pinning, and the monitor replay Durable Object pending-intent/finalize/recovery lifecycle.
+**Current decision (updated 2026-11-25):** The dedicated monitor-replay checkpoint profile, dual-digest provider contract, authenticated gateway composition, durable API pending-intent recovery/finalization, synthetic positive recovery path, and gateway-to-DynamoDB Local workerd integration are implemented and covered by exact-head CI in PR #201. A production gateway service binding to the isolated provider Worker exists, but the production provider Worker write switch remains explicitly `false`; the production gateway has no `WITNESS_EVIDENCE_AUTHORITY` binding. The gateway therefore fails closed with `provider_unavailable` before a provider append. A configuration regression test now locks these deployment invariants.
 
-This remains a readiness audit, not a claim that monitor replay rollback protection is implemented. PR #185 remains the governing bridge protocol contract. Production rollback protection remains **NOT QUALIFIED**.
+This remains a readiness audit, not a claim that monitor replay rollback protection is production-qualified. PR #185 remains the governing bridge protocol contract. Production rollback protection remains **NOT QUALIFIED**.
 
 ## 1. Evidence inspected
 
@@ -95,5 +95,80 @@ This audit does not add a gateway, service binding, provider adapter, signed tre
 - **Gate B — workload identity:** PRs #190–#191 implement signed workload identity and durable nonce replay. PR #192 adds the private gateway Worker; PR #193 adds the API caller proof signer; PR #194 verifies the real API-to-gateway named RPC boundary in local workerd. PR #194 exact-head CI run #2384 passed.
 - **Gate C — local evidence verification:** PR #197 adds the private `verifyEvidence` RPC, pinned root/scope configuration, durable trust-bundle generation state, historical trust context for accepted tree heads, receipt verification, inclusion proof and prior-head consistency verification. Local workerd integration tests cover the full API-to-gateway path.
 - **Gate D — provider-neutral append/readback coordinator:** this branch adds a TypeScript adapter contract and coordinator for RFC 8785 snapshot bytes, deterministic operation IDs, exact idempotency, ambiguous-ack recovery, immutable operation lookup and latest-head readback. Its in-memory unit tests are logic evidence only; no external provider is wired or qualified.
-- **Next:** implement the durable pending-intent/finalize/recovery lifecycle around `GossipReplayStateDO`, keeping provider calls outside storage transactions and reconciling restore state against the verified witness head. Only then wire a concrete provider adapter behind the contract.
+- **Next:** complete ADR-021's dedicated `sky-high-fence-monitor-replay-v1` profile integration. Its closed JSON Schema, strict TypeScript body validator and signed receipt/checkpoint-digest verification path are now implemented in PR #201. Remaining work: persist/read back snapshot and checkpoint bytes/digests separately in the provider-neutral adapter/coordinator, integrate independent evidence-authority issuance/recovery, and bind verified replay evidence into API finalization. The current coordinator's `checkpointDigest = snapshotDigest` assumption must be removed before any provider append is enabled.
 - **Still prohibited:** no live provider writes, production keys, public gateway ingress, or host/student-code execution. No rollback protection or independent provider durability claim is authorized by these local tests.
+
+
+## 8. Updated implementation status — PR #201
+
+- **Pending intent / local recovery lifecycle:** implemented in PR #201. Exact canonical request bytes and predecessor identity are persisted before gateway calls; recovery retries outside transactions; Durable Object alarms re-arm after reconstruction and retry transient failures only. Exact-head CI passed on commit `34219425326200c8c7384b57693e149db8e23ac1`.
+- **Provider-neutral coordinator:** implemented and exercised with in-memory tests and DynamoDB Local qualification harnesses. These do not qualify production provider durability or an independent witness.
+- **Important profile mismatch discovered:** the coordinator currently treats the replay snapshot digest as the checkpoint digest, while the existing witness checkpoint-body profile is an authority lifecycle schema. ADR-021 proposes a separate monitor-replay checkpoint-body profile and explicit separation of snapshot digest, checkpoint digest, receipt leaf hash and tree-head digest. This is now the immediate blocking gate.
+- **Concrete provider and independent evidence authority:** not wired. No live append is authorized. A provider append acknowledgement or opaque consistency token cannot satisfy the evidence-authority gate.
+- **Production qualification:** NOT QUALIFIED. No student-code execution or host admission authorization follows from these local implementation tests.
+
+
+## 9. Replay checkpoint profile implementation progress — 2026-11-23
+
+- Added `monitorReplayCheckpointBody` and `monitorReplayCheckpointArtifact` to the existing FENCE witness JSON Schema; the authority checkpoint definition and existing vectors are unchanged.
+- Added strict TypeScript validation for the replay body, including exact keys, sender/recipient distinction, bounded snapshot byte length and distinct snapshot/message digests.
+- Extended the receipt verifier to verify the JCS digest of the replay checkpoint body while retaining the existing receipt envelope profile, key purpose and Ed25519 signing domain. Receipt operation/generation/predecessor/authority/host bindings and trust-domain identity are checked.
+- Added synthetic tests for valid replay body structure, forbidden authority-schema aliases, malformed fields and a signed receipt whose checkpoint digest is computed from the new replay body.
+- This does not yet change provider adapter persistence, coordinator digest semantics or gateway RPC. No provider append is enabled.
+
+
+## 10. Dual-digest implementation update — 2026-11-23
+
+The dedicated replay checkpoint profile now has:
+- closed JSON Schema and strict TypeScript validation;
+- signed receipt verification over the exact canonical replay checkpoint-body digest;
+- separate snapshot/checkpoint digests and exact canonical byte persistence in the provider-neutral adapter contract;
+- coordinator enforcement of exact scope/predecessor/snapshot/checkpoint binding and dual-byte readback;
+- API finalization using explicit `snapshotDigest`.
+
+Exact-head CI run #2677 passed on `244de56ecc0188412c1d7f2b3b3ee56dff50e4f7`.
+
+**Remaining gates:** gateway checkpoint construction must create the dedicated profile from the persisted replay intent; the storage provider must be concretely implemented and qualified; an independently administered evidence authority must issue/recover signed receipt + signed tree head + inclusion/consistency proofs; gateway verification and API finalization must be exercised end-to-end with those exact artifacts. No production provider writes or student execution are enabled.
+
+
+## 11. Message-bound request construction update
+
+The durable intent and gateway request now bind sender ID, recipient ID, canonical message digest, base state version, exact snapshot byte length, and scope/predecessor/operation identity. Gateway validation re-hashes the exact snapshot, confirms sender/recipient match the decoded snapshot, and requires the triggering message digest to be represented in retained message history before constructing the dedicated signed checkpoint body.
+
+Exact-head CI run #2701 passed on `144131dbc691e0670b02b64da585ee9fe2984d91`. Provider writes remain disabled; the next missing layer is a separate evidence-authority contract and a concrete storage provider.
+
+
+## 12. Independent evidence-authority boundary
+
+A dedicated `WitnessEvidenceAuthority` contract now separates receipt/transparency evidence issuance from the provider's atomic checkpoint storage. It includes exact checkpoint-byte readback, signed receipt, signed tree head, proofs, idempotent issue/recover and immutable operation lookup. Structural identity checks and ambiguous-ack recovery have synthetic tests.
+
+The contract is not connected to a remote service or configured binding. The gateway continues to return `provider_unavailable`; no live append or evidence issuance is possible yet. The next implementation slice is to wire provider append/readback and authority issuance behind their separate interfaces, then run full gateway verification over the returned bundle.
+
+
+## 13. Gateway composition progress
+
+The private gateway's checkpoint RPC now composes the provider-neutral coordinator with the independent evidence-authority interface. It builds the dedicated replay checkpoint body from the persisted message-bound intent, verifies exact dual-digest identity through provider readback, requests signed evidence, checks exact checkpoint bytes and structural receipt/tree-head/proof metadata, then returns canonical evidence bytes for the API Worker's cryptographic verification RPC.
+
+The two environment bindings are optional and intentionally absent from Wrangler/deployment configuration. Without both, the gateway returns `provider_unavailable`; pending intents remain blocked and retryable. No provider or evidence-authority writes are enabled in the current environment.
+
+
+## 14. DynamoDB adapter implementation update
+
+A TypeScript DynamoDB provider adapter now implements the dual-digest provider contract using conditional transactional writes, immutable operation/idempotency records, chunked exact-byte storage and strongly consistent readback. CI's DynamoDB Local step successfully exercised exact bytes/digests, retries, conflicts, stale predecessor and independent-client concurrency.
+
+The factory is loopback-only. No live AWS credentials, table, provider service binding or deployment are configured. The adapter has not yet passed Cloudflare workerd transport qualification or real AWS provider qualification. It must not be described as production-qualified.
+
+
+## 15. Production deployment boundary and current fail-closed posture — 2026-11-25
+
+The production configuration has a deliberate two-part boundary:
+
+- `apps/witness-gateway/wrangler.jsonc` binds the production gateway to the isolated `sky-high-witness-provider` Worker through the private `WITNESS_PROVIDER` service binding.
+- The production gateway does **not** bind `WITNESS_EVIDENCE_AUTHORITY`. `WitnessGateway.checkpointReplay` requires both provider and evidence-authority RPCs and returns `provider_unavailable` if either is absent. The provider-only workerd integration test proves that this path creates neither a latest-head record nor an immutable operation record.
+- `apps/witness-gateway/provider.wrangler.jsonc` explicitly sets `WITNESS_DDB_WRITES_ENABLED=false`. The provider Worker additionally requires this switch and all provider configuration/secrets before constructing its AWS adapter.
+- Both gateway and provider Worker configurations set `workers_dev=false`; their normal HTTP surfaces return 404. The intended entrypoint is private service-binding RPC, not public ingress.
+- `apps/witness-gateway/src/production-deployment-guard.test.ts` reads the actual Wrangler JSONC files and asserts the absent production authority binding, explicit provider write-disable setting, and disabled public Worker surfaces.
+
+The provider service binding is therefore an intentionally inert integration boundary, not a live append capability. The gateway-level missing-authority guard is the primary pre-append control; the provider write switch is an independent second control. Neither synthetic tests nor the configuration guard establish production provider qualification.
+
+**Still not qualified / not approved:** independently administered evidence authority; out-of-band production root provisioning and rotation/revocation governance; durable anti-rollback state across restore and operator failure domains; real AWS provider durability and IAM/account isolation; backup/restore and partition/fork/split-view exercises; independent monitors with distinct operators/accounts/failure domains; independent security review; and formal architecture/security approval. Production approval remains false. No live credentials, live writes, or deployment are authorized by this PR.

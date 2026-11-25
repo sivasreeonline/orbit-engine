@@ -1,5 +1,5 @@
 import type { Env } from "../env";
-import type { WitnessEvidenceVerificationResult } from "./witness-gateway-contract";
+import type { WitnessEvidenceVerificationResult, WitnessReplayCheckpointResult } from "./witness-gateway-contract";
 import type {
   WorkloadAuthenticationResult,
   WorkloadProof,
@@ -115,5 +115,58 @@ export async function verifyEvidenceViaWitnessGateway(
     return await env.WITNESS_GATEWAY.verifyEvidence(created.proof, canonicalEvidenceBody);
   } catch {
     return { verified: false, reason: "gateway_unavailable" };
+  }
+}
+
+
+export type WitnessReplayCheckpointCallResult =
+  | WitnessReplayCheckpointResult
+  | {
+      readonly checkpointed: false;
+      readonly reason:
+        | "gateway_unavailable"
+        | "caller_identity_unconfigured"
+        | "caller_proof_signing_failed";
+    };
+
+/** Submit the exact persisted checkpoint intent through the authenticated private RPC. */
+export async function checkpointReplayViaWitnessGateway(
+  env: Pick<
+    Env,
+    | "WITNESS_GATEWAY"
+    | "WORKLOAD_CALLER_ID"
+    | "WORKLOAD_CALLER_KEY_ID"
+    | "WORKLOAD_CALLER_PRIVATE_KEY_PKCS8"
+  >,
+  canonicalCheckpointBody: Uint8Array,
+): Promise<WitnessReplayCheckpointCallResult> {
+  if (!env.WITNESS_GATEWAY) {
+    return { checkpointed: false, reason: "gateway_unavailable" };
+  }
+  const created = await createApiWorkloadProof(
+    {
+      ...(env.WORKLOAD_CALLER_ID !== undefined
+        ? { callerId: env.WORKLOAD_CALLER_ID }
+        : {}),
+      ...(env.WORKLOAD_CALLER_KEY_ID !== undefined
+        ? { keyId: env.WORKLOAD_CALLER_KEY_ID }
+        : {}),
+      ...(env.WORKLOAD_CALLER_PRIVATE_KEY_PKCS8 !== undefined
+        ? { privateKeyPkcs8: env.WORKLOAD_CALLER_PRIVATE_KEY_PKCS8 }
+        : {}),
+    },
+    canonicalCheckpointBody,
+    "checkpoint_replay",
+  );
+  if (!created.created) {
+    return { checkpointed: false, reason: created.reason };
+  }
+  try {
+    return await env.WITNESS_GATEWAY.checkpointReplay(
+      created.proof,
+      canonicalCheckpointBody,
+    );
+  } catch {
+    return { checkpointed: false, reason: "gateway_unavailable" };
   }
 }

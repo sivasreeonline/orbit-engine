@@ -1,0 +1,25 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "sky-high-witness-gateway-dynamodb-local-integration-client",
+  "main": "gateway-integration-client-worker.ts",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat", "rpc"],
+  "workers_dev": false,
+  "services": [
+    {
+      "binding": "WITNESS_GATEWAY",
+      "service": "sky-high-witness-gateway-dynamodb-local",
+      "entrypoint": "WitnessGateway"
+    },
+    {
+      "binding": "WITNESS_PROVIDER",
+      "service": "sky-high-dynamodb-local-witness-provider",
+      "entrypoint": "DynamoDBLocalWitnessProvider"
+    },
+    {
+      "binding": "WITNESS_GATEWAY_PROVIDER_ONLY",
+      "service": "sky-high-witness-gateway-provider-only",
+      "entrypoint": "WitnessGateway"
+    }
+  ]
+}

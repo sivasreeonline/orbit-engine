@@ -1,0 +1,8 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "sky-high-dynamodb-local-witness-provider",
+  "main": "dynamodb-local-provider/index.ts",
+  "compatibility_date": "2026-11-09",
+  "compatibility_flags": ["nodejs_compat", "rpc"],
+  "workers_dev": false
+}
