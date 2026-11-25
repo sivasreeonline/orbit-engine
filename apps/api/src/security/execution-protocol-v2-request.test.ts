@@ -73,6 +73,15 @@ describe("buildExecutionProtocolV2Request", () => {
     });
     expect(new TextDecoder().decode(built.requestBytes)).toBe(JSON.stringify(built.request));
     expect(built.requestSha256).toMatch(/^[0-9a-f]{64}$/);
+    const digestBuffer = new ArrayBuffer(built.requestBytes.byteLength);
+    new Uint8Array(digestBuffer).set(built.requestBytes);
+    const expectedDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", digestBuffer));
+    const expectedHash = Array.from(expectedDigest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    expect(built.requestSha256).toBe(expectedHash);
+
+    const repeated = await buildExecutionProtocolV2Request(input, policy, entropy);
+    expect(repeated.requestBytes).toEqual(built.requestBytes);
+    expect(repeated.requestSha256).toBe(built.requestSha256);
     expect(built.intakeAt.toISOString()).toBe("2026-11-26T10:00:00.000Z");
   });
 
@@ -96,6 +105,18 @@ describe("buildExecutionProtocolV2Request", () => {
       policy,
       entropy,
     )).rejects.toThrow("protocol_v2_request_source_sha256_invalid");
+  });
+
+  it("rejects malformed runtime digests and resource limits", async () => {
+    await expect(buildExecutionProtocolV2Request(input, {
+      ...policy,
+      runtimeImageDigests: { ...policy.runtimeImageDigests, java: "java:latest" },
+    }, entropy)).rejects.toThrow("protocol_v2_request_runtime_image_digest_invalid");
+
+    await expect(buildExecutionProtocolV2Request(input, {
+      ...policy,
+      limits: { ...policy.limits, outputBytes: 0 },
+    }, entropy)).rejects.toThrow("protocol_v2_request_resource_limits_invalid");
   });
 
   it("rejects deadlines that exceed the database's ten-minute ceiling", async () => {
