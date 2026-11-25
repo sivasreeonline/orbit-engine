@@ -146,7 +146,7 @@ Added `apps/witness-gateway/src/anchor-cas-model.ts` and its unit tests. The pur
 The decision contract covers:
 
 - first-write creation against an explicit empty predecessor;
-- exact idempotent retry after a lost acknowledgement (`ALREADY_APPLIED`);
+- exact idempotent retry after a lost acknowledgement (`ALREADY_APPLIED`), including retries after later anchor records have committed by consulting an immutable operation-ID index;
 - rejection when an operation ID is reused with different request/record bytes;
 - compare-and-set against both the expected sequence and expected record digest, so two writers racing the same predecessor cannot both win;
 - exact sequence increment and predecessor-digest linkage;
