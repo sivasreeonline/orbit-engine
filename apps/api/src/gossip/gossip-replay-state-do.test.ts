@@ -34,8 +34,14 @@ function makeHarness(existing?: Map<string, unknown>, env: Partial<Env> = {}) {
     async get<T>(key: string): Promise<T | undefined> {
       return values.get(key) as T | undefined;
     },
-    async put<T>(key: string, value: T): Promise<void> {
-      values.set(key, structuredClone(value));
+    async put<T>(keyOrEntries: string | Record<string, T>, value?: T): Promise<void> {
+      if (typeof keyOrEntries === "string") {
+        values.set(keyOrEntries, structuredClone(value));
+        return;
+      }
+      for (const [key, entry] of Object.entries(keyOrEntries)) {
+        values.set(key, structuredClone(entry));
+      }
     },
     async delete(key: string): Promise<boolean> {
       return values.delete(key);
