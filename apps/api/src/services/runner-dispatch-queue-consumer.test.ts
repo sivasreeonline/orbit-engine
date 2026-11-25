@@ -70,9 +70,18 @@ describe("consumeRunnerDispatchBatch", () => {
     expect(message.retry).toHaveBeenCalledOnce();
   });
 
+  it("passes a strict v2 metadata envelope to durable handoff", async () => {
+    const message = makeMessage({ ...envelope, protocolVersion: "v2" });
+    const record = vi.fn(async () => ({ status: "RECORDED" as const, dispatchId: "dispatch-v2" }));
+    const summary = await consumeRunnerDispatchBatch({ messages: [message] }, { record });
+    expect(summary).toEqual({ received: 1, acknowledged: 1, retried: 0 });
+    expect(record).toHaveBeenCalledWith({ ...envelope, protocolVersion: "v2" });
+    expect(message.ack).toHaveBeenCalledOnce();
+  });
+
   it("retries malformed or extended messages without passing them to persistence", async () => {
     const malformed = makeMessage({ ...envelope, sourceCode: "must-not-cross" });
-    const unknownVersion = makeMessage({ ...envelope, protocolVersion: "v2" });
+    const unknownVersion = makeMessage({ ...envelope, protocolVersion: "v3" });
     const record = vi.fn(async () => ({
       status: "RECORDED" as const,
       dispatchId: "dispatch-1",
