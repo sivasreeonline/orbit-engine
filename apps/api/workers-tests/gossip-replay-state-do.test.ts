@@ -176,6 +176,6 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
       canonicalDigest: "b".repeat(64),
     }, 10_000);
     expect(blocked.outcome).toBe("BLOCKED");
-  });;
+  });
 
 });
