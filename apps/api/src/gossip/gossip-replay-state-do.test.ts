@@ -656,24 +656,47 @@ describe("GossipReplayStateDO", () => {
     await harness.object.stageCheckpointIntent(pending);
     harness.clearAlarm();
 
+    const nextState: VersionedReplayState = {
+      version: 2,
+      stateVersion: 1,
+      snapshot: proposedState,
+      witnessHead: {
+        generation: 1,
+        digest: "d".repeat(64),
+        treeSize: 1,
+        treeHeadDigest: "b".repeat(64),
+      },
+    };
+    const replacementSnapshot = { highestSequence: 2 };
+    const replacementIntent = await createReplayCheckpointIntent({
+      baseStateVersion: 1,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(2).canonicalDigest,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 1, digest: "d".repeat(64) },
+      nextState: replacementSnapshot,
+    });
+    const replacementPending = await createPendingReplayIntent(
+      replacementIntent,
+      message(2),
+      replacementSnapshot,
+    );
+
     vi.spyOn(harness.object, "recoverPendingCheckpointIntent").mockImplementation(async () => {
-      // Model the original intent being finalized and a newer transition
+      // Model the original intent being finalized and a valid newer transition
       // being staged before the alarm's quarantine transaction runs.
       await harness.storage.transaction(async (txn) => {
-        const current = await txn.get<PendingReplayIntent>("replay-checkpoint-pending-v1");
-        if (current) {
-          await txn.put("replay-checkpoint-pending-v1", {
-            ...current,
-            transitionDigest: "f".repeat(64),
-          });
-        }
+        await txn.put(REPLAY_STATE_ENVELOPE_KEY, nextState);
+        await txn.put("replay-checkpoint-pending-v1", replacementPending);
       });
       return { recovered: false, reason: "evidence_not_verified" };
     });
 
     await harness.object.alarm();
 
-    expect(harness.values.has("replay-checkpoint-pending-v1")).toBe(true);
+    expect(harness.values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(nextState);
+    expect(harness.values.get("replay-checkpoint-pending-v1")).toEqual(replacementPending);
     expect(harness.values.has(REPLAY_CHECKPOINT_QUARANTINE_KEY)).toBe(false);
   });
 
