@@ -138,3 +138,19 @@ The model classifies independently supplied local, external-anchor, witness and 
 - root-rotation overlap, successor bundle acceptance, successor tree-head acceptance, old-root removal, and emergency approval.
 
 **Boundary:** this is a deterministic reference/decision model, not a connected anchor client or production recovery controller. It does not verify signatures, Merkle proofs, bundle signatures, monitor identities, or anchor compare-and-set itself. Those proofs must be verified by the calling layer before the corresponding boolean evidence is supplied. No external anchor provider is selected, no runtime recovery path invokes this model yet, and production rollback protection remains **NOT QUALIFIED**.
+
+## 10. Deterministic anchor compare-and-set model — 2026-11-25
+
+Added `apps/witness-gateway/src/anchor-cas-model.ts` and its unit tests. The pure model specifies a candidate external-anchor record with a monotonically increasing sequence, predecessor record digest, unique operation ID, canonical request digest, record digest, and trust checkpoint.
+
+The decision contract covers:
+
+- first-write creation against an explicit empty predecessor;
+- exact idempotent retry after a lost acknowledgement (`ALREADY_APPLIED`);
+- rejection when an operation ID is reused with different request/record bytes;
+- compare-and-set against both the expected sequence and expected record digest, so two writers racing the same predecessor cannot both win;
+- exact sequence increment and predecessor-digest linkage;
+- immutable log identity, non-regressing trust-bundle generation and tree size, and same-size root conflict rejection;
+- mandatory caller-verified trust-bundle chain evidence for generation advances and Merkle consistency evidence for tree-size advances.
+
+**Boundary:** the model does not calculate or authenticate record digests, authenticate writer identity, provide trusted time, persist data, implement a transaction, or contact an independently administered anchor. The boolean proof inputs are trusted assertions from a future verifier boundary, not proof verification. The model therefore demonstrates decision semantics only; it is not an anchor implementation, does not close the external restore-domain problem, and does not change the production qualification status.
