@@ -246,3 +246,17 @@ Extended the workerd/DynamoDB Local integration harness with a second gateway in
 The workerd integration suite now passes both cases: provider-only fail-closed/no-write and the full provider + authority + cryptographic verification + exact-byte readback path (2/2). Push CI run #45615016674 and pull-request CI run #45615032202 both passed all three jobs on `63b7c7d66966526d94574f7a1857fc757ee7650d`.
 
 This guard matches the current production posture: without a configured evidence-authority binding, replay checkpoint requests remain unavailable and cannot create provider records. It is a local synthetic fail-closed test, not production authority qualification.
+
+
+## Production deployment guard reconciliation — 2026-11-25
+
+The production deployment configuration now has an explicit, test-locked fail-closed posture:
+
+- The production gateway has a private service binding to the isolated provider Worker, but no `WITNESS_EVIDENCE_AUTHORITY` service binding. `checkpointReplay` requires both bindings and returns `provider_unavailable` before invoking the provider if the authority is absent.
+- The provider Worker deployment configuration pins `WITNESS_DDB_WRITES_ENABLED=false`. The Worker refuses to construct its AWS adapter unless the switch is explicitly enabled and the required region, table and credentials are present.
+- Gateway and provider Workers keep `workers_dev=false` and their ordinary HTTP fetch handlers return 404.
+- `apps/witness-gateway/src/production-deployment-guard.test.ts` reads both Wrangler JSONC configurations and asserts these invariants. The provider-only workerd integration test separately proves the gateway does not append when the authority binding is missing.
+
+This configuration is intentionally not a production checkpoint service. The provider binding is present as a private integration boundary, while the missing authority binding and disabled provider write switch independently prevent production writes. No deployment, secret provisioning or live AWS operation was performed.
+
+**Remaining qualification gates:** separately administered production evidence authority; out-of-band root-key governance and rotation/revocation; durable anti-rollback trust state; production AWS provider/IAM/account qualification; restore, partition, fork and split-view testing; independent monitor operators/accounts/failure domains; and independent architecture/security approval. ADR-021 remains Proposed and production qualification remains NOT QUALIFIED.
