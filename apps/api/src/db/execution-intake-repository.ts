@@ -1,6 +1,7 @@
 import { Client } from "pg";
 import type { Principal } from "../contracts";
 import { DatabaseUnavailableError } from "./database-errors";
+import { canonicalTestBundleIdentity, TestBundleEncodingError, type CanonicalTestBundleCase } from "./canonical-test-bundle";
 
 export type ExecutionAction = "RUN" | "SUBMIT";
 export type ExecutionLanguage = "java" | "python";
@@ -47,6 +48,13 @@ export class ExecutionProblemNotFoundError extends Error {
   constructor() {
     super("execution_problem_not_found");
     this.name = "ExecutionProblemNotFoundError";
+  }
+}
+
+export class ExecutionTestBundleIntegrityError extends Error {
+  constructor(message = "execution_test_bundle_integrity_failed") {
+    super(message);
+    this.name = "ExecutionTestBundleIntegrityError";
   }
 }
 
@@ -146,9 +154,10 @@ export class PostgresExecutionIntakeRepository {
 
         const existing = await client.query<ExistingExecutionRow>(
           [
-            "SELECT ei.attempt_id, ej.id AS execution_id, ei.request_sha256",
+            "SELECT ei.attempt_id, ej.id AS execution_id, ei.request_sha256, attempt.problem_version_id",
             "FROM execution_idempotency AS ei",
             "INNER JOIN execution_jobs AS ej ON ej.attempt_id = ei.attempt_id",
+            "INNER JOIN execution_attempts AS attempt ON attempt.id = ei.attempt_id",
             "WHERE ei.tenant_id = $1::uuid AND ei.actor_user_id = $2::uuid",
             "  AND ei.endpoint = $3 AND ei.idempotency_key = $4",
             "FOR UPDATE OF ei",
@@ -161,10 +170,16 @@ export class PostgresExecutionIntakeRepository {
           if (prior.request_sha256.trim() !== requestHash) {
             throw new IdempotencyConflictError();
           }
+          const testBundleId = await loadTestBundleIdentity(
+            client,
+            prior.problem_version_id,
+            input.action,
+          );
           await client.query("COMMIT");
           return {
             executionId: prior.execution_id,
             attemptId: prior.attempt_id,
+            testBundleId,
             replayed: true,
           };
         }
@@ -183,6 +198,14 @@ export class PostgresExecutionIntakeRepository {
         );
         const selectedProblem = problem.rows[0];
         if (!selectedProblem) throw new ExecutionProblemNotFoundError();
+
+        // Match the runner artifact repository's visibility filter, ordering,
+        // byte limits and canonical encoder before any durable intake writes.
+        const testBundleId = await loadTestBundleIdentity(
+          client,
+          selectedProblem.problem_version_id,
+          input.action,
+        );
 
         const snapshot = await client.query<IdRow>(
           [
@@ -250,7 +273,7 @@ export class PostgresExecutionIntakeRepository {
         );
 
         await client.query("COMMIT");
-        return { executionId, attemptId, replayed: false };
+        return { executionId, attemptId, testBundleId, replayed: false };
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);
         throw error;
