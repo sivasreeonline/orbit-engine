@@ -189,6 +189,20 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0003_execution_intake_foundation.sql
 
+      # Intake now reads the immutable v2 request table even when v2 is disabled;
+      # install its proposal schema before the intake PostgreSQL integration test.
+      - name: Apply and re-apply immutable protocol v2 request migration
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0014_execution_protocol_v2_requests.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0014_execution_protocol_v2_requests.sql
+
+      - name: Verify protocol v2 request persistence SQL invariants
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0014_execution_protocol_v2_requests.sql
+
       - name: Verify concurrent execution intake against PostgreSQL
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
@@ -380,18 +394,6 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/runner-recovery-repository.integration.test.ts
-
-      - name: Apply and re-apply immutable protocol v2 request migration
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0014_execution_protocol_v2_requests.sql
-          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0014_execution_protocol_v2_requests.sql
-
-      - name: Verify protocol v2 request persistence SQL invariants
-        env:
-          PGPASSWORD: postgres
-        run: psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/tests/0014_execution_protocol_v2_requests.sql
 
       - name: Worker deployment dry run
         run: npx wrangler deploy --dry-run
