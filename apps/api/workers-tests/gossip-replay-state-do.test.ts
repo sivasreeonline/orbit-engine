@@ -167,6 +167,12 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     expect(recovery).toMatchObject({ recovered: true, stateVersion: 1 });
     expect(await restartedStub.hasPendingCheckpointIntent()).toBe(false);
     expect(await restartedStub.getPendingCheckpointIntent()).toBeUndefined();
+    // A duplicate recovery after the atomic commit must be a no-op: the
+    // completed transition is no longer eligible for provider or evidence RPCs.
+    expect(await restartedStub.recoverPendingCheckpointIntent()).toEqual({
+      recovered: false,
+      reason: "no_pending_intent",
+    });
 
     // Versioned state cannot be bypassed through the legacy acceptance API.
     const blocked = await restartedStub.acceptVerifiedMessage({
