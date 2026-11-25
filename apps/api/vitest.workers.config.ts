@@ -78,6 +78,8 @@ export default defineConfig({
                 FENCE_TEST_PROVIDER_LOSE_NEXT_ACK: "true",
                 // Provider commit succeeds, but independent evidence issuance is unavailable once.
                 FENCE_TEST_AUTHORITY_FAIL_NEXT_ISSUANCE: "true",
+                // Next return a shape-valid proof with a bad hash; API verification must reject it.
+                FENCE_TEST_AUTHORITY_CORRUPT_NEXT_PROOF: "true",
               },
             },
             {
