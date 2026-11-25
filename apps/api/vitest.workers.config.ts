@@ -65,17 +65,26 @@ export default defineConfig({
           },
           workers: [
             {
-              name: "sky-high-synthetic-witness-services",
-              scriptPath: ".test-dist/synthetic-witness-services/index.js",
+              name: "sky-high-synthetic-witness-provider",
+              scriptPath: ".test-dist/synthetic-witness-provider/index.js",
+              modules: true,
+              compatibilityDate: "2026-11-09",
+              compatibilityFlags: ["nodejs_compat", "rpc"],
+              bindings: {
+                // The provider receives only its one-shot lost-ack test flag.
+                // It has no evidence-authority private key binding.
+                FENCE_TEST_PROVIDER_LOSE_NEXT_ACK: "true",
+              },
+            },
+            {
+              name: "sky-high-synthetic-evidence-authority",
+              scriptPath: ".test-dist/synthetic-evidence-authority/index.js",
               modules: true,
               compatibilityDate: "2026-11-09",
               compatibilityFlags: ["nodejs_compat", "rpc"],
               bindings: {
                 FENCE_TEST_AUTHORITY_ROOT_PRIVATE_KEY_PKCS8: base64Url(authorityRootPrivateKeyPkcs8),
                 FENCE_TEST_AUTHORITY_ROOT_PUBLIC_KEY_BASE64URL: base64Url(authorityRootPublicKey),
-                // Exercise the gateway coordinator's commit-before-ack recovery
-                // path through the actual synthetic provider Worker RPC.
-                FENCE_TEST_PROVIDER_LOSE_NEXT_ACK: "true",
                 // Provider commit succeeds, but independent evidence issuance is unavailable once.
                 FENCE_TEST_AUTHORITY_FAIL_NEXT_ISSUANCE: "true",
                 // Next return a shape-valid proof with a bad hash; API verification must reject it.
@@ -119,11 +128,11 @@ export default defineConfig({
               },
               serviceBindings: {
                 WITNESS_PROVIDER: {
-                  name: "sky-high-synthetic-witness-services",
+                  name: "sky-high-synthetic-witness-provider",
                   entrypoint: "SyntheticWitnessProvider",
                 },
                 WITNESS_EVIDENCE_AUTHORITY: {
-                  name: "sky-high-synthetic-witness-services",
+                  name: "sky-high-synthetic-evidence-authority",
                   entrypoint: "SyntheticWitnessEvidenceAuthorityEntrypoint",
                 },
               },
