@@ -28,6 +28,11 @@ export interface ExternalAnchorRecord {
 
 export interface AnchorCasInput {
   readonly current: ExternalAnchorRecord | null;
+  /**
+   * Durable immutable operation index, including records older than current.
+   * A production anchor must retain this (or an equivalent queryable index).
+   */
+  readonly knownOperations?: readonly ExternalAnchorRecord[];
   readonly expectedSequence: number;
   readonly expectedRecordDigest: string;
   readonly proposed: ExternalAnchorRecord;
@@ -99,14 +104,18 @@ function sameRecord(a: ExternalAnchorRecord, b: ExternalAnchorRecord): boolean {
 export function evaluateAnchorCompareAndSet(input: AnchorCasInput): AnchorCasDecision {
   const { current, proposed } = input;
   if (!validRecord(proposed) || (current !== null && !validRecord(current)) ||
+      (input.knownOperations !== undefined &&
+        (!Array.isArray(input.knownOperations) || input.knownOperations.some((item) => !validRecord(item)))) ||
       !Number.isSafeInteger(input.expectedSequence) || input.expectedSequence < 0 ||
       !DIGEST.test(input.expectedRecordDigest)) {
     return { action: "REJECTED", reason: "invalid_record" };
   }
 
-  if (current?.operationId === proposed.operationId) {
-    return sameRecord(current, proposed)
-      ? { action: "ALREADY_APPLIED", record: current }
+  const knownOperation = input.knownOperations?.find((item) => item.operationId === proposed.operationId)
+    ?? (current?.operationId === proposed.operationId ? current : undefined);
+  if (knownOperation) {
+    return sameRecord(knownOperation, proposed)
+      ? { action: "ALREADY_APPLIED", record: knownOperation }
       : { action: "REJECTED", reason: "operation_id_conflict" };
   }
 
