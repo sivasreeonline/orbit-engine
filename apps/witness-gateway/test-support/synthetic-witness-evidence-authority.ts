@@ -62,11 +62,13 @@ async function sign(
   return base64url(new Uint8Array(signature));
 }
 
-async function generateSigningKey(): Promise<{
+interface SyntheticSigningKey {
   readonly privateKey: CryptoKey;
   readonly publicKey: Uint8Array;
   readonly keyId: string;
-}> {
+}
+
+async function generateSigningKey(): Promise<SyntheticSigningKey> {
   const pair = await crypto.subtle.generateKey(
     { name: "Ed25519" },
     true,
@@ -76,12 +78,49 @@ async function generateSigningKey(): Promise<{
   return { privateKey: pair.privateKey, publicKey, keyId: await fingerprint(publicKey) };
 }
 
+function decodeBase64Url(value: string): Uint8Array {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new TypeError("test signing key material is malformed");
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") +
+    "=".repeat((4 - (value.length % 4)) % 4);
+  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+}
+
+/** Import a test-harness root keypair; private bytes remain inside this authority instance. */
+async function importRootSigningKey(
+  privateKeyPkcs8Base64Url: string,
+  publicKeyBase64Url: string,
+): Promise<SyntheticSigningKey> {
+  const publicKey = decodeBase64Url(publicKeyBase64Url);
+  const privateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    decodeBase64Url(privateKeyPkcs8Base64Url),
+    { name: "Ed25519" },
+    false,
+    ["sign"],
+  );
+  return { privateKey, publicKey, keyId: await fingerprint(publicKey) };
+}
+
 export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthority {
   private readonly records = new Map<string, WitnessEvidenceAuthorityBundle>();
   private readonly logEntries: Uint8Array[] = [];
-  private readonly rootKeyPromise = generateSigningKey();
+  private readonly rootKeyPromise: Promise<SyntheticSigningKey>;
   private readonly receiptKeyPromise = generateSigningKey();
   private readonly logKeyPromise = generateSigningKey();
+
+  constructor(rootKeyPromise: Promise<SyntheticSigningKey> = generateSigningKey()) {
+    this.rootKeyPromise = rootKeyPromise;
+  }
+
+  /** Test-only factory for injecting a root whose public half is pinned by the gateway. */
+  static withRootKeyMaterial(
+    privateKeyPkcs8Base64Url: string,
+    publicKeyBase64Url: string,
+  ): SyntheticWitnessEvidenceAuthority {
+    return new SyntheticWitnessEvidenceAuthority(
+      importRootSigningKey(privateKeyPkcs8Base64Url, publicKeyBase64Url),
+    );
+  }
 
   private operationKey(scope: WitnessCheckpointScope, operationId: string): string {
     return canonicalize({ scope, operationId }) ?? "";
