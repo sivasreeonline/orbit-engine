@@ -4,6 +4,7 @@ import {
   finalizePendingReplayIntent,
   hasPendingReplayIntent,
   initializeVersionedReplayState,
+  REPLAY_CHECKPOINT_QUARANTINE_KEY,
   stagePendingReplayIntent,
   type ReplayCheckpointStorage,
   type VersionedReplayState,
@@ -25,7 +26,7 @@ const REORDER_WINDOW = 64;
 const RETAINED_SEQUENCE_WINDOW = 128;
 const DIGEST = /^[0-9a-f]{64}$/;
 
-export const REPLAY_CHECKPOINT_QUARANTINE_KEY = "replay-checkpoint-quarantine-v1";
+export { REPLAY_CHECKPOINT_QUARANTINE_KEY } from "./gossip-replay-checkpoint-lifecycle";
 
 interface ReplayCheckpointQuarantine {
   readonly version: 1;
@@ -393,11 +394,9 @@ export class GossipReplayStateDO extends DurableObject<Env> {
       pending,
     );
     if (staged.staged) {
-      // A newly staged transition is a new operator-authorized attempt. Clear
-      // any quarantine left by a prior, already-resolved pending transition.
-      await this.ctx.storage.delete(REPLAY_CHECKPOINT_QUARANTINE_KEY);
-      // Alarm scheduling is deliberately outside the state transaction; the
-      // constructor repairs the narrow crash window between commit and alarm.
+      // The lifecycle transaction atomically clears stale quarantine with the
+      // pending-intent write. Alarm scheduling remains outside that transaction;
+      // constructor recovery repairs the commit-to-alarm crash window.
       await this.ctx.storage.setAlarm(Date.now() + 1_000);
     }
     return staged;
