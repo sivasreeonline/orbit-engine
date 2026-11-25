@@ -185,7 +185,8 @@ export function decideTrustRecovery(input: TrustRecoveryInput): TrustRecoveryDec
     return { action: "QUARANTINE", reason: "local_ahead" };
   }
 
-  if (!sameHead(anchor, witness)) {
+  if (!sameHead(anchor, witness) ||
+      witness.trustBundleGeneration > anchor.trustBundleGeneration) {
     if (!input.witnessExtendsAnchor) {
       return { action: "QUARANTINE", reason: "consistency_unproven" };
     }
