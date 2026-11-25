@@ -282,6 +282,24 @@ jobs:
         run: |
           docker run -d --name fence-dynamodb-local -p 8000:8000 amazon/dynamodb-local:3.3.2 -jar DynamoDBLocal.jar -inMemory -sharedDb
 
+      - name: Bundle gateway for DynamoDB Local workerd integration
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --config wrangler.jsonc --outdir .test-dist/witness-gateway
+
+      - name: Bundle isolated DynamoDB Local provider Worker
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --config test-support/dynamodb-local-provider.wrangler.jsonc --outdir .test-dist/dynamodb-local-provider
+
+      - name: Bundle synthetic evidence authority Worker
+        working-directory: apps/witness-gateway
+        run: npx wrangler deploy --dry-run --config test-support/synthetic-services.wrangler.jsonc --outdir .test-dist/synthetic-witness-services
+
+      - name: Verify gateway provider binding against DynamoDB Local in workerd
+        working-directory: apps/witness-gateway
+        env:
+          FENCE_DDB_LOCAL_ENDPOINT: http://127.0.0.1:8000
+        run: npm run test:workers:dynamodb-local
+
       - name: Verify AWS DynamoDB witness adapter against DynamoDB Local
         env:
           PYTHONPATH: ../../scripts
