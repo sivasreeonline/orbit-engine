@@ -107,7 +107,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
       request_deadline_valid: true, request_sha256: "0".repeat(64), request_bytes: bytes,
     }], existing: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
-    await expect(repository.record({ executionId, attemptId, protocolVersion: "v3" }))
+    await expect(repository.record({ executionId, attemptId, protocolVersion: "v3" } as never))
       .rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
     expect(fake.calls.some((call) => call.text.includes("INSERT INTO runner_dispatch_outbox"))).toBe(false);
   });
@@ -181,7 +181,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
     const fake = fakeClient();
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
-    await expect(repository.record({ ...envelope, protocolVersion: "v3" }))
+    await expect(repository.record({ ...envelope, protocolVersion: "v3" } as never))
       .rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
     await expect(repository.record({ ...envelope, sourceCode: "must-not-cross" } as never))
       .rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
