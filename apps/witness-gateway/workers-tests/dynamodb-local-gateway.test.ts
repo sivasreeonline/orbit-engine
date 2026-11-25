@@ -1,4 +1,5 @@
 import { DynamoDBClient, CreateTableCommand, DeleteTableCommand, DescribeTableCommand } from "@aws-sdk/client-dynamodb";
+import canonicalize from "canonicalize";
 import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { WitnessGatewayRpc } from "../../api/src/witness/witness-gateway-contract";
@@ -30,15 +31,16 @@ const scope: WitnessCheckpointScope = {
   hostId: "workerd-dynamodb-host",
 };
 const predecessor = { generation: 0, digest: "0".repeat(64) };
-const admin = new DynamoDBClient({
-  endpoint: bindings.FENCE_DDB_LOCAL_ENDPOINT,
-  region: bindings.FENCE_DDB_LOCAL_REGION,
-  credentials: { accessKeyId: "local", secretAccessKey: "local" },
-  requestHandler: createFetchDynamoDBRequestHandler(),
-});
+let admin: DynamoDBClient | undefined;
 
-describe("gateway provider binding against DynamoDB Local in workerd", () => {
+describe.skipIf(!bindings.FENCE_DDB_LOCAL_ENDPOINT)("gateway provider binding against DynamoDB Local in workerd", () => {
   beforeAll(async () => {
+    admin = new DynamoDBClient({
+      endpoint: bindings.FENCE_DDB_LOCAL_ENDPOINT,
+      region: bindings.FENCE_DDB_LOCAL_REGION,
+      credentials: { accessKeyId: "local", secretAccessKey: "local" },
+      requestHandler: createFetchDynamoDBRequestHandler(),
+    });
     await admin.send(new CreateTableCommand({
       TableName: bindings.FENCE_DDB_LOCAL_TABLE_NAME,
       AttributeDefinitions: [
@@ -67,11 +69,11 @@ describe("gateway provider binding against DynamoDB Local in workerd", () => {
 
   afterAll(async () => {
     try {
-      await admin.send(new DeleteTableCommand({
+      if (admin) await admin.send(new DeleteTableCommand({
         TableName: bindings.FENCE_DDB_LOCAL_TABLE_NAME,
       }));
     } finally {
-      admin.destroy();
+      admin?.destroy();
     }
   });
 
@@ -150,7 +152,7 @@ describe("gateway provider binding against DynamoDB Local in workerd", () => {
     expect(stored?.checkpoint.checkpointDigest).toBe(verified.checkpointDigest);
     expect(stored?.checkpoint.checkpointDigest).not.toBe(intent.snapshotDigest);
     expect(new TextDecoder().decode(stored!.checkpoint.canonicalSnapshotBytes))
-      .toBe(JSON.stringify(snapshot, Object.keys(snapshot).sort()));
+      .toBe(canonicalize(snapshot));
     expect(stored?.receipt.checkpointDigest).toBe(verified.checkpointDigest);
 
     const latest = await bindings.WITNESS_PROVIDER.readLatest(scope);
