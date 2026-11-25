@@ -58,7 +58,7 @@ export default defineConfig({
           workers: [
             {
               name: "sky-high-dynamodb-local-witness-provider",
-              scriptPath: ".test-dist/dynamodb-local-provider/dynamodb-local-provider-worker.js",
+              scriptPath: ".test-dist/dynamodb-local-provider/index.js",
               modules: true,
               compatibilityDate: "2026-11-09",
               compatibilityFlags: ["nodejs_compat", "rpc"],
