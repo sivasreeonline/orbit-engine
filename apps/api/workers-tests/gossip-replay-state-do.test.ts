@@ -176,7 +176,20 @@ describe("GossipReplayStateDO in the local Cloudflare Workers runtime", () => {
     expect(await restartedStub.hasPendingCheckpointIntent()).toBe(true);
     expect(await restartedStub.getPendingCheckpointIntent()).toEqual(pending);
 
-    // Two callers now resume the same durable intent. They must recover evidence
+    // The authority next returns a structurally plausible inclusion proof with
+    // a corrupted hash. The gateway can transport it, but the API's independent
+    // cryptographic verifier must reject it and preserve the exact pending intent.
+    const invalidEvidence = await restartedStub.recoverPendingCheckpointIntent();
+    expect(invalidEvidence).toEqual({
+      recovered: false,
+      reason: "evidence_not_verified",
+    });
+    expect(await restartedStub.hasPendingCheckpointIntent()).toBe(true);
+    expect(await restartedStub.getPendingCheckpointIntent()).toEqual(pending);
+
+    // Two callers now resume the same durable intent. They must recover the
+    // authority's original immutable evidence bundle for the already-committed
+    // operation, without appending a second generation, and only one may finalize.
     // for the already-committed operation, without appending a second generation,
     // and the storage transaction must allow only one finalization.
     const concurrentRecoveries = await Promise.all([
