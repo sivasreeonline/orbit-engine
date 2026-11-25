@@ -27,7 +27,7 @@ function fakeClient(options: {
           attempt_id: attemptId,
           job_state: "QUEUED",
           outbox_attempt_id: attemptId,
-          outbox_protocol_version: "v1",
+          outbox_protocol_version: "v1", outbox_payload_protocol_version: "v1",
           correlation_id: "corr-1",
           request_attempt_id: null, request_protocol_version: null,
           request_correlation_id: null, request_deadline_at: null,
@@ -83,7 +83,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
     const requestSha = createHash("sha256").update(requestBytes).digest("hex");
     const fake = fakeClient({ authoritative: [{
       attempt_id: attemptId, job_state: "QUEUED", outbox_attempt_id: attemptId,
-      outbox_protocol_version: "v2", correlation_id: correlationId,
+      outbox_protocol_version: "v2", outbox_payload_protocol_version: "v2", correlation_id: correlationId,
       request_attempt_id: attemptId, request_protocol_version: "v2",
       request_correlation_id: correlationId, request_deadline_at: deadlineAt,
       request_deadline_valid: true, request_sha256: requestSha, request_bytes: requestBytes,
@@ -101,7 +101,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
     const bytes = new TextEncoder().encode(JSON.stringify({ protocolVersion: "v2" }));
     const fake = fakeClient({ authoritative: [{
       attempt_id: attemptId, job_state: "QUEUED", outbox_attempt_id: attemptId,
-      outbox_protocol_version: "v2", correlation_id: correlationId,
+      outbox_protocol_version: "v2", outbox_payload_protocol_version: "v2", correlation_id: correlationId,
       request_attempt_id: attemptId, request_protocol_version: "v2",
       request_correlation_id: correlationId, request_deadline_at: deadlineAt,
       request_deadline_valid: true, request_sha256: "0".repeat(64), request_bytes: bytes,
@@ -133,7 +133,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
   it("returns the existing intent for a duplicate delivery", async () => {
     const fake = fakeClient({ authoritative: [{
       attempt_id: attemptId, job_state: "RUNNING", outbox_attempt_id: attemptId,
-      outbox_protocol_version: "v1", correlation_id: "corr-1",
+      outbox_protocol_version: "v1", outbox_payload_protocol_version: "v1", correlation_id: "corr-1",
     }], inserted: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
 
@@ -149,7 +149,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
       attempt_id: attemptId,
       job_state: "RUNNING",
       outbox_attempt_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
-      outbox_protocol_version: "v1",
+      outbox_protocol_version: "v1", outbox_payload_protocol_version: "v1",
       correlation_id: "corr-1",
     }], existing: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
@@ -162,7 +162,7 @@ describe("PostgresRunnerDispatchHandoffRepository", () => {
   it("rejects a first-time handoff when the job is no longer queued", async () => {
     const fake = fakeClient({ authoritative: [{
       attempt_id: attemptId, job_state: "RUNNING", outbox_attempt_id: attemptId,
-      outbox_protocol_version: "v1", correlation_id: "corr-1",
+      outbox_protocol_version: "v1", outbox_payload_protocol_version: "v1", correlation_id: "corr-1",
     }], existing: [] });
     const repository = new PostgresRunnerDispatchHandoffRepository(connection, () => fake.client);
     await expect(repository.record(envelope)).rejects.toBeInstanceOf(InvalidRunnerDispatchEnvelopeError);
