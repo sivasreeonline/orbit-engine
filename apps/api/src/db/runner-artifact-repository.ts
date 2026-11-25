@@ -308,6 +308,12 @@ export class PostgresRunnerArtifactRepository {
           throw new RunnerArtifactIntegrityError("runner_artifact_source_hash_mismatch");
         }
         const sourceCode = decodeUtf8(sourceBytes, "source_code");
+        if (artifact.dispatch_protocol_version === "v1" && artifact.request_protocol_version !== null) {
+          throw new RunnerArtifactIntegrityError("runner_artifact_protocol_version_mismatch");
+        }
+        if (artifact.dispatch_protocol_version !== "v1" && artifact.dispatch_protocol_version !== "v2") {
+          throw new RunnerArtifactIntegrityError("runner_artifact_protocol_version_unsupported");
+        }
 
         const testResult = await client.query<TestCaseRow>(
           [
@@ -355,6 +361,59 @@ export class PostgresRunnerArtifactRepository {
           throw error;
         }
         const { testBundleId, testBundleSha256 } = testBundleIdentity;
+        let protocolRequest: RunnerExecutionArtifact["protocolRequest"];
+        if (artifact.dispatch_protocol_version === "v2") {
+          if (artifact.request_protocol_version !== "v2" ||
+              artifact.request_attempt_id !== input.attemptId ||
+              artifact.request_correlation_id !== artifact.dispatch_correlation_id ||
+              !artifact.request_bytes || !artifact.request_sha256 ||
+              !artifact.request_deadline_at ||
+              timestampMs(artifact.request_deadline_at) <= Date.now()) {
+            throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_missing_or_stale");
+          }
+          const requestBytes = new Uint8Array(artifact.request_bytes);
+          const requestSha256 = await sha256(requestBytes);
+          if (requestSha256 !== artifact.request_sha256.trim()) {
+            throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_hash_mismatch");
+          }
+          let requestDocument: Record<string, unknown>;
+          try {
+            requestDocument = JSON.parse(decodeUtf8(requestBytes, "protocol_request")) as Record<string, unknown>;
+          } catch {
+            throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_invalid_json");
+          }
+          const expectedKeys = [
+            "protocolVersion", "correlationId", "executionId", "attemptId", "problemVersionId",
+            "action", "language", "runtimeVersion", "runtimeImageDigest", "sourceArtifactId",
+            "sourceSha256", "testBundleId", "comparisonPolicy", "deadlineAt", "cancellationRef", "limits",
+          ].sort().join(",");
+          if (!requestDocument || typeof requestDocument !== "object" || Array.isArray(requestDocument) ||
+              Object.keys(requestDocument).sort().join(",") !== expectedKeys ||
+              requestDocument.protocolVersion !== "v2" ||
+              requestDocument.executionId !== input.executionId ||
+              requestDocument.attemptId !== input.attemptId ||
+              requestDocument.correlationId !== artifact.dispatch_correlation_id ||
+              requestDocument.problemVersionId !== artifact.problem_version_id ||
+              requestDocument.action !== artifact.action ||
+              requestDocument.language !== artifact.language ||
+              requestDocument.runtimeVersion !== artifact.runtime_version ||
+              requestDocument.sourceArtifactId !== artifact.source_snapshot_id ||
+              requestDocument.sourceSha256 !== computedSourceHash ||
+              requestDocument.testBundleId !== testBundleId ||
+              requestDocument.comparisonPolicy !== "EXACT_BYTES" ||
+              Date.parse(String(requestDocument.deadlineAt)) !== timestampMs(artifact.request_deadline_at) ||
+              Date.parse(String(requestDocument.deadlineAt)) <= Date.now()) {
+            throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_mismatch");
+          }
+          let binary = "";
+          const chunkSize = 0x8000;
+          for (let offset = 0; offset < requestBytes.length; offset += chunkSize) {
+            binary += String.fromCharCode(...requestBytes.subarray(offset, Math.min(offset + chunkSize, requestBytes.length)));
+          }
+          protocolRequest = { requestBytesBase64: btoa(binary), requestSha256 };
+        } else if (artifact.request_protocol_version !== null) {
+          throw new RunnerArtifactIntegrityError("runner_artifact_protocol_request_unexpected");
+        }
 
         const finalLeaseCheck = await client.query<{ execution_id: string }>(
           [
@@ -388,6 +447,7 @@ export class PostgresRunnerArtifactRepository {
           testBundleId,
           testBundleSha256,
           testCases,
+          ...(protocolRequest ? { protocolRequest } : {}),
         };
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);
