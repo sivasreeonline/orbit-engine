@@ -78,6 +78,12 @@ async function generateSigningKey(): Promise<SyntheticSigningKey> {
   return { privateKey: pair.privateKey, publicKey, keyId: await fingerprint(publicKey) };
 }
 
+function ownedArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
 function decodeBase64Url(value: string): Uint8Array {
   if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new TypeError("test signing key material is malformed");
   const padded = value.replace(/-/g, "+").replace(/_/g, "/") +
@@ -93,7 +99,7 @@ async function importRootSigningKey(
   const publicKey = decodeBase64Url(publicKeyBase64Url);
   const privateKey = await crypto.subtle.importKey(
     "pkcs8",
-    decodeBase64Url(privateKeyPkcs8Base64Url),
+    ownedArrayBuffer(decodeBase64Url(privateKeyPkcs8Base64Url)),
     { name: "Ed25519" },
     false,
     ["sign"],
