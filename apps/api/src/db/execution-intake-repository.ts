@@ -61,6 +61,13 @@ export class ExecutionTestBundleIntegrityError extends Error {
   }
 }
 
+export class ExecutionProtocolRequestIntegrityError extends Error {
+  constructor(message = "execution_protocol_request_integrity_failed") {
+    super(message);
+    this.name = "ExecutionProtocolRequestIntegrityError";
+  }
+}
+
 export class IdempotencyConflictError extends Error {
   constructor() {
     super("idempotency_key_reused_with_different_request");
@@ -177,11 +184,16 @@ async function sha256Bytes(value: Uint8Array): Promise<string> {
 
 function persistedProtocolTestBundleId(row: ExistingExecutionRow): string {
   if (!row.protocol_request_bytes || !row.protocol_request_sha256) {
-    throw new ExecutionTestBundleIntegrityError("persisted_protocol_request_missing");
+    throw new ExecutionProtocolRequestIntegrityError("persisted_protocol_request_missing");
   }
   const bytes = new Uint8Array(row.protocol_request_bytes);
-  const documentText = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  const document = JSON.parse(documentText) as Record<string, unknown>;
+  let document: Record<string, unknown>;
+  try {
+    const documentText = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    document = JSON.parse(documentText) as Record<string, unknown>;
+  } catch {
+    throw new ExecutionProtocolRequestIntegrityError("persisted_protocol_request_encoding_invalid");
+  }
   if (document.protocolVersion !== "v2" ||
       document.executionId !== row.execution_id ||
       document.attemptId !== row.attempt_id ||
@@ -189,7 +201,7 @@ function persistedProtocolTestBundleId(row: ExistingExecutionRow): string {
       document.correlationId !== row.outbox_correlation_id ||
       typeof document.testBundleId !== "string" ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(document.testBundleId)) {
-    throw new ExecutionTestBundleIntegrityError("persisted_protocol_request_invalid");
+    throw new ExecutionProtocolRequestIntegrityError("persisted_protocol_request_invalid");
   }
   return document.testBundleId;
 }
@@ -286,7 +298,7 @@ export class PostgresExecutionIntakeRepository {
           if (prior.protocol_version === "v2") {
             if (await sha256Bytes(new Uint8Array(prior.protocol_request_bytes ?? [])) !==
                 (prior.protocol_request_sha256 ?? "").trim()) {
-              throw new ExecutionTestBundleIntegrityError("persisted_protocol_request_digest_invalid");
+              throw new ExecutionProtocolRequestIntegrityError("persisted_protocol_request_digest_invalid");
             }
             testBundleId = persistedProtocolTestBundleId(prior);
           } else {
