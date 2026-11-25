@@ -115,6 +115,26 @@ describe("M1 API control plane", () => {
     expect(response.headers.get("X-Correlation-ID")).toBe("student-session:request-42");
   });
 
+  it.each(["bad value", "bad/identifier", "x".repeat(97)])(
+    "replaces an invalid or oversized supplied correlation ID: %s",
+    async (suppliedId) => {
+      const { handler } = makeHarness();
+
+      const response = await handler(makeRequest("/missing-route", {
+        headers: { "X-Correlation-ID": suppliedId },
+      }));
+      const body = await readJson<{ correlationId: string }>(response);
+      const generatedId = response.headers.get("X-Correlation-ID");
+
+      expect(response.status).toBe(404);
+      expect(generatedId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+      expect(generatedId).not.toBe(suppliedId);
+      expect(body.correlationId).toBe(generatedId);
+    },
+  );
+
   it("rejects an untrusted origin before route handling", async () => {
     const { handler, authenticator } = makeHarness();
 
