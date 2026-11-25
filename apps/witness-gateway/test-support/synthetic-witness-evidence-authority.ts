@@ -153,7 +153,7 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
       return inFlight.promise;
     }
 
-    const promise = this.issueOrRecoverEvidenceOnce(request).finally(() => {
+    const promise = this.issueOrRecoverEvidenceOnce(key, request).finally(() => {
       if (this.inFlight.get(key)?.promise === promise) this.inFlight.delete(key);
     });
     this.inFlight.set(key, { requestFingerprint, promise });
@@ -161,6 +161,7 @@ export class SyntheticWitnessEvidenceAuthority implements WitnessEvidenceAuthori
   }
 
   private async issueOrRecoverEvidenceOnce(
+    key: string,
     request: WitnessEvidenceAuthorityRequest,
   ): Promise<WitnessEvidenceAuthorityBundle> {
     const existing = this.records.get(key);
