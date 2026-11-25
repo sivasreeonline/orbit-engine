@@ -105,7 +105,7 @@ async function loadTestBundleIdentity(
       "  AND ($2::varchar = 'SUBMIT' OR visibility = 'PUBLIC')",
       "ORDER BY sequence",
       "LIMIT $3",
-    ].join("\\n"),
+    ].join("\n"),
     [problemVersionId, action, MAX_TEST_CASES + 1],
   );
   if (result.rows.length < 1 || result.rows.length > MAX_TEST_CASES) {
