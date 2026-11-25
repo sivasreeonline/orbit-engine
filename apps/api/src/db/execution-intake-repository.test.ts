@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ExecutionProtocolV2Policy } from "../security/execution-protocol-v2-policy";
 import {
   ExecutionProblemNotFoundError,
   ExecutionTestBundleIntegrityError,
