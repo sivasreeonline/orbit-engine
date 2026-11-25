@@ -31,6 +31,24 @@ function fakeClient(options: {
       if (text.includes("FROM execution_idempotency AS ei")) {
         return { rows: (options.existing ?? []) as unknown as T[] };
       }
+      if (text.includes("FROM problem_test_cases")) {
+        const action = values?.[1];
+        const publicCase = {
+          id: "case-public",
+          sequence: 1,
+          visibility: "PUBLIC",
+          input_data: new TextEncoder().encode("1 2"),
+          expected_output: new TextEncoder().encode("3\\n"),
+        };
+        const hiddenCase = {
+          id: "case-hidden",
+          sequence: 2,
+          visibility: "HIDDEN",
+          input_data: new TextEncoder().encode("4 5"),
+          expected_output: new TextEncoder().encode("9\\n"),
+        };
+        return { rows: (action === "SUBMIT" ? [publicCase, hiddenCase] : [publicCase]) as unknown as T[] };
+      }
       if (text.includes("FROM problems AS p")) {
         return { rows: (options.problem ?? [{
           problem_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
@@ -121,6 +139,32 @@ describe("PostgresExecutionIntakeRepository", () => {
     expect(replay).toEqual({ ...created, replayed: true });
     expect(replayFake.calls.some((call) => call.text.includes("INSERT INTO source_snapshots"))).toBe(false);
     expect(replayFake.committed()).toBe(true);
+  });
+
+  it("uses PUBLIC cases for RUN and includes HIDDEN cases for SUBMIT", async () => {
+    const runFake = fakeClient();
+    const runRepository = new PostgresExecutionIntakeRepository(connection, () => runFake.client);
+    const run = await runRepository.create(input, key);
+
+    const submitFake = fakeClient();
+    const submitRepository = new PostgresExecutionIntakeRepository(connection, () => submitFake.client);
+    const submit = await submitRepository.create({ ...input, action: "SUBMIT" }, key);
+
+    const runQuery = runFake.calls.find((call) => call.text.includes("FROM problem_test_cases"));
+    const submitQuery = submitFake.calls.find((call) => call.text.includes("FROM problem_test_cases"));
+    expect(runQuery?.values?.[1]).toBe("RUN");
+    expect(submitQuery?.values?.[1]).toBe("SUBMIT");
+    expect(run.testBundleId).toMatch(/-run-[0-9a-f]{16}$/);
+    expect(submit.testBundleId).toMatch(/-submit-[0-9a-f]{16}$/);
+    expect(submit.testBundleId).not.toBe(run.testBundleId);
+  });
+
+  it("fails closed when a published problem has no valid test bundle", async () => {
+    const fake = fakeClient({ failAt: "FROM problem_test_cases" });
+    const repository = new PostgresExecutionIntakeRepository(connection, () => fake.client);
+    await expect(repository.create(input, key)).rejects.toBeInstanceOf(ExecutionTestBundleIntegrityError);
+    expect(fake.calls.some((call) => call.text.includes("INSERT INTO source_snapshots"))).toBe(false);
+    expect(fake.rolledBack()).toBe(true);
   });
 
   it("rejects reuse of an idempotency key for a different request and rolls back", async () => {
