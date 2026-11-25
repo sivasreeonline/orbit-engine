@@ -39,6 +39,8 @@ function input(overrides: Partial<TrustRecoveryInput> = {}): TrustRecoveryInput 
     monitors: monitors(local),
     requiredMonitorCount: 2,
     witnessExtendsAnchor: false,
+    anchorTrustBundleExtendsLocal: false,
+    witnessTrustBundleExtendsAnchor: false,
     anchorAvailable: true,
     ...overrides,
   };
@@ -72,6 +74,61 @@ describe("decideTrustRecovery", () => {
       reason: "anchor_ahead",
       requiredCheckpoint: anchor,
     });
+  });
+
+  it("repairs a local snapshot after a verified trust-bundle generation advance", () => {
+    const local = checkpoint({
+      trustBundleGeneration: 2,
+      trustBundleDigest: d("e"),
+      treeSize: 5,
+      treeRootHash: d("f"),
+      treeHeadDigest: d("1"),
+      anchorSequence: 6,
+      anchorRecordDigest: d("2"),
+    });
+    const anchor = checkpoint({
+      trustBundleGeneration: 3,
+      trustBundleDigest: d("a"),
+      anchorSequence: 7,
+    });
+    expect(decideTrustRecovery(input({
+      local,
+      anchor,
+      witness: anchor,
+      monitors: monitors(anchor),
+      anchorTrustBundleExtendsLocal: true,
+    }))).toMatchObject({
+      action: "REPAIR_LOCAL_FORWARD",
+      reason: "anchor_ahead",
+      requiredCheckpoint: anchor,
+    });
+  });
+
+  it("requires a verified root-signed trust-bundle chain before accepting a newer witness bundle", () => {
+    const anchor = checkpoint();
+    const witness = checkpoint({
+      trustBundleGeneration: 4,
+      trustBundleDigest: d("e"),
+      treeSize: 12,
+      treeRootHash: d("f"),
+      treeHeadDigest: d("1"),
+    });
+    expect(decideTrustRecovery(input({
+      local: anchor,
+      anchor,
+      witness,
+      monitors: monitors(witness),
+      witnessExtendsAnchor: true,
+      witnessTrustBundleExtendsAnchor: false,
+    }))).toEqual({ action: "QUARANTINE", reason: "consistency_unproven" });
+    expect(decideTrustRecovery(input({
+      local: anchor,
+      anchor,
+      witness,
+      monitors: monitors(witness),
+      witnessExtendsAnchor: true,
+      witnessTrustBundleExtendsAnchor: true,
+    })).action).toBe("ADVANCE_ANCHOR");
   });
 
   it("advances the anchor only when the witness head extends it and monitors agree", () => {
