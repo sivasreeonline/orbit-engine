@@ -506,6 +506,53 @@ describe("GossipReplayStateDO", () => {
     vi.mocked(verifyEvidenceViaWitnessGateway).mockReset();
   });
 
+  it("does not automatically retry cryptographically invalid evidence from the alarm", async () => {
+    vi.mocked(checkpointReplayViaWitnessGateway).mockResolvedValue({
+      checkpointed: true,
+      canonicalEvidenceBody: new TextEncoder().encode("{}"),
+    });
+    vi.mocked(verifyEvidenceViaWitnessGateway).mockResolvedValue({
+      verified: false,
+      reason: "receipt_invalid",
+    });
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    const proposedState = { highestSequence: 1 };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    const pending = await createPendingReplayIntent(intent, message(1), proposedState);
+    await harness.object.stageCheckpointIntent(pending);
+    harness.clearAlarm();
+
+    await harness.object.alarm();
+
+    expect(checkpointReplayViaWitnessGateway).toHaveBeenCalledTimes(1);
+    expect(verifyEvidenceViaWitnessGateway).toHaveBeenCalledTimes(1);
+    expect(harness.getAlarm()).toBeNull();
+    expect(harness.values.get("replay-checkpoint-pending-v1")).toEqual(pending);
+    expect(harness.values.get(REPLAY_STATE_ENVELOPE_KEY)).toEqual(initial);
+    vi.mocked(checkpointReplayViaWitnessGateway).mockReset();
+    vi.mocked(verifyEvidenceViaWitnessGateway).mockReset();
+  });
+
   it("keeps pending intent when returned evidence fails independent verification", async () => {
     vi.mocked(checkpointReplayViaWitnessGateway).mockResolvedValue({
       checkpointed: true,
