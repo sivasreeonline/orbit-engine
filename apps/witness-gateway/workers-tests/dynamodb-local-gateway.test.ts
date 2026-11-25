@@ -14,6 +14,7 @@ import type {
 
 interface IntegrationEnv {
   readonly WITNESS_GATEWAY: WitnessGatewayRpc;
+  readonly WITNESS_GATEWAY_PROVIDER_ONLY: WitnessGatewayRpc;
   readonly WITNESS_PROVIDER: WitnessProviderAdapter;
   readonly FENCE_TEST_CALLER_ID: string;
   readonly FENCE_TEST_CALLER_KEY_ID: string;
@@ -32,6 +33,46 @@ const scope: WitnessCheckpointScope = {
 };
 const predecessor = { generation: 0, digest: "0".repeat(64) };
 let admin: DynamoDBClient | undefined;
+
+async function createCheckpointRequest() {
+  const messageDigest = "a".repeat(64);
+  const senderId = "workerd-monitor-a";
+  const recipientId = "workerd-monitor-b";
+  const snapshot = {
+    version: 1,
+    senderId,
+    recipientId,
+    highestSequence: 1,
+    seenByMessageId: {
+      "workerd-dynamodb-message-1": {
+        sequence: 1,
+        digest: messageDigest,
+      },
+    },
+  };
+  const intent = await createReplayCheckpointIntent({
+    baseStateVersion: 0,
+    senderId,
+    recipientId,
+    messageDigest,
+    scope: [
+      scope.trustDomainId,
+      scope.witnessId,
+      scope.authorityId,
+      scope.hostId,
+    ].join("|"),
+    expectedPredecessor: predecessor,
+    nextState: snapshot,
+  });
+  const requestBytes = new TextEncoder().encode(intent.canonicalCheckpointBody);
+  const signed = await createApiWorkloadProof({
+    callerId: bindings.FENCE_TEST_CALLER_ID,
+    keyId: bindings.FENCE_TEST_CALLER_KEY_ID,
+    privateKeyPkcs8: bindings.FENCE_TEST_CALLER_PRIVATE_KEY_PKCS8,
+  }, requestBytes, "checkpoint_replay");
+  if (!signed.created) throw new Error("test caller proof could not be signed");
+  return { snapshot, intent, requestBytes, proof: signed.proof };
+}
 
 describe.skipIf(!bindings.FENCE_DDB_LOCAL_ENDPOINT)("gateway provider binding against DynamoDB Local in workerd", () => {
   beforeAll(async () => {
@@ -78,47 +119,26 @@ describe.skipIf(!bindings.FENCE_DDB_LOCAL_ENDPOINT)("gateway provider binding ag
     }
   });
 
-  it("commits through the gateway's provider RPC, verifies authority evidence, and reads exact bytes back", async () => {
-    const messageDigest = "a".repeat(64);
-    const senderId = "workerd-monitor-a";
-    const recipientId = "workerd-monitor-b";
-    const snapshot = {
-      version: 1,
-      senderId,
-      recipientId,
-      highestSequence: 1,
-      seenByMessageId: {
-        "workerd-dynamodb-message-1": {
-          sequence: 1,
-          digest: messageDigest,
-        },
-      },
-    };
-    const intent = await createReplayCheckpointIntent({
-      baseStateVersion: 0,
-      senderId,
-      recipientId,
-      messageDigest,
-      scope: [
-        scope.trustDomainId,
-        scope.witnessId,
-        scope.authorityId,
-        scope.hostId,
-      ].join("|"),
-      expectedPredecessor: predecessor,
-      nextState: snapshot,
+  it("fails closed without an evidence-authority binding and performs no provider append", async () => {
+    const { intent, requestBytes, proof } = await createCheckpointRequest();
+    const result = await bindings.WITNESS_GATEWAY_PROVIDER_ONLY.checkpointReplay(
+      proof,
+      requestBytes,
+    );
+
+    expect(result).toEqual({
+      checkpointed: false,
+      reason: "provider_unavailable",
     });
-    const requestBytes = new TextEncoder().encode(intent.canonicalCheckpointBody);
-    const signed = await createApiWorkloadProof({
-      callerId: bindings.FENCE_TEST_CALLER_ID,
-      keyId: bindings.FENCE_TEST_CALLER_KEY_ID,
-      privateKeyPkcs8: bindings.FENCE_TEST_CALLER_PRIVATE_KEY_PKCS8,
-    }, requestBytes, "checkpoint_replay");
-    expect(signed.created).toBe(true);
-    if (!signed.created) throw new Error("test caller proof could not be signed");
+    expect(await bindings.WITNESS_PROVIDER.readLatest(scope)).toBeNull();
+    expect(await bindings.WITNESS_PROVIDER.readByOperation(scope, intent.operationId)).toBeNull();
+  });
+
+  it("commits through the gateway's provider RPC, verifies authority evidence, and reads exact bytes back", async () => {
+    const { snapshot, intent, requestBytes, proof } = await createCheckpointRequest();
 
     const checkpoint = await bindings.WITNESS_GATEWAY.checkpointReplay(
-      signed.proof,
+      proof,
       requestBytes,
     );
     expect(checkpoint.checkpointed).toBe(true);
