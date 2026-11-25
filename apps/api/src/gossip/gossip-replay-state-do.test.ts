@@ -278,6 +278,45 @@ describe("GossipReplayStateDO", () => {
     expect(harness.getAlarm()).toEqual(expect.any(Number));
   });
 
+  it("clears prior quarantine atomically with a newly staged pending intent", async () => {
+    const harness = makeHarness();
+    const initial: VersionedReplayState = {
+      version: 2,
+      stateVersion: 0,
+      snapshot: { highestSequence: 0 },
+      witnessHead: {
+        generation: 0,
+        digest: "0".repeat(64),
+        treeSize: 0,
+        treeHeadDigest: "0".repeat(64),
+      },
+    };
+    await harness.object.initializeCheckpointedState(initial);
+    await harness.storage.put(REPLAY_CHECKPOINT_QUARANTINE_KEY, {
+      version: 1,
+      reason: "evidence_not_verified",
+      quarantinedAt: 10_000,
+    });
+    const proposedState = { highestSequence: 1 };
+    const intent = await createReplayCheckpointIntent({
+      baseStateVersion: 0,
+      senderId: "monitor-a",
+      recipientId: "monitor-b",
+      messageDigest: message(1).canonicalDigest,
+      scope: "domain-a|witness-a|authority-a|host-a",
+      expectedPredecessor: { generation: 0, digest: "0".repeat(64) },
+      nextState: proposedState,
+    });
+    const pending = await createPendingReplayIntent(intent, message(1), proposedState);
+
+    const staged = await harness.object.stageCheckpointIntent(pending);
+
+    expect(staged).toEqual({ staged: true, stateVersion: 0 });
+    expect(harness.values.get("replay-checkpoint-pending-v1")).toEqual(pending);
+    expect(harness.values.has(REPLAY_CHECKPOINT_QUARANTINE_KEY)).toBe(false);
+    expect(harness.getAlarm()).toEqual(expect.any(Number));
+  });
+
   it("re-arms a missing alarm after reconstructing an object with a pending intent", async () => {
     const first = makeHarness();
     const initial: VersionedReplayState = {
