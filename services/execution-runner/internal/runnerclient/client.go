@@ -31,6 +31,7 @@ import (
 
 const (
 	claimPath             = "/internal/v1/runner/claim"
+	claimV2Path           = "/internal/v2/runner/claim"
 	acceptPath            = "/internal/v1/runner/accept"
 	startPath             = "/internal/v1/runner/start"
 	heartbeatPath         = "/internal/v1/runner/heartbeat"
@@ -47,6 +48,7 @@ const (
 )
 
 var uuidPattern = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+var uuidV4Pattern = regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
 type Config struct {
 	ControlPlaneURL string
@@ -182,7 +184,8 @@ type claimResponse struct {
 	Meta struct {
 		Claimed                    int `json:"claimed"`
 		MaxActiveLeasesPerRunner   int `json:"maxActiveLeasesPerRunner"`
-		LeaseDurationSeconds       int `json:"leaseDurationSeconds"`
+		LeaseDurationSeconds       int    `json:"leaseDurationSeconds"`
+		ProtocolVersion            string `json:"protocolVersion,omitempty"`
 	} `json:"meta"`
 }
 
@@ -352,37 +355,40 @@ func New(config Config) (*Client, error) {
 // Claim requests a bounded batch of metadata-only dispatch leases. The control
 // plane remains authoritative for fairness and the two-active-lease runner cap.
 func (c *Client) Claim(ctx context.Context, requestedSlots int) ([]Dispatch, error) {
+	return c.claim(ctx, claimPath, requestedSlots, "v1")
+}
+
+// ClaimV2 uses the separately authenticated v2 claim route. It is deliberately
+// opt-in at the call site; the worker default Claim path remains v1-only.
+func (c *Client) ClaimV2(ctx context.Context, requestedSlots int) ([]Dispatch, error) {
+	return c.claim(ctx, claimV2Path, requestedSlots, "v2")
+}
+
+func (c *Client) claim(ctx context.Context, path string, requestedSlots int, protocolVersion string) ([]Dispatch, error) {
 	if requestedSlots < 1 || requestedSlots > 4 {
 		return nil, errors.New("requested slots must be between 1 and 4")
 	}
-
 	body, err := json.Marshal(claimRequest{RequestedSlots: requestedSlots})
-	if err != nil {
-		return nil, fmt.Errorf("encode runner claim: %w", err)
-	}
+	if err != nil { return nil, fmt.Errorf("encode runner claim: %w", err) }
 	var response claimResponse
-	if err := c.postSignedJSON(ctx, claimPath, body, &response); err != nil {
-		return nil, err
-	}
-
-	if response.Meta.Claimed != len(response.Data) ||
-		response.Meta.Claimed < 0 ||
-		response.Meta.Claimed > requestedSlots ||
-		response.Meta.Claimed > maxActiveLeases ||
+	if err := c.postSignedJSON(ctx, path, body, &response); err != nil { return nil, err }
+	if response.Meta.Claimed != len(response.Data) || response.Meta.Claimed < 0 ||
+		response.Meta.Claimed > requestedSlots || response.Meta.Claimed > maxActiveLeases ||
 		response.Meta.MaxActiveLeasesPerRunner != maxActiveLeases ||
-		response.Meta.LeaseDurationSeconds != leaseDurationSeconds {
+		response.Meta.LeaseDurationSeconds != leaseDurationSeconds ||
+		(protocolVersion == "v2" && response.Meta.ProtocolVersion != "v2") {
 		return nil, errors.New("runner claim response violates the bounded lease contract")
 	}
-
 	seen := make(map[string]struct{}, len(response.Data))
 	now := c.now().UTC()
 	for _, dispatch := range response.Data {
-		if !validDispatch(dispatch) || !dispatch.LeaseExpiresAt.After(now) {
-			return nil, errors.New("runner claim response contains an invalid or expired dispatch")
+		if !validDispatch(dispatch) || dispatch.ProtocolVersion != protocolVersion || !dispatch.LeaseExpiresAt.After(now) {
+			return nil, errors.New("runner claim response contains an invalid, mismatched or expired dispatch")
 		}
-		if _, exists := seen[dispatch.DispatchID]; exists {
-			return nil, errors.New("runner claim response contains a duplicate dispatch")
+		if protocolVersion == "v2" && !uuidV4Pattern.MatchString(dispatch.CorrelationID) {
+			return nil, errors.New("protocol v2 dispatch has an invalid correlation ID")
 		}
+		if _, exists := seen[dispatch.DispatchID]; exists { return nil, errors.New("runner claim response contains a duplicate dispatch") }
 		seen[dispatch.DispatchID] = struct{}{}
 	}
 	return response.Data, nil
