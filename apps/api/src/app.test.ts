@@ -41,6 +41,7 @@ import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidenc
 import {
   RunnerCompletionNotStartedError,
   RunnerCompletionRuntimeImageMismatchError,
+  RunnerCompletionResultDigestMismatchError,
 } from "./db/execution-evidence-repository";
 import type {
   RecordRunnerExecutionResultInput,
@@ -2007,6 +2008,28 @@ describe("authenticated runner completion endpoint", () => {
     expect(response.status).toBe(409);
     expect(await readJson(response)).toMatchObject({
       error: { code: "RUNNER_RUNTIME_IMAGE_MISMATCH", retryable: false },
+    });
+    expect(recordRunnerResult).toHaveBeenCalledOnce();
+  });
+
+  it("returns a non-retryable conflict when the v2 canonical result digest is invalid", async () => {
+    const signed = await signedCompletionRequest(completionBody);
+    const recordRunnerResult = vi.fn(async () => {
+      throw new RunnerCompletionResultDigestMismatchError();
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-complete-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerCompletionRepository: { recordRunnerResult },
+    });
+    const response = await handler(signed.request);
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_RESULT_DIGEST_MISMATCH", retryable: false },
     });
     expect(recordRunnerResult).toHaveBeenCalledOnce();
   });
