@@ -1078,13 +1078,18 @@ func decodeStrict(body []byte, output any) error {
 }
 
 func validDispatch(dispatch Dispatch) bool {
-	return uuidPattern.MatchString(dispatch.DispatchID) &&
-		uuidPattern.MatchString(dispatch.ExecutionID) &&
-		uuidPattern.MatchString(dispatch.AttemptID) &&
-		uuidPattern.MatchString(dispatch.LeaseToken) &&
-		dispatch.ProtocolVersion != "" && len(dispatch.ProtocolVersion) <= 64 &&
-		dispatch.CorrelationID != "" && len(dispatch.CorrelationID) <= 128 &&
-		dispatch.DeliveryAttempt >= 1 && !dispatch.LeaseExpiresAt.IsZero()
+	if !uuidPattern.MatchString(dispatch.DispatchID) ||
+		!uuidPattern.MatchString(dispatch.ExecutionID) ||
+		!uuidPattern.MatchString(dispatch.AttemptID) ||
+		!uuidPattern.MatchString(dispatch.LeaseToken) ||
+		dispatch.DeliveryAttempt < 1 || dispatch.LeaseExpiresAt.IsZero() {
+		return false
+	}
+	if dispatch.ProtocolVersion == "v1" {
+		return dispatch.CorrelationID != "" && len(dispatch.CorrelationID) <= 128
+	}
+	return dispatch.ProtocolVersion == "v2" &&
+		uuidV4Pattern.MatchString(dispatch.CorrelationID)
 }
 
 func (c *Client) newUUID() (string, error) {
