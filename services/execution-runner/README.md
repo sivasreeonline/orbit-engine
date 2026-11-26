@@ -97,3 +97,21 @@ The `cmd/runner` entry point remains health-only and loopback-bound. It does not
 5. Implement and qualify the ephemeral sandbox lifecycle behind the Executor interface.
 6. Enforce network denial, non-root identity, CPU, memory, PID, wall-clock, filesystem and output limits.
 7. Add cleanup attestation and adversarial tests; keep execution disabled until the full sandbox/security review passes.
+
+
+The client rejects dispatch protocol values other than `v1` and `v2`; v2
+dispatches must carry a UUIDv4 correlation ID. Start requires a still-live
+lease and validates the durable start event identity and timestamp. Heartbeat
+acknowledgements must echo the stable heartbeat ID and dispatch/execution
+identity, extend the previously acknowledged lease expiry, and remain inside
+the bounded renewal horizon. These checks are enforced before the worker
+coordinator advances to artifact retrieval or completion.
+
+
+The single-dispatch worker coordinator accepts an explicit `WorkerConfig.ProtocolVersion`.
+An omitted value remains `v1`; `v2` selects the dedicated `ClaimV2` client
+method and rejects a dispatch whose protocol does not match the configured
+worker. V2 artifacts must include the immutable protocol request envelope.
+This is a library-level opt-in only: the health-only `cmd/runner` entry point
+does not configure or start the worker, and server-side v2 capability and
+feature gates remain authoritative.

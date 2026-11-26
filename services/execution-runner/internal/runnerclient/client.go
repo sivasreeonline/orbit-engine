@@ -530,8 +530,8 @@ func isStaleAcceptanceLeaseError(err error) bool {
 }
 
 func (c *Client) StartDispatch(ctx context.Context, dispatch Dispatch) (StartResult, error) {
-	if !validDispatch(dispatch) {
-		return StartResult{}, errors.New("valid dispatch is required")
+	if !validDispatch(dispatch) || !dispatch.LeaseExpiresAt.After(c.now()) {
+		return StartResult{}, errors.New("valid unexpired dispatch is required")
 	}
 	body, err := json.Marshal(startRequest{
 		DispatchID: dispatch.DispatchID,
@@ -553,7 +553,8 @@ func (c *Client) StartDispatch(ctx context.Context, dispatch Dispatch) (StartRes
 		return StartResult{}, errors.New("runner start response does not match the dispatch")
 	}
 	startedAt, err := time.Parse(time.RFC3339Nano, data.StartedAt)
-	if err != nil {
+	if err != nil || startedAt.IsZero() ||
+		startedAt.After(c.now().UTC().Add(5*time.Second)) {
 		return StartResult{}, errors.New("runner start response has an invalid timestamp")
 	}
 	return StartResult{
@@ -603,8 +604,9 @@ func (c *Client) RenewLease(
 		return HeartbeatResult{}, errors.New("runner heartbeat response does not match the lease")
 	}
 	expiresAt, err := time.Parse(time.RFC3339Nano, data.LeaseExpiresAt)
-	if err != nil || !expiresAt.After(c.now()) {
-		return HeartbeatResult{}, errors.New("runner heartbeat response has an invalid or expired lease timestamp")
+	if err != nil || !expiresAt.After(c.now()) ||
+		!expiresAt.After(dispatch.LeaseExpiresAt) {
+		return HeartbeatResult{}, errors.New("runner heartbeat response has an invalid, expired or non-extending lease timestamp")
 	}
 	if expiresAt.After(c.now().Add(3 * time.Minute)) {
 		return HeartbeatResult{}, errors.New("runner heartbeat response exceeds the bounded renewal horizon")
@@ -995,13 +997,18 @@ func decodeStrict(body []byte, output any) error {
 }
 
 func validDispatch(dispatch Dispatch) bool {
-	return uuidPattern.MatchString(dispatch.DispatchID) &&
-		uuidPattern.MatchString(dispatch.ExecutionID) &&
-		uuidPattern.MatchString(dispatch.AttemptID) &&
-		uuidPattern.MatchString(dispatch.LeaseToken) &&
-		dispatch.ProtocolVersion != "" && len(dispatch.ProtocolVersion) <= 64 &&
-		dispatch.CorrelationID != "" && len(dispatch.CorrelationID) <= 128 &&
-		dispatch.DeliveryAttempt >= 1 && !dispatch.LeaseExpiresAt.IsZero()
+	if !uuidPattern.MatchString(dispatch.DispatchID) ||
+		!uuidPattern.MatchString(dispatch.ExecutionID) ||
+		!uuidPattern.MatchString(dispatch.AttemptID) ||
+		!uuidPattern.MatchString(dispatch.LeaseToken) ||
+		dispatch.DeliveryAttempt < 1 || dispatch.LeaseExpiresAt.IsZero() {
+		return false
+	}
+	if dispatch.ProtocolVersion == "v1" {
+		return dispatch.CorrelationID != "" && len(dispatch.CorrelationID) <= 128
+	}
+	return dispatch.ProtocolVersion == "v2" &&
+		uuidV4Pattern.MatchString(dispatch.CorrelationID)
 }
 
 func (c *Client) newUUID() (string, error) {
