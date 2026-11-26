@@ -83,7 +83,8 @@ interface ApiDependencies {
   readonly evidenceRepository?: ExecutionEvidenceReadRepository;
   readonly executionIntakeRepository?: ExecutionIntakeRepository;
   readonly runnerIdentityRepository?: Pick<PostgresRunnerIdentityRepository, "findActivePublicKey" | "consumeNonce">;
-  readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner" | "claimFairBatchForRunnerV2">;
+  readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner"> &
+    Partial<Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunnerV2">>;
   readonly protocolV2ClaimsEnabled?: boolean;
   readonly runnerAcceptanceRepository?: Pick<PostgresRunnerAcceptanceRepository, "record">;
   readonly codingEvidenceRepository?: Pick<PostgresCodingEvidenceRepository, "createSession" | "appendBatch">;
