@@ -8,14 +8,14 @@ export interface V2CanonicalResultDigestInput {
   readonly policyRevision: string;
   readonly runtimeImageDigest: string;
   readonly infrastructureStatus: "SUCCEEDED" | "FAILED";
-  readonly infrastructureErrorCode?: string;
+  readonly infrastructureErrorCode?: string | undefined;
   readonly compilationStatus: "NOT_STARTED" | "SUCCEEDED" | "FAILED";
   readonly verdict: string;
   readonly cleanupStatus: "SUCCEEDED" | "FAILED" | "UNKNOWN";
   readonly testsTotal: number;
   readonly testsPassed: number;
   readonly elapsedMs: number;
-  readonly peakMemoryBytes?: number;
+  readonly peakMemoryBytes?: number | undefined;
   readonly runnerVersion: string;
   readonly startedAt: string;
   readonly completedAt: string;
