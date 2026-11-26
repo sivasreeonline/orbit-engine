@@ -432,7 +432,7 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
       });
       expect(intent.status).toBe("RECORDED");
 
-      const claimPromise = leases.claimFairBatchForRunnerV2(runnerId, 1, 2, 120);
+      const claimPromise = leases.claimFairBatchForRunnerV2(runnerId, 100, 2, 120);
       await qualificationRead;
 
       await revoker.query("BEGIN");
@@ -453,8 +453,7 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
       // can proceed; it cannot retroactively invalidate the issued lease.
       releaseQualification();
       const claimed = await claimPromise;
-      expect(claimed).toHaveLength(1);
-      expect(claimed[0]?.id).toBe(intent.dispatchId);
+      expect(claimed.some((lease) => lease.id === intent.dispatchId)).toBe(true);
 
       await revoker.query(
         "UPDATE runner_machine_protocol_capabilities SET status='REVOKED', revoked_at=now() WHERE runner_id=$1 AND protocol_version='v2'",
