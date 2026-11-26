@@ -228,6 +228,10 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
     });
     await verifier.connect();
     await verifier.query(
+      "INSERT INTO runner_machines (id, machine_name) VALUES ($1, $2)",
+      [runnerId, `shared-cap-runner-${runnerId}`],
+    );
+    await verifier.query(
       "INSERT INTO runner_machine_protocol_capabilities (runner_id, protocol_version, qualification_reference) VALUES ($1, 'v2', $2)",
       [runnerId, `integration-qualification-${randomUUID()}`],
     );
@@ -311,6 +315,11 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
     const leases = new PostgresRunnerDispatchLeaseRepository(databaseUrl);
     const verifier = new Client({ connectionString: databaseUrl });
     const runnerId = randomUUID();
+    await verifier.connect();
+    await verifier.query(
+      "INSERT INTO runner_machines (id, machine_name) VALUES ($1, $2)",
+      [runnerId, `unqualified-runner-${runnerId}`],
+    );
     const created = await intake.create({
       principal: { tenantId, userId: randomUUID(), roles: ["STUDENT"] },
       action: "RUN",
@@ -331,7 +340,6 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
       .rejects.toThrow("runner_protocol_not_qualified");
 
     try {
-      await verifier.connect();
       const persisted = await verifier.query<{ lease_owner: string | null; lease_token: string | null }>(
         "SELECT lease_owner, lease_token::text AS lease_token FROM runner_dispatch_outbox WHERE id = $1::uuid",
         [intent.dispatchId],
