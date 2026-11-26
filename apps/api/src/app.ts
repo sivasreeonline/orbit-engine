@@ -1059,7 +1059,15 @@ export function createApiHandler(dependencies: ApiDependencies) {
             requestId, origin, allowedOrigins);
         }
 
-        const leases = await dependencies.runnerDispatchLeaseRepository.claimFairBatchForRunnerV2(
+        const claimV2 = dependencies.runnerDispatchLeaseRepository.claimFairBatchForRunnerV2;
+        if (!claimV2) {
+          return errorResponse("PROTOCOL_V2_CLAIM_NOT_CONFIGURED",
+            "Protocol v2 runner claims are not configured.", 503, false,
+            requestId, origin, allowedOrigins);
+        }
+        const leases = await claimV2.call(
+          dependencies.runnerDispatchLeaseRepository,
+
           authenticatedRunner.runnerId,
           Math.min(claimBody.requestedSlots as number, 2),
           2,
