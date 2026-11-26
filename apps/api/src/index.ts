@@ -43,6 +43,12 @@ export default {
         env.PROTOCOL_V2_INTAKE_ENABLED !== "false") {
       throw new Error("invalid_protocol_v2_intake_gate");
     }
+    if (env.PROTOCOL_V2_CLAIMS_ENABLED !== undefined &&
+        env.PROTOCOL_V2_CLAIMS_ENABLED !== "true" &&
+        env.PROTOCOL_V2_CLAIMS_ENABLED !== "false") {
+      throw new Error("invalid_protocol_v2_claims_gate");
+    }
+
     const protocolV2Enabled = env.PROTOCOL_V2_INTAKE_ENABLED === "true";
     const protocolV2Policy = protocolV2Enabled ? loadExecutionProtocolV2Policy(env) : null;
     if (protocolV2Enabled && !protocolV2Policy) {
@@ -67,6 +73,7 @@ export default {
       executionIntakeRepository,
       runnerIdentityRepository,
       runnerDispatchLeaseRepository,
+      protocolV2ClaimsEnabled: env.PROTOCOL_V2_CLAIMS_ENABLED === "true",
       runnerAcceptanceRepository,
       runnerStartRepository,
       runnerHeartbeatRepository,
