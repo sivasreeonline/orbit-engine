@@ -413,6 +413,29 @@ describe.skipIf(!databaseUrl)("authenticated runner completion PostgreSQL integr
         completion_count: "0",
       });
 
+      await expect(evidence.recordRunnerResult({
+        ...completionInput,
+        resultSha256: "e".repeat(64),
+      })).rejects.toThrow("runner_completion_result_digest_mismatch");
+      const afterRejectedDigest = await setup.query<{
+        job_state: string;
+        result_count: string;
+        completion_count: string;
+        completion_events: string;
+      }>(
+        [
+          "SELECT job.state AS job_state,",
+          "  (SELECT count(*)::text FROM execution_result_records WHERE execution_id=job.id) AS result_count,",
+          "  (SELECT count(*)::text FROM runner_dispatch_completions WHERE execution_id=job.id) AS completion_count,",
+          "  (SELECT count(*)::text FROM execution_evidence_events WHERE execution_id=job.id AND event_type='EXECUTION_FINISHED') AS completion_events",
+          "FROM execution_jobs AS job WHERE job.id=$1::uuid",
+        ].join("\n"),
+        [created.executionId],
+      );
+      expect(afterRejectedDigest.rows[0]).toEqual({
+        job_state: "RUNNING", result_count: "0", completion_count: "0", completion_events: "0",
+      });
+
       const completed = await evidence.recordRunnerResult(completionInput);
       expect(completed.replayed).toBe(false);
       expect(completed.state).toBe("COMPLETED");
