@@ -122,6 +122,85 @@ func TestClaimSendsSignedBoundedRequestAndValidatesDispatch(t *testing.T) {
 	}
 }
 
+func TestClaimV2UsesDistinctSignedRouteAndRejectsProtocolDowngrade(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	dispatch.ProtocolVersion = "v2"
+	dispatch.CorrelationID = "40000000-0000-4000-8000-000000000099"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != claimV2Path {
+			t.Fatalf("unexpected v2 claim request: %s %s", request.Method, request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil { t.Fatalf("read v2 claim body: %v", err) }
+		verifyTestRequest(t, request, body)
+		if string(body) != `{"requestedSlots":1}` {
+			t.Fatalf("unexpected v2 claim body: %s", body)
+		}
+		writeJSON(t, writer, http.StatusOK, map[string]any{
+			"data": []Dispatch{dispatch},
+			"meta": map[string]any{
+				"claimed": 1, "maxActiveLeasesPerRunner": 2,
+				"leaseDurationSeconds": 120, "protocolVersion": "v2",
+			},
+		})
+	}))
+	defer server.Close()
+
+	claimed, err := newTestClient(t, server).ClaimV2(context.Background(), 1)
+	if err != nil { t.Fatal(err) }
+	if len(claimed) != 1 || claimed[0].ProtocolVersion != "v2" {
+		t.Fatalf("unexpected v2 dispatches: %#v", claimed)
+	}
+}
+
+func TestClaimV2RejectsMissingVersionMarkerAndNonV4Correlation(t *testing.T) {
+	cases := []struct {
+		name string
+		metaVersion string
+		correlation string
+	}{
+		{name: "missing version marker", metaVersion: "", correlation: "40000000-0000-4000-8000-000000000099"},
+		{name: "invalid correlation", metaVersion: "v2", correlation: "corr-not-uuid"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+			dispatch.ProtocolVersion = "v2"
+			dispatch.CorrelationID = testCase.correlation
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writeJSON(t, writer, http.StatusOK, map[string]any{
+					"data": []Dispatch{dispatch},
+					"meta": map[string]any{
+						"claimed": 1, "maxActiveLeasesPerRunner": 2,
+						"leaseDurationSeconds": 120, "protocolVersion": testCase.metaVersion,
+					},
+				})
+			}))
+			defer server.Close()
+			if _, err := newTestClient(t, server).ClaimV2(context.Background(), 1); err == nil {
+				t.Fatal("invalid v2 claim response was accepted")
+			}
+		})
+	}
+}
+
+func TestV1ClaimRejectsV2DispatchDowngrade(t *testing.T) {
+	dispatch := testDispatch(fixedRunnerTime().Add(90 * time.Second))
+	dispatch.ProtocolVersion = "v2"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writeJSON(t, writer, http.StatusOK, map[string]any{
+			"data": []Dispatch{dispatch},
+			"meta": map[string]int{
+				"claimed": 1, "maxActiveLeasesPerRunner": 2, "leaseDurationSeconds": 120,
+			},
+		})
+	}))
+	defer server.Close()
+	if _, err := newTestClient(t, server).Claim(context.Background(), 1); err == nil {
+		t.Fatal("v1 claim accepted a v2 dispatch")
+	}
+}
+
 func TestClaimRejectsMalformedAndOutOfContractResponses(t *testing.T) {
 	cases := []struct {
 		name string

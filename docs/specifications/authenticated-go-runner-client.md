@@ -59,3 +59,18 @@ For a network error or lost response, the prepared receipt remains pending. On r
 ## Tests
 
 The client tests cover signature verification, bounded claim metadata, malformed/expired response rejection, write-ahead receipt ordering, restart recovery after a temporary API failure, fresh request nonce on retry, strict response parsing, and redirect rejection. Exact-head CI results are authoritative; local execution is not inferred from source inspection.
+
+
+## Protocol v2 claim isolation
+
+The client exposes a separate `ClaimV2` method for
+`POST /internal/v2/runner/claim`. It is not called by the worker's default
+`Claim` flow and does not enable v2 polling or execution. Both claim methods
+share the same bounded request and lease-capacity checks, but enforce an exact
+protocol match on every returned dispatch. The v1 method rejects v2 dispatches;
+the v2 method rejects v1 dispatches, requires the response metadata marker
+`protocolVersion: "v2"`, and requires the v2 UUIDv4 correlation identity.
+
+The v2 claim route uses the same Ed25519 request signing and one-time nonce
+mechanism as the other private runner operations. Server-side capability
+qualification and the default-off v2 claim feature gate remain authoritative.
