@@ -27,6 +27,7 @@ type ExecutionEvidenceReadRepository = Pick<
 import type { Env } from "./env";
 import type { PostgresRunnerIdentityRepository } from "./db/runner-identity-repository";
 import type { PostgresRunnerDispatchLeaseRepository } from "./db/runner-dispatch-lease-repository";
+import { RunnerProtocolNotQualifiedError } from "./db/runner-dispatch-lease-repository";
 import type { PostgresRunnerAcceptanceRepository } from "./db/runner-acceptance-repository";
 import {
   RunnerAcceptanceConflictError,
@@ -1101,6 +1102,11 @@ export function createApiHandler(dependencies: ApiDependencies) {
           },
         }, 200, requestId, origin, allowedOrigins);
       } catch (error) {
+        if (error instanceof RunnerProtocolNotQualifiedError) {
+          return errorResponse("RUNNER_PROTOCOL_NOT_QUALIFIED",
+            "This runner is not qualified for protocol v2.", 403, false,
+            requestId, origin, allowedOrigins);
+        }
         if (error instanceof DatabaseUnavailableError) {
           return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
             "Runner dispatch is temporarily unavailable.", 503, true,
