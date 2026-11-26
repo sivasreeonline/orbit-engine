@@ -58,7 +58,7 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     expect(claim?.text).toContain("FOR UPDATE OF lane SKIP LOCKED");
     expect(claim?.text).toContain("DISTINCT ON (owner_attempt.tenant_id, owner_attempt.actor_user_id)");
     expect(claim?.text).toContain("ORDER BY lane.last_served_ticket");
-    expect(claim?.text.match(/protocol_version = 'v1'/g)).toHaveLength(2);
+    expect(claim?.text.match(/protocol_version = \$4/g)).toHaveLength(2);
     expect(claim?.text).toContain("nextval('runner_dispatch_scheduler_ticket_seq')");
     expect(claim?.values).toEqual([20, "fair-dispatcher-1", 45]);
     expect(fake.ended()).toBe(true);
@@ -101,12 +101,12 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     const claim = calls.find((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"));
     expect(claim?.text).toContain("FOR UPDATE OF pending, job SKIP LOCKED");
     expect(claim?.text.match(/protocol_version = 'v1'/g)).toHaveLength(2);
-    expect(calls[4]?.text).toContain("protocol_version = 'v1'");
+    expect(calls[4]?.text).not.toContain("protocol_version");
     expect(claim?.text).toContain("UPDATE execution_jobs AS job");
     expect(claim?.text).toContain("lease_token = claimed.lease_token");
     expect(claim?.text).toContain("'JOB_CLAIMED', 'RUNNER'");
     expect(claim?.text).toContain("INSERT INTO execution_evidence_events");
-    expect(claim?.values).toEqual([2, runnerId, 120]);
+    expect(claim?.values).toEqual([2, runnerId, 120, "v1"]);
     expect(calls.some((call) => call.text === "COMMIT")).toBe(true);
     expect(ended).toBe(true);
   });
@@ -146,4 +146,28 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     const unconfigured = new PostgresRunnerDispatchLeaseRepository(undefined);
     await expect(unconfigured.claimBatch("dispatcher-1", 1, 30)).rejects.toThrow("database_unavailable");
   });
+
+  it("shares active capacity across protocol versions while claiming only v2", async () => {
+    const calls: Call[] = [];
+    const runnerId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
+    const client = {
+      async connect() {},
+      async query<T extends Record<string, unknown>>(text: string, values?: unknown[]) {
+        calls.push({ text, values });
+        if (text.includes("SELECT count(*)::integer AS active_count")) {
+          return { rows: [{ active_count: 1 }] as unknown as T[] };
+        }
+        return { rows: [] as T[] };
+      },
+      async end() {},
+    };
+    const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => client);
+    await expect(repository.claimFairBatchForRunnerV2(runnerId, 2, 2, 120)).resolves.toEqual([]);
+    const active = calls.find((call) => call.text.includes("active_count"));
+    const claim = calls.find((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"));
+    expect(active?.text).not.toContain("protocol_version");
+    expect(claim?.text.match(/protocol_version = \$4/g)).toHaveLength(2);
+    expect(claim?.values).toEqual([1, runnerId, 120, "v2"]);
+  });
+
 });
