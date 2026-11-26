@@ -268,6 +268,15 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
         run: npx vitest run src/db/runner-dispatch-handoff-repository.integration.test.ts
 
+      # The v2 claim qualification gate reads this table; install its schema
+      # before exercising the dispatch-lease PostgreSQL integration tests.
+      - name: Apply runner protocol capability migration for dispatch claim tests
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0007_runner_machine_identity.sql
+          psql -h 127.0.0.1 -U postgres -d sky_high_test -v ON_ERROR_STOP=1 -f migrations/0016_runner_protocol_capabilities.sql
+
       - name: Verify runner dispatch leases against PostgreSQL
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/sky_high_test
