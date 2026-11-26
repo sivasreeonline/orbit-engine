@@ -9,6 +9,7 @@ import {
   RunnerCompletionNotStartedError,
   RunnerCompletionUnauthorizedError,
   RunnerCompletionRuntimeImageMismatchError,
+  RunnerCompletionResultDigestMismatchError,
   RunnerCompletionProtocolIntegrityError,
   StaleExecutionLeaseError,
   type RecordRunnerExecutionResultInput,
@@ -863,6 +864,11 @@ export function createApiHandler(dependencies: ApiDependencies) {
         if (error instanceof RunnerCompletionRuntimeImageMismatchError) {
           return errorResponse("RUNNER_RUNTIME_IMAGE_MISMATCH",
             "The reported runtime image does not match the immutable v2 execution request.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerCompletionResultDigestMismatchError) {
+          return errorResponse("RUNNER_RESULT_DIGEST_MISMATCH",
+            "The v2 result digest does not match the canonical execution and policy binding.", 409, false,
             requestId, origin, allowedOrigins);
         }
         if (error instanceof RunnerCompletionProtocolIntegrityError) {
