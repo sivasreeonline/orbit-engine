@@ -479,7 +479,8 @@ export class PostgresRunnerDispatchLeaseRepository {
       await client.connect();
       await client.query("SET statement_timeout = '5s'");
       return await operation(client);
-    } catch {
+    } catch (error) {
+      if (error instanceof RunnerProtocolNotQualifiedError) throw error;
       throw new DatabaseUnavailableError();
     } finally {
       await client.end().catch(() => undefined);
