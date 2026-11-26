@@ -355,4 +355,125 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
   }, 15_000);
 
 
+  it("serializes v2 claims ahead of a concurrent qualification revocation", async () => {
+    const intake = new PostgresExecutionIntakeRepository(databaseUrl, undefined, {
+      policyRevision: "v2-revocation-race-integration",
+      runtimeImageDigests: {
+        java: `sha256:${"1".repeat(64)}`,
+        python: `sha256:${"2".repeat(64)}`,
+      },
+      limits: {
+        cpuQuotaMillis: 1_000,
+        memoryBytes: 268_435_456,
+        wallTimeMillis: 60_000,
+        processLimit: 32,
+        outputBytes: 1_048_576,
+        scratchBytes: 16_777_216,
+        scratchInodes: 1_024,
+      },
+    } satisfies ExecutionProtocolV2Policy);
+    const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
+    const runnerId = randomUUID();
+    const claimClient = new Client({ connectionString: databaseUrl });
+    const revoker = new Client({ connectionString: databaseUrl });
+    let signalQualificationRead!: () => void;
+    let releaseQualification!: () => void;
+    const qualificationRead = new Promise<void>((resolve) => {
+      signalQualificationRead = resolve;
+    });
+    const qualificationGate = new Promise<void>((resolve) => {
+      releaseQualification = resolve;
+    });
+    const interceptedClient = new Proxy(claimClient, {
+      get(target, property) {
+        if (property === "query") {
+          return async (...args: [string, unknown[]?]) => {
+            const result = await target.query(args[0], args[1]);
+            if (args[0].includes("FROM runner_machine_protocol_capabilities")
+              && args[0].includes("FOR SHARE")) {
+              signalQualificationRead();
+              await qualificationGate;
+            }
+            return result;
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const leases = new PostgresRunnerDispatchLeaseRepository(
+      databaseUrl,
+      (() => interceptedClient as never),
+    );
+
+    try {
+      await revoker.connect();
+      await revoker.query(
+        "INSERT INTO runner_machines (id, machine_name) VALUES ($1, $2)",
+        [runnerId, `revocation-race-runner-${runnerId}`],
+      );
+      await revoker.query(
+        "INSERT INTO runner_machine_protocol_capabilities (runner_id, protocol_version, qualification_reference) VALUES ($1, 'v2', $2)",
+        [runnerId, `revocation-race-${randomUUID()}`],
+      );
+      const created = await intake.create({
+        principal: { tenantId, userId: randomUUID(), roles: ["STUDENT"] },
+        action: "RUN",
+        problemSlug: "two-sum",
+        language: "java",
+        runtimeVersion: "25",
+        sourceCode: "public class Main { public static void main(String[] args) {} }",
+        correlationId: `v2-revocation-race-${randomUUID()}`,
+      }, `v2-revocation-race-${randomUUID()}`);
+      const intent = await handoff.record({
+        executionId: created.executionId,
+        attemptId: created.attemptId,
+        protocolVersion: "v2",
+      });
+      expect(intent.status).toBe("RECORDED");
+
+      const claimPromise = leases.claimFairBatchForRunnerV2(runnerId, 1, 2, 120);
+      await qualificationRead;
+
+      await revoker.query("BEGIN");
+      await revoker.query("SET LOCAL lock_timeout = '100ms'");
+      let revocationError: { code?: string } | undefined;
+      try {
+        await revoker.query(
+          "UPDATE runner_machine_protocol_capabilities SET status='REVOKED', revoked_at=now() WHERE runner_id=$1 AND protocol_version='v2'",
+          [runnerId],
+        );
+      } catch (error) {
+        revocationError = error as { code?: string };
+      }
+      expect(revocationError?.code).toBe("55P03");
+      await revoker.query("ROLLBACK");
+
+      // The claim still owns its FOR SHARE lock. Once it commits, revocation
+      // can proceed; it cannot retroactively invalidate the issued lease.
+      releaseQualification();
+      const claimed = await claimPromise;
+      expect(claimed).toHaveLength(1);
+      expect(claimed[0]?.id).toBe(intent.dispatchId);
+
+      await revoker.query(
+        "UPDATE runner_machine_protocol_capabilities SET status='REVOKED', revoked_at=now() WHERE runner_id=$1 AND protocol_version='v2'",
+        [runnerId],
+      );
+      const capability = await revoker.query<{ status: string; revoked_at: Date | null }>(
+        "SELECT status, revoked_at FROM runner_machine_protocol_capabilities WHERE runner_id=$1 AND protocol_version='v2'",
+        [runnerId],
+      );
+      expect(capability.rows[0]?.status).toBe("REVOKED");
+      expect(capability.rows[0]?.revoked_at).not.toBeNull();
+    } finally {
+      releaseQualification();
+      await claimClient.end().catch(() => undefined);
+      await revoker.query("ROLLBACK").catch(() => undefined);
+      await revoker.query("DELETE FROM runner_machine_protocol_capabilities WHERE runner_id=$1", [runnerId]).catch(() => undefined);
+      await revoker.query("DELETE FROM runner_machines WHERE id=$1", [runnerId]).catch(() => undefined);
+      await revoker.end().catch(() => undefined);
+    }
+  }, 15_000);
+
 });
