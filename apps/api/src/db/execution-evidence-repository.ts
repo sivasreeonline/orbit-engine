@@ -199,6 +199,20 @@ export class RunnerCompletionConflictError extends Error {
   }
 }
 
+export class RunnerCompletionRuntimeImageMismatchError extends Error {
+  constructor() {
+    super("runner_completion_runtime_image_mismatch");
+    this.name = "RunnerCompletionRuntimeImageMismatchError";
+  }
+}
+
+export class RunnerCompletionProtocolIntegrityError extends Error {
+  constructor() {
+    super("runner_completion_protocol_request_integrity_invalid");
+    this.name = "RunnerCompletionProtocolIntegrityError";
+  }
+}
+
 interface QueueStatusRow extends Record<string, unknown> {
   readonly execution_id: string;
   readonly attempt_id: string;
@@ -262,6 +276,13 @@ function isSafeCode(value: string): boolean {
 
 function isSha256(value: string): boolean {
   return /^[0-9a-f]{64}$/.test(value);
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const digest = await crypto.subtle.digest("SHA-256", copy.buffer);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function isoTimestamp(value: Date | string): string {
@@ -624,6 +645,9 @@ export class PostgresExecutionEvidenceRepository {
           dispatch_id: string;
           execution_id: string;
           attempt_id: string;
+          protocol_version: "v1" | "v2";
+          protocol_request_sha256: string | null;
+          protocol_request_bytes: Uint8Array | null;
           delivery_state: string;
           dispatch_owner: string | null;
           dispatch_token: string | null;
@@ -635,12 +659,15 @@ export class PostgresExecutionEvidenceRepository {
         }>(
           [
             "SELECT dispatch.id AS dispatch_id, dispatch.execution_id, dispatch.attempt_id,",
+            "  dispatch.protocol_version, protocol_request.request_sha256 AS protocol_request_sha256,",
+            "  protocol_request.request_bytes AS protocol_request_bytes,",
             "  dispatch.delivery_state, dispatch.lease_owner AS dispatch_owner,",
             "  dispatch.lease_token::text AS dispatch_token, dispatch.lease_expires_at AS dispatch_expires_at,",
             "  job.state AS job_state, job.lease_owner AS job_owner,",
             "  job.lease_token::text AS job_token, job.lease_expires_at AS job_expires_at",
             "FROM runner_dispatch_outbox AS dispatch",
             "INNER JOIN execution_jobs AS job ON job.id = dispatch.execution_id",
+            "LEFT JOIN execution_protocol_requests AS protocol_request ON protocol_request.execution_id = dispatch.execution_id",
             "WHERE dispatch.id = $1::uuid AND dispatch.execution_id = $2::uuid",
             "  AND dispatch.attempt_id = $3::uuid AND job.attempt_id = $3::uuid",
             "FOR UPDATE OF dispatch, job",
@@ -649,6 +676,30 @@ export class PostgresExecutionEvidenceRepository {
         );
         const currentLease = lease.rows[0];
         if (!currentLease) throw new ExecutionEvidenceNotFoundError();
+
+        if (currentLease.protocol_version === "v2") {
+          const requestBytes = currentLease.protocol_request_bytes;
+          const requestDigest = currentLease.protocol_request_sha256?.trim();
+          if (!requestBytes || !requestDigest || await sha256Hex(requestBytes) !== requestDigest) {
+            throw new RunnerCompletionProtocolIntegrityError();
+          }
+          let protocolRequest: Record<string, unknown>;
+          try {
+            protocolRequest = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(requestBytes)) as Record<string, unknown>;
+          } catch {
+            throw new RunnerCompletionProtocolIntegrityError();
+          }
+          if (!protocolRequest || typeof protocolRequest !== "object" || Array.isArray(protocolRequest) ||
+              protocolRequest.protocolVersion !== "v2" ||
+              protocolRequest.executionId !== input.executionId ||
+              protocolRequest.attemptId !== input.attemptId) {
+            throw new RunnerCompletionProtocolIntegrityError();
+          }
+          if (typeof input.runtimeImageDigest !== "string" ||
+              protocolRequest.runtimeImageDigest !== `sha256:${input.runtimeImageDigest}`) {
+            throw new RunnerCompletionRuntimeImageMismatchError();
+          }
+        }
 
         const priorCompletion = await client.query<{
           execution_id: string;
