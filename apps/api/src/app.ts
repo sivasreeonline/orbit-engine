@@ -83,7 +83,8 @@ interface ApiDependencies {
   readonly evidenceRepository?: ExecutionEvidenceReadRepository;
   readonly executionIntakeRepository?: ExecutionIntakeRepository;
   readonly runnerIdentityRepository?: Pick<PostgresRunnerIdentityRepository, "findActivePublicKey" | "consumeNonce">;
-  readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner">;
+  readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner" | "claimFairBatchForRunnerV2">;
+  readonly protocolV2ClaimsEnabled?: boolean;
   readonly runnerAcceptanceRepository?: Pick<PostgresRunnerAcceptanceRepository, "record">;
   readonly codingEvidenceRepository?: Pick<PostgresCodingEvidenceRepository, "createSession" | "appendBatch">;
   readonly runnerStartRepository?: Pick<PostgresRunnerStartRepository, "start">;
@@ -996,6 +997,103 @@ export function createApiHandler(dependencies: ApiDependencies) {
       }
     }
 
+
+
+    if (request.method === "POST" && path === "/internal/v2/runner/claim") {
+      if (dependencies.protocolV2ClaimsEnabled !== true) {
+        return errorResponse("PROTOCOL_V2_CLAIMS_DISABLED",
+          "Protocol v2 runner claims are not enabled.", 503, false,
+          requestId, origin, allowedOrigins);
+      }
+      if (!dependencies.runnerIdentityRepository || !dependencies.runnerDispatchLeaseRepository) {
+        return errorResponse("RUNNER_CONTROL_PLANE_NOT_CONFIGURED",
+          "Runner dispatch is temporarily unavailable.", 503, true,
+          requestId, origin, allowedOrigins);
+      }
+
+      const mediaType = (request.headers.get("Content-Type") ?? "")
+        .split(";")[0]?.trim().toLowerCase();
+      if (mediaType !== "application/json") {
+        return errorResponse("UNSUPPORTED_MEDIA_TYPE",
+          "The runner claim request must use application/json.", 415, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      let rawBody: Uint8Array;
+      let claimBody: unknown;
+      try {
+        rawBody = await readRawBody(request, 1024);
+        claimBody = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(rawBody)) as unknown;
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          return errorResponse("REQUEST_BODY_TOO_LARGE",
+            "The runner claim request exceeds the allowed size.", 413, false,
+            requestId, origin, allowedOrigins);
+        }
+        return errorResponse("INVALID_REQUEST_BODY",
+          "The runner claim request must contain valid JSON.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      if (!isRecord(claimBody) ||
+          Object.keys(claimBody).length !== 1 ||
+          Object.keys(claimBody).some((key) => key !== "requestedSlots") ||
+          !Number.isInteger(claimBody.requestedSlots) ||
+          (claimBody.requestedSlots as number) < 1 ||
+          (claimBody.requestedSlots as number) > 4) {
+        return errorResponse("INVALID_RUNNER_CLAIM",
+          "The runner claim must contain requestedSlots from 1 to 4.", 400, false,
+          requestId, origin, allowedOrigins);
+      }
+
+      try {
+        const authenticatedRunner = await authenticateRunnerRequest(
+          request,
+          rawBody,
+          dependencies.runnerIdentityRepository,
+        );
+        if (!authenticatedRunner) {
+          return errorResponse("RUNNER_AUTHENTICATION_FAILED",
+            "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        const leases = await dependencies.runnerDispatchLeaseRepository.claimFairBatchForRunnerV2(
+          authenticatedRunner.runnerId,
+          Math.min(claimBody.requestedSlots as number, 2),
+          2,
+          120,
+        );
+        return jsonResponse({
+          data: leases.map((lease) => ({
+            dispatchId: lease.id,
+            executionId: lease.executionId,
+            attemptId: lease.attemptId,
+            protocolVersion: lease.protocolVersion,
+            correlationId: lease.correlationId,
+            deliveryAttempt: lease.deliveryAttempts,
+            leaseToken: lease.leaseToken,
+            leaseExpiresAt: lease.leaseExpiresAt,
+          })),
+          meta: {
+            claimed: leases.length,
+            protocolVersion: "v2",
+            maxActiveLeasesPerRunner: 2,
+            leaseDurationSeconds: 120,
+          },
+        }, 200, requestId, origin, allowedOrigins);
+      } catch (error) {
+        if (error instanceof DatabaseUnavailableError) {
+          return errorResponse("RUNNER_CONTROL_PLANE_UNAVAILABLE",
+            "Runner dispatch is temporarily unavailable.", 503, true,
+            requestId, origin, allowedOrigins);
+        }
+        console.error("runner_v2_claim_failed", { correlationId: requestId });
+        return errorResponse("INTERNAL_ERROR",
+          "Runner dispatch could not be claimed.", 500, true,
+          requestId, origin, allowedOrigins);
+      }
+    }
 
     if (request.method === "POST" && path === "/internal/v1/runner/claim") {
       if (!dependencies.runnerIdentityRepository || !dependencies.runnerDispatchLeaseRepository) {
