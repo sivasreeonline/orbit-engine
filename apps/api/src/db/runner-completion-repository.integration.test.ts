@@ -388,7 +388,7 @@ describe.skipIf(!databaseUrl)("authenticated runner completion PostgreSQL integr
           "FROM execution_jobs AS job",
           "INNER JOIN runner_dispatch_outbox AS dispatch ON dispatch.execution_id=job.id",
           "WHERE job.id=$1::uuid",
-        ].join("\\n"),
+        ].join("\n"),
         [created.executionId],
       );
       expect(finalState.rows[0]).toEqual({
