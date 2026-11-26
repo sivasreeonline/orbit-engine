@@ -116,7 +116,11 @@ interface HarnessOptions {
     claimFairBatchForRunner(
       runnerId: string, requestedSlots: number, maxActiveLeases: number, leaseSeconds: number,
     ): Promise<RunnerDispatchLease[]>;
+    claimFairBatchForRunnerV2?(
+      runnerId: string, requestedSlots: number, maxActiveLeases: number, leaseSeconds: number,
+    ): Promise<RunnerDispatchLease[]>;
   };
+  protocolV2ClaimsEnabled?: boolean;
   runnerAcceptanceRepository?: {
     record(input: RecordRunnerAcceptanceInput): Promise<RecordedRunnerAcceptance>;
   };
@@ -166,6 +170,9 @@ function makeHarness(options: HarnessOptions = {}) {
       : {}),
     ...(options.runnerDispatchLeaseRepository
       ? { runnerDispatchLeaseRepository: options.runnerDispatchLeaseRepository }
+      : {}),
+    ...(options.protocolV2ClaimsEnabled !== undefined
+      ? { protocolV2ClaimsEnabled: options.protocolV2ClaimsEnabled }
       : {}),
     ...(options.runnerAcceptanceRepository
       ? { runnerAcceptanceRepository: options.runnerAcceptanceRepository }
@@ -886,6 +893,124 @@ describe("authenticated runner claim endpoint", () => {
     expect(response.status).toBe(400);
     expect(findActivePublicKey).not.toHaveBeenCalled();
     expect(claimFairBatchForRunner).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("authenticated protocol v2 runner claim endpoint", () => {
+  const runnerId = "40000000-0000-4000-8000-000000000001";
+  const dispatch: RunnerDispatchLease = {
+    id: "50000000-0000-4000-8000-000000000001",
+    executionId: "60000000-0000-4000-8000-000000000001",
+    attemptId: "70000000-0000-4000-8000-000000000001",
+    protocolVersion: "v2",
+    correlationId: "test-runner-v2-claim",
+    deliveryAttempts: 1,
+    leaseToken: "80000000-0000-4000-8000-000000000001",
+    leaseExpiresAt: "2026-11-26T08:16:00.000Z",
+  };
+
+  function encodeBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).split("+").join("-").split("/").join("_").replace(/=+$/g, "");
+  }
+
+  async function signedRequest() {
+    const now = new Date();
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const nonce = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+    const bodyText = JSON.stringify({ requestedSlots: 2 });
+    const body = new TextEncoder().encode(bodyText);
+    const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair;
+    const publicKey = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
+    const message = await canonicalRunnerRequestMessage({
+      keyId: "runner-v2-test-key", method: "POST",
+      path: "/internal/v2/runner/claim", timestamp, nonce, body,
+    });
+    const signature = new Uint8Array(await crypto.subtle.sign("Ed25519", pair.privateKey, new Uint8Array(message)));
+    return {
+      request: new Request("https://api.skyhigh.example/internal/v2/runner/claim", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [RUNNER_AUTH_HEADERS.keyId]: "runner-v2-test-key",
+          [RUNNER_AUTH_HEADERS.timestamp]: timestamp,
+          [RUNNER_AUTH_HEADERS.nonce]: nonce,
+          [RUNNER_AUTH_HEADERS.signature]: encodeBase64Url(signature),
+        },
+        body: bodyText,
+      }),
+      publicKey,
+    };
+  }
+
+  it("keeps v2 claims disabled by default before authenticating or querying leases", async () => {
+    const signed = await signedRequest();
+    const findActivePublicKey = vi.fn(async () => ({
+      keyId: "runner-v2-test-key", runnerId, publicKey: signed.publicKey,
+    }));
+    const claimFairBatchForRunnerV2 = vi.fn(async () => [dispatch]);
+    const { handler } = makeHarness({
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce: vi.fn(async () => true) },
+      runnerDispatchLeaseRepository: {
+        claimFairBatchForRunner: vi.fn(async () => []),
+        claimFairBatchForRunnerV2,
+      },
+    });
+    const response = await handler(signed.request);
+    expect(response.status).toBe(503);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "PROTOCOL_V2_CLAIMS_DISABLED", retryable: false },
+    });
+    expect(findActivePublicKey).not.toHaveBeenCalled();
+    expect(claimFairBatchForRunnerV2).not.toHaveBeenCalled();
+  });
+
+  it("authenticates v2 claim on a distinct route and returns only v2 leases", async () => {
+    const signed = await signedRequest();
+    const findActivePublicKey = vi.fn(async () => ({
+      keyId: "runner-v2-test-key", runnerId, publicKey: signed.publicKey,
+    }));
+    const consumeNonce = vi.fn(async () => true);
+    const claimFairBatchForRunnerV2 = vi.fn(async () => [dispatch]);
+    const { handler } = makeHarness({
+      protocolV2ClaimsEnabled: true,
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
+      runnerDispatchLeaseRepository: {
+        claimFairBatchForRunner: vi.fn(async () => []),
+        claimFairBatchForRunnerV2,
+      },
+    });
+    const response = await handler(signed.request);
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      data: [{ dispatchId: dispatch.id, protocolVersion: "v2" }],
+      meta: { protocolVersion: "v2", maxActiveLeasesPerRunner: 2 },
+    });
+    expect(consumeNonce).toHaveBeenCalledOnce();
+    expect(claimFairBatchForRunnerV2).toHaveBeenCalledWith(runnerId, 2, 2, 120);
+  });
+
+  it("does not claim if the v2 route signature is replayed", async () => {
+    const signed = await signedRequest();
+    const claimFairBatchForRunnerV2 = vi.fn(async () => [dispatch]);
+    const { handler } = makeHarness({
+      protocolV2ClaimsEnabled: true,
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-v2-test-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => false),
+      },
+      runnerDispatchLeaseRepository: {
+        claimFairBatchForRunner: vi.fn(async () => []),
+        claimFairBatchForRunnerV2,
+      },
+    });
+    const response = await handler(signed.request);
+    expect(response.status).toBe(401);
+    expect(claimFairBatchForRunnerV2).not.toHaveBeenCalled();
   });
 });
 
