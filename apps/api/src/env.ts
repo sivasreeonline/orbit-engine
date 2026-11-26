@@ -22,6 +22,7 @@ export interface Env {
   readonly JAVA_RUNTIME_VERSION?: string;
   readonly PYTHON_RUNTIME_VERSION?: string;
   readonly PROTOCOL_V2_INTAKE_ENABLED?: string;
+  readonly PROTOCOL_V2_CLAIMS_ENABLED?: string;
   readonly PROTOCOL_V2_POLICY_REVISION?: string;
   readonly JAVA_RUNTIME_IMAGE_DIGEST?: string;
   readonly PYTHON_RUNTIME_IMAGE_DIGEST?: string;
