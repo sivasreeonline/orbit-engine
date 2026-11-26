@@ -158,3 +158,21 @@ API checks the row after request authentication and nonce consumption and
 before acquiring a dispatch lease. Revocation is observed by the next claim.
 Provisioning a capability is an administrative qualification action, not a
 runner API operation. V2 remains behind the separate default-off claims gate.
+
+## V2 completion runtime-image attestation
+
+A v2 runner completion must report the SHA-256 digest of the runtime image actually
+used. The API compares that digest with the runtime image pinned in the immutable
+`execution_protocol_requests.request_bytes` artifact. It verifies the exact persisted
+request bytes against `request_sha256` before trusting the pinned image value, and
+also binds the request's protocol, execution ID and attempt ID to the dispatch being
+completed.
+
+A missing, malformed, or digest-invalid persisted request fails closed. A runner
+reporting an image other than the pinned image receives a non-retryable
+`RUNNER_RUNTIME_IMAGE_MISMATCH` conflict; no terminal result, completion receipt,
+or completion evidence is written. V1 completion behavior remains unchanged.
+
+This check is performed inside the same database transaction that locks the
+dispatch and execution job, before terminal result persistence. It does not
+activate v2 execution or change the default-off claim/publication gates.

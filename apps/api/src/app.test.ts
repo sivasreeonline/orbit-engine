@@ -40,6 +40,7 @@ import { RUNNER_AUTH_HEADERS } from "./services/runner-request-authenticator";
 import type { PostgresExecutionEvidenceRepository } from "./db/execution-evidence-repository";
 import {
   RunnerCompletionNotStartedError,
+  RunnerCompletionRuntimeImageMismatchError,
 } from "./db/execution-evidence-repository";
 import type {
   RecordRunnerExecutionResultInput,
@@ -1984,5 +1985,29 @@ describe("authenticated runner completion endpoint", () => {
     expect(await readJson(response)).toMatchObject({
       error: { code: "RUNNER_START_REQUIRED", retryable: false },
     });
+  });
+
+  it("returns a non-retryable conflict when v2 completion reports an unpinned runtime image", async () => {
+    const signed = await signedCompletionRequest(completionBody);
+    const recordRunnerResult = vi.fn(async () => {
+      throw new RunnerCompletionRuntimeImageMismatchError();
+    });
+    const { handler } = makeHarness({
+      runnerIdentityRepository: {
+        findActivePublicKey: vi.fn(async () => ({
+          keyId: "runner-complete-key", runnerId, publicKey: signed.publicKey,
+        })),
+        consumeNonce: vi.fn(async () => true),
+      },
+      runnerCompletionRepository: { recordRunnerResult },
+    });
+
+    const response = await handler(signed.request);
+
+    expect(response.status).toBe(409);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: "RUNNER_RUNTIME_IMAGE_MISMATCH", retryable: false },
+    });
+    expect(recordRunnerResult).toHaveBeenCalledOnce();
   });
 });

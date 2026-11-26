@@ -8,6 +8,8 @@ import {
   RunnerCompletionNotAcceptedError,
   RunnerCompletionNotStartedError,
   RunnerCompletionUnauthorizedError,
+  RunnerCompletionRuntimeImageMismatchError,
+  RunnerCompletionProtocolIntegrityError,
   StaleExecutionLeaseError,
   type RecordRunnerExecutionResultInput,
 } from "./db/execution-evidence-repository";
@@ -856,6 +858,16 @@ export function createApiHandler(dependencies: ApiDependencies) {
         if (error instanceof StaleExecutionLeaseError) {
           return errorResponse("RUNNER_LEASE_STALE",
             "The runner lease has expired or no longer belongs to this runner.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerCompletionRuntimeImageMismatchError) {
+          return errorResponse("RUNNER_RUNTIME_IMAGE_MISMATCH",
+            "The reported runtime image does not match the immutable v2 execution request.", 409, false,
+            requestId, origin, allowedOrigins);
+        }
+        if (error instanceof RunnerCompletionProtocolIntegrityError) {
+          return errorResponse("RUNNER_PROTOCOL_INTEGRITY_FAILURE",
+            "The immutable v2 execution request failed integrity verification.", 409, false,
             requestId, origin, allowedOrigins);
         }
         if (error instanceof RunnerCompletionConflictError ||
