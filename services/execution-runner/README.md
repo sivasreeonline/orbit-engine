@@ -97,3 +97,12 @@ The `cmd/runner` entry point remains health-only and loopback-bound. It does not
 5. Implement and qualify the ephemeral sandbox lifecycle behind the Executor interface.
 6. Enforce network denial, non-root identity, CPU, memory, PID, wall-clock, filesystem and output limits.
 7. Add cleanup attestation and adversarial tests; keep execution disabled until the full sandbox/security review passes.
+
+
+The client rejects dispatch protocol values other than `v1` and `v2`; v2
+dispatches must carry a UUIDv4 correlation ID. Start requires a still-live
+lease and validates the durable start event identity and timestamp. Heartbeat
+acknowledgements must echo the stable heartbeat ID and dispatch/execution
+identity, extend the previously acknowledged lease expiry, and remain inside
+the bounded renewal horizon. These checks are enforced before the worker
+coordinator advances to artifact retrieval or completion.
