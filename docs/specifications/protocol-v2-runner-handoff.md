@@ -122,3 +122,26 @@ The remaining coordinated rollout work is the authenticated v2 claim/lease path,
 a version-aware runner dispatch contract, and qualification of the approved
 isolated sandbox. Those pieces must remain gated until identity, cancellation,
 artifact authorization and M0 isolation criteria are met.
+
+
+## Authenticated v2 claim boundary (stacked follow-up)
+
+The stacked authenticated-claim slice introduces a distinct `POST /internal/v2/runner/claim`
+route. It uses the existing Ed25519 runner request signature and one-time nonce
+authentication, but is disabled unless `PROTOCOL_V2_CLAIMS_ENABLED=true` is
+explicitly configured. The existing `/internal/v1/runner/claim` route remains
+v1-only and is not widened.
+
+The shared PostgreSQL claim transaction accepts a protocol discriminator for
+candidate selection. The v1 wrapper selects v1 only; the separately named v2
+wrapper selects v2 only. The active lease count intentionally has no protocol
+filter, so a runner's two active slots are shared across v1 and v2. Both paths
+continue to acquire the global fair-scheduler lock and per-runner advisory lock
+before reading capacity and claiming. V2 therefore participates in the same
+least-served student-lane scheduler, but cannot consume a slot already occupied
+by a v1 lease.
+
+This is a claim-boundary integration only. It does not establish v2 sandbox
+qualification, cancellation semantics, artifact authorization parity, runner
+protocol support, or permission to enable v2 claims in production. Keep the
+configuration gate false until those independent release gates are satisfied.

@@ -148,4 +148,141 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
     }
   }, 15_000);
 
+
+  it("counts a mixed v1 and v2 active-lease set against the shared two-slot runner cap", async () => {
+    const intake = new PostgresExecutionIntakeRepository(databaseUrl);
+    const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
+    const leases = new PostgresRunnerDispatchLeaseRepository(databaseUrl);
+    const verifier = new Client({
+      connectionString: databaseUrl,
+      application_name: "sky-high-shared-runner-cap-integration",
+    });
+    const runnerId = randomUUID();
+    const v2Policy = {
+      policyRevision: "v2-shared-cap-integration",
+      runtimeImageDigests: {
+        java: `sha256:${"e".repeat(64)}`,
+        python: `sha256:${"f".repeat(64)}`,
+      },
+      limits: {
+        cpuQuotaMillis: 1_000,
+        memoryBytes: 268_435_456,
+        wallTimeMillis: 60_000,
+        processLimit: 32,
+        outputBytes: 1_048_576,
+        scratchBytes: 16_777_216,
+        scratchInodes: 1_024,
+      },
+    } satisfies ExecutionProtocolV2Policy;
+    const v2Intake = new PostgresExecutionIntakeRepository(databaseUrl, undefined, v2Policy);
+
+    // Retire unrelated v1 dispatch fixtures so this test owns the v1 lease.
+    const leftovers = await leases.claimBatch("shared-cap-cleanup", 100, 60);
+    await Promise.all(leftovers.map((lease) =>
+      leases.markDeadLetter(lease.id, "shared-cap-cleanup", lease.leaseToken),
+    ));
+
+    const sourceCode = "public class Main { public static void main(String[] args) {} }";
+    const v1Created = await intake.create({
+      principal: { tenantId, userId: randomUUID(), roles: ["STUDENT"] },
+      action: "RUN",
+      problemSlug: "two-sum",
+      language: "java",
+      runtimeVersion: "25",
+      sourceCode,
+      correlationId: `shared-cap-v1-${randomUUID()}`,
+    }, `shared-cap-v1-${randomUUID()}`);
+    const v2ActiveCreated = await v2Intake.create({
+      principal: { tenantId, userId: randomUUID(), roles: ["STUDENT"] },
+      action: "RUN",
+      problemSlug: "two-sum",
+      language: "java",
+      runtimeVersion: "25",
+      sourceCode,
+      correlationId: `shared-cap-v2-active-${randomUUID()}`,
+    }, `shared-cap-v2-active-${randomUUID()}`);
+    const v2PendingCreated = await v2Intake.create({
+      principal: { tenantId, userId: randomUUID(), roles: ["STUDENT"] },
+      action: "RUN",
+      problemSlug: "two-sum",
+      language: "java",
+      runtimeVersion: "25",
+      sourceCode,
+      correlationId: `shared-cap-v2-pending-${randomUUID()}`,
+    }, `shared-cap-v2-pending-${randomUUID()}`);
+
+    await handoff.record({
+      executionId: v1Created.executionId,
+      attemptId: v1Created.attemptId,
+      protocolVersion: "v1",
+    });
+    const v2ActiveIntent = await handoff.record({
+      executionId: v2ActiveCreated.executionId,
+      attemptId: v2ActiveCreated.attemptId,
+      protocolVersion: "v2",
+    });
+    const v2PendingIntent = await handoff.record({
+      executionId: v2PendingCreated.executionId,
+      attemptId: v2PendingCreated.attemptId,
+      protocolVersion: "v2",
+    });
+    expect(v2ActiveIntent.status).toBe("RECORDED");
+    expect(v2PendingIntent.status).toBe("RECORDED");
+
+    try {
+      await verifier.connect();
+      const liveV1 = await leases.claimBatch("shared-cap-v1-fixture", 1, 120);
+      expect(liveV1).toHaveLength(1);
+
+      // Model one already-active lease of each protocol under the same runner.
+      // The second v2 intent remains eligible but must not exceed the shared cap.
+      await verifier.query(
+        "UPDATE runner_dispatch_outbox SET lease_owner=$2, lease_token=gen_random_uuid(), lease_expires_at=now()+interval '120 seconds' WHERE id=$1::uuid",
+        [liveV1[0]!.id, runnerId],
+      );
+      await verifier.query(
+        "UPDATE runner_dispatch_outbox SET lease_owner=$2, lease_token=gen_random_uuid(), lease_expires_at=now()+interval '120 seconds' WHERE id=$1::uuid",
+        [v2ActiveIntent.dispatchId, runnerId],
+      );
+
+      const activeByProtocol = await verifier.query<{
+        protocol_version: string;
+        active_count: number;
+      }>(
+        [
+          "SELECT protocol_version, count(*)::integer AS active_count",
+          "FROM runner_dispatch_outbox",
+          "WHERE lease_owner=$1 AND delivery_state='PENDING' AND lease_expires_at > now()",
+          "GROUP BY protocol_version ORDER BY protocol_version",
+        ].join("\n"),
+        [runnerId],
+      );
+      expect(activeByProtocol.rows).toEqual([
+        { protocol_version: "v1", active_count: 1 },
+        { protocol_version: "v2", active_count: 1 },
+      ]);
+
+      const v2Claim = await leases.claimFairBatchForRunnerV2(runnerId, 2, 2, 120);
+      expect(v2Claim).toEqual([]);
+
+      const pendingState = await verifier.query<{
+        protocol_version: string;
+        delivery_state: string;
+        lease_owner: string | null;
+        lease_token: string | null;
+      }>(
+        "SELECT protocol_version, delivery_state, lease_owner, lease_token::text AS lease_token FROM runner_dispatch_outbox WHERE id = $1::uuid",
+        [v2PendingIntent.dispatchId],
+      );
+      expect(pendingState.rows[0]).toEqual({
+        protocol_version: "v2",
+        delivery_state: "PENDING",
+        lease_owner: null,
+        lease_token: null,
+      });
+    } finally {
+      await verifier.end();
+    }
+  }, 15_000);
+
 });
