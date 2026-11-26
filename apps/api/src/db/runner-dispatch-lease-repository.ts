@@ -208,10 +208,23 @@ export class PostgresRunnerDispatchLeaseRepository {
    * so concurrent polls cannot both spend the same remaining capacity.
    */
   async claimFairBatchForRunner(
+    runnerId: string, requestedSlots: number, maxActiveLeases: number, leaseSeconds: number,
+  ): Promise<RunnerDispatchLease[]> {
+    return this.claimFairBatchForRunnerVersion(runnerId, requestedSlots, maxActiveLeases, leaseSeconds, "v1");
+  }
+
+  async claimFairBatchForRunnerV2(
+    runnerId: string, requestedSlots: number, maxActiveLeases: number, leaseSeconds: number,
+  ): Promise<RunnerDispatchLease[]> {
+    return this.claimFairBatchForRunnerVersion(runnerId, requestedSlots, maxActiveLeases, leaseSeconds, "v2");
+  }
+
+  private async claimFairBatchForRunnerVersion(
     runnerId: string,
     requestedSlots: number,
     maxActiveLeases: number,
     leaseSeconds: number,
+    protocolVersion: "v1" | "v2",
   ): Promise<RunnerDispatchLease[]> {
     if (!this.connectionString) throw new DatabaseUnavailableError();
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(runnerId)) {
@@ -243,7 +256,6 @@ export class PostgresRunnerDispatchLeaseRepository {
             "FROM runner_dispatch_outbox",
             "WHERE lease_owner = $1",
             "  AND delivery_state = 'PENDING'",
-            "  AND protocol_version = 'v1'",
             "  AND lease_expires_at > now()",
           ].join("\n"),
           [runnerId],
@@ -267,7 +279,7 @@ export class PostgresRunnerDispatchLeaseRepository {
           "    WHERE owner_attempt.tenant_id = lane.tenant_id",
           "      AND owner_attempt.actor_user_id = lane.actor_user_id",
           "      AND pending.delivery_state = 'PENDING'",
-          "      AND pending.protocol_version = 'v1'",
+          "      AND pending.protocol_version = $4",
           "      AND pending.available_at <= now()",
           "      AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= now())",
           "      AND ((job.state = 'QUEUED' AND job.available_at <= now())",
@@ -288,7 +300,7 @@ export class PostgresRunnerDispatchLeaseRepository {
           "    WHERE owner_attempt.tenant_id = lane.tenant_id",
           "      AND owner_attempt.actor_user_id = lane.actor_user_id",
           "      AND pending.delivery_state = 'PENDING'",
-          "      AND pending.protocol_version = 'v1'",
+          "      AND pending.protocol_version = $4",
           "      AND pending.available_at <= now()",
           "      AND (pending.lease_expires_at IS NULL OR pending.lease_expires_at <= now())",
           "      AND ((job.state = 'QUEUED' AND job.available_at <= now())",
@@ -343,7 +355,7 @@ export class PostgresRunnerDispatchLeaseRepository {
           "CROSS JOIN (SELECT count(*) FROM claimed_events) AS evidence_write",
           "CROSS JOIN (SELECT count(*) FROM served) AS scheduler_cursor_write",
           ].join("\n"),
-          [slotBudget, runnerId, leaseSeconds],
+          [slotBudget, runnerId, leaseSeconds, protocolVersion],
         );
         await client.query("COMMIT");
         return result.rows.map((row) => ({
