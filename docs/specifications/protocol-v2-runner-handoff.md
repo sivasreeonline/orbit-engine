@@ -145,3 +145,16 @@ This is a claim-boundary integration only. It does not establish v2 sandbox
 qualification, cancellation semantics, artifact authorization parity, runner
 protocol support, or permission to enable v2 claims in production. Keep the
 configuration gate false until those independent release gates are satisfied.
+
+
+## Runner protocol qualification registry
+
+Migration `0016_runner_protocol_capabilities.sql` adds an explicit,
+control-plane-managed capability record per runner and protocol. New runners
+receive no protocol capability rows by default. A runner cannot self-register
+or self-upgrade through the authenticated claim request. V2 claim requires an
+active, non-revoked `v2` capability row with a qualification reference. The
+API checks the row after request authentication and nonce consumption and
+before acquiring a dispatch lease. Revocation is observed by the next claim.
+Provisioning a capability is an administrative qualification action, not a
+runner API operation. V2 remains behind the separate default-off claims gate.

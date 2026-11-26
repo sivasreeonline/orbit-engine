@@ -1,6 +1,8 @@
 import { Client } from "pg";
 import { DatabaseUnavailableError } from "./database-errors";
 
+export type RunnerProtocolVersion = "v1" | "v2";
+
 export interface ActiveRunnerPublicKey {
   readonly keyId: string;
   readonly runnerId: string;
@@ -80,6 +82,37 @@ export class PostgresRunnerIdentityRepository {
         runnerId: row.runner_id,
         publicKey: new Uint8Array(row.public_key),
       };
+    });
+  }
+
+  async supportsProtocol(
+    runnerId: string,
+    protocolVersion: RunnerProtocolVersion,
+  ): Promise<boolean> {
+    if (!this.connectionString) throw new DatabaseUnavailableError();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(runnerId) ||
+        (protocolVersion !== "v1" && protocolVersion !== "v2")) {
+      throw new Error("invalid_runner_protocol_capability_lookup");
+    }
+
+    return this.withClient(async (client) => {
+      const result = await client.query<{ supported: boolean }>(
+        [
+          "SELECT EXISTS (",
+          "  SELECT 1",
+          "  FROM runner_machines AS machine",
+          "  INNER JOIN runner_machine_protocol_capabilities AS capability",
+          "    ON capability.runner_id = machine.id",
+          "  WHERE machine.id = $1::uuid",
+          "    AND machine.status = 'ACTIVE'",
+          "    AND capability.protocol_version = $2",
+          "    AND capability.status = 'ACTIVE'",
+          "    AND capability.revoked_at IS NULL",
+          ") AS supported",
+        ].join("\n"),
+        [runnerId, protocolVersion],
+      );
+      return result.rows[0]?.supported === true;
     });
   }
 

@@ -82,4 +82,36 @@ describe.skipIf(!databaseUrl)("runner identity repository PostgreSQL integration
       await setup.end();
     }
   });
+  it("requires an explicit active capability and immediately observes revocation", async () => {
+    const runnerId = randomUUID();
+    const client = new Client({ connectionString: databaseUrl });
+    const repository = new PostgresRunnerIdentityRepository(databaseUrl);
+    try {
+      await client.connect();
+      await client.query(
+        "INSERT INTO runner_machines (id, machine_name) VALUES ($1, $2)",
+        [runnerId, `runner-capability-${runnerId}`],
+      );
+
+      await expect(repository.supportsProtocol(runnerId, "v2")).resolves.toBe(false);
+      await client.query(
+        "INSERT INTO runner_machine_protocol_capabilities (runner_id, protocol_version, qualification_reference) VALUES ($1, 'v2', $2)",
+        [runnerId, `qualification-${runnerId}`],
+      );
+      await expect(repository.supportsProtocol(runnerId, "v2")).resolves.toBe(true);
+
+      await client.query(
+        "UPDATE runner_machine_protocol_capabilities SET status='REVOKED', revoked_at=now() WHERE runner_id=$1 AND protocol_version='v2'",
+        [runnerId],
+      );
+      await expect(repository.supportsProtocol(runnerId, "v2")).resolves.toBe(false);
+      await expect(repository.supportsProtocol(runnerId, "v1")).resolves.toBe(false);
+    } finally {
+      await client.query("DELETE FROM runner_machine_protocol_capabilities WHERE runner_id=$1", [runnerId]).catch(() => undefined);
+      await client.query("DELETE FROM runner_machines WHERE id=$1", [runnerId]).catch(() => undefined);
+      await client.end();
+    }
+  });
+
+
 });

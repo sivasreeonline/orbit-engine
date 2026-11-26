@@ -82,7 +82,7 @@ interface ApiDependencies {
   readonly repository: ProblemRepository;
   readonly evidenceRepository?: ExecutionEvidenceReadRepository;
   readonly executionIntakeRepository?: ExecutionIntakeRepository;
-  readonly runnerIdentityRepository?: Pick<PostgresRunnerIdentityRepository, "findActivePublicKey" | "consumeNonce">;
+  readonly runnerIdentityRepository?: Pick<PostgresRunnerIdentityRepository, "findActivePublicKey" | "consumeNonce" | "supportsProtocol">;
   readonly runnerDispatchLeaseRepository?: Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunner"> &
     Partial<Pick<PostgresRunnerDispatchLeaseRepository, "claimFairBatchForRunnerV2">>;
   readonly protocolV2ClaimsEnabled?: boolean;
@@ -1056,6 +1056,15 @@ export function createApiHandler(dependencies: ApiDependencies) {
         if (!authenticatedRunner) {
           return errorResponse("RUNNER_AUTHENTICATION_FAILED",
             "The runner request could not be authenticated.", 401, false,
+            requestId, origin, allowedOrigins);
+        }
+
+        if (!await dependencies.runnerIdentityRepository.supportsProtocol(
+          authenticatedRunner.runnerId,
+          "v2",
+        )) {
+          return errorResponse("RUNNER_PROTOCOL_NOT_QUALIFIED",
+            "This runner is not qualified for protocol v2.", 403, false,
             requestId, origin, allowedOrigins);
         }
 
