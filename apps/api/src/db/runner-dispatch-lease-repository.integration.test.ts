@@ -432,7 +432,7 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
       });
       expect(intent.status).toBe("RECORDED");
 
-      const claimPromise = leases.claimFairBatchForRunnerV2(runnerId, 100, 2, 120);
+      const claimPromise = leases.claimFairBatchForRunnerV2(runnerId, 10, 10, 120);
       await qualificationRead;
 
       await revoker.query("BEGIN");
