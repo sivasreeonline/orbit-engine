@@ -182,6 +182,9 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
       async connect() {},
       async query<T extends Record<string, unknown>>(text: string, values?: unknown[]) {
         calls.push({ text, values });
+        if (text.includes("runner_machine_protocol_capabilities")) {
+          return { rows: [{ runner_id: runnerId }] as unknown as T[] };
+        }
         if (text.includes("SELECT count(*)::integer AS active_count")) {
           return { rows: [{ active_count: 1 }] as unknown as T[] };
         }
@@ -190,15 +193,17 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
       async end() {},
     };
     const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => client);
-    await expect(repository.claimFairBatchForRunnerV2(runnerId, 2, 2, 120))
-      .rejects.toBeInstanceOf(RunnerProtocolNotQualifiedError);
+    await expect(repository.claimFairBatchForRunnerV2(runnerId, 2, 2, 120)).resolves.toEqual([]);
     const active = calls.find((call) => call.text.includes("active_count"));
     const qualification = calls.find((call) => call.text.includes("runner_machine_protocol_capabilities"));
+    const claim = calls.find((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"));
     expect(active?.text).not.toContain("protocol_version");
     expect(qualification?.text).toContain("FOR SHARE");
     expect(qualification?.values).toEqual([runnerId]);
-    expect(calls.some((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"))).toBe(false);
-    expect(calls.some((call) => call.text === "ROLLBACK")).toBe(true);
+    expect(claim?.text.match(/pending\.protocol_version = \$4/g)).toHaveLength(2);
+    expect(claim?.values).toEqual([1, runnerId, 120, "v2"]);
+    expect(calls.some((call) => call.text === "COMMIT")).toBe(true);
+    expect(calls.some((call) => call.text === "ROLLBACK")).toBe(false);
   });
 
 });
