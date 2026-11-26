@@ -148,4 +148,54 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
     }
   }, 15_000);
 
+
+  it("shares the two-active-lease cap across v1 and v2 while preserving v1-only selection", async () => {
+    const intake = new PostgresExecutionIntakeRepository(databaseUrl);
+    const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
+    const leases = new PostgresRunnerDispatchLeaseRepository(databaseUrl);
+    const verifier = new Client({ connectionString: databaseUrl, application_name: "sky-high-shared-runner-cap-integration" });
+    const runnerId = randomUUID();
+    const v2Policy = {
+      policyRevision: "v2-shared-cap-integration",
+      runtimeImageDigests: { java: `sha256:${"e".repeat(64)}`, python: `sha256:${"f".repeat(64)}` },
+      limits: { cpuQuotaMillis: 1000, memoryBytes: 268435456, wallTimeMillis: 60000,
+        processLimit: 32, outputBytes: 1048576, scratchBytes: 16777216, scratchInodes: 1024 },
+    } satisfies ExecutionProtocolV2Policy;
+    const v1Created = await intake.create({
+      principal: { tenantId, userId: randomUUID(), roles: ["STUDENT"] }, action: "RUN",
+      problemSlug: "two-sum", language: "java", runtimeVersion: "25",
+      sourceCode: "public class Main { public static void main(String[] args) {} }",
+      correlationId: `shared-cap-v1-${randomUUID()}`,
+    }, `shared-cap-v1-${randomUUID()}`);
+    const v2Intake = new PostgresExecutionIntakeRepository(databaseUrl, undefined, v2Policy);
+    const v2Created = await v2Intake.create({
+      principal: { tenantId, userId: randomUUID(), roles: ["STUDENT"] }, action: "RUN",
+      problemSlug: "two-sum", language: "java", runtimeVersion: "25",
+      sourceCode: "public class Main { public static void main(String[] args) {} }",
+      correlationId: `shared-cap-v2-${randomUUID()}`,
+    }, `shared-cap-v2-${randomUUID()}`);
+    await handoff.record({ executionId: v1Created.executionId, attemptId: v1Created.attemptId, protocolVersion: "v1" });
+    const v2Intent = await handoff.record({ executionId: v2Created.executionId, attemptId: v2Created.attemptId, protocolVersion: "v2" });
+    expect(v2Intent.status).toBe("RECORDED");
+
+    try {
+      await verifier.connect();
+      const liveV1 = await leases.claimBatch("shared-cap-v1-fixture", 1, 120);
+      expect(liveV1).toHaveLength(1);
+      await verifier.query(
+        "UPDATE runner_dispatch_outbox SET lease_owner=$2, lease_token=gen_random_uuid(), lease_expires_at=now()+interval '120 seconds' WHERE id=$1::uuid",
+        [v2Intent.dispatchId, runnerId],
+      );
+      const v2Claim = await leases.claimFairBatchForRunnerV2(runnerId, 2, 2, 120);
+      expect(v2Claim).toEqual([]);
+      const v1State = await verifier.query<{ protocol_version: string; delivery_state: string }>(
+        "SELECT protocol_version, delivery_state FROM runner_dispatch_outbox WHERE id=$1::uuid",
+        [liveV1[0]!.id],
+      );
+      expect(v1State.rows[0]).toEqual({ protocol_version: "v1", delivery_state: "PENDING" });
+    } finally {
+      await verifier.end();
+    }
+  }, 15000);
+
 });
