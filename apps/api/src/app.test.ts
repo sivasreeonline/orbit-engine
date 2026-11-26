@@ -831,7 +831,7 @@ describe("authenticated runner claim endpoint", () => {
     const consumeNonce = vi.fn(async () => true);
     const claimFairBatchForRunner = vi.fn(async () => [dispatch]);
     const { handler, authenticator } = makeHarness({
-      runnerIdentityRepository: { findActivePublicKey, consumeNonce, supportsProtocol },
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
       runnerDispatchLeaseRepository: { claimFairBatchForRunner },
     });
 
@@ -854,8 +854,6 @@ describe("authenticated runner claim endpoint", () => {
     expect(authenticator.authenticate).not.toHaveBeenCalled();
     expect(findActivePublicKey).toHaveBeenCalledWith("runner-test-key", expect.any(Date));
     expect(consumeNonce).toHaveBeenCalledOnce();
-    expect(supportsProtocol).toHaveBeenCalledWith(runnerId, "v2");
-    expect(supportsProtocol).toHaveBeenCalledWith(runnerId, "v2");
     expect(claimFairBatchForRunner).toHaveBeenCalledWith(runnerId, 2, 2, 120);
   });
 
