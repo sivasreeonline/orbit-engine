@@ -2,20 +2,24 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, "feat/**", "fix/**", "docs/**"]
     paths:
       - "apps/web/**"
       - "apps/api/**"
       - "docs/**"
+      - "migrations/**"
+      - "scripts/**"
       - ".github/workflows/**"
       - "AGENTS.md"
       - "CLAUDE.md"
   push:
-    branches: [main, "feat/**", "fix/**"]
+    branches: [main, "feat/**", "fix/**", "docs/**"]
     paths:
       - "apps/web/**"
       - "apps/api/**"
       - "docs/**"
+      - "migrations/**"
+      - "scripts/**"
       - ".github/workflows/**"
       - "AGENTS.md"
       - "CLAUDE.md"
@@ -26,7 +30,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   web:
@@ -100,10 +104,58 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Install PostgreSQL client
+      - name: Set up Python for FENCE-001 witness profile conformance
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned FENCE-001 conformance dependencies
+        run: python -m pip install --disable-pip-version-check "jsonschema==4.25.1" "cryptography==46.0.3" "rfc8785==0.1.4"
+
+      - name: Verify FENCE-001 witness profile schema and cryptographic vectors
+        run: python ../../scripts/validate_m0_fence_witness_profile.py
+
+      - name: Configure PostgreSQL client wrappers
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/postgres-client-bin"
+
+          cat > "$RUNNER_TEMP/postgres-client-bin/psql" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          container_id="$(docker ps --filter "ancestor=postgres:17-alpine" --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+          args=()
+          input_file=""
+          while (($#)); do
+            if [[ "$1" == "-f" ]]; then
+              if (($# < 2)); then echo "psql wrapper: -f requires a file path" >&2; exit 2; fi
+              input_file="$2"
+              args+=("-f" "-")
+              shift 2
+            else
+              args+=("$1")
+              shift
+            fi
+          done
+          if [[ -n "$input_file" ]]; then
+            test -f "$input_file"
+            cat "$input_file" | docker exec -i -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" psql "${args[@]}"
+          else
+            exec docker exec -i -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" psql "${args[@]}"
+          fi
+          SH
+
+          cat > "$RUNNER_TEMP/postgres-client-bin/pg_isready" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          container_id="$(docker ps --filter "ancestor=postgres:17-alpine" --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+          exec docker exec -e "PGPASSWORD=${PGPASSWORD:-}" "$container_id" pg_isready "$@"
+          SH
+
+          chmod +x "$RUNNER_TEMP/postgres-client-bin/psql" "$RUNNER_TEMP/postgres-client-bin/pg_isready"
+          echo "$RUNNER_TEMP/postgres-client-bin" >> "$GITHUB_PATH"
 
       - name: Apply problem catalog migration
         env:
