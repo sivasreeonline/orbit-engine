@@ -111,7 +111,7 @@ interface HarnessOptions {
   runnerIdentityRepository?: {
     findActivePublicKey(keyId: string, now: Date): Promise<ActiveRunnerPublicKey | null>;
     consumeNonce(keyId: string, nonce: string, now: Date, expiresAt: Date): Promise<boolean>;
-    supportsProtocol(runnerId: string, protocolVersion: "v1" | "v2"): Promise<boolean>;
+    supportsProtocol?(runnerId: string, protocolVersion: "v1" | "v2"): Promise<boolean>;
   };
   runnerDispatchLeaseRepository?: {
     claimFairBatchForRunner(
@@ -167,7 +167,12 @@ function makeHarness(options: HarnessOptions = {}) {
       : {}),
     ...(options.runtimeVersions ? { runtimeVersions: options.runtimeVersions } : {}),
     ...(options.runnerIdentityRepository
-      ? { runnerIdentityRepository: options.runnerIdentityRepository }
+      ? {
+          runnerIdentityRepository: {
+            ...options.runnerIdentityRepository,
+            supportsProtocol: options.runnerIdentityRepository.supportsProtocol ?? (async () => false),
+          },
+        }
       : {}),
     ...(options.runnerDispatchLeaseRepository
       ? { runnerDispatchLeaseRepository: options.runnerDispatchLeaseRepository }
@@ -850,6 +855,7 @@ describe("authenticated runner claim endpoint", () => {
     expect(findActivePublicKey).toHaveBeenCalledWith("runner-test-key", expect.any(Date));
     expect(consumeNonce).toHaveBeenCalledOnce();
     expect(supportsProtocol).toHaveBeenCalledWith(runnerId, "v2");
+    expect(supportsProtocol).toHaveBeenCalledWith(runnerId, "v2");
     expect(claimFairBatchForRunner).toHaveBeenCalledWith(runnerId, 2, 2, 120);
   });
 
@@ -976,10 +982,11 @@ describe("authenticated protocol v2 runner claim endpoint", () => {
       keyId: "runner-v2-test-key", runnerId, publicKey: signed.publicKey,
     }));
     const consumeNonce = vi.fn(async () => true);
+    const supportsProtocol = vi.fn(async () => true);
     const claimFairBatchForRunnerV2 = vi.fn(async () => [dispatch]);
     const { handler } = makeHarness({
       protocolV2ClaimsEnabled: true,
-      runnerIdentityRepository: { findActivePublicKey, consumeNonce },
+      runnerIdentityRepository: { findActivePublicKey, consumeNonce, supportsProtocol },
       runnerDispatchLeaseRepository: {
         claimFairBatchForRunner: vi.fn(async () => []),
         claimFairBatchForRunnerV2,
@@ -1015,8 +1022,6 @@ describe("authenticated protocol v2 runner claim endpoint", () => {
     expect(response.status).toBe(401);
     expect(claimFairBatchForRunnerV2).not.toHaveBeenCalled();
   });
-});
-
 
   it("rejects an authenticated runner without active v2 qualification", async () => {
     const signed = await signedRequest();
@@ -1042,6 +1047,10 @@ describe("authenticated protocol v2 runner claim endpoint", () => {
     });
     expect(claimFairBatchForRunnerV2).not.toHaveBeenCalled();
   });
+});
+
+
+
 
 describe("authenticated runner acceptance endpoint", () => {
   const runnerId = "40000000-0000-4000-8000-000000000001";
