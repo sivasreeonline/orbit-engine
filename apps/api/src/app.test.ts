@@ -999,6 +999,7 @@ describe("authenticated protocol v2 runner claim endpoint", () => {
       meta: { protocolVersion: "v2", maxActiveLeasesPerRunner: 2 },
     });
     expect(consumeNonce).toHaveBeenCalledOnce();
+    expect(supportsProtocol).toHaveBeenCalledWith(runnerId, "v2");
     expect(claimFairBatchForRunnerV2).toHaveBeenCalledWith(runnerId, 2, 2, 120);
   });
 
