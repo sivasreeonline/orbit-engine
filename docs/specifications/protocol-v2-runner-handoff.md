@@ -176,3 +176,13 @@ or completion evidence is written. V1 completion behavior remains unchanged.
 This check is performed inside the same database transaction that locks the
 dispatch and execution job, before terminal result persistence. It does not
 activate v2 execution or change the default-off claim/publication gates.
+
+## V2 canonical result attestation
+
+V2 terminal results use the canonical JSON envelope `SKYHIGH-RUNNER-RESULT-V2`. The API recomputes its SHA-256 from the allowlisted outcome and trusted completion context before it writes a terminal result, completion receipt, or completion evidence.
+
+The envelope binds execution, attempt, dispatch, authenticated runner and key identity; the exact immutable request SHA-256; the persisted policy revision; the pinned runtime image digest; all allowlisted outcome classifications and counts; runner version; and start/completion timestamps. Nullable infrastructure error and peak-memory fields are encoded explicitly as JSON null. Timestamps are normalized to UTC with millisecond precision. Property order is fixed and is part of the contract.
+
+The TypeScript API helper and Go runner protocol helper share a fixed digest vector. V2 completion rejects a digest mismatch with non-retryable `RUNNER_RESULT_DIGEST_MISMATCH`; the transaction rolls back without creating a terminal result, completion receipt, or evidence event. V1 digest behavior is unchanged.
+
+This attestation strengthens the completion boundary; it does not enable v2 execution or alter any default-off dispatch gate.

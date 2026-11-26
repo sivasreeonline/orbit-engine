@@ -1,5 +1,6 @@
 import { Client } from "pg";
 import { DatabaseUnavailableError } from "./database-errors";
+import { computeV2CanonicalResultSha256 } from "../security/execution-protocol-v2-result";
 
 export type ExecutionEvidenceEventType =
   | "ATTEMPT_ACCEPTED"
@@ -203,6 +204,13 @@ export class RunnerCompletionRuntimeImageMismatchError extends Error {
   constructor() {
     super("runner_completion_runtime_image_mismatch");
     this.name = "RunnerCompletionRuntimeImageMismatchError";
+  }
+}
+
+export class RunnerCompletionResultDigestMismatchError extends Error {
+  constructor() {
+    super("runner_completion_result_digest_mismatch");
+    this.name = "RunnerCompletionResultDigestMismatchError";
   }
 }
 
@@ -647,6 +655,7 @@ export class PostgresExecutionEvidenceRepository {
           attempt_id: string;
           protocol_version: "v1" | "v2";
           protocol_request_sha256: string | null;
+          protocol_policy_revision: string | null;
           protocol_request_bytes: Uint8Array | null;
           delivery_state: string;
           dispatch_owner: string | null;
@@ -660,6 +669,7 @@ export class PostgresExecutionEvidenceRepository {
           [
             "SELECT dispatch.id AS dispatch_id, dispatch.execution_id, dispatch.attempt_id,",
             "  dispatch.protocol_version, protocol_request.request_sha256 AS protocol_request_sha256,",
+            "  protocol_request.policy_revision AS protocol_policy_revision,",
             "  protocol_request.request_bytes AS protocol_request_bytes,",
             "  dispatch.delivery_state, dispatch.lease_owner AS dispatch_owner,",
             "  dispatch.lease_token::text AS dispatch_token, dispatch.lease_expires_at AS dispatch_expires_at,",
@@ -698,6 +708,35 @@ export class PostgresExecutionEvidenceRepository {
           if (typeof input.runtimeImageDigest !== "string" ||
               protocolRequest.runtimeImageDigest !== `sha256:${input.runtimeImageDigest}`) {
             throw new RunnerCompletionRuntimeImageMismatchError();
+          }
+          const policyRevision = currentLease.protocol_policy_revision?.trim();
+          if (!policyRevision || !isSha256(requestDigest)) {
+            throw new RunnerCompletionProtocolIntegrityError();
+          }
+          const expectedResultDigest = await computeV2CanonicalResultSha256({
+            executionId: input.executionId,
+            attemptId: input.attemptId,
+            dispatchId: input.dispatchId,
+            runnerId: input.leaseOwner,
+            keyId: input.keyId,
+            requestSha256: requestDigest,
+            policyRevision,
+            runtimeImageDigest: input.runtimeImageDigest,
+            infrastructureStatus: input.infrastructureStatus,
+            infrastructureErrorCode: input.infrastructureErrorCode,
+            compilationStatus: input.compilationStatus,
+            verdict: input.verdict,
+            cleanupStatus: input.cleanupStatus,
+            testsTotal: input.testsTotal,
+            testsPassed: input.testsPassed,
+            elapsedMs: input.elapsedMs,
+            peakMemoryBytes: input.peakMemoryBytes,
+            runnerVersion: input.runnerVersion,
+            startedAt: input.startedAt,
+            completedAt: input.completedAt,
+          });
+          if (expectedResultDigest !== input.resultSha256) {
+            throw new RunnerCompletionResultDigestMismatchError();
           }
         }
 
@@ -898,6 +937,7 @@ export class PostgresExecutionEvidenceRepository {
           error instanceof RunnerCompletionNotStartedError ||
           error instanceof RunnerCompletionConflictError ||
           error instanceof RunnerCompletionRuntimeImageMismatchError ||
+          error instanceof RunnerCompletionResultDigestMismatchError ||
           error instanceof RunnerCompletionProtocolIntegrityError) {
         throw error;
       }
@@ -1063,6 +1103,7 @@ export class PostgresExecutionEvidenceRepository {
           error instanceof RunnerCompletionNotStartedError ||
           error instanceof RunnerCompletionConflictError ||
           error instanceof RunnerCompletionRuntimeImageMismatchError ||
+          error instanceof RunnerCompletionResultDigestMismatchError ||
           error instanceof RunnerCompletionProtocolIntegrityError ||
           error instanceof Error && error.message.startsWith("invalid_")) {
         throw error;

@@ -8,6 +8,7 @@ import { PostgresRunnerDispatchLeaseRepository } from "./runner-dispatch-lease-r
 import { PostgresRunnerAcceptanceRepository } from "./runner-acceptance-repository";
 import { PostgresRunnerStartRepository } from "./runner-start-repository";
 import type { ExecutionProtocolV2Policy } from "../security/execution-protocol-v2-policy";
+import { computeV2CanonicalResultSha256 } from "../security/execution-protocol-v2-result";
 import {
   RunnerCompletionConflictError,
   RunnerCompletionRuntimeImageMismatchError,
@@ -356,7 +357,7 @@ describe.skipIf(!databaseUrl)("authenticated runner completion PostgreSQL integr
       expect(startedReplay.replayed).toBe(true);
       expect(startedReplay.eventId).toBe(started.eventId);
 
-      const completionInput = makeResult({
+      const baseCompletionInput = makeResult({
         executionId: created.executionId,
         attemptId: created.attemptId,
         dispatchId: dispatch.id,
@@ -364,6 +365,31 @@ describe.skipIf(!databaseUrl)("authenticated runner completion PostgreSQL integr
         keyId,
         leaseToken: dispatch.leaseToken,
       });
+      const completionInput = {
+        ...baseCompletionInput,
+        resultSha256: await computeV2CanonicalResultSha256({
+          executionId: created.executionId,
+          attemptId: created.attemptId,
+          dispatchId: dispatch.id,
+          runnerId,
+          keyId,
+          requestSha256: persistedRequest.rows[0]!.request_sha256.trim(),
+          policyRevision: persistedRequest.rows[0]!.policy_revision,
+          runtimeImageDigest: baseCompletionInput.runtimeImageDigest!,
+          infrastructureStatus: baseCompletionInput.infrastructureStatus,
+          infrastructureErrorCode: baseCompletionInput.infrastructureErrorCode,
+          compilationStatus: baseCompletionInput.compilationStatus,
+          verdict: baseCompletionInput.verdict,
+          cleanupStatus: baseCompletionInput.cleanupStatus,
+          testsTotal: baseCompletionInput.testsTotal,
+          testsPassed: baseCompletionInput.testsPassed,
+          elapsedMs: baseCompletionInput.elapsedMs,
+          peakMemoryBytes: baseCompletionInput.peakMemoryBytes,
+          runnerVersion: baseCompletionInput.runnerVersion,
+          startedAt: baseCompletionInput.startedAt,
+          completedAt: baseCompletionInput.completedAt,
+        }),
+      };
       await expect(evidence.recordRunnerResult({
         ...completionInput,
         runtimeImageDigest: "d".repeat(64),
@@ -385,6 +411,29 @@ describe.skipIf(!databaseUrl)("authenticated runner completion PostgreSQL integr
         job_state: "RUNNING",
         result_count: "0",
         completion_count: "0",
+      });
+
+      await expect(evidence.recordRunnerResult({
+        ...completionInput,
+        resultSha256: "e".repeat(64),
+      })).rejects.toThrow("runner_completion_result_digest_mismatch");
+      const afterRejectedDigest = await setup.query<{
+        job_state: string;
+        result_count: string;
+        completion_count: string;
+        completion_events: string;
+      }>(
+        [
+          "SELECT job.state AS job_state,",
+          "  (SELECT count(*)::text FROM execution_result_records WHERE execution_id=job.id) AS result_count,",
+          "  (SELECT count(*)::text FROM runner_dispatch_completions WHERE execution_id=job.id) AS completion_count,",
+          "  (SELECT count(*)::text FROM execution_evidence_events WHERE execution_id=job.id AND event_type='EXECUTION_FINISHED') AS completion_events",
+          "FROM execution_jobs AS job WHERE job.id=$1::uuid",
+        ].join("\n"),
+        [created.executionId],
+      );
+      expect(afterRejectedDigest.rows[0]).toEqual({
+        job_state: "RUNNING", result_count: "0", completion_count: "0", completion_events: "0",
       });
 
       const completed = await evidence.recordRunnerResult(completionInput);
