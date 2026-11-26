@@ -143,6 +143,7 @@ func (worker *Worker) RunOnce(ctx context.Context) (WorkResult, error) {
 	}
 
 	var dispatches []runnerclient.Dispatch
+	var err error
 	if worker.config.ProtocolVersion == "v2" {
 		dispatches, err = worker.controlPlane.ClaimV2(ctx, 1)
 	} else {
