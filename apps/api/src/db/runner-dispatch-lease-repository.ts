@@ -1,6 +1,13 @@
 import { Client } from "pg";
 import { DatabaseUnavailableError } from "./database-errors";
 
+export class RunnerProtocolNotQualifiedError extends Error {
+  constructor() {
+    super("runner_protocol_not_qualified");
+    this.name = "RunnerProtocolNotQualifiedError";
+  }
+}
+
 export interface RunnerDispatchLease {
   readonly id: string;
   readonly executionId: string;
@@ -250,6 +257,24 @@ export class PostgresRunnerDispatchLeaseRepository {
           "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
           [runnerId],
         );
+        if (protocolVersion === "v2") {
+          // Lock the qualification row until the claim transaction commits.
+          // A concurrent revocation must serialize before or after this claim;
+          // it cannot slip between the qualification check and lease creation.
+          const qualification = await client.query<{ runner_id: string }>(
+            [
+              "SELECT runner_id::text AS runner_id",
+              "FROM runner_machine_protocol_capabilities",
+              "WHERE runner_id = $1::uuid AND protocol_version = 'v2'",
+              "  AND status = 'ACTIVE' AND revoked_at IS NULL",
+              "FOR SHARE",
+            ].join("\\n"),
+            [runnerId],
+          );
+          if (qualification.rows.length !== 1) {
+            throw new RunnerProtocolNotQualifiedError();
+          }
+        }
         const active = await client.query<{ active_count: number }>(
           [
             "SELECT count(*)::integer AS active_count",
