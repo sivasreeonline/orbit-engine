@@ -74,3 +74,29 @@ the v2 method rejects v1 dispatches, requires the response metadata marker
 The v2 claim route uses the same Ed25519 request signing and one-time nonce
 mechanism as the other private runner operations. Server-side capability
 qualification and the default-off v2 claim feature gate remain authoritative.
+
+
+## Lease-fenced lifecycle identity
+
+The Go client lifecycle methods preserve the claim identity across the remaining
+control-plane transitions:
+
+- `StartDispatch` sends only dispatch ID, execution ID, attempt ID and lease
+  token, then verifies the returned dispatch/execution/attempt IDs and durable
+  evidence event ID before the caller proceeds.
+- `RenewLease` requires a caller-retained heartbeat UUID. A retry must reuse
+  the same heartbeat ID and exact request body; the signed transport still
+  generates a fresh timestamp and nonce. The response must echo the heartbeat,
+  dispatch and execution identities, extend the dispatch's current expiry, and
+  remain within the bounded renewal horizon.
+- `FetchArtifact` remains gated by the dispatch identity and independently
+  validates source bytes, test-bundle digest, and for v2 the signed immutable
+  request digest and all request-to-artifact bindings.
+- `CompleteExecution` sends the same dispatch/execution/attempt/lease tuple
+  and validates the terminal acknowledgement against the submitted result
+  digest and expected terminal state.
+
+Dispatch validation is protocol-specific: v1 correlation IDs remain opaque
+bounded identifiers, while v2 requires a UUIDv4 correlation ID. A v2 claim
+cannot be accepted as v1 or vice versa. These are client-side fail-closed
+checks; the control plane's database lease fencing remains authoritative.
