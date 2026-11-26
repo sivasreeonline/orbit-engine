@@ -78,6 +78,26 @@ func (fake *fakeControlPlane) Claim(_ context.Context, slots int) ([]runnerclien
 	return []runnerclient.Dispatch{fake.dispatch}, nil
 }
 
+func (fake *fakeControlPlane) ClaimV2(_ context.Context, slots int) ([]runnerclient.Dispatch, error) {
+	fake.event("claim-v2")
+	if slots != 1 {
+		return nil, fmt.Errorf("v2 slots = %d, want 1", slots)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if !fake.hasWork {
+		return nil, nil
+	}
+	dispatch := fake.dispatch
+	dispatch.ProtocolVersion = "v2"
+	dispatch.CorrelationID = "a4000000-0000-4000-8000-000000000001"
+	fake.artifact.ProtocolRequest = &runnerclient.ProtocolRequestArtifact{
+		RequestBytesBase64: "dGVzdA==",
+		RequestSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+	return []runnerclient.Dispatch{dispatch}, nil
+}
+
 func (fake *fakeControlPlane) AcceptDispatch(
 	_ context.Context,
 	journal *acceptancejournal.Journal,
@@ -396,6 +416,39 @@ func TestRunOnceRetriesTerminalCompletionWithIdenticalResult(t *testing.T) {
 	}
 	if control.completionInputs[0] != control.completionInputs[1] {
 		t.Fatal("completion retry changed the immutable result payload")
+	}
+}
+
+func TestRunOnceUsesExplicitV2ClaimAndRejectsProtocolFallback(t *testing.T) {
+	t.Parallel()
+	control := newFakeControlPlane()
+	worker := testWorker(t, control, fakeArtifactExecutor{ready: true}, WorkerConfig{
+		ProtocolVersion: "v2",
+	})
+	result, err := worker.RunOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.HasWork || result.DispatchID != control.dispatch.DispatchID ||
+		result.Completion.State != "COMPLETED" {
+		t.Fatalf("unexpected v2 worker result: %+v", result)
+	}
+	control.mu.Lock()
+	defer control.mu.Unlock()
+	if len(control.events) == 0 || control.events[1] != "claim-v2" {
+		t.Fatalf("v2 worker did not use the dedicated claim method: %v", control.events)
+	}
+}
+
+func TestNewWorkerRejectsUnsupportedProtocolVersion(t *testing.T) {
+	t.Parallel()
+	control := newFakeControlPlane()
+	journal := openTestJournal(t)
+	_, err := NewWorker(control, journal, fakeArtifactExecutor{ready: true}, WorkerConfig{
+		ProtocolVersion: "v3",
+	})
+	if err == nil {
+		t.Fatal("unsupported runner protocol version was accepted")
 	}
 }
 
