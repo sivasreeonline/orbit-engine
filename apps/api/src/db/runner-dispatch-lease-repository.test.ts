@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PostgresRunnerDispatchLeaseRepository } from "./runner-dispatch-lease-repository";
+import { PostgresRunnerDispatchLeaseRepository, RunnerProtocolNotQualifiedError } from "./runner-dispatch-lease-repository";
 
 interface Call { readonly text: string; readonly values: unknown[] | undefined; }
 function fakeClient(rows: Record<string, unknown>[] = []) {
@@ -147,6 +147,34 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     await expect(unconfigured.claimBatch("dispatcher-1", 1, 30)).rejects.toThrow("database_unavailable");
   });
 
+  it("holds an active v2 qualification row through the atomic claim transaction", async () => {
+    const calls: Call[] = [];
+    const runnerId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
+    const client = {
+      async connect() {},
+      async query<T extends Record<string, unknown>>(text: string, values?: unknown[]) {
+        calls.push({ text, values });
+        if (text.includes("runner_machine_protocol_capabilities")) {
+          return { rows: [{ runner_id: runnerId }] as unknown as T[] };
+        }
+        if (text.includes("SELECT count(*)::integer AS active_count")) {
+          return { rows: [{ active_count: 0 }] as unknown as T[] };
+        }
+        return { rows: [] as T[] };
+      },
+      async end() {},
+    };
+    const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => client);
+    await expect(repository.claimFairBatchForRunnerV2(runnerId, 2, 2, 120)).resolves.toEqual([]);
+    const qualificationIndex = calls.findIndex((call) => call.text.includes("runner_machine_protocol_capabilities"));
+    const commitIndex = calls.findIndex((call) => call.text === "COMMIT");
+    expect(calls[qualificationIndex]?.text).toContain("status = 'ACTIVE'");
+    expect(calls[qualificationIndex]?.text).toContain("revoked_at IS NULL");
+    expect(calls[qualificationIndex]?.text).toContain("FOR SHARE");
+    expect(qualificationIndex).toBeGreaterThan(0);
+    expect(commitIndex).toBeGreaterThan(qualificationIndex);
+  });
+
   it("shares active capacity across protocol versions while claiming only v2", async () => {
     const calls: Call[] = [];
     const runnerId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
@@ -162,12 +190,15 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
       async end() {},
     };
     const repository = new PostgresRunnerDispatchLeaseRepository(connection, () => client);
-    await expect(repository.claimFairBatchForRunnerV2(runnerId, 2, 2, 120)).resolves.toEqual([]);
+    await expect(repository.claimFairBatchForRunnerV2(runnerId, 2, 2, 120))
+      .rejects.toBeInstanceOf(RunnerProtocolNotQualifiedError);
     const active = calls.find((call) => call.text.includes("active_count"));
-    const claim = calls.find((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"));
+    const qualification = calls.find((call) => call.text.includes("runner_machine_protocol_capabilities"));
     expect(active?.text).not.toContain("protocol_version");
-    expect(claim?.text.match(/protocol_version = \$4/g)).toHaveLength(2);
-    expect(claim?.values).toEqual([1, runnerId, 120, "v2"]);
+    expect(qualification?.text).toContain("FOR SHARE");
+    expect(qualification?.values).toEqual([runnerId]);
+    expect(calls.some((call) => call.text.includes("WITH candidate_lanes AS MATERIALIZED"))).toBe(false);
+    expect(calls.some((call) => call.text === "ROLLBACK")).toBe(true);
   });
 
 });
