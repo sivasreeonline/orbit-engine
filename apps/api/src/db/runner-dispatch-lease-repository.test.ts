@@ -58,7 +58,7 @@ describe("PostgresRunnerDispatchLeaseRepository", () => {
     expect(claim?.text).toContain("FOR UPDATE OF lane SKIP LOCKED");
     expect(claim?.text).toContain("DISTINCT ON (owner_attempt.tenant_id, owner_attempt.actor_user_id)");
     expect(claim?.text).toContain("ORDER BY lane.last_served_ticket");
-    expect(claim?.text.match(/protocol_version = \$4/g)).toHaveLength(2);
+    expect(claim?.text.match(/protocol_version = 'v1'/g)).toHaveLength(2);
     expect(claim?.text).toContain("nextval('runner_dispatch_scheduler_ticket_seq')");
     expect(claim?.values).toEqual([20, "fair-dispatcher-1", 45]);
     expect(fake.ended()).toBe(true);
