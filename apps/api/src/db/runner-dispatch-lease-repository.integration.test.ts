@@ -289,6 +289,8 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
         lease_token: null,
       });
     } finally {
+      await verifier.query("DELETE FROM runner_machine_protocol_capabilities WHERE runner_id=$1", [runnerId]).catch(() => undefined);
+      await verifier.query("DELETE FROM runner_machines WHERE id=$1", [runnerId]).catch(() => undefined);
       await verifier.end();
     }
   }, 15_000);
@@ -346,6 +348,8 @@ describe.skipIf(!databaseUrl)("runner dispatch lease PostgreSQL integration", ()
       );
       expect(persisted.rows[0]).toEqual({ lease_owner: null, lease_token: null });
     } finally {
+      await verifier.query("DELETE FROM runner_machine_protocol_capabilities WHERE runner_id=$1", [runnerId]).catch(() => undefined);
+      await verifier.query("DELETE FROM runner_machines WHERE id=$1", [runnerId]).catch(() => undefined);
       await verifier.end();
     }
   }, 15_000);
