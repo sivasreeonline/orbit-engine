@@ -18,6 +18,7 @@ var ErrLeaseWindowTooShort = errors.New("runner lease does not have enough time 
 type ControlPlane interface {
 	RetryPending(context.Context, *acceptancejournal.Journal) ([]runnerclient.AcceptanceResult, error)
 	Claim(context.Context, int) ([]runnerclient.Dispatch, error)
+	ClaimV2(context.Context, int) ([]runnerclient.Dispatch, error)
 	AcceptDispatch(context.Context, *acceptancejournal.Journal, runnerclient.Dispatch) (runnerclient.AcceptanceResult, error)
 	StartDispatch(context.Context, runnerclient.Dispatch) (runnerclient.StartResult, error)
 	NewHeartbeatID() (string, error)
@@ -35,6 +36,7 @@ type ArtifactExecutor interface {
 }
 
 type WorkerConfig struct {
+	ProtocolVersion        string
 	HeartbeatInterval      time.Duration
 	HeartbeatRetryDelay    time.Duration
 	CompletionRetryDelay   time.Duration
@@ -86,6 +88,12 @@ func NewWorker(
 	if controlPlane == nil || journal == nil || executor == nil {
 		return nil, errors.New("runner control plane, acceptance journal and executor are required")
 	}
+	if config.ProtocolVersion == "" {
+		config.ProtocolVersion = "v1"
+	}
+	if config.ProtocolVersion != "v1" && config.ProtocolVersion != "v2" {
+		return nil, errors.New("runner worker protocol version must be v1 or v2")
+	}
 	if config.HeartbeatInterval == 0 {
 		config.HeartbeatInterval = 30 * time.Second
 	}
@@ -134,9 +142,14 @@ func (worker *Worker) RunOnce(ctx context.Context) (WorkResult, error) {
 		return WorkResult{}, ErrSandboxNotConfigured
 	}
 
-	dispatches, err := worker.controlPlane.Claim(ctx, 1)
+	var dispatches []runnerclient.Dispatch
+	if worker.config.ProtocolVersion == "v2" {
+		dispatches, err = worker.controlPlane.ClaimV2(ctx, 1)
+	} else {
+		dispatches, err = worker.controlPlane.Claim(ctx, 1)
+	}
 	if err != nil {
-		return WorkResult{}, fmt.Errorf("claim runner dispatch: %w", err)
+		return WorkResult{}, fmt.Errorf("claim %s runner dispatch: %w", worker.config.ProtocolVersion, err)
 	}
 	if len(dispatches) == 0 {
 		return WorkResult{}, nil
@@ -172,6 +185,15 @@ func (worker *Worker) processDispatch(
 	}
 	if artifact.ExecutionID != dispatch.ExecutionID || artifact.AttemptID != dispatch.AttemptID {
 		return runnerclient.CompletionResult{}, errors.New("execution artifact identity does not match the claimed dispatch")
+	}
+	if dispatch.ProtocolVersion == "v2" && artifact.ProtocolRequest == nil {
+		return runnerclient.CompletionResult{}, errors.New("protocol v2 dispatch is missing its immutable request artifact")
+	}
+	if dispatch.ProtocolVersion == "v1" && artifact.ProtocolRequest != nil {
+		return runnerclient.CompletionResult{}, errors.New("protocol v1 dispatch unexpectedly contains a protocol v2 request artifact")
+	}
+	if dispatch.ProtocolVersion != worker.config.ProtocolVersion {
+		return runnerclient.CompletionResult{}, errors.New("claimed dispatch protocol does not match the configured worker protocol")
 	}
 
 	executionContext, cancelExecution := context.WithCancel(ctx)
