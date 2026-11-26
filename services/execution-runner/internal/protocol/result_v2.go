@@ -12,27 +12,27 @@ import (
 // attestation. Keep field order, names, nulls and timestamp precision aligned
 // with apps/api/src/security/execution-protocol-v2-result.ts.
 type CanonicalResultV2 struct {
-	Format                 string  `json:"format"`
-	ExecutionID            string  `json:"executionId"`
-	AttemptID              string  `json:"attemptId"`
-	DispatchID             string  `json:"dispatchId"`
-	RunnerID               string  `json:"runnerId"`
-	KeyID                  string  `json:"keyId"`
-	RequestSHA256          string  `json:"requestSha256"`
-	PolicyRevision         string  `json:"policyRevision"`
-	RuntimeImageDigest     string  `json:"runtimeImageDigest"`
-	InfrastructureStatus   string  `json:"infrastructureStatus"`
+	Format                  string  `json:"format"`
+	ExecutionID             string  `json:"executionId"`
+	AttemptID               string  `json:"attemptId"`
+	DispatchID              string  `json:"dispatchId"`
+	RunnerID                string  `json:"runnerId"`
+	KeyID                   string  `json:"keyId"`
+	RequestSHA256           string  `json:"requestSha256"`
+	PolicyRevision          string  `json:"policyRevision"`
+	RuntimeImageDigest      string  `json:"runtimeImageDigest"`
+	InfrastructureStatus    string  `json:"infrastructureStatus"`
 	InfrastructureErrorCode *string `json:"infrastructureErrorCode"`
-	CompilationStatus      string  `json:"compilationStatus"`
-	Verdict                string  `json:"verdict"`
-	CleanupStatus          string  `json:"cleanupStatus"`
-	TestsTotal             int64   `json:"testsTotal"`
-	TestsPassed            int64   `json:"testsPassed"`
-	ElapsedMs              int64   `json:"elapsedMs"`
-	PeakMemoryBytes        *int64  `json:"peakMemoryBytes"`
-	RunnerVersion          string  `json:"runnerVersion"`
-	StartedAt              string  `json:"startedAt"`
-	CompletedAt            string  `json:"completedAt"`
+	CompilationStatus       string  `json:"compilationStatus"`
+	Verdict                 string  `json:"verdict"`
+	CleanupStatus           string  `json:"cleanupStatus"`
+	TestsTotal              int64   `json:"testsTotal"`
+	TestsPassed             int64   `json:"testsPassed"`
+	ElapsedMs               int64   `json:"elapsedMs"`
+	PeakMemoryBytes         *int64  `json:"peakMemoryBytes"`
+	RunnerVersion           string  `json:"runnerVersion"`
+	StartedAt               string  `json:"startedAt"`
+	CompletedAt             string  `json:"completedAt"`
 }
 
 func CanonicalResultV2Digest(input CanonicalResultV2) (string, error) {
