@@ -268,7 +268,7 @@ export class PostgresRunnerDispatchLeaseRepository {
               "WHERE runner_id = $1::uuid AND protocol_version = 'v2'",
               "  AND status = 'ACTIVE' AND revoked_at IS NULL",
               "FOR SHARE",
-            ].join("\\n"),
+            ].join("\n"),
             [runnerId],
           );
           if (qualification.rows.length !== 1) {
