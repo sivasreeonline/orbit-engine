@@ -10,6 +10,7 @@ import { PostgresRunnerStartRepository } from "./runner-start-repository";
 import type { ExecutionProtocolV2Policy } from "../security/execution-protocol-v2-policy";
 import {
   RunnerCompletionConflictError,
+  RunnerCompletionRuntimeImageMismatchError,
   type RecordRunnerExecutionResultInput,
 } from "./execution-evidence-repository";
 
@@ -363,6 +364,29 @@ describe.skipIf(!databaseUrl)("authenticated runner completion PostgreSQL integr
         keyId,
         leaseToken: dispatch.leaseToken,
       });
+      await expect(evidence.recordRunnerResult({
+        ...completionInput,
+        runtimeImageDigest: "d".repeat(64),
+      })).rejects.toBeInstanceOf(RunnerCompletionRuntimeImageMismatchError);
+      const afterRejectedRuntime = await setup.query<{
+        job_state: string;
+        result_count: string;
+        completion_count: string;
+      }>(
+        [
+          "SELECT job.state AS job_state,",
+          "  (SELECT count(*)::text FROM execution_result_records WHERE execution_id=job.id) AS result_count,",
+          "  (SELECT count(*)::text FROM runner_dispatch_completions WHERE execution_id=job.id) AS completion_count",
+          "FROM execution_jobs AS job WHERE job.id=$1::uuid",
+        ].join("\n"),
+        [created.executionId],
+      );
+      expect(afterRejectedRuntime.rows[0]).toEqual({
+        job_state: "RUNNING",
+        result_count: "0",
+        completion_count: "0",
+      });
+
       const completed = await evidence.recordRunnerResult(completionInput);
       expect(completed.replayed).toBe(false);
       expect(completed.state).toBe("COMPLETED");
