@@ -896,7 +896,9 @@ export class PostgresExecutionEvidenceRepository {
           error instanceof RunnerCompletionUnauthorizedError ||
           error instanceof RunnerCompletionNotAcceptedError ||
           error instanceof RunnerCompletionNotStartedError ||
-          error instanceof RunnerCompletionConflictError) {
+          error instanceof RunnerCompletionConflictError ||
+          error instanceof RunnerCompletionRuntimeImageMismatchError ||
+          error instanceof RunnerCompletionProtocolIntegrityError) {
         throw error;
       }
       if (error instanceof DatabaseUnavailableError) throw error;
@@ -1060,6 +1062,8 @@ export class PostgresExecutionEvidenceRepository {
           error instanceof RunnerCompletionNotAcceptedError ||
           error instanceof RunnerCompletionNotStartedError ||
           error instanceof RunnerCompletionConflictError ||
+          error instanceof RunnerCompletionRuntimeImageMismatchError ||
+          error instanceof RunnerCompletionProtocolIntegrityError ||
           error instanceof Error && error.message.startsWith("invalid_")) {
         throw error;
       }
