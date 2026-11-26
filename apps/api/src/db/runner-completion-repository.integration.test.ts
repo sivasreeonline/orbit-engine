@@ -7,6 +7,7 @@ import { PostgresRunnerDispatchHandoffRepository } from "./runner-dispatch-hando
 import { PostgresRunnerDispatchLeaseRepository } from "./runner-dispatch-lease-repository";
 import { PostgresRunnerAcceptanceRepository } from "./runner-acceptance-repository";
 import { PostgresRunnerStartRepository } from "./runner-start-repository";
+import type { ExecutionProtocolV2Policy } from "../security/execution-protocol-v2-policy";
 import {
   RunnerCompletionConflictError,
   type RecordRunnerExecutionResultInput,
@@ -245,4 +246,167 @@ describe.skipIf(!databaseUrl)("authenticated runner completion PostgreSQL integr
       await setup.end();
     }
   }, 20_000);
+
+  it("completes a qualified v2 runner lifecycle from claim through immutable result replay", async () => {
+    const runnerId = randomUUID();
+    const actorId = randomUUID();
+    const keyId = `runner-v2-lifecycle-${runnerId}`;
+    const setup = new Client({ connectionString: databaseUrl });
+    const policy = {
+      policyRevision: "v2-positive-lifecycle-integration",
+      runtimeImageDigests: {
+        java: `sha256:${"b".repeat(64)}`,
+        python: `sha256:${"c".repeat(64)}`,
+      },
+      limits: {
+        cpuQuotaMillis: 1_000,
+        memoryBytes: 268_435_456,
+        wallTimeMillis: 60_000,
+        processLimit: 32,
+        outputBytes: 1_048_576,
+        scratchBytes: 16_777_216,
+        scratchInodes: 1_024,
+      },
+    } satisfies ExecutionProtocolV2Policy;
+    const intake = new PostgresExecutionIntakeRepository(databaseUrl, undefined, policy);
+    const handoff = new PostgresRunnerDispatchHandoffRepository(databaseUrl);
+    const dispatches = new PostgresRunnerDispatchLeaseRepository(databaseUrl);
+    const acceptance = new PostgresRunnerAcceptanceRepository(databaseUrl);
+    const start = new PostgresRunnerStartRepository(databaseUrl);
+    const evidence = new PostgresExecutionEvidenceRepository(databaseUrl);
+
+    await setup.connect();
+    try {
+      await setup.query(
+        "INSERT INTO runner_machines (id, machine_name) VALUES ($1, $2)",
+        [runnerId, `v2-lifecycle-runner-${runnerId}`],
+      );
+      await setup.query(
+        "INSERT INTO runner_machine_keys (key_id, runner_id, public_key) VALUES ($1, $2, $3)",
+        [keyId, runnerId, randomBytes(32)],
+      );
+      await setup.query(
+        "INSERT INTO runner_machine_protocol_capabilities (runner_id, protocol_version, qualification_reference) VALUES ($1, 'v2', $2)",
+        [runnerId, `v2-lifecycle-qualification-${randomUUID()}`],
+      );
+
+      const created = await intake.create({
+        principal: { tenantId, userId: actorId, roles: ["STUDENT"] },
+        action: "SUBMIT",
+        problemSlug: "two-sum",
+        language: "java",
+        runtimeVersion: "25",
+        sourceCode: `public class Main { // v2-positive-lifecycle-${randomUUID()} }\\n`,
+        correlationId: `v2-positive-lifecycle-${randomUUID()}`,
+      }, `v2-positive-lifecycle-${randomUUID()}`);
+      const handoffResult = await handoff.record({
+        executionId: created.executionId,
+        attemptId: created.attemptId,
+        protocolVersion: "v2",
+      });
+      expect(handoffResult.status).toBe("RECORDED");
+
+      const claimed = await dispatches.claimFairBatchForRunnerV2(runnerId, 10, 10, 120);
+      const dispatch = claimed.find((item) => item.executionId === created.executionId);
+      if (!dispatch) throw new Error("V2_LIFECYCLE_DISPATCH_NOT_CLAIMED");
+
+      const persistedRequest = await setup.query<{
+        protocol_version: string;
+        policy_revision: string;
+        request_sha256: string;
+        request_bytes: Buffer;
+      }>(
+        "SELECT protocol_version, policy_revision, request_sha256, request_bytes FROM execution_protocol_requests WHERE execution_id = $1::uuid",
+        [created.executionId],
+      );
+      expect(persistedRequest.rows).toHaveLength(1);
+      expect(persistedRequest.rows[0]?.protocol_version).toBe("v2");
+      expect(persistedRequest.rows[0]?.policy_revision).toBe(policy.policyRevision);
+      expect(createHash("sha256").update(persistedRequest.rows[0]!.request_bytes).digest("hex"))
+        .toBe(persistedRequest.rows[0]?.request_sha256.trim());
+
+      const acceptanceInput = {
+        acceptanceId: randomUUID(),
+        dispatchId: dispatch.id,
+        executionId: created.executionId,
+        attemptId: created.attemptId,
+        runnerId,
+        keyId,
+        leaseToken: dispatch.leaseToken,
+        receiptSha256: createHash("sha256").update(dispatch.id + dispatch.leaseToken).digest("hex"),
+      };
+      const accepted = await acceptance.record(acceptanceInput);
+      expect(accepted.replayed).toBe(false);
+      const acceptedReplay = await acceptance.record(acceptanceInput);
+      expect(acceptedReplay.replayed).toBe(true);
+      expect(acceptedReplay.eventId).toBe(accepted.eventId);
+
+      const startInput = {
+        dispatchId: dispatch.id,
+        executionId: created.executionId,
+        attemptId: created.attemptId,
+        leaseToken: dispatch.leaseToken,
+        runnerId,
+        keyId,
+      };
+      const started = await start.start(startInput);
+      expect(started.replayed).toBe(false);
+      const startedReplay = await start.start(startInput);
+      expect(startedReplay.replayed).toBe(true);
+      expect(startedReplay.eventId).toBe(started.eventId);
+
+      const completionInput = makeResult({
+        executionId: created.executionId,
+        attemptId: created.attemptId,
+        dispatchId: dispatch.id,
+        runnerId,
+        keyId,
+        leaseToken: dispatch.leaseToken,
+      });
+      const completed = await evidence.recordRunnerResult(completionInput);
+      expect(completed.replayed).toBe(false);
+      expect(completed.state).toBe("COMPLETED");
+      const completedReplay = await evidence.recordRunnerResult(completionInput);
+      expect(completedReplay.replayed).toBe(true);
+      expect(completedReplay.resultSha256).toBe(completed.resultSha256);
+
+      const finalState = await setup.query<{
+        protocol_version: string;
+        job_state: string;
+        dispatch_state: string;
+        acceptance_events: string;
+        start_events: string;
+        completion_events: string;
+        result_count: string;
+      }>(
+        [
+          "SELECT dispatch.protocol_version, job.state AS job_state, dispatch.delivery_state AS dispatch_state,",
+          "  (SELECT count(*)::text FROM execution_evidence_events WHERE execution_id=job.id AND event_type='RUNNER_ACCEPTED') AS acceptance_events,",
+          "  (SELECT count(*)::text FROM execution_evidence_events WHERE execution_id=job.id AND event_type='RUNNER_STARTED') AS start_events,",
+          "  (SELECT count(*)::text FROM execution_evidence_events WHERE execution_id=job.id AND event_type='EXECUTION_FINISHED') AS completion_events,",
+          "  (SELECT count(*)::text FROM execution_result_records WHERE execution_id=job.id) AS result_count",
+          "FROM execution_jobs AS job",
+          "INNER JOIN runner_dispatch_outbox AS dispatch ON dispatch.execution_id=job.id",
+          "WHERE job.id=$1::uuid",
+        ].join("\n"),
+        [created.executionId],
+      );
+      expect(finalState.rows[0]).toEqual({
+        protocol_version: "v2",
+        job_state: "COMPLETED",
+        dispatch_state: "DELIVERED",
+        acceptance_events: "1",
+        start_events: "1",
+        completion_events: "1",
+        result_count: "1",
+      });
+    } finally {
+      await setup.query(
+        "DELETE FROM runner_machine_protocol_capabilities WHERE runner_id=$1",
+        [runnerId],
+      ).catch(() => undefined);
+      await setup.query("DELETE FROM runner_machines WHERE id=$1", [runnerId]).catch(() => undefined);
+      await setup.end();
+    }
+  }, 30_000);
 });
