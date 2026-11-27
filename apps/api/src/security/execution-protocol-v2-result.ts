@@ -36,24 +36,6 @@ const REQUIRED_FORMAT = "SKYHIGH-RUNNER-RESULT-V2";
 const INT64_MIN = -9223372036854775808n;
 const INT64_MAX = 9223372036854775807n;
 
-const REQUIRED_STRING_FIELDS: readonly string[] = [
-  "format",
-  "executionId",
-  "attemptId",
-  "dispatchId",
-  "runnerId",
-  "keyId",
-  "requestSha256",
-  "policyRevision",
-  "runtimeImageDigest",
-];
-
-const REQUIRED_INT64_FIELDS: readonly string[] = [
-  "testsTotal",
-  "testsPassed",
-  "elapsedMs",
-];
-
 // RFC3339: YYYY-MM-DDTHH:MM:SS[.fraction][Z|±HH:MM]
 // Fractional seconds may have any number of digits; we truncate to 3.
 const RFC3339_REGEX = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/;
@@ -266,6 +248,9 @@ function normalizeTimestamp(ts: string): string {
 
   // Apply day offset with manual month/year rollover (avoids Date.UTC() year offset)
   const { year: utcYear, month: utcMonth, day: utcDay } = addDays(year, month, day, dayOffset);
+  if (utcYear < 0 || utcYear > 9999) {
+    throw new Error(`timestamp year out of range: ${ts}`);
+  }
   const utcHour = Math.floor(utcTotalMinutes / 60);
   const utcMinute = utcTotalMinutes % 60;
 

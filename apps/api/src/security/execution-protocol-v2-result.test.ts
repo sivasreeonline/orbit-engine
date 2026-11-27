@@ -535,6 +535,42 @@ describe("Result V2 timestamp tests", () => {
     const json = canonicalResultV2Json(result);
     expect(json).toContain('"startedAt":"0004-02-29T12:00:00.000Z"');
   });
+
+  it("rolls year 0099 back into 0098 across a timezone boundary", async () => {
+    const result = { ...baseResult, startedAt: "0099-01-01T00:30:00+01:00", completedAt: "0099-01-01T00:30:01+01:00" };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"startedAt":"0098-12-31T23:30:00.000Z"');
+    expect(json).toContain('"completedAt":"0098-12-31T23:30:01.000Z"');
+    expect(await canonicalResultV2Digest(result)).toBe("7e2ea1dffbfa46e2d1dcb818287999e9aac9e2a533fbf528e51012f2d609cf3c");
+  });
+
+  it("rolls year 0099 forward into 0100 across a timezone boundary", async () => {
+    const result = { ...baseResult, startedAt: "0099-12-31T23:30:00-01:00", completedAt: "0099-12-31T23:30:01-01:00" };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"startedAt":"0100-01-01T00:30:00.000Z"');
+    expect(json).toContain('"completedAt":"0100-01-01T00:30:01.000Z"');
+    expect(await canonicalResultV2Digest(result)).toBe("32ece086899ebeafe3183ee94b6baba3a799cee121fbbc9831d9029a2c7f2e3e");
+  });
+
+  it("rolls leap year 0004 back to Feb 29 across a timezone boundary", async () => {
+    const result = { ...baseResult, startedAt: "0004-03-01T00:30:00+01:00", completedAt: "0004-03-01T00:30:01+01:00" };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"startedAt":"0004-02-29T23:30:00.000Z"');
+    expect(json).toContain('"completedAt":"0004-02-29T23:30:01.000Z"');
+    expect(await canonicalResultV2Digest(result)).toBe("6c50571bed56cbaf4d9676b0a44ed97d119080c9740ca87e1944046174805bcd");
+  });
+
+  it("rejects year 0000 rolling before the supported range", () => {
+    const result = { ...baseResult, startedAt: "0000-01-01T00:30:00+01:00", completedAt: "0000-01-01T00:30:01+01:00" };
+    expect(() => validateResultV2(result)).toThrow(/out of range/);
+    expect(() => canonicalResultV2Json(result)).toThrow(/out of range/);
+  });
+
+  it("rejects year 9999 rolling after the supported range", () => {
+    const result = { ...baseResult, startedAt: "9999-12-31T23:30:00-01:00", completedAt: "9999-12-31T23:30:01-01:00" };
+    expect(() => validateResultV2(result)).toThrow(/out of range/);
+    expect(() => canonicalResultV2Json(result)).toThrow(/out of range/);
+  });
 });
 
 describe("Result V2 string escaping tests", () => {

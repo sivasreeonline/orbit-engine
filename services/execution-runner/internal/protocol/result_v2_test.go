@@ -720,36 +720,40 @@ func independentNoFractionResult() CanonicalResultV2 {
 	return result
 }
 
-// TestCanonicalResultV2IndependentUnicode tests that valid UTF-16 surrogate
-// pairs are emitted as original characters (matching Go encoding/json behavior),
-// while unpaired surrogates are emitted as raw bytes (Go json.Marshal does not
-// reject them, but the TypeScript implementation rejects them).
+// TestCanonicalResultV2IndependentUnicode tests UTF-8/Unicode serialization
+// behavior matching Go's encoding/json. Valid supplementary-plane characters
+// pass through as UTF-8 bytes. Unpaired UTF-16 surrogates cannot be expressed
+// in Go strings (string(rune(0xD800)) becomes U+FFFD), so this test documents
+// Go's actual behavior rather than TypeScript's rejection policy.
 func TestCanonicalResultV2IndependentUnicode(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name          string
 		runnerVersion string
+		wantJSON      string
 	}{
 		{
 			name:          "supplementary-plane emoji U+1F600",
 			runnerVersion: "v" + string(rune(0x1F600)),
+			wantJSON:      "\"v😀\"",
 		},
 		{
 			name:          "supplementary-plane musical symbol U+1D11E",
 			runnerVersion: "v" + string(rune(0x1D11E)),
+			wantJSON:      "\"v𝄞\"",
 		},
 		{
 			name:          "mixed ASCII BMP and supplementary-plane",
 			runnerVersion: "a" + string(rune(0x00E9)) + string(rune(0x1F600)) + "b",
+			wantJSON:      "\"aé😀b\"",
 		},
 		{
-			name:          "unpaired high surrogate",
+			// string(rune(0xD800)) becomes U+FFFD in Go, which marshals as the
+			// replacement character, not as an unpaired surrogate.
+			name:          "rune 0xD800 becomes U+FFFD",
 			runnerVersion: "a" + string(rune(0xD800)) + "b",
-		},
-		{
-			name:          "unpaired low surrogate",
-			runnerVersion: "a" + string(rune(0xDC00)) + "b",
+			wantJSON:      "\"a�b\"",
 		},
 	}
 
@@ -766,11 +770,8 @@ func TestCanonicalResultV2IndependentUnicode(t *testing.T) {
 				t.Fatalf("unexpected marshal error: %v", err)
 			}
 
-			// Valid Unicode should appear as-is in the JSON bytes
-			expectedSubstring := test.runnerVersion
-			if !strings.Contains(string(encoded), expectedSubstring) {
-				t.Fatalf("marshaled JSON does not contain original Unicode:\n  got: %s", string(encoded))
-
+			if !strings.Contains(string(encoded), test.wantJSON) {
+				t.Fatalf("marshaled JSON mismatch: got %s", string(encoded))
 			}
 		})
 	}
@@ -812,7 +813,7 @@ func TestCanonicalResultV2IndependentIntegerValidation(t *testing.T) {
 
 // TestCanonicalResultV2IndependentYearBoundary tests RFC3339 year boundary
 // compatibility with Go's time.Parse. Years 0-99 must be handled literally
-// (no 1900 offset).
+// (no 1900 offset). Timezone rollover across year boundaries is verified.
 func TestCanonicalResultV2IndependentYearBoundary(t *testing.T) {
 	t.Parallel()
 
@@ -826,25 +827,25 @@ func TestCanonicalResultV2IndependentYearBoundary(t *testing.T) {
 			name:        "year 0000",
 			startedAt:   "0000-01-01T00:00:00Z",
 			completedAt: "0000-01-01T00:00:01Z",
-			wantDigest:  "",
+			wantDigest:  "3c1110abf47899ba8988b7ea28db72ebe93e6c904f35d3bce30f6359761e8917",
 		},
 		{
 			name:        "year 0099",
 			startedAt:   "0099-12-31T23:59:59Z",
 			completedAt: "0099-12-31T23:59:59Z",
-			wantDigest:  "",
+			wantDigest:  "480cc90cb1ddbcc9a19a3d02c4c4ae376648e4744322cf4809114b520e2fcc71",
 		},
 		{
 			name:        "year 1000",
 			startedAt:   "1000-01-01T00:00:00Z",
 			completedAt: "1000-01-01T00:00:01Z",
-			wantDigest:  "",
+			wantDigest:  "929d3cf4004bf2548c3946536d3fd82144170848643f4186edf5895d51b57d94",
 		},
 		{
 			name:        "leap year 0004",
 			startedAt:   "0004-02-29T12:00:00Z",
 			completedAt: "0004-02-29T12:00:01Z",
-			wantDigest:  "",
+			wantDigest:  "e3371de782e226290aa3becfd47cac4bd1a2a203fe471b95d173285e79bf32c4",
 		},
 	}
 
@@ -861,9 +862,11 @@ func TestCanonicalResultV2IndependentYearBoundary(t *testing.T) {
 			if err != nil {
 				t.Fatalf("digest error: %v", err)
 			}
-			test.wantDigest = digest
+			if digest != test.wantDigest {
+				t.Fatalf("digest mismatch for %s:\n  got: %q\n  want: %q", test.name, digest, test.wantDigest)
+			}
 
-			// Verify canonical JSON normalization
+			// Verify canonical JSON normalization independently
 			normalized, err := normalizeTimestamps(result)
 			if err != nil {
 				t.Fatalf("normalize error: %v", err)
@@ -880,6 +883,102 @@ func TestCanonicalResultV2IndependentYearBoundary(t *testing.T) {
 			}
 			if !strings.Contains(string(encoded), `"completedAt":"`+expectedCompletedAt+`"`) {
 				t.Fatalf("JSON does not contain normalized completedAt:\n  got: %s", string(encoded))
+			}
+		})
+	}
+}
+
+// TestCanonicalResultV2TimezoneRolloverBoundaries verifies that timezone
+// normalization may cross year boundaries only while the normalized UTC year
+// remains representable as four-digit RFC3339 (0000-9999).
+func TestCanonicalResultV2TimezoneRolloverBoundaries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		startedAt       string
+		completedAt     string
+		wantStartedAt   string
+		wantCompletedAt string
+		wantDigest      string
+		wantErr         bool
+	}{
+		{
+			name:            "year 0099 rolls back into 0098",
+			startedAt:       "0099-01-01T00:30:00+01:00",
+			completedAt:     "0099-01-01T00:30:01+01:00",
+			wantStartedAt:   "0098-12-31T23:30:00.000Z",
+			wantCompletedAt: "0098-12-31T23:30:01.000Z",
+			wantDigest:      "7e2ea1dffbfa46e2d1dcb818287999e9aac9e2a533fbf528e51012f2d609cf3c",
+		},
+		{
+			name:            "year 0099 rolls forward into 0100",
+			startedAt:       "0099-12-31T23:30:00-01:00",
+			completedAt:     "0099-12-31T23:30:01-01:00",
+			wantStartedAt:   "0100-01-01T00:30:00.000Z",
+			wantCompletedAt: "0100-01-01T00:30:01.000Z",
+			wantDigest:      "32ece086899ebeafe3183ee94b6baba3a799cee121fbbc9831d9029a2c7f2e3e",
+		},
+		{
+			name:            "leap year 0004 rolls back to Feb 29",
+			startedAt:       "0004-03-01T00:30:00+01:00",
+			completedAt:     "0004-03-01T00:30:01+01:00",
+			wantStartedAt:   "0004-02-29T23:30:00.000Z",
+			wantCompletedAt: "0004-02-29T23:30:01.000Z",
+			wantDigest:      "6c50571bed56cbaf4d9676b0a44ed97d119080c9740ca87e1944046174805bcd",
+		},
+		{
+			name:        "year 0000 rolls before supported range",
+			startedAt:   "0000-01-01T00:30:00+01:00",
+			completedAt: "0000-01-01T00:30:01+01:00",
+			wantErr:     true,
+		},
+		{
+			name:        "year 9999 rolls after supported range",
+			startedAt:   "9999-12-31T23:30:00-01:00",
+			completedAt: "9999-12-31T23:30:01-01:00",
+			wantErr:     true,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := independentBaseResult()
+			result.StartedAt = test.startedAt
+			result.CompletedAt = test.completedAt
+
+			digest, err := CanonicalResultV2Digest(result)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("expected out-of-range timestamp error, got nil")
+				}
+				if !strings.Contains(err.Error(), "out of range") {
+					t.Fatalf("expected out-of-range error, got: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("digest error: %v", err)
+			}
+			if digest != test.wantDigest {
+				t.Fatalf("digest mismatch for %s:\n  got: %q\n  want: %q", test.name, digest, test.wantDigest)
+			}
+
+			normalized, err := normalizeTimestamps(result)
+			if err != nil {
+				t.Fatalf("normalize error: %v", err)
+			}
+			encoded, err := json.Marshal(normalized)
+			if err != nil {
+				t.Fatalf("marshal error: %v", err)
+			}
+
+			expected := `{"format":"SKYHIGH-RUNNER-RESULT-V2","executionId":"exec_123","attemptId":"attempt_123","dispatchId":"dispatch_123","runnerId":"runner_01","keyId":"key_2026_01","requestSha256":"` + strings.Repeat("a", 64) + `","policyRevision":"policy_rev_7","runtimeImageDigest":"sha256:` + strings.Repeat("a", 64) + `","infrastructureStatus":"OK","infrastructureErrorCode":null,"compilationStatus":"SUCCEEDED","verdict":"ACCEPTED","cleanupStatus":"CLEANED","testsTotal":3,"testsPassed":3,"elapsedMs":1234,"peakMemoryBytes":null,"runnerVersion":"0.1.0","startedAt":"` + test.wantStartedAt + `","completedAt":"` + test.wantCompletedAt + `"}`
+			if string(encoded) != expected {
+				t.Fatalf("canonical JSON mismatch for %s:\n  got: %s\n  want: %s", test.name, string(encoded), expected)
 			}
 		})
 	}
