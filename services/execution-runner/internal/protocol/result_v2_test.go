@@ -2,24 +2,70 @@ package protocol
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// Golden fixtures below were computed independently with SHA-256 over the
-// exact canonical JSON bytes, not via CanonicalResultV2Digest.
+// Shared fixtures live at test/fixtures/result-v2 relative to the repository
+// root. They are consumed by both Go and TypeScript tests to guarantee
+// byte-for-byte JSON and SHA-256 parity between languages.
+//
+// Go test invocation: `go test` from services/execution-runner/.
+// The fixture path is computed relative to the repository root by locating
+// go.mod and walking up two directory levels.
 
-const goldenJSONBase = `{"format":"SKYHIGH-RUNNER-RESULT-V2","executionId":"exec_123","attemptId":"attempt_123","dispatchId":"dispatch_123","runnerId":"runner_01","keyId":"key_2026_01","requestSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","policyRevision":"policy_rev_7","runtimeImageDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","infrastructureStatus":"OK","infrastructureErrorCode":null,"compilationStatus":"SUCCEEDED","verdict":"ACCEPTED","cleanupStatus":"CLEANED","testsTotal":3,"testsPassed":3,"elapsedMs":1234,"peakMemoryBytes":null,"runnerVersion":"0.1.0","startedAt":"2026-11-26T13:40:10.123Z","completedAt":"2026-11-26T13:40:11.987Z"}`
+type digestFixture struct {
+	Filename              string `json:"filename"`
+	ExpectedCanonicalJSON string `json:"expectedCanonicalJson"`
+	ExpectedSHA256        string `json:"expectedSha256"`
+}
 
-const goldenDigestBase = "9c85ee9b616a3a5144dd3c5e91db8d39187f721e86e023c9ac7bf27e0a585e0c"
+type digestManifest struct {
+	Fixtures []digestFixture `json:"fixtures"`
+}
 
-const goldenJSONPopulated = `{"format":"SKYHIGH-RUNNER-RESULT-V2","executionId":"exec_123","attemptId":"attempt_123","dispatchId":"dispatch_123","runnerId":"runner_01","keyId":"key_2026_01","requestSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","policyRevision":"policy_rev_7","runtimeImageDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","infrastructureStatus":"FAILED","infrastructureErrorCode":"E_INFRA_TIMEOUT","compilationStatus":"SUCCEEDED","verdict":"INTERNAL_ERROR","cleanupStatus":"CLEANED","testsTotal":3,"testsPassed":1,"elapsedMs":1234,"peakMemoryBytes":134217728,"runnerVersion":"0.1.0","startedAt":"2026-11-26T13:40:10.123Z","completedAt":"2026-11-26T13:40:11.987Z"}`
+// fixtureRoot returns the absolute path to test/fixtures/result-v2 relative
+// to the repository root. It locates go.mod (which is always at the repo
+// root for this module) and walks up two levels from the package directory.
+func fixtureRoot(t *testing.T) string {
+	t.Helper()
+	// The test file lives at <repo>/services/execution-runner/internal/protocol/
+	// Walk up: protocol -> internal -> execution-runner -> services -> repo root
+	dir, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("unable to determine current directory: %v", err)
+	}
+	repoRoot := filepath.Clean(filepath.Join(dir, "..", "..", "..", ".."))
+	return filepath.Join(repoRoot, "test", "fixtures", "result-v2")
+}
 
-const goldenDigestPopulated = "fb263750d6c8615e6fd52963b153e86e341699415c04578401d191c9781f6cc8"
+// loadManifest loads the shared digest manifest.
+func loadManifest(t *testing.T) digestManifest {
+	t.Helper()
+	root := fixtureRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, "digests.json"))
+	if err != nil {
+		t.Fatalf("unable to read digests manifest: %v", err)
+	}
+	var manifest digestManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("unable to parse digests manifest: %v", err)
+	}
+	return manifest
+}
 
-const goldenJSONNoFraction = `{"format":"SKYHIGH-RUNNER-RESULT-V2","executionId":"exec_123","attemptId":"attempt_123","dispatchId":"dispatch_123","runnerId":"runner_01","keyId":"key_2026_01","requestSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","policyRevision":"policy_rev_7","runtimeImageDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","infrastructureStatus":"OK","infrastructureErrorCode":null,"compilationStatus":"SUCCEEDED","verdict":"ACCEPTED","cleanupStatus":"CLEANED","testsTotal":3,"testsPassed":3,"elapsedMs":1234,"peakMemoryBytes":null,"runnerVersion":"0.1.0","startedAt":"2026-11-26T13:40:10.000Z","completedAt":"2026-11-26T13:40:11.000Z"}`
-
-const goldenDigestNoFraction = "ae518feff74e67b8abb4c788dd15b31578e0a158f7bbd29e9db683929723934c"
+// loadFixtureJSON reads a fixture file and returns its raw bytes.
+func loadFixtureJSON(t *testing.T, filename string) []byte {
+	t.Helper()
+	root := fixtureRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, filename))
+	if err != nil {
+		t.Fatalf("unable to read fixture %q: %v", filename, err)
+	}
+	return data
+}
 
 func stringPtr(value string) *string {
 	return &value
@@ -68,6 +114,7 @@ func populatedCanonicalResult() CanonicalResultV2 {
 	result.InfrastructureErrorCode = stringPtr("E_INFRA_TIMEOUT")
 	result.Verdict = "INTERNAL_ERROR"
 	result.TestsPassed = 1
+	result.ElapsedMs = 9007199254740993
 	result.PeakMemoryBytes = int64Ptr(134217728)
 	return result
 }
@@ -82,6 +129,18 @@ func normalizedPopulatedCanonicalResult() CanonicalResultV2 {
 func TestCanonicalResultV2DigestMatchesGoldenFixture(t *testing.T) {
 	t.Parallel()
 
+	manifest := loadManifest(t)
+	var baseFixture digestFixture
+	for _, f := range manifest.Fixtures {
+		if f.Filename == "base.json" {
+			baseFixture = f
+			break
+		}
+	}
+	if baseFixture.Filename == "" {
+		t.Fatal("manifest missing base.json fixture")
+	}
+
 	result := validCanonicalResult()
 	startedAt := result.StartedAt
 	completedAt := result.CompletedAt
@@ -90,8 +149,8 @@ func TestCanonicalResultV2DigestMatchesGoldenFixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if digest != goldenDigestBase {
-		t.Fatalf("digest = %q, want %q", digest, goldenDigestBase)
+	if digest != baseFixture.ExpectedSHA256 {
+		t.Fatalf("digest = %q, want %q", digest, baseFixture.ExpectedSHA256)
 	}
 	if len(digest) != 64 {
 		t.Fatalf("digest length = %d, want 64", len(digest))
@@ -104,32 +163,81 @@ func TestCanonicalResultV2DigestMatchesGoldenFixture(t *testing.T) {
 func TestCanonicalResultV2JSONBytesAreExact(t *testing.T) {
 	t.Parallel()
 
-	encoded, err := json.Marshal(normalizedCanonicalResult())
-	if err != nil {
-		t.Fatalf("marshal base result: %v", err)
-	}
-	if string(encoded) != goldenJSONBase {
-		t.Fatalf("base JSON = %s, want %s", encoded, goldenJSONBase)
-	}
+	manifest := loadManifest(t)
 
-	encodedPopulated, err := json.Marshal(normalizedPopulatedCanonicalResult())
-	if err != nil {
-		t.Fatalf("marshal populated result: %v", err)
+	for _, f := range manifest.Fixtures {
+		f := f
+		t.Run(f.Filename, func(t *testing.T) {
+			t.Parallel()
+
+			raw := loadFixtureJSON(t, f.Filename)
+			if string(raw) != f.ExpectedCanonicalJSON {
+				t.Fatalf("fixture %s canonical JSON mismatch:\n  got: %s\n  want: %s", f.Filename, string(raw), f.ExpectedCanonicalJSON)
+			}
+		})
 	}
-	if string(encodedPopulated) != goldenJSONPopulated {
-		t.Fatalf("populated JSON = %s, want %s", encodedPopulated, goldenJSONPopulated)
+}
+
+// TestCanonicalResultV2RoundTrip unmarshals each shared fixture into a Go
+// CanonicalResultV2, re-marshals it, and verifies the bytes are identical to
+// the fixture. This guarantees that the Go struct serialization matches the
+// shared canonical bytes consumed by TypeScript.
+func TestCanonicalResultV2RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	manifest := loadManifest(t)
+
+	for _, f := range manifest.Fixtures {
+		f := f
+		t.Run("roundtrip_"+f.Filename, func(t *testing.T) {
+			t.Parallel()
+
+			raw := loadFixtureJSON(t, f.Filename)
+			var result CanonicalResultV2
+			if err := json.Unmarshal(raw, &result); err != nil {
+				t.Fatalf("unmarshal fixture %s: %v", f.Filename, err)
+			}
+
+			encoded, err := json.Marshal(result)
+			if err != nil {
+				t.Fatalf("marshal result: %v", err)
+			}
+			if string(encoded) != f.ExpectedCanonicalJSON {
+				t.Fatalf("roundtrip JSON mismatch for %s:\n  got: %s\n  want: %s", f.Filename, string(encoded), f.ExpectedCanonicalJSON)
+			}
+
+			digest, err := CanonicalResultV2Digest(result)
+			if err != nil {
+				t.Fatalf("digest for %s: %v", f.Filename, err)
+			}
+			if digest != f.ExpectedSHA256 {
+				t.Fatalf("roundtrip digest mismatch for %s:\n  got: %q\n  want: %q", f.Filename, digest, f.ExpectedSHA256)
+			}
+		})
 	}
 }
 
 func TestCanonicalResultV2DigestPopulatedOptionalFields(t *testing.T) {
 	t.Parallel()
 
+	manifest := loadManifest(t)
+	var populatedFixture digestFixture
+	for _, f := range manifest.Fixtures {
+		if f.Filename == "populated.json" {
+			populatedFixture = f
+			break
+		}
+	}
+	if populatedFixture.Filename == "" {
+		t.Fatal("manifest missing populated.json fixture")
+	}
+
 	digest, err := CanonicalResultV2Digest(populatedCanonicalResult())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if digest != goldenDigestPopulated {
-		t.Fatalf("digest = %q, want %q", digest, goldenDigestPopulated)
+	if digest != populatedFixture.ExpectedSHA256 {
+		t.Fatalf("digest = %q, want %q", digest, populatedFixture.ExpectedSHA256)
 	}
 
 	encoded, err := json.Marshal(normalizedPopulatedCanonicalResult())
@@ -147,6 +255,24 @@ func TestCanonicalResultV2DigestPopulatedOptionalFields(t *testing.T) {
 func TestCanonicalResultV2DigestTimestampNormalization(t *testing.T) {
 	t.Parallel()
 
+	manifest := loadManifest(t)
+	var baseFixture digestFixture
+	var noFractionFixture digestFixture
+	for _, f := range manifest.Fixtures {
+		if f.Filename == "base.json" {
+			baseFixture = f
+		}
+		if f.Filename == "no-fraction.json" {
+			noFractionFixture = f
+		}
+	}
+	if baseFixture.Filename == "" {
+		t.Fatal("manifest missing base.json fixture")
+	}
+	if noFractionFixture.Filename == "" {
+		t.Fatal("manifest missing no-fraction.json fixture")
+	}
+
 	tests := []struct {
 		name        string
 		startedAt   string
@@ -157,31 +283,31 @@ func TestCanonicalResultV2DigestTimestampNormalization(t *testing.T) {
 			name:        "nanoseconds truncated to milliseconds",
 			startedAt:   "2026-11-26T13:40:10.123456789Z",
 			completedAt: "2026-11-26T13:40:11.987654321Z",
-			wantDigest:  goldenDigestBase,
+			wantDigest:  baseFixture.ExpectedSHA256,
 		},
 		{
 			name:        "nanoseconds truncate not round",
 			startedAt:   "2026-11-26T13:40:10.123999999Z",
 			completedAt: "2026-11-26T13:40:11.987999999Z",
-			wantDigest:  goldenDigestBase,
+			wantDigest:  baseFixture.ExpectedSHA256,
 		},
 		{
 			name:        "offset converted to UTC",
 			startedAt:   "2026-11-26T15:40:10.123456789+02:00",
 			completedAt: "2026-11-26T15:40:11.987654321+02:00",
-			wantDigest:  goldenDigestBase,
+			wantDigest:  baseFixture.ExpectedSHA256,
 		},
 		{
 			name:        "already normalized",
 			startedAt:   "2026-11-26T13:40:10.123Z",
 			completedAt: "2026-11-26T13:40:11.987Z",
-			wantDigest:  goldenDigestBase,
+			wantDigest:  baseFixture.ExpectedSHA256,
 		},
 		{
 			name:        "no fractional seconds become .000Z",
 			startedAt:   "2026-11-26T13:40:10Z",
 			completedAt: "2026-11-26T13:40:11Z",
-			wantDigest:  goldenDigestNoFraction,
+			wantDigest:  noFractionFixture.ExpectedSHA256,
 		},
 	}
 
@@ -208,12 +334,24 @@ func TestCanonicalResultV2DigestTimestampNormalization(t *testing.T) {
 func TestCanonicalResultV2DigestDeterministicAcrossRepeatedCalls(t *testing.T) {
 	t.Parallel()
 
+	manifest := loadManifest(t)
+	var baseFixture digestFixture
+	for _, f := range manifest.Fixtures {
+		if f.Filename == "base.json" {
+			baseFixture = f
+			break
+		}
+	}
+	if baseFixture.Filename == "" {
+		t.Fatal("manifest missing base.json fixture")
+	}
+
 	first, err := CanonicalResultV2Digest(validCanonicalResult())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if first != goldenDigestBase {
-		t.Fatalf("first digest = %q, want %q", first, goldenDigestBase)
+	if first != baseFixture.ExpectedSHA256 {
+		t.Fatalf("first digest = %q, want %q", first, baseFixture.ExpectedSHA256)
 	}
 
 	for i := 0; i < 5; i++ {
@@ -230,26 +368,24 @@ func TestCanonicalResultV2DigestDeterministicAcrossRepeatedCalls(t *testing.T) {
 func TestCanonicalResultV2DigestNullHandling(t *testing.T) {
 	t.Parallel()
 
-	encoded, err := json.Marshal(normalizedCanonicalResult())
-	if err != nil {
-		t.Fatalf("marshal base result: %v", err)
+	manifest := loadManifest(t)
+	var baseFixture digestFixture
+	for _, f := range manifest.Fixtures {
+		if f.Filename == "base.json" {
+			baseFixture = f
+			break
+		}
 	}
-	if !strings.Contains(string(encoded), `"infrastructureErrorCode":null`) {
-		t.Fatalf("base JSON missing null infrastructureErrorCode: %s", encoded)
-	}
-	if !strings.Contains(string(encoded), `"peakMemoryBytes":null`) {
-		t.Fatalf("base JSON missing null peakMemoryBytes: %s", encoded)
+	if baseFixture.Filename == "" {
+		t.Fatal("manifest missing base.json fixture")
 	}
 
-	encodedPopulated, err := json.Marshal(normalizedPopulatedCanonicalResult())
-	if err != nil {
-		t.Fatalf("marshal populated result: %v", err)
+	raw := loadFixtureJSON(t, "base.json")
+	if !strings.Contains(string(raw), `"infrastructureErrorCode":null`) {
+		t.Fatalf("base JSON missing null infrastructureErrorCode: %s", string(raw))
 	}
-	if strings.Contains(string(encodedPopulated), `"infrastructureErrorCode":null`) {
-		t.Fatalf("populated JSON must not contain null infrastructureErrorCode: %s", encodedPopulated)
-	}
-	if strings.Contains(string(encodedPopulated), `"peakMemoryBytes":null`) {
-		t.Fatalf("populated JSON must not contain null peakMemoryBytes: %s", encodedPopulated)
+	if !strings.Contains(string(raw), `"peakMemoryBytes":null`) {
+		t.Fatalf("base JSON missing null peakMemoryBytes: %s", string(raw))
 	}
 }
 
@@ -397,6 +533,20 @@ func TestCanonicalResultV2DigestRejectsInvalidFormat(t *testing.T) {
 func TestCanonicalResultV2JSONFieldOrderAndPresence(t *testing.T) {
 	t.Parallel()
 
+	manifest := loadManifest(t)
+	var baseFixture digestFixture
+	for _, f := range manifest.Fixtures {
+		if f.Filename == "base.json" {
+			baseFixture = f
+			break
+		}
+	}
+	if baseFixture.Filename == "" {
+		t.Fatal("manifest missing base.json fixture")
+	}
+
+	goldenJSON := baseFixture.ExpectedCanonicalJSON
+
 	fields := []string{
 		"format",
 		"executionId",
@@ -428,11 +578,11 @@ func TestCanonicalResultV2JSONFieldOrderAndPresence(t *testing.T) {
 	previous := -1
 	for _, field := range fields {
 		needle := `"` + field + `":`
-		index := strings.Index(goldenJSONBase, needle)
+		index := strings.Index(goldenJSON, needle)
 		if index == -1 {
 			t.Fatalf("golden JSON missing field %q", field)
 		}
-		if strings.Count(goldenJSONBase, needle) != 1 {
+		if strings.Count(goldenJSON, needle) != 1 {
 			t.Fatalf("golden JSON field %q appears more than once", field)
 		}
 		if index <= previous {
@@ -441,10 +591,10 @@ func TestCanonicalResultV2JSONFieldOrderAndPresence(t *testing.T) {
 		previous = index
 	}
 
-	if !strings.HasPrefix(goldenJSONBase, `{"format":`) {
+	if !strings.HasPrefix(goldenJSON, `{"format":`) {
 		t.Fatal("golden JSON must start with format field")
 	}
-	if !strings.HasSuffix(goldenJSONBase, "}") {
+	if !strings.HasSuffix(goldenJSON, "}") {
 		t.Fatal("golden JSON must end with }")
 	}
 }
