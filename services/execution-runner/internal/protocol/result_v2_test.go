@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Shared fixtures live at test/fixtures/result-v2 relative to the repository
@@ -597,4 +598,124 @@ func TestCanonicalResultV2JSONFieldOrderAndPresence(t *testing.T) {
 	if !strings.HasSuffix(goldenJSON, "}") {
 		t.Fatal("golden JSON must end with }")
 	}
+}
+
+// TestCanonicalResultV2IndependentConstruction constructs CanonicalResultV2
+// values independently (without unmarshalling any fixture) for each shared
+// fixture and verifies that CanonicalResultV2Digest produces the exact
+// canonical JSON bytes and SHA-256 digest recorded in the shared fixtures.
+func TestCanonicalResultV2IndependentConstruction(t *testing.T) {
+	t.Parallel()
+
+	manifest := loadManifest(t)
+
+	fixtures := map[string]func() CanonicalResultV2{
+		"base.json":        func() CanonicalResultV2 { return independentBaseResult() },
+		"populated.json":   func() CanonicalResultV2 { return independentPopulatedResult() },
+		"no-fraction.json": func() CanonicalResultV2 { return independentNoFractionResult() },
+	}
+
+	for _, f := range manifest.Fixtures {
+		f := f
+		t.Run("independent_"+f.Filename, func(t *testing.T) {
+			t.Parallel()
+
+			construct, ok := fixtures[f.Filename]
+			if !ok {
+				t.Fatalf("no independent constructor for %s", f.Filename)
+			}
+			result := construct()
+
+			digest, err := CanonicalResultV2Digest(result)
+			if err != nil {
+				t.Fatalf("digest for independently constructed %s: %v", f.Filename, err)
+			}
+			if digest != f.ExpectedSHA256 {
+				t.Fatalf("independent digest mismatch for %s:\n  got: %q\n  want: %q", f.Filename, digest, f.ExpectedSHA256)
+			}
+
+			// CanonicalResultV2Digest normalizes timestamps to UTC millisecond
+			// precision. Marshal after normalization so the JSON bytes reflect
+			// the canonical timestamps.
+			normalized, err := normalizeTimestamps(result)
+			if err != nil {
+				t.Fatalf("normalize timestamps for independently constructed %s: %v", f.Filename, err)
+			}
+			encoded, err := json.Marshal(normalized)
+			if err != nil {
+				t.Fatalf("marshal independently constructed result: %v", err)
+			}
+			if string(encoded) != f.ExpectedCanonicalJSON {
+				t.Fatalf("independent JSON mismatch for %s:\n  got: %s\n  want: %s", f.Filename, string(encoded), f.ExpectedCanonicalJSON)
+			}
+		})
+	}
+}
+
+// independentBaseResult constructs the base fixture result independently
+// without reading base.json.
+func independentBaseResult() CanonicalResultV2 {
+	return CanonicalResultV2{
+		Format:                  "SKYHIGH-RUNNER-RESULT-V2",
+		ExecutionID:             "exec_123",
+		AttemptID:               "attempt_123",
+		DispatchID:              "dispatch_123",
+		RunnerID:                "runner_01",
+		KeyID:                   "key_2026_01",
+		RequestSHA256:           strings.Repeat("a", 64),
+		PolicyRevision:          "policy_rev_7",
+		RuntimeImageDigest:      "sha256:" + strings.Repeat("a", 64),
+		InfrastructureStatus:    "OK",
+		InfrastructureErrorCode: nil,
+		CompilationStatus:       "SUCCEEDED",
+		Verdict:                 "ACCEPTED",
+		CleanupStatus:           "CLEANED",
+		TestsTotal:              3,
+		TestsPassed:             3,
+		ElapsedMs:               1234,
+		PeakMemoryBytes:         nil,
+		RunnerVersion:           "0.1.0",
+		StartedAt:               "2026-11-26T13:40:10.123Z",
+		CompletedAt:             "2026-11-26T13:40:11.987Z",
+	}
+}
+
+// independentPopulatedResult constructs the populated fixture result
+// independently without reading populated.json. It exercises the full signed
+// int64 range (9007199254740993 exceeds JavaScript's safe integer range) and
+// a populated nullable pointer field.
+func independentPopulatedResult() CanonicalResultV2 {
+	result := independentBaseResult()
+	result.InfrastructureStatus = "FAILED"
+	result.InfrastructureErrorCode = stringPtr("E_INFRA_TIMEOUT")
+	result.Verdict = "INTERNAL_ERROR"
+	result.TestsPassed = 1
+	result.ElapsedMs = 9007199254740993
+	result.PeakMemoryBytes = int64Ptr(134217728)
+	return result
+}
+
+// normalizeTimestamps returns a copy of result with startedAt and completedAt
+// normalized to UTC millisecond precision, matching
+// CanonicalResultV2Digest's behavior.
+func normalizeTimestamps(result CanonicalResultV2) (CanonicalResultV2, error) {
+	startedAt, err := time.Parse(time.RFC3339Nano, result.StartedAt)
+	if err != nil {
+		return result, err
+	}
+	result.StartedAt = startedAt.UTC().Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z")
+
+	completedAt, err := time.Parse(time.RFC3339Nano, result.CompletedAt)
+	if err != nil {
+		return result, err
+	}
+	result.CompletedAt = completedAt.UTC().Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z")
+
+	return result, nil
+}
+func independentNoFractionResult() CanonicalResultV2 {
+	result := independentBaseResult()
+	result.StartedAt = "2026-11-26T13:40:10Z"
+	result.CompletedAt = "2026-11-26T13:40:11Z"
+	return result
 }
