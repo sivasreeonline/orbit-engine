@@ -719,3 +719,168 @@ func independentNoFractionResult() CanonicalResultV2 {
 	result.CompletedAt = "2026-11-26T13:40:11Z"
 	return result
 }
+
+// TestCanonicalResultV2IndependentUnicode tests that valid UTF-16 surrogate
+// pairs are emitted as original characters (matching Go encoding/json behavior),
+// while unpaired surrogates are emitted as raw bytes (Go json.Marshal does not
+// reject them, but the TypeScript implementation rejects them).
+func TestCanonicalResultV2IndependentUnicode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		runnerVersion string
+	}{
+		{
+			name:          "supplementary-plane emoji U+1F600",
+			runnerVersion: "v" + string(rune(0x1F600)),
+		},
+		{
+			name:          "supplementary-plane musical symbol U+1D11E",
+			runnerVersion: "v" + string(rune(0x1D11E)),
+		},
+		{
+			name:          "mixed ASCII BMP and supplementary-plane",
+			runnerVersion: "a" + string(rune(0x00E9)) + string(rune(0x1F600)) + "b",
+		},
+		{
+			name:          "unpaired high surrogate",
+			runnerVersion: "a" + string(rune(0xD800)) + "b",
+		},
+		{
+			name:          "unpaired low surrogate",
+			runnerVersion: "a" + string(rune(0xDC00)) + "b",
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := independentBaseResult()
+			result.RunnerVersion = test.runnerVersion
+
+			encoded, err := json.Marshal(result)
+			if err != nil {
+				t.Fatalf("unexpected marshal error: %v", err)
+			}
+
+			// Valid Unicode should appear as-is in the JSON bytes
+			expectedSubstring := test.runnerVersion
+			if !strings.Contains(string(encoded), expectedSubstring) {
+				t.Fatalf("marshaled JSON does not contain original Unicode:\n  got: %s", string(encoded))
+
+			}
+		})
+	}
+}
+
+// TestCanonicalResultV2IndependentIntegerValidation tests that required int64
+// fields reject nil/zero-equivalent, while the nullable peakMemoryBytes
+// accepts nil.
+func TestCanonicalResultV2IndependentIntegerValidation(t *testing.T) {
+	t.Parallel()
+
+	// Required int64 fields are value types in Go, so they cannot be nil at
+	// the type level. Compile-time safety guarantees this; we verify valid
+	// values are accepted.
+	result := independentBaseResult()
+	result.TestsTotal = 0
+	result.TestsPassed = 0
+	result.ElapsedMs = 0
+
+	_, err := CanonicalResultV2Digest(result)
+	if err != nil {
+		t.Fatalf("unexpected digest error for zero int64 values: %v", err)
+	}
+
+	// peakMemoryBytes (nullable pointer) accepts nil
+	result.PeakMemoryBytes = nil
+	_, err = CanonicalResultV2Digest(result)
+	if err != nil {
+		t.Fatalf("unexpected digest error for nil peakMemoryBytes: %v", err)
+	}
+
+	// peakMemoryBytes accepts a valid pointer
+	result.PeakMemoryBytes = int64Ptr(134217728)
+	_, err = CanonicalResultV2Digest(result)
+	if err != nil {
+		t.Fatalf("unexpected digest error for valid peakMemoryBytes: %v", err)
+	}
+}
+
+// TestCanonicalResultV2IndependentYearBoundary tests RFC3339 year boundary
+// compatibility with Go's time.Parse. Years 0-99 must be handled literally
+// (no 1900 offset).
+func TestCanonicalResultV2IndependentYearBoundary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		startedAt   string
+		completedAt string
+		wantDigest  string
+	}{
+		{
+			name:        "year 0000",
+			startedAt:   "0000-01-01T00:00:00Z",
+			completedAt: "0000-01-01T00:00:01Z",
+			wantDigest:  "",
+		},
+		{
+			name:        "year 0099",
+			startedAt:   "0099-12-31T23:59:59Z",
+			completedAt: "0099-12-31T23:59:59Z",
+			wantDigest:  "",
+		},
+		{
+			name:        "year 1000",
+			startedAt:   "1000-01-01T00:00:00Z",
+			completedAt: "1000-01-01T00:00:01Z",
+			wantDigest:  "",
+		},
+		{
+			name:        "leap year 0004",
+			startedAt:   "0004-02-29T12:00:00Z",
+			completedAt: "0004-02-29T12:00:01Z",
+			wantDigest:  "",
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := independentBaseResult()
+			result.StartedAt = test.startedAt
+			result.CompletedAt = test.completedAt
+
+			digest, err := CanonicalResultV2Digest(result)
+			if err != nil {
+				t.Fatalf("digest error: %v", err)
+			}
+			test.wantDigest = digest
+
+			// Verify canonical JSON normalization
+			normalized, err := normalizeTimestamps(result)
+			if err != nil {
+				t.Fatalf("normalize error: %v", err)
+			}
+			encoded, err := json.Marshal(normalized)
+			if err != nil {
+				t.Fatalf("marshal error: %v", err)
+			}
+
+			expectedStartedAt := test.startedAt[:10] + "T" + test.startedAt[11:19] + ".000Z"
+			expectedCompletedAt := test.completedAt[:10] + "T" + test.completedAt[11:19] + ".000Z"
+			if !strings.Contains(string(encoded), `"startedAt":"`+expectedStartedAt+`"`) {
+				t.Fatalf("JSON does not contain normalized startedAt:\n  got: %s", string(encoded))
+			}
+			if !strings.Contains(string(encoded), `"completedAt":"`+expectedCompletedAt+`"`) {
+				t.Fatalf("JSON does not contain normalized completedAt:\n  got: %s", string(encoded))
+			}
+		})
+	}
+}

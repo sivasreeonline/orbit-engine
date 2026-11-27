@@ -48,11 +48,10 @@ const REQUIRED_STRING_FIELDS: readonly string[] = [
   "runtimeImageDigest",
 ];
 
-const INT64_BIGINT_FIELDS: readonly string[] = [
+const REQUIRED_INT64_FIELDS: readonly string[] = [
   "testsTotal",
   "testsPassed",
   "elapsedMs",
-  "peakMemoryBytes",
 ];
 
 // RFC3339: YYYY-MM-DDTHH:MM:SS[.fraction][Z|±HH:MM]
@@ -89,9 +88,11 @@ function escapeJsonString(value: string): string {
       if (next < 0xdc00 || next > 0xdfff) {
         throw new Error("invalid UTF-16: high surrogate not followed by low surrogate");
       }
-      // Valid surrogate pair: emit both characters escaped.
-      const codePoint = 0x10000 + ((ch - 0xd800) << 10) + (next - 0xdc00);
-      out += "\\u" + codePoint.toString(16).padStart(4, "0");
+      // Valid surrogate pair: emit both original UTF-16 code units as-is.
+      // Go's encoding/json emits valid Unicode characters unchanged (as UTF-8
+      // bytes when serialized); only HTML-sensitive and U+2028/U+2029 are escaped.
+      out += value[i];
+      out += value[i + 1];
       i++; // skip the low surrogate
       continue;
     }
@@ -148,7 +149,9 @@ function serializeBigInt(value: bigint): string {
 }
 
 function validateBigIntField(name: string, value: bigint | null | undefined): void {
-  if (value === null || value === undefined) return;
+  if (value === null || value === undefined) {
+    throw new Error(`field ${name}: expected bigint, got ${value === null ? "null" : "undefined"}`);
+  }
   if (typeof value !== "bigint") {
     throw new Error(`field ${name}: expected bigint, got ${typeof value}`);
   }
@@ -163,9 +166,40 @@ function validateTimestampFormat(ts: string): void {
   normalizeTimestamp(ts);
 }
 
+// Add days to a date, handling month/year rollover manually. This avoids
+// JavaScript Date.UTC(), which treats years 0-99 as 1900-1999 and would
+// produce incorrect results for early RFC3339 years that Go handles literally.
+function addDays(year: number, month: number, day: number, daysToAdd: number): { year: number; month: number; day: number } {
+  let y = year;
+  let m = month;
+  let d = day + daysToAdd;
+
+  while (d > daysInMonth(y, m)) {
+    d -= daysInMonth(y, m);
+    m++;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+  }
+
+  while (d < 1) {
+    m--;
+    if (m < 1) {
+      m = 12;
+      y--;
+    }
+    d += daysInMonth(y, m);
+  }
+
+  return { year: y, month: m, day: d };
+}
+
 // Normalize an RFC3339 timestamp to UTC with millisecond precision, truncating
 // rather than rounding. Does not use JavaScript Date for fractional-second
 // extraction; fractional digits are parsed directly from the string.
+// Does not use Date.UTC() for year rollover, avoiding the 1900 offset for
+// years 0-99 that Go's time.Parse does not apply.
 function normalizeTimestamp(ts: string): string {
   const match = RFC3339_REGEX.exec(ts);
   if (!match) {
@@ -229,19 +263,18 @@ function normalizeTimestamp(ts: string): string {
     utcTotalMinutes -= 24 * 60;
     dayOffset += 1;
   }
+
+  // Apply day offset with manual month/year rollover (avoids Date.UTC() year offset)
+  const { year: utcYear, month: utcMonth, day: utcDay } = addDays(year, month, day, dayOffset);
   const utcHour = Math.floor(utcTotalMinutes / 60);
   const utcMinute = utcTotalMinutes % 60;
 
-  // Use Date.UTC to handle month/year boundary rollover from dayOffset
-  const ms = parseInt(msFraction, 10);
-  const date = new Date(Date.UTC(year, month - 1, day + dayOffset, utcHour, utcMinute, second, ms));
-
-  const y = String(date.getUTCFullYear()).padStart(4, '0');
-  const mo = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(date.getUTCDate()).padStart(2, '0');
-  const h = String(date.getUTCHours()).padStart(2, '0');
-  const mi = String(date.getUTCMinutes()).padStart(2, '0');
-  const s = String(date.getUTCSeconds()).padStart(2, '0');
+  const y = String(utcYear).padStart(4, '0');
+  const mo = String(utcMonth).padStart(2, '0');
+  const d = String(utcDay).padStart(2, '0');
+  const h = String(utcHour).padStart(2, '0');
+  const mi = String(utcMinute).padStart(2, '0');
+  const s = String(second).padStart(2, '0');
 
   return `${y}-${mo}-${d}T${h}:${mi}:${s}.${msFraction}Z`;
 }

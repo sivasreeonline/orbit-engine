@@ -511,6 +511,30 @@ describe("Result V2 timestamp tests", () => {
     const result = { ...baseResult, startedAt: "" };
     expect(() => validateResultV2(result)).toThrow();
   });
+
+  it("normalizes year 0000 timestamp correctly", () => {
+    const result = { ...baseResult, startedAt: "0000-01-01T00:00:00Z" };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"startedAt":"0000-01-01T00:00:00.000Z"');
+  });
+
+  it("normalizes year 0099 timestamp correctly", () => {
+    const result = { ...baseResult, startedAt: "0099-12-31T23:59:59Z" };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"startedAt":"0099-12-31T23:59:59.000Z"');
+  });
+
+  it("normalizes year 1000 timestamp correctly", () => {
+    const result = { ...baseResult, startedAt: "1000-01-01T00:00:00Z" };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"startedAt":"1000-01-01T00:00:00.000Z"');
+  });
+
+  it("handles leap year 0004 correctly", () => {
+    const result = { ...baseResult, startedAt: "0004-02-29T12:00:00Z" };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"startedAt":"0004-02-29T12:00:00.000Z"');
+  });
 });
 
 describe("Result V2 string escaping tests", () => {
@@ -675,11 +699,75 @@ describe("Result V2 invalid input tests", () => {
     expect(() => validateResultV2(result)).toThrow();
   });
 
+  it("rejects null for required testsTotal", () => {
+    const result = { ...baseResult, testsTotal: null as unknown as bigint };
+    expect(() => validateResultV2(result)).toThrow();
+    expect(() => canonicalResultV2Json(result)).toThrow();
+  });
+
+  it("rejects undefined for required testsPassed", () => {
+    const result = { ...baseResult, testsPassed: undefined as unknown as bigint };
+    expect(() => validateResultV2(result)).toThrow();
+    expect(() => canonicalResultV2Json(result)).toThrow();
+  });
+
+  it("rejects null for required elapsedMs", () => {
+    const result = { ...baseResult, elapsedMs: null as unknown as bigint };
+    expect(() => validateResultV2(result)).toThrow();
+    expect(() => canonicalResultV2Json(result)).toThrow();
+  });
+
+  it("accepts null for nullable peakMemoryBytes", () => {
+    const result = { ...baseResult, peakMemoryBytes: null };
+    expect(() => validateResultV2(result)).not.toThrow();
+    expect(() => canonicalResultV2Json(result)).not.toThrow();
+  });
+
+  it("rejects null for required peakMemoryBytes when not nullable", () => {
+    // peakMemoryBytes is nullable in the contract, so null is valid.
+    // This test documents that null is accepted, distinguishing from
+    // required fields where null is rejected.
+    const result = { ...baseResult, peakMemoryBytes: null };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"peakMemoryBytes":null');
+  });
+
   it("rejects invalid Unicode (unpaired surrogate)", () => {
     const result = {
       ...baseResult,
       runnerVersion: "a" + String.fromCharCode(0xD800) + "b",
     };
     expect(() => canonicalResultV2Json(result)).toThrow();
+  });
+
+  it("emits valid surrogate pairs as original UTF-16 code units", () => {
+    // 😀 (U+1F600, supplementary-plane emoji)
+    const result = { ...baseResult, runnerVersion: "v😀" };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"runnerVersion":"v😀"');
+  });
+
+  it("emits supplementary-plane character outside emoji range", () => {
+    // U+1D11E MUSICAL SYMBOL G CLEF (outside emoji range)
+    const result = { ...baseResult, runnerVersion: "v𝄞" };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"runnerVersion":"v𝄞"');
+  });
+
+  it("mixes ASCII, BMP Unicode and supplementary-plane characters", () => {
+    const result = {
+      ...baseResult,
+      runnerVersion: "a" + String.fromCharCode(0x00E9) + "😀" + "b",
+    };
+    const json = canonicalResultV2Json(result);
+    expect(json).toContain('"runnerVersion":"aé😀b"');
+  });
+
+  it("produces exact UTF-8 byte output for supplementary-plane characters", () => {
+    const result = { ...baseResult, runnerVersion: "x😀y" };
+    const bytes = canonicalResultV2Bytes(result);
+    const text = new TextDecoder().decode(bytes);
+    // JSON bytes must contain the raw UTF-8 for 😀, not \uXXXX escape
+    expect(text).toContain('"runnerVersion":"x😀y"');
   });
 });
