@@ -184,7 +184,10 @@ function addDays(year: number, month: number, day: number, daysToAdd: number): {
 // years 0-99 that Go's time.Parse does not apply.
 function normalizeTimestamp(ts: string): string {
   const match = RFC3339_REGEX.exec(ts);
-  if (!match) {
+  if (!match || match[0].length !== ts.length) {
+    // RegExp.$ without the m flag matches before a trailing newline, so an
+    // explicit full-string match guard is required to reject input such as
+    // "2026-11-26T13:40:10Z\n" that Go's time.Parse rejects as "extra text".
     throw new Error(`invalid timestamp: ${ts}`);
   }
 

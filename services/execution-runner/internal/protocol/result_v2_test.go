@@ -425,6 +425,10 @@ func TestCanonicalResultV2DigestRejectsInvalidTimestamps(t *testing.T) {
 			name:   "space instead of T",
 			mutate: func(result *CanonicalResultV2) { result.CompletedAt = "2026-11-26 13:40:11Z" },
 		},
+		{
+			name:   "trailing newline",
+			mutate: func(result *CanonicalResultV2) { result.StartedAt = "2026-11-26T13:40:10Z\n" },
+		},
 	}
 
 	for _, test := range tests {

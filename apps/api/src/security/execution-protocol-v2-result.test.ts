@@ -512,6 +512,12 @@ describe("Result V2 timestamp tests", () => {
     expect(() => validateResultV2(result)).toThrow();
   });
 
+  it("rejects trailing newline in timestamp", () => {
+    const result = { ...baseResult, startedAt: "2026-11-26T13:40:10Z\n" };
+    expect(() => validateResultV2(result)).toThrow();
+    expect(() => canonicalResultV2Json(result)).toThrow();
+  });
+
   it("normalizes year 0000 timestamp correctly", () => {
     const result = { ...baseResult, startedAt: "0000-01-01T00:00:00Z" };
     const json = canonicalResultV2Json(result);
