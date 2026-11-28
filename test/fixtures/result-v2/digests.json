@@ -1,0 +1,19 @@
+{
+  "fixtures": [
+    {
+      "filename": "base.json",
+      "expectedCanonicalJson": "{\"format\":\"SKYHIGH-RUNNER-RESULT-V2\",\"executionId\":\"exec_123\",\"attemptId\":\"attempt_123\",\"dispatchId\":\"dispatch_123\",\"runnerId\":\"runner_01\",\"keyId\":\"key_2026_01\",\"requestSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"policyRevision\":\"policy_rev_7\",\"runtimeImageDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"infrastructureStatus\":\"OK\",\"infrastructureErrorCode\":null,\"compilationStatus\":\"SUCCEEDED\",\"verdict\":\"ACCEPTED\",\"cleanupStatus\":\"CLEANED\",\"testsTotal\":3,\"testsPassed\":3,\"elapsedMs\":1234,\"peakMemoryBytes\":null,\"runnerVersion\":\"0.1.0\",\"startedAt\":\"2026-11-26T13:40:10.123Z\",\"completedAt\":\"2026-11-26T13:40:11.987Z\"}",
+      "expectedSha256": "9c85ee9b616a3a5144dd3c5e91db8d39187f721e86e023c9ac7bf27e0a585e0c"
+    },
+    {
+      "filename": "populated.json",
+      "expectedCanonicalJson": "{\"format\":\"SKYHIGH-RUNNER-RESULT-V2\",\"executionId\":\"exec_123\",\"attemptId\":\"attempt_123\",\"dispatchId\":\"dispatch_123\",\"runnerId\":\"runner_01\",\"keyId\":\"key_2026_01\",\"requestSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"policyRevision\":\"policy_rev_7\",\"runtimeImageDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"infrastructureStatus\":\"FAILED\",\"infrastructureErrorCode\":\"E_INFRA_TIMEOUT\",\"compilationStatus\":\"SUCCEEDED\",\"verdict\":\"INTERNAL_ERROR\",\"cleanupStatus\":\"CLEANED\",\"testsTotal\":3,\"testsPassed\":1,\"elapsedMs\":9007199254740993,\"peakMemoryBytes\":134217728,\"runnerVersion\":\"0.1.0\",\"startedAt\":\"2026-11-26T13:40:10.123Z\",\"completedAt\":\"2026-11-26T13:40:11.987Z\"}",
+      "expectedSha256": "4859c9a994fbfde9c793a50cc251d9dd50bb99b59968f956c9da03d69df5751a"
+    },
+    {
+      "filename": "no-fraction.json",
+      "expectedCanonicalJson": "{\"format\":\"SKYHIGH-RUNNER-RESULT-V2\",\"executionId\":\"exec_123\",\"attemptId\":\"attempt_123\",\"dispatchId\":\"dispatch_123\",\"runnerId\":\"runner_01\",\"keyId\":\"key_2026_01\",\"requestSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"policyRevision\":\"policy_rev_7\",\"runtimeImageDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"infrastructureStatus\":\"OK\",\"infrastructureErrorCode\":null,\"compilationStatus\":\"SUCCEEDED\",\"verdict\":\"ACCEPTED\",\"cleanupStatus\":\"CLEANED\",\"testsTotal\":3,\"testsPassed\":3,\"elapsedMs\":1234,\"peakMemoryBytes\":null,\"runnerVersion\":\"0.1.0\",\"startedAt\":\"2026-11-26T13:40:10.000Z\",\"completedAt\":\"2026-11-26T13:40:11.000Z\"}",
+      "expectedSha256": "ae518feff74e67b8abb4c788dd15b31578e0a158f7bbd29e9db683929723934c"
+    }
+  ]
+}

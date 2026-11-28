@@ -47,7 +47,11 @@ func CanonicalResultV2Digest(input CanonicalResultV2) (string, error) {
 		if err != nil {
 			return "", errors.New("v2 canonical result timestamp is invalid")
 		}
-		*timestamp = parsed.UTC().Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z")
+		utc := parsed.UTC()
+		if utc.Year() < 0 || utc.Year() > 9999 {
+			return "", errors.New("v2 canonical result timestamp is out of range")
+		}
+		*timestamp = utc.Truncate(time.Millisecond).Format("2006-01-02T15:04:05.000Z")
 	}
 	encoded, err := json.Marshal(input)
 	if err != nil {
